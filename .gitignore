@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+
+# Node / Vite
+node_modules/
+dist/
+.parcel-cache/
+.vite/
+*.tsbuildinfo
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local secrets (NEVER commit)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Local data
+data/
+tmp/
+*.sqlite
+*.sqlite3
+*.db
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Generated
+frontend/src/api/types.ts

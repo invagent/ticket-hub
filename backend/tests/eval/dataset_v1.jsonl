@@ -1,0 +1,4 @@
+{"id": "sample-001", "raw_text": "登录后页面卡顿，菜单加载超过 10 秒", "expected_type": "Operation", "expected_dedup": null}
+{"id": "sample-002", "raw_text": "应付单审核时报错: NullPointerException at line 234", "expected_type": "Bug_fix", "expected_dedup": null}
+{"id": "sample-003", "raw_text": "希望支持批量导出 PDF 凭证", "expected_type": "Demand", "expected_dedup": null}
+{"id": "sample-004", "raw_text": "新员工 john 入职，需要开通财务模块权限", "expected_type": "Internal_task", "expected_dedup": null}
