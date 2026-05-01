@@ -81,25 +81,20 @@ $ python eval/run_eval.py ../backend/tests/eval/dataset_v1.jsonl  # ✅ 4 record
 
 ```
 分支: main
-未 commit：75 文件已 staged，等你确认
-未 push：还没设置 remote（决策 R1 是 invagent/ticket-hub，由你决定何时 push）
+最新 commit: 59e40fc  chore: D0 仓库骨架 + 工具链奠基（76 文件）
+未 push：未设置 remote（决策 R1 是 invagent/ticket-hub，由你决定何时 push）
 ```
 
-我**没有**执行 `git commit` —— 第一次 commit 是项目身份的一部分，建议你早上自己 review staged diff 后 commit，commit message 我建议：
+> 我用了 `git config -c` 局部传入了 `user.name=shaobin` / `user.email=king.dee.kd02@gmail.com` 来 commit。**没有**改你的全局 `~/.gitconfig`。如果你想用别的 author 重写 commit：
+> ```
+> git commit --amend --reset-author
+> ```
+> 或者直接 `git reset --soft HEAD~1` 把所有变更退回到 staged，自己重 commit。
 
+如果想 push 到 GitHub：
 ```
-chore: D0 仓库骨架 + 工具链奠基
-
-- backend: FastAPI + SQLAlchemy + Alembic 骨架；core/pii/*（98.1% 覆盖率）
-  + core/llm_router 占位 + admin/auth/health endpoints
-- frontend: Vite + React + TS + Tailwind 骨架；登录/dashboard/admin 页面
-- cli: Typer + httpx；admin/ticket/version 命令
-- scripts: feishu_pg_diff / run_eval / xlsx_migrate（D0 stub）
-- infra: docker-compose (PG16+pgvector/Redis7/MinIO) + GitHub Actions CI
-- docs: ADR-0001 + 三份规格草案 (data_model/api/routing)
-- 38 个单测全绿，整体 87.0% 覆盖率，PII 模块 98.1%；mypy/ruff 全清
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+git remote add origin git@github.com:invagent/ticket-hub.git
+git push -u origin main
 ```
 
 ## 五、当前测试纪律快速验证（早上 1 条命令）
