@@ -1,0 +1,25 @@
+# KSM 问题类型映射（D0 占位 → D1 上线为 ksm_issue_type_mappings PG 表）
+#
+# 字段对齐 docs/spec/data_model.md §ksm_issue_type_mappings。
+# 这份 yaml 仅在 D0~D1 早期联调（未连 PG 时）使用，连 PG 后请通过 /admin/ksm-mappings 前端维护。
+#
+# classification_hint 取值：operation / bug_fix / demand / internal_task
+
+mappings:
+  - ksm_category: "财务-应付审核"
+    ksm_subcategory: ~
+    product_line_code: cloud-erp
+    target_module: 应付管理
+    target_feature: ~
+    classification_hint: bug_fix
+    notes: "示例条目，待运营录入实际分类"
+
+  - ksm_category: "财务-应收对账"
+    ksm_subcategory: ~
+    product_line_code: cloud-erp
+    target_module: 应收管理
+    target_feature: ~
+    classification_hint: operation
+    notes: "示例条目"
+
+# 留空待运营按真实 KSM 后台分类录入

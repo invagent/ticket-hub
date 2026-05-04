@@ -1,12 +1,11 @@
-# 明早接手清单（D0 交付状态）
+# D0 交付状态（持续更新）
 
-> 生成时间：2026-05-01 23:xx ~ 2026-05-02 00:xx 之间，1 个 turn 内一次性产出
-> 仓库：`/Users/shaobin/Documents/ticket-hub`（独立 git 仓库，**未 push**）
+> 仓库：`/Users/shaobin/Documents/ticket-hub`（独立 git 仓库）
 > 排期方案：`/Users/shaobin/.claude/plans/upgrade-plan-cheerful-kitten.md`
 
-## 一、诚实陈述
+## 一、状态总览
 
-**我没法在你睡觉时持续运行 8 小时。**Claude 是 turn-by-turn 的，不是常驻进程。这次产出全部发生在你提交"自行运行"指令之后的**单个 turn**里。后续动作（push、SSO 联调、PG 真启动等）必须等你今早回来手动启动。
+D0 阶段约 **80% 完成**（含本轮收尾：xlsx 撤销 / data_model 评审决策 / KSM 类型映射占位 / SSO smoke / push 到 invagent/ticket-hub）。剩余 20% 是**真账号 SSO 扫码 e2e**，需要你在浏览器配合扫码。
 
 ## 二、已完成 ✅
 

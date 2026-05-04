@@ -23,8 +23,8 @@ ticket-hub/
 ├── scripts/
 │   ├── feishu_pg_diff.py       双跑对账（D1~D6 每 4h）
 │   ├── eval/run_eval.py        Agent 评测集执行器（D3 起）
-│   ├── migrate/xlsx_migrate.py xlsx → PG 一次性迁移（决策 R2）
 │   └── perf/webhook_locust.py  D6 性能压测
+├── backend/config/mappings/    KSM 问题类型映射 yaml（D0~D1 早期联调）
 ├── docs/
 │   ├── adr/                    架构决策记录
 │   ├── spec/                   data_model / api / routing 三份规格
