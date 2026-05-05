@@ -23,9 +23,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("code", sa.String(32), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
-        sa.Column(
-            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")
-        ),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -47,9 +45,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("code", sa.String(64), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
-        sa.Column(
-            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")
-        ),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -77,9 +73,7 @@ def upgrade() -> None:
         sa.Column("ksm_account", sa.String(64), nullable=True),
         sa.Column("zhichi_agent_id", sa.String(64), nullable=True),
         sa.Column("role", sa.String(32), nullable=False, server_default="member"),
-        sa.Column(
-            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")
-        ),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",

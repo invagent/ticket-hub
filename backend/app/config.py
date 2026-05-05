@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     feishu_sso_redirect_uri: str = "http://localhost:8080/api/auth/feishu/callback"
+    feishu_app_token: str = ""  # bitable app id (legacy table-as-storage; D6 退役)
+    feishu_table_id: str = ""  # ticket bitable table id (legacy)
+    feishu_duty_table_id: str = ""  # 值班表 table id（D1 用作 assignment seed）
 
     # ---- KSM ----
     ksm_base_url: str = "https://ierpuat.kingdee.com"
