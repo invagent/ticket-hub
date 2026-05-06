@@ -9,6 +9,8 @@ import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { SupervisorPage } from "./pages/supervisor/SupervisorPage";
 import { TicketsListPage } from "./pages/tickets/TicketsListPage";
 import { TicketDetailPage } from "./pages/tickets/TicketDetailPage";
+import { HubIssuesListPage } from "./pages/hub-issues/HubIssuesListPage";
+import { HubIssueDetailPage } from "./pages/hub-issues/HubIssueDetailPage";
 import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { UsersPage } from "./pages/admin/users/UsersPage";
@@ -31,6 +33,8 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/supervisor" element={<SupervisorPage />} />
             <Route path="/tickets" element={<TicketsListPage />} />
             <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
+            <Route path="/hub-issues" element={<HubIssuesListPage />} />
+            <Route path="/hub-issues/:hubIssueId" element={<HubIssueDetailPage />} />
             <Route path="/customers" element={<CustomersSearchPage />} />
             <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
             <Route path="/admin/users" element={<UsersPage />} />

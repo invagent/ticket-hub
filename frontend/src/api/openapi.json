@@ -622,6 +622,18 @@
             ],
             "title": "Feishu Task Status"
           },
+          "feishu_task_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Task Synced At"
+          },
           "first_seen_at": {
             "format": "date-time",
             "title": "First Seen At",
@@ -844,6 +856,7 @@
           "customer_verified_at",
           "feishu_task_id",
           "feishu_task_status",
+          "feishu_task_synced_at",
           "superseded_by_hub_issue_id",
           "supersede_reason"
         ],

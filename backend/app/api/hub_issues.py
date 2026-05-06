@@ -70,6 +70,7 @@ class HubIssueDetail(HubIssueSummary):
     # Internal_task
     feishu_task_id: str | None
     feishu_task_status: str | None
+    feishu_task_synced_at: datetime | None
     # Type-immutable supersede chain
     superseded_by_hub_issue_id: int | None
     supersede_reason: str | None

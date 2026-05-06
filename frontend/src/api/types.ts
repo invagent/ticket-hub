@@ -652,6 +652,8 @@ export interface components {
             feishu_task_id: string | null;
             /** Feishu Task Status */
             feishu_task_status: string | null;
+            /** Feishu Task Synced At */
+            feishu_task_synced_at: string | null;
             /**
              * First Seen At
              * Format: date-time
