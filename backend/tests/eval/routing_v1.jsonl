@@ -1,0 +1,50 @@
+{"id": "rt-001", "module": "应付管理", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [1], "expected_scope": "module"}
+{"id": "rt-002", "module": "应付管理", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [1], "expected_scope": "module"}
+{"id": "rt-003", "module": "应收管理", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [2], "expected_scope": "module"}
+{"id": "rt-004", "module": "应收管理", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [2], "expected_scope": "module"}
+{"id": "rt-005", "module": "总账", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [3], "expected_scope": "module"}
+{"id": "rt-006", "module": "总账", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [3], "expected_scope": "module"}
+{"id": "rt-007", "module": "固定资产", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [4, 5], "expected_scope": "module"}
+{"id": "rt-008", "module": "固定资产", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [4, 5], "expected_scope": "module"}
+{"id": "rt-009", "module": "薪资管理", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [6], "expected_scope": "module"}
+{"id": "rt-010", "module": "薪资管理", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [6], "expected_scope": "module"}
+{"id": "rt-011", "module": "考勤", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [7], "expected_scope": "module"}
+{"id": "rt-012", "module": "考勤", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [7], "expected_scope": "module"}
+{"id": "rt-013", "module": "招聘", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [8], "expected_scope": "module"}
+{"id": "rt-014", "module": "招聘", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [8], "expected_scope": "module"}
+{"id": "rt-015", "module": "采购订单", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [9], "expected_scope": "module"}
+{"id": "rt-016", "module": "采购订单", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [9], "expected_scope": "module"}
+{"id": "rt-017", "module": "库存管理", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [10, 11], "expected_scope": "module"}
+{"id": "rt-018", "module": "库存管理", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [10, 11], "expected_scope": "module"}
+{"id": "rt-019", "module": "销售订单", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [12], "expected_scope": "module"}
+{"id": "rt-020", "module": "销售订单", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [12], "expected_scope": "module"}
+{"id": "rt-021", "module": "客户档案", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [13], "expected_scope": "module"}
+{"id": "rt-022", "module": "客户档案", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [13], "expected_scope": "module"}
+{"id": "rt-023", "module": "商机", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [14], "expected_scope": "module"}
+{"id": "rt-024", "module": "商机", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [14], "expected_scope": "module"}
+{"id": "rt-025", "module": "合同", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [15], "expected_scope": "module"}
+{"id": "rt-026", "module": "合同", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [15], "expected_scope": "module"}
+{"id": "rt-027", "module": null, "feature": "数据导入", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [16], "expected_scope": "feature"}
+{"id": "rt-028", "module": null, "feature": "数据导入", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [16], "expected_scope": "feature"}
+{"id": "rt-029", "module": null, "feature": "批量导出", "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [17], "expected_scope": "feature"}
+{"id": "rt-030", "module": null, "feature": "报表生成", "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [18], "expected_scope": "feature"}
+{"id": "rt-031", "module": null, "feature": "权限管理", "product_line_code": null, "expected_decision": "assigned", "expected_user_ids": [19], "expected_scope": "feature"}
+{"id": "rt-032", "module": null, "feature": "登录认证", "product_line_code": null, "expected_decision": "assigned", "expected_user_ids": [20], "expected_scope": "feature"}
+{"id": "rt-033", "module": "应付管理", "feature": "数据导入", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [1], "expected_scope": "module"}
+{"id": "rt-034", "module": "应收管理", "feature": "批量导出", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [2], "expected_scope": "module"}
+{"id": "rt-035", "module": "薪资管理", "feature": "数据导入", "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [6], "expected_scope": "module"}
+{"id": "rt-036", "module": "采购订单", "feature": "报表生成", "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [9], "expected_scope": "module"}
+{"id": "rt-037", "module": "客户档案", "feature": "数据导入", "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [13], "expected_scope": "module"}
+{"id": "rt-038", "module": "未知模块", "feature": "数据导入", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [16], "expected_scope": "feature"}
+{"id": "rt-039", "module": "未知模块", "feature": "权限管理", "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [19], "expected_scope": "feature"}
+{"id": "rt-040", "module": null, "feature": null, "product_line_code": "cloud-erp", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-041", "module": "未知模块", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-042", "module": "未知模块", "feature": "未知特性", "product_line_code": "cloud-erp", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-043", "module": "应付管理", "feature": null, "product_line_code": "hcm", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-044", "module": "应付管理", "feature": null, "product_line_code": "scm", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-045", "module": "招聘", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "default_pool", "expected_user_ids": [99], "expected_scope": "none"}
+{"id": "rt-046", "module": "应付管理", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [1], "expected_scope": "module"}
+{"id": "rt-047", "module": "总账", "feature": null, "product_line_code": "cloud-erp", "expected_decision": "assigned", "expected_user_ids": [3], "expected_scope": "module"}
+{"id": "rt-048", "module": "薪资管理", "feature": null, "product_line_code": "hcm", "expected_decision": "assigned", "expected_user_ids": [6], "expected_scope": "module"}
+{"id": "rt-049", "module": "库存管理", "feature": null, "product_line_code": "scm", "expected_decision": "assigned", "expected_user_ids": [10, 11], "expected_scope": "module"}
+{"id": "rt-050", "module": "客户档案", "feature": null, "product_line_code": "crm", "expected_decision": "assigned", "expected_user_ids": [13], "expected_scope": "module"}

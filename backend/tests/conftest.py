@@ -116,14 +116,18 @@ def mock_zhichi():
 @pytest.fixture(scope="session")
 def _pg_container_or_skip():
     if os.environ.get("CI_NO_DOCKER") == "1":
-        pytest.skip("Docker not available")
+        pytest.skip("Docker not available (CI_NO_DOCKER=1)")
     try:
         from testcontainers.postgres import PostgresContainer
     except ImportError:
         pytest.skip("testcontainers not installed")
 
-    with PostgresContainer("postgres:16-alpine") as pg:
-        yield pg
+    try:
+        with PostgresContainer("postgres:16-alpine") as pg:
+            yield pg
+    except Exception as e:
+        # Docker daemon not running, image pull failed, etc.
+        pytest.skip(f"PG container could not start: {e}")
 
 
 @pytest.fixture
