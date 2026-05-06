@@ -371,6 +371,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ready */
+        get: operations["ready_health_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/ksm": {
         parameters: {
             query?: never;
@@ -418,6 +435,19 @@ export interface components {
             acknowledged_at: string;
             /** Notification Id */
             notification_id: number;
+        };
+        /** CheckOut */
+        CheckOut: {
+            /** Error */
+            error?: string | null;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean;
+            /** Required */
+            required: boolean;
         };
         /**
          * CustomerDetail
@@ -814,6 +844,18 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+        };
+        /** ReadinessResponse */
+        ReadinessResponse: {
+            /** Checks */
+            checks: components["schemas"]["CheckOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "degraded" | "unhealthy";
+            /** Version */
+            version: string;
         };
         /** RelinkBody */
         RelinkBody: {
@@ -1706,6 +1748,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    ready_health_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };
