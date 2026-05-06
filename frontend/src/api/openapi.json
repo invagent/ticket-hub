@@ -59,6 +59,72 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "CountsOut": {
+        "properties": {
+          "customers_total": {
+            "title": "Customers Total",
+            "type": "integer"
+          },
+          "hub_issues_total": {
+            "title": "Hub Issues Total",
+            "type": "integer"
+          },
+          "notifications_pending": {
+            "title": "Notifications Pending",
+            "type": "integer"
+          },
+          "tickets_active": {
+            "title": "Tickets Active",
+            "type": "integer"
+          },
+          "tickets_total": {
+            "title": "Tickets Total",
+            "type": "integer"
+          },
+          "users_total": {
+            "title": "Users Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tickets_total",
+          "tickets_active",
+          "hub_issues_total",
+          "customers_total",
+          "users_total",
+          "notifications_pending"
+        ],
+        "title": "CountsOut",
+        "type": "object"
+      },
+      "CustomerDedupOut": {
+        "properties": {
+          "identities_matched": {
+            "title": "Identities Matched",
+            "type": "integer"
+          },
+          "identities_total": {
+            "title": "Identities Total",
+            "type": "integer"
+          },
+          "match_rate": {
+            "title": "Match Rate",
+            "type": "number"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "identities_total",
+          "identities_matched",
+          "match_rate",
+          "target"
+        ],
+        "title": "CustomerDedupOut",
+        "type": "object"
+      },
       "CustomerDetail": {
         "description": "Full identity-graph payload for /customers/:id detail page.",
         "properties": {
@@ -154,6 +220,34 @@
           "created_at"
         ],
         "title": "CustomerSummary",
+        "type": "object"
+      },
+      "DashboardOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CountsOut"
+          },
+          "customer_dedup": {
+            "$ref": "#/components/schemas/CustomerDedupOut"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingOut"
+          },
+          "sla": {
+            "$ref": "#/components/schemas/SLAOut"
+          },
+          "supervisor": {
+            "$ref": "#/components/schemas/SupervisorOut"
+          }
+        },
+        "required": [
+          "counts",
+          "routing",
+          "supervisor",
+          "customer_dedup",
+          "sla"
+        ],
+        "title": "DashboardOut",
         "type": "object"
       },
       "FeatureScopeIn": {
@@ -1436,6 +1530,72 @@
         "title": "RelinkResponse",
         "type": "object"
       },
+      "RoutingOut": {
+        "properties": {
+          "auto_assigned": {
+            "title": "Auto Assigned",
+            "type": "integer"
+          },
+          "auto_hit_rate": {
+            "title": "Auto Hit Rate",
+            "type": "number"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "tickets_total": {
+            "title": "Tickets Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tickets_total",
+          "auto_assigned",
+          "auto_hit_rate",
+          "target"
+        ],
+        "title": "RoutingOut",
+        "type": "object"
+      },
+      "SLAOut": {
+        "properties": {
+          "acknowledged": {
+            "title": "Acknowledged",
+            "type": "integer"
+          },
+          "acknowledgement_rate": {
+            "title": "Acknowledgement Rate",
+            "type": "number"
+          },
+          "escalated": {
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "notifications_total": {
+            "title": "Notifications Total",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notifications_total",
+          "pending",
+          "acknowledged",
+          "escalated",
+          "acknowledgement_rate",
+          "target"
+        ],
+        "title": "SLAOut",
+        "type": "object"
+      },
       "SourceOut": {
         "properties": {
           "code": {
@@ -1462,6 +1622,34 @@
           "is_active"
         ],
         "title": "SourceOut",
+        "type": "object"
+      },
+      "SupervisorOut": {
+        "properties": {
+          "linked_tickets": {
+            "title": "Linked Tickets",
+            "type": "integer"
+          },
+          "relink_count": {
+            "title": "Relink Count",
+            "type": "integer"
+          },
+          "relink_rate": {
+            "title": "Relink Rate",
+            "type": "number"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linked_tickets",
+          "relink_count",
+          "relink_rate",
+          "target"
+        ],
+        "title": "SupervisorOut",
         "type": "object"
       },
       "TicketDetail": {
@@ -2937,6 +3125,27 @@
         "summary": "Get Hub Issue",
         "tags": [
           "hub-issues"
+        ]
+      }
+    },
+    "/api/metrics/dashboard": {
+      "get": {
+        "operationId": "dashboard_metrics_api_metrics_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard Metrics",
+        "tags": [
+          "metrics"
         ]
       }
     },

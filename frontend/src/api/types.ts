@@ -252,6 +252,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard Metrics */
+        get: operations["dashboard_metrics_api_metrics_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/inbox": {
         parameters: {
             query?: never;
@@ -449,6 +466,32 @@ export interface components {
             /** Required */
             required: boolean;
         };
+        /** CountsOut */
+        CountsOut: {
+            /** Customers Total */
+            customers_total: number;
+            /** Hub Issues Total */
+            hub_issues_total: number;
+            /** Notifications Pending */
+            notifications_pending: number;
+            /** Tickets Active */
+            tickets_active: number;
+            /** Tickets Total */
+            tickets_total: number;
+            /** Users Total */
+            users_total: number;
+        };
+        /** CustomerDedupOut */
+        CustomerDedupOut: {
+            /** Identities Matched */
+            identities_matched: number;
+            /** Identities Total */
+            identities_total: number;
+            /** Match Rate */
+            match_rate: number;
+            /** Target */
+            target: string;
+        };
         /**
          * CustomerDetail
          * @description Full identity-graph payload for /customers/:id detail page.
@@ -479,6 +522,14 @@ export interface components {
             primary_contact: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** DashboardOut */
+        DashboardOut: {
+            counts: components["schemas"]["CountsOut"];
+            customer_dedup: components["schemas"]["CustomerDedupOut"];
+            routing: components["schemas"]["RoutingOut"];
+            sla: components["schemas"]["SLAOut"];
+            supervisor: components["schemas"]["SupervisorOut"];
         };
         /** FeatureScopeIn */
         FeatureScopeIn: {
@@ -884,6 +935,32 @@ export interface components {
             /** Ticket Id */
             ticket_id: number;
         };
+        /** RoutingOut */
+        RoutingOut: {
+            /** Auto Assigned */
+            auto_assigned: number;
+            /** Auto Hit Rate */
+            auto_hit_rate: number;
+            /** Target */
+            target: string;
+            /** Tickets Total */
+            tickets_total: number;
+        };
+        /** SLAOut */
+        SLAOut: {
+            /** Acknowledged */
+            acknowledged: number;
+            /** Acknowledgement Rate */
+            acknowledgement_rate: number;
+            /** Escalated */
+            escalated: number;
+            /** Notifications Total */
+            notifications_total: number;
+            /** Pending */
+            pending: number;
+            /** Target */
+            target: string;
+        };
         /** SourceOut */
         SourceOut: {
             /** Code */
@@ -894,6 +971,17 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+        };
+        /** SupervisorOut */
+        SupervisorOut: {
+            /** Linked Tickets */
+            linked_tickets: number;
+            /** Relink Count */
+            relink_count: number;
+            /** Relink Rate */
+            relink_rate: number;
+            /** Target */
+            target: string;
         };
         /** TicketDetail */
         TicketDetail: {
@@ -1531,6 +1619,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_metrics_api_metrics_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOut"];
                 };
             };
         };

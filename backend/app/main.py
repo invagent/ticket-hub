@@ -14,6 +14,7 @@ from app.api import (
     customers,
     health,
     hub_issues,
+    metrics,
     supervisor,
     tickets,
     webhooks,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
     app.include_router(hub_issues.router, prefix="/api/hub-issues", tags=["hub-issues"])
     app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
+    app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
     app.include_router(webhooks.router, prefix="/webhook", tags=["webhook"])
 
     return app
