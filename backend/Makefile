@@ -52,6 +52,10 @@ seed-scopes:
 	@if [ -z "$(YAML)" ]; then echo "Usage: make seed-scopes YAML=config/seeds/assignment_scopes.example.yaml [DRY=1]"; exit 1; fi
 	$(PY) ../scripts/seed/seed_assignment_scopes.py $(YAML) $(if $(DRY),--dry-run,)
 
+seed-ksm-types:
+	@if [ -z "$(YAML)" ]; then echo "Usage: make seed-ksm-types YAML=config/mappings/ksm_issue_types.yaml [DRY=1] [PRUNE=1]"; exit 1; fi
+	$(PY) ../scripts/seed/seed_ksm_type_mappings.py $(YAML) $(if $(DRY),--dry-run,) $(if $(PRUNE),--prune,)
+
 e2e:
 	$(PYTEST) tests/e2e -v -m e2e
 
