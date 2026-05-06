@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import admin, auth, health, supervisor, webhooks
+from app.api import admin, admin_scopes, auth, health, supervisor, webhooks
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.trace import ensure_trace_id, set_trace_id
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+    app.include_router(admin_scopes.router, prefix="/api/admin/scopes", tags=["admin-scopes"])
     app.include_router(supervisor.router, prefix="/api/supervisor", tags=["supervisor"])
     app.include_router(webhooks.router, prefix="/webhook", tags=["webhook"])
 
