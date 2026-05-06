@@ -140,6 +140,18 @@ export async function postByPath<P extends keyof paths>(
   });
 }
 
+/** Typed DELETE against a path-with-param endpoint. */
+export async function deleteByPath<P extends keyof paths>(
+  templatePath: P,
+  params: Record<string, string | number>,
+): Promise<ResponseOf<paths[P], "delete">> {
+  let actual = templatePath as string;
+  for (const [k, v] of Object.entries(params)) {
+    actual = actual.replaceAll(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  return request(actual, { method: "DELETE" });
+}
+
 // Convenience type aliases for frequently-used response shapes.
 // Add more here as the frontend grows; they remain in sync with the OpenAPI spec.
 export type TicketSummary =
