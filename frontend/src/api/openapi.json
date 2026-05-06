@@ -180,6 +180,131 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoryEvent": {
+        "description": "One row in the merged ticket timeline.\n\nTwo `kind` values are emitted:\n  - 'status'        — a status_history transition (from→to)\n  - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start\n                       of an association; effective_to non-null = closed)\n\nSorted by `occurred_at` ascending in the response (oldest → newest); the\nfrontend reverses for display.",
+        "properties": {
+          "change_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Reason"
+          },
+          "changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "hub_issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Issue Id"
+          },
+          "human_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Confirmed"
+          },
+          "kind": {
+            "enum": [
+              "status",
+              "hub_issue_link"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata_": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "to_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Status"
+          }
+        },
+        "required": [
+          "kind",
+          "occurred_at"
+        ],
+        "title": "HistoryEvent",
+        "type": "object"
+      },
       "HistoryOut": {
         "properties": {
           "action": {
@@ -223,6 +348,27 @@
           "changed_at"
         ],
         "title": "HistoryOut",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "items"
+        ],
+        "title": "HistoryResponse",
         "type": "object"
       },
       "HubIssueDetail": {
@@ -3039,6 +3185,48 @@
           }
         },
         "summary": "Get Ticket",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/tickets/{ticket_id}/history": {
+      "get": {
+        "operationId": "get_ticket_history_api_tickets__ticket_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ticket History",
         "tags": [
           "tickets"
         ]

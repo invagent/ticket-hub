@@ -337,6 +337,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ticket History */
+        get: operations["get_ticket_history_api_tickets__ticket_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -459,6 +476,50 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HistoryEvent
+         * @description One row in the merged ticket timeline.
+         *
+         *     Two `kind` values are emitted:
+         *       - 'status'        — a status_history transition (from→to)
+         *       - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start
+         *                            of an association; effective_to non-null = closed)
+         *
+         *     Sorted by `occurred_at` ascending in the response (oldest → newest); the
+         *     frontend reverses for display.
+         */
+        HistoryEvent: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /** Changed By */
+            changed_by?: string | null;
+            /** Effective To */
+            effective_to?: string | null;
+            /** From Status */
+            from_status?: string | null;
+            /** Hub Issue Id */
+            hub_issue_id?: number | null;
+            /** Human Confirmed */
+            human_confirmed?: boolean | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "status" | "hub_issue_link";
+            /** Metadata */
+            metadata_?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason?: string | null;
+            /** To Status */
+            to_status?: string | null;
+        };
         /** HistoryOut */
         HistoryOut: {
             /** Action */
@@ -480,6 +541,13 @@ export interface components {
             scope_type: string;
             /** User Id */
             user_id: number;
+        };
+        /** HistoryResponse */
+        HistoryResponse: {
+            /** Items */
+            items: components["schemas"]["HistoryEvent"][];
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** HubIssueDetail */
         HubIssueDetail: {
@@ -1576,6 +1644,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ticket_history_api_tickets__ticket_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryResponse"];
                 };
             };
             /** @description Validation Error */

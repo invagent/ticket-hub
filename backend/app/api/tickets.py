@@ -1,7 +1,8 @@
-"""GET /api/tickets — list / detail.
+"""GET /api/tickets — list / detail / history.
 
   GET /api/tickets?source_code=&type=&status=&assigned_user_id=&page=&page_size=
   GET /api/tickets/{ticket_id}
+  GET /api/tickets/{ticket_id}/history          status + relink merged timeline
 
 All authenticated users can read (any role). D2 may add row-level visibility
 (only own + supervisor sees subordinates) — for D1 keep open within the org.
@@ -10,7 +11,7 @@ All authenticated users can read (any role). D2 may add row-level visibility
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,7 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
+from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
+from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
 
 router = APIRouter()
 
@@ -109,3 +112,82 @@ def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
     return TicketDetail.model_validate(ticket)
+
+
+# ---- /history -------------------------------------------------------------
+
+
+class HistoryEvent(BaseModel):
+    """One row in the merged ticket timeline.
+
+    Two `kind` values are emitted:
+      - 'status'        — a status_history transition (from→to)
+      - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start
+                           of an association; effective_to non-null = closed)
+
+    Sorted by `occurred_at` ascending in the response (oldest → newest); the
+    frontend reverses for display.
+    """
+
+    kind: Literal["status", "hub_issue_link"]
+    occurred_at: datetime
+    # status fields (None when kind != 'status')
+    from_status: str | None = None
+    to_status: str | None = None
+    changed_by: str | None = None
+    reason: str | None = None
+    metadata_: dict[str, Any] | None = None
+    # hub_issue_link fields (None when kind != 'hub_issue_link')
+    hub_issue_id: int | None = None
+    effective_to: datetime | None = None
+    change_reason: str | None = None
+    human_confirmed: bool | None = None
+
+
+class HistoryResponse(BaseModel):
+    ticket_id: int
+    items: list[HistoryEvent]
+
+
+@router.get("/{ticket_id}/history", response_model=HistoryResponse)
+def get_ticket_history(
+    ticket_id: int,
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> HistoryResponse:
+    if TicketRepository(db).get(ticket_id) is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    status_rows = StatusHistoryRepository(db).find_for_entity(
+        entity_type="ticket", entity_id=ticket_id
+    )
+    relink_rows = TicketHubIssueHistoryRepository(db).find_for_ticket(ticket_id)
+
+    events: list[HistoryEvent] = []
+    for s in status_rows:
+        events.append(
+            HistoryEvent(
+                kind="status",
+                occurred_at=s.changed_at,
+                from_status=s.from_status,
+                to_status=s.to_status,
+                changed_by=s.changed_by,
+                reason=s.reason,
+                metadata_=s.metadata_,
+            )
+        )
+    for h in relink_rows:
+        events.append(
+            HistoryEvent(
+                kind="hub_issue_link",
+                occurred_at=h.effective_from,
+                hub_issue_id=h.hub_issue_id,
+                effective_to=h.effective_to,
+                change_reason=h.change_reason,
+                human_confirmed=h.human_confirmed,
+            )
+        )
+    # Stable merge sort: status and relink with the same timestamp keep
+    # status-first (status is the cause; relink is often the effect).
+    events.sort(key=lambda e: (e.occurred_at, 0 if e.kind == "status" else 1))
+    return HistoryResponse(ticket_id=ticket_id, items=events)

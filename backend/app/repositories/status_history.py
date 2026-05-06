@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import StatusHistory
@@ -12,6 +13,21 @@ from app.models import StatusHistory
 class StatusHistoryRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
+
+    def find_for_entity(
+        self, *, entity_type: str, entity_id: int, limit: int = 200
+    ) -> list[StatusHistory]:
+        """All status transitions for a (entity_type, entity_id), oldest first."""
+        stmt = (
+            select(StatusHistory)
+            .where(
+                StatusHistory.entity_type == entity_type,
+                StatusHistory.entity_id == entity_id,
+            )
+            .order_by(StatusHistory.changed_at.asc(), StatusHistory.id.asc())
+            .limit(min(max(limit, 1), 1000))
+        )
+        return list(self._db.execute(stmt).scalars().all())
 
     def record(
         self,
