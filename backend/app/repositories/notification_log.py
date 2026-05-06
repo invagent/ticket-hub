@@ -73,3 +73,22 @@ class NotificationLogRepository:
         row.escalated_at = at or datetime.now(UTC)
         row.escalated_to_user_id = escalated_to_user_id
         self._db.flush()
+
+    def list_pending_for_recipient(
+        self, recipient_user_id: int, *, limit: int = 100
+    ) -> list[NotificationLog]:
+        """Inbox view: unacknowledged + un-escalated notifications for a user."""
+        stmt = (
+            select(NotificationLog)
+            .where(
+                NotificationLog.recipient_user_id == recipient_user_id,
+                NotificationLog.acknowledged_at.is_(None),
+                NotificationLog.escalated_at.is_(None),
+            )
+            .order_by(NotificationLog.sent_at.desc())
+            .limit(limit)
+        )
+        return list(self._db.execute(stmt).scalars().all())
+
+    def get(self, notification_id: int) -> NotificationLog | None:
+        return self._db.get(NotificationLog, notification_id)
