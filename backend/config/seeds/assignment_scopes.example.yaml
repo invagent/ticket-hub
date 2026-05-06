@@ -1,0 +1,78 @@
+# 路由分工种子（示例）
+#
+# 从飞书云文档「产研值班表」「服务值班表」抽出来后，按本文件 schema 整理，
+# 然后跑 `python scripts/seed/seed_assignment_scopes.py path/to/this.yaml --dsn $PG_DSN`。
+#
+# 数据键说明：
+#   - users[].employee_no  KSM 工号（首选稳定 key；脚本按此查询/upsert）
+#   - users[].feishu_uid   飞书 open_id（可选；用户首次 SSO 登录时会被覆盖为真实值）
+#   - partners[]           二元数组列表，每个元素 [employee_no_A, employee_no_B] 表示互为 backup
+#   - module_scopes[]      产品线 × 模块的分工（路由 step 1 命中点）
+#   - feature_scopes[]     跨产品线的 feature 兜底分工（路由 step 2 命中点）
+#
+# 这份 example 与 backend/tests/eval/routing_v1.jsonl 完全对齐：
+# 跑完 seed 后，replay 50/50 命中。
+
+product_lines:
+  - {code: cloud-erp, name: Cloud ERP}
+  - {code: hcm, name: HCM}
+  - {code: scm, name: SCM}
+  - {code: crm, name: CRM}
+
+users:
+  - {employee_no: K0001, name: 张应付, role: assignee}
+  - {employee_no: K0002, name: 王应收, role: assignee}
+  - {employee_no: K0003, name: 李总账, role: assignee}
+  - {employee_no: K0004, name: 赵固资甲, role: assignee}
+  - {employee_no: K0005, name: 钱固资乙, role: assignee}
+  - {employee_no: K0006, name: 孙薪资, role: assignee}
+  - {employee_no: K0007, name: 周考勤, role: assignee}
+  - {employee_no: K0008, name: 吴招聘, role: assignee}
+  - {employee_no: K0009, name: 郑采购, role: assignee}
+  - {employee_no: K0010, name: 冯库存甲, role: assignee}
+  - {employee_no: K0011, name: 陈库存乙, role: assignee}
+  - {employee_no: K0012, name: 卫销售, role: assignee}
+  - {employee_no: K0013, name: 蒋客户, role: assignee}
+  - {employee_no: K0014, name: 沈商机, role: assignee}
+  - {employee_no: K0015, name: 韩合同, role: assignee}
+  - {employee_no: K0016, name: 杨数据导入, role: assignee}
+  - {employee_no: K0017, name: 朱批量, role: assignee}
+  - {employee_no: K0018, name: 秦报表, role: assignee}
+  - {employee_no: K0019, name: 尤权限, role: assignee}
+  - {employee_no: K0020, name: 许登录, role: assignee}
+  - {employee_no: K0099, name: 兜底池, role: supervisor}
+
+partners:
+  # 固定资产组
+  - [K0004, K0005]
+  # 库存管理组
+  - [K0010, K0011]
+
+module_scopes:
+  # ---- cloud-erp ----
+  - {employee_no: K0001, product_line: cloud-erp, module: 应付管理}
+  - {employee_no: K0002, product_line: cloud-erp, module: 应收管理}
+  - {employee_no: K0003, product_line: cloud-erp, module: 总账}
+  - {employee_no: K0004, product_line: cloud-erp, module: 固定资产}
+  - {employee_no: K0005, product_line: cloud-erp, module: 固定资产}
+  # ---- hcm ----
+  - {employee_no: K0006, product_line: hcm, module: 薪资管理}
+  - {employee_no: K0007, product_line: hcm, module: 考勤}
+  - {employee_no: K0008, product_line: hcm, module: 招聘}
+  # ---- scm ----
+  - {employee_no: K0009, product_line: scm, module: 采购订单}
+  - {employee_no: K0010, product_line: scm, module: 库存管理}
+  - {employee_no: K0011, product_line: scm, module: 库存管理}
+  - {employee_no: K0012, product_line: scm, module: 销售订单}
+  # ---- crm ----
+  - {employee_no: K0013, product_line: crm, module: 客户档案}
+  - {employee_no: K0014, product_line: crm, module: 商机}
+  - {employee_no: K0015, product_line: crm, module: 合同}
+
+feature_scopes:
+  # 跨产品线兜底（module 没命中时走 feature）
+  - {employee_no: K0016, feature: 数据导入}
+  - {employee_no: K0017, feature: 批量导出}
+  - {employee_no: K0018, feature: 报表生成}
+  - {employee_no: K0019, feature: 权限管理}
+  - {employee_no: K0020, feature: 登录认证}

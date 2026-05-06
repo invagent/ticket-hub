@@ -48,6 +48,10 @@ eval:
 eval-routing:
 	$(PY) ../scripts/eval/d1_routing_replay.py tests/eval/routing_v1.jsonl --threshold 0.9
 
+seed-scopes:
+	@if [ -z "$(YAML)" ]; then echo "Usage: make seed-scopes YAML=config/seeds/assignment_scopes.example.yaml [DRY=1]"; exit 1; fi
+	$(PY) ../scripts/seed/seed_assignment_scopes.py $(YAML) $(if $(DRY),--dry-run,)
+
 e2e:
 	$(PYTEST) tests/e2e -v -m e2e
 
