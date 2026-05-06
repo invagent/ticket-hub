@@ -2,6 +2,9 @@ import { NavLink, Outlet } from "react-router-dom";
 
 const navItems = [
   { to: "/", label: "Dashboard" },
+  { to: "/supervisor", label: "主管工作台" },
+  { to: "/tickets", label: "跨源工单" },
+  { to: "/customers", label: "客户搜索" },
   { to: "/admin/users", label: "用户管理" },
   { to: "/admin/scopes", label: "分工管理" },
 ];
@@ -15,7 +18,7 @@ export function Layout() {
           <NavLink
             key={item.to}
             to={item.to}
-            end
+            end={item.to === "/"}
             className={({ isActive }) =>
               `block px-3 py-2 rounded text-sm ${
                 isActive ? "bg-blue-600 text-white" : "hover:bg-gray-100 dark:hover:bg-gray-900"

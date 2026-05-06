@@ -112,6 +112,34 @@ export const api = {
 // Re-export raw request for callers that need uncommon shapes (multipart, etc.)
 export { request as rawRequest };
 
+/** Typed GET against a path-with-param endpoint (e.g. /api/tickets/{ticket_id}). */
+export async function getByPath<P extends keyof paths>(
+  templatePath: P,
+  params: Record<string, string | number>,
+): Promise<ResponseOf<paths[P], "get">> {
+  let actual = templatePath as string;
+  for (const [k, v] of Object.entries(params)) {
+    actual = actual.replaceAll(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  return request(actual);
+}
+
+/** Typed POST against a path-with-param endpoint. */
+export async function postByPath<P extends keyof paths>(
+  templatePath: P,
+  params: Record<string, string | number>,
+  body?: unknown,
+): Promise<ResponseOf<paths[P], "post">> {
+  let actual = templatePath as string;
+  for (const [k, v] of Object.entries(params)) {
+    actual = actual.replaceAll(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  return request(actual, {
+    method: "POST",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+
 // Convenience type aliases for frequently-used response shapes.
 // Add more here as the frontend grows; they remain in sync with the OpenAPI spec.
 export type TicketSummary =
