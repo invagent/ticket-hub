@@ -1,4 +1,4 @@
-"""ticket / hub_issue overdue queries (used by SLAWatcher)."""
+"""ticket / hub_issue queries used by SLAWatcher and ingest."""
 
 from __future__ import annotations
 
@@ -11,10 +11,39 @@ from app.models import HubIssue, Ticket
 
 
 class TicketRepository:
-    """Read helpers for SLA scanning. Soft-delete-aware."""
+    """Read + write helpers. Soft-delete-aware on reads."""
 
     def __init__(self, db: Session) -> None:
         self._db = db
+
+    # ---- ingest helpers ------------------------------------------------
+
+    def find_by_source(self, source_code: str, source_ticket_id: str) -> Ticket | None:
+        """Idempotency lookup: a webhook may fire multiple times for the same bill."""
+        stmt = select(Ticket).where(
+            Ticket.source_code == source_code,
+            Ticket.source_ticket_id == source_ticket_id,
+            Ticket.deleted_at.is_(None),
+        )
+        return self._db.execute(stmt).scalar_one_or_none()
+
+    def add(self, ticket: Ticket) -> Ticket:
+        self._db.add(ticket)
+        self._db.flush()
+        return ticket
+
+    def next_short_code(self, prefix: str = "TKT") -> str:
+        """Generate the next short_code by counting current rows + 1.
+
+        D1 fast path: simple counter; D2+ may switch to a sequence/redis counter
+        if write contention becomes an issue.
+        """
+        from sqlalchemy import func
+
+        n: int | None = self._db.execute(select(func.count(Ticket.id))).scalar()
+        return f"{prefix}-{(n or 0) + 1:06d}"
+
+    # ---- SLA scan ------------------------------------------------------
 
     def find_unreplied_overdue(
         self, *, threshold: timedelta, now: datetime | None = None

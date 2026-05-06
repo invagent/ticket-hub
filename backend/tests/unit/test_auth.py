@@ -28,6 +28,13 @@ def test_login_url_returns_authorize_url(app_client) -> None:
     assert "test-app" in body["authorize_url"]
 
 
-def test_callback_d0_pending_impl(app_client) -> None:
+def test_callback_invalid_code_returns_401(app_client) -> None:
+    """D1: callback now implemented; bogus code propagates as 401 from feishu OIDC.
+
+    Real OAuth flow is exercised in tests/unit/services/test_feishu_sso.py via respx mocks.
+    Here we just verify the endpoint contract: 401 on auth failure.
+    """
+    # No mocks — real httpx will fail to reach Feishu in unit env.
+    # Either DNS / network → 401 (FeishuSSOError handler); we accept 401 OR 503.
     resp = app_client.post("/api/auth/feishu/callback?code=fake")
-    assert resp.status_code == 501
+    assert resp.status_code in (401, 503)

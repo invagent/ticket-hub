@@ -1,18 +1,26 @@
 """Feishu SSO login + JWT issuance.
 
-D0: stub endpoints; full SSO callback wired up in D1 with feishu app
-credentials. Decision D19 (v0.5.3): Feishu SSO is the only login entry.
+Decision D19 (v0.5.3): Feishu SSO is the only login entry.
 """
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from jose import jwt
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.logging import get_logger
+from app.db import get_session
+from app.services.auth.feishu_sso import (
+    FeishuSSOConfig,
+    FeishuSSOError,
+    FeishuSSOService,
+)
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class LoginUrlResponse(BaseModel):
@@ -23,15 +31,15 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    user_id: int
+    feishu_uid: str
+    name: str
+    role: str
 
 
 @router.get("/feishu/login", response_model=LoginUrlResponse)
 def feishu_login_url() -> LoginUrlResponse:
-    """Return the Feishu OAuth2 authorize URL.
-
-    D0: returns the URL deterministically; full state token + nonce
-    handling lands in D1.
-    """
+    """Return the Feishu OAuth2 authorize URL."""
     settings = get_settings()
     if not settings.feishu_app_id:
         raise HTTPException(status_code=503, detail="feishu_app_id not configured")
@@ -44,12 +52,41 @@ def feishu_login_url() -> LoginUrlResponse:
 
 
 @router.post("/feishu/callback", response_model=TokenResponse)
-def feishu_callback(code: str) -> TokenResponse:
+def feishu_callback(code: str, db: Session = Depends(get_session)) -> TokenResponse:
     """Exchange Feishu auth code for our JWT.
 
-    D0: NOT IMPLEMENTED — returns 501. D1 wires the full flow.
+    Side effect: upserts users row (creates on first login).
     """
-    raise HTTPException(status_code=501, detail="D1: feishu callback pending impl")
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise HTTPException(status_code=503, detail="feishu credentials not configured")
+
+    svc = FeishuSSOService(
+        FeishuSSOConfig(
+            app_id=settings.feishu_app_id,
+            app_secret=settings.feishu_app_secret,
+            redirect_uri=settings.feishu_sso_redirect_uri,
+        )
+    )
+    try:
+        try:
+            authed = svc.login(db, code=code)
+        finally:
+            svc.close()
+    except FeishuSSOError as e:
+        logger.warning("feishu_sso_failed", error=str(e))
+        raise HTTPException(status_code=401, detail=f"sso failed: {e}") from e
+
+    db.commit()
+    token, ttl = issue_jwt(sub=str(authed.user_id), name=authed.name, role=authed.role)
+    return TokenResponse(
+        access_token=token,
+        expires_in=ttl,
+        user_id=authed.user_id,
+        feishu_uid=authed.feishu_uid,
+        name=authed.name,
+        role=authed.role,
+    )
 
 
 def issue_jwt(*, sub: str, name: str, role: str = "member") -> tuple[str, int]:
