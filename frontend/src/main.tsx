@@ -10,6 +10,7 @@ import { SupervisorPage } from "./pages/supervisor/SupervisorPage";
 import { TicketsListPage } from "./pages/tickets/TicketsListPage";
 import { TicketDetailPage } from "./pages/tickets/TicketDetailPage";
 import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
+import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { UsersPage } from "./pages/admin/users/UsersPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 
@@ -31,6 +32,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/tickets" element={<TicketsListPage />} />
             <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
             <Route path="/customers" element={<CustomersSearchPage />} />
+            <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
             <Route path="/admin/users" element={<UsersPage />} />
             <Route path="/admin/scopes" element={<ScopesPage />} />
           </Route>

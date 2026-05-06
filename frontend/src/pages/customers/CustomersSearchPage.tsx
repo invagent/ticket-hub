@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
@@ -49,28 +50,37 @@ export function CustomersSearchPage() {
             search.data.map((c) => (
               <li
                 key={c.id}
-                className="border border-gray-200 dark:border-gray-800 rounded p-3 flex items-start justify-between"
+                className="border border-gray-200 dark:border-gray-800 rounded hover:border-blue-400 dark:hover:border-blue-500"
               >
-                <div className="space-y-1">
-                  <div className="font-medium">{c.display_name ?? `customer #${c.id}`}</div>
-                  {c.company && <div className="text-xs text-gray-500">{c.company}</div>}
-                  {c.primary_contact && (
-                    <div className="text-xs text-gray-500">
-                      {[
-                        c.primary_contact.email && `email: ${c.primary_contact.email}`,
-                        c.primary_contact.mobile && `mobile: ${c.primary_contact.mobile}`,
-                        c.primary_contact.erp_uid && `erp: ${c.primary_contact.erp_uid}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                <Link
+                  to={`/customers/${c.id}`}
+                  className="block p-3 flex items-start justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="font-medium text-blue-600 hover:underline">
+                      {c.display_name ?? `customer #${c.id}`}
                     </div>
+                    {c.company && (
+                      <div className="text-xs text-gray-500">{c.company}</div>
+                    )}
+                    {c.primary_contact && (
+                      <div className="text-xs text-gray-500">
+                        {[
+                          c.primary_contact.email && `email: ${c.primary_contact.email}`,
+                          c.primary_contact.mobile && `mobile: ${c.primary_contact.mobile}`,
+                          c.primary_contact.erp_uid && `erp: ${c.primary_contact.erp_uid}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                  {c.merged_into_customer_id != null && (
+                    <span className="text-xs text-amber-600 shrink-0 ml-2">
+                      已合并 → #{c.merged_into_customer_id}
+                    </span>
                   )}
-                </div>
-                {c.merged_into_customer_id != null && (
-                  <span className="text-xs text-amber-600">
-                    已合并 → #{c.merged_into_customer_id}
-                  </span>
-                )}
+                </Link>
               </li>
             ))
           )}
