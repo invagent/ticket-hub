@@ -5,9 +5,10 @@
 | 编号 | 标题 | 阶段 | 状态 |
 |------|------|------|------|
 | 0001 | [技术栈与 Monorepo 结构](0001-stack-and-monorepo.md) | D0 | Accepted |
+| 0002 | [INT PK 偏离 spec UUID](0002-int-pk-deviation.md) | D1 | Accepted |
 
 预留：
-- 0002 飞书 SSO Token 模型与 JWT 续期策略 (D1)
+- 0003 飞书 SSO Token 模型与 JWT 续期策略 (D1)
 - 0003 路由算法（module → feature → default_pool）(D1)
 - 0004 SLA 升级链（supervisor → deputy → 上级）(D2)
 - 0005 PII 加密 / 主密钥轮换（季度）(D3)
