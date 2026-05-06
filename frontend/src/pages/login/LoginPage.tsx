@@ -6,7 +6,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<{ authorize_url: string }>("/api/auth/feishu/login")
+    api
+      .get("/api/auth/feishu/login")
       .then((r) => setAuthorizeUrl(r.authorize_url))
       .catch((e) => setError(String(e)));
   }, []);

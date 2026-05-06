@@ -61,10 +61,16 @@ cov:
 	$(PYTEST) tests/unit --cov=app --cov-report=html
 	@echo "Open htmlcov/index.html"
 
-openapi-check:
-	$(PY) -c "from app.main import app; import json, sys; json.dump(app.openapi(), sys.stdout, indent=2)" > /tmp/openapi.json
-	@echo "Backend OpenAPI written to /tmp/openapi.json"
-	@echo "TODO: diff against frontend/src/api/types.ts (D1)"
+openapi-dump:
+	$(PY) ../scripts/openapi/dump_openapi.py ../frontend/src/api/openapi.json
+
+openapi-check: openapi-dump
+	@if ! git diff --quiet -- ../frontend/src/api/openapi.json; then \
+		echo "❌ openapi.json drift — run 'make gen-types' from repo root and commit"; \
+		git --no-pager diff --stat -- ../frontend/src/api/openapi.json; \
+		exit 1; \
+	fi
+	@echo "✅ openapi.json is up to date"
 
 clean:
 	rm -rf $(VENV) .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

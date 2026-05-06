@@ -1,20 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
-interface User {
-  id: number;
-  feishu_uid: string;
-  employee_no: string | null;
-  name: string;
-  email: string | null;
-  role: string;
-  is_active: boolean;
-}
-
 export function UsersPage() {
+  // Type inferred from OpenAPI: paths["/api/admin/users"]["get"] response.
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin", "users"],
-    queryFn: () => api<User[]>("/api/admin/users"),
+    queryFn: () => api.get("/api/admin/users"),
   });
 
   return (
