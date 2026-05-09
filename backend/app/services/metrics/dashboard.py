@@ -102,6 +102,48 @@ class DashboardMetrics:
     webhook_intake: WebhookIntakeBlock
 
 
+def _from_json(payload: dict) -> DashboardMetrics:
+    """Re-hydrate DashboardMetrics from materialized_metrics.metrics_json.
+
+    Keep block constructors in sync with the asdict() in materializer.py;
+    schema is owned by `DashboardMetrics`.
+    """
+    return DashboardMetrics(
+        counts=CountsBlock(**payload["counts"]),
+        routing=RoutingBlock(**payload["routing"]),
+        supervisor=SupervisorBlock(**payload["supervisor"]),
+        customer_dedup=CustomerDedupBlock(**payload["customer_dedup"]),
+        sla=SLABlock(**payload["sla"]),
+        webhook_intake=WebhookIntakeBlock(**payload["webhook_intake"]),
+    )
+
+
+def get_dashboard_metrics(db: Session) -> DashboardMetrics:
+    """Public read API used by /api/metrics/dashboard.
+
+    Reads materialized_metrics first (refreshed by Celery beat every 5 min).
+    Falls back to on-the-fly compute when the table is empty (fresh DB or
+    Celery beat hasn't run yet).
+    """
+    from app.models import MaterializedMetrics  # avoid import cycle
+
+    row = db.execute(
+        select(MaterializedMetrics)
+        .where(MaterializedMetrics.slot_key == "latest")
+        .limit(1)
+    ).scalar_one_or_none()
+    if row is not None:
+        try:
+            return _from_json(row.metrics_json)
+        except (KeyError, TypeError) as e:
+            # Schema drift between writer and reader — fall through to live compute
+            from app.core.logging import get_logger
+            get_logger(__name__).warning(
+                "dashboard_materialized_payload_invalid", error=str(e)
+            )
+    return compute_dashboard_metrics(db)
+
+
 _TICKET_ACTIVE_STATUSES = (
     "received",
     "linked",

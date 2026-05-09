@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
-from app.services.metrics.dashboard import compute_dashboard_metrics
+from app.services.metrics.dashboard import get_dashboard_metrics
 
 router = APIRouter()
 
@@ -80,7 +80,7 @@ def dashboard_metrics(
     _user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> DashboardOut:
-    m = compute_dashboard_metrics(db)
+    m = get_dashboard_metrics(db)
     return DashboardOut(
         counts=CountsOut(**asdict(m.counts)),
         routing=RoutingOut(**asdict(m.routing)),
