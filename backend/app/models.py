@@ -66,6 +66,10 @@ class ProductLine(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # D2-C: per-product-line SLA threshold overrides. NULL = use SLAWatcher
+    # built-in defaults (4h ticket reply / 4-24h hub_issue by type).
+    sla_reply_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sla_resolve_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
