@@ -52,6 +52,12 @@ const FULL_METRICS = {
     acknowledgement_rate: 0.926,
     target: "≥ 0.90",
   },
+  webhook_intake: {
+    window_hours: 24,
+    by_source: { ksm: 12, zhichi: 8, zammad: 3 },
+    total: 23,
+    deduped_total: 0,
+  },
 };
 
 describe("DashboardPage", () => {

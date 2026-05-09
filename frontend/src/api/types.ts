@@ -142,6 +142,147 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/feishu/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Departments
+         * @description List immediate child departments of `parent_id` (default: root='0').
+         *
+         *     Frontend uses this to lazily expand the org tree node-by-node.
+         */
+        get: operations["list_feishu_departments_api_admin_users_feishu_departments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/feishu/departments/{department_id}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Department Users
+         * @description List users directly under a Feishu department, marking which are
+         *     already in our local users table (`already_synced=True`) so the UI can
+         *     show them differently.
+         *
+         *     Uses `open_department_id` as `department_id` (Feishu accepts both for
+         *     most contact APIs, but open id is preferred for tenant-scoped browsing).
+         */
+        get: operations["list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/sync-from-feishu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync From Feishu
+         * @description Bulk-pull users from Feishu contact API and upsert into local users.
+         *
+         *     Provide either `department_id` (sync all members of a Feishu dept) OR
+         *     `open_ids` (sync specific users). Mutually exclusive: must give one.
+         */
+        post: operations["sync_from_feishu_api_admin_users_sync_from_feishu_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Detail */
+        get: operations["get_user_detail_api_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_api_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch User */
+        patch: operations["patch_user_api_admin_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/partners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Partner */
+        post: operations["add_partner_api_admin_users__user_id__partners_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/partners/{partner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Partner */
+        delete: operations["remove_partner_api_admin_users__user_id__partners__partner_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/supervisor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Supervisor */
+        post: operations["set_supervisor_api_admin_users__user_id__supervisor_post"];
+        /** Clear Supervisor */
+        delete: operations["clear_supervisor_api_admin_users__user_id__supervisor_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/feishu/callback": {
         parameters: {
             query?: never;
@@ -550,7 +691,7 @@ export interface components {
             customer_dedup: components["schemas"]["CustomerDedupOut"];
             routing: components["schemas"]["RoutingOut"];
             sla: components["schemas"]["SLAOut"];
-            supervisor: components["schemas"]["SupervisorOut"];
+            supervisor: components["schemas"]["app__api__metrics__SupervisorOut"];
             webhook_intake: components["schemas"]["WebhookIntakeOut"];
         };
         /** FeatureScopeIn */
@@ -573,6 +714,45 @@ export interface components {
             id: number;
             /** User Id */
             user_id: number;
+        };
+        /**
+         * FeishuContactUserOut
+         * @description One user under a department in the org-tree browser, annotated with
+         *     sync status so the UI can grey-out already-synced rows.
+         */
+        FeishuContactUserOut: {
+            /** Already Synced */
+            already_synced: boolean;
+            /** Email */
+            email: string;
+            /** Employee No */
+            employee_no: string;
+            /** Is Activated */
+            is_activated: boolean;
+            /** Local User Id */
+            local_user_id: number | null;
+            /** Mobile */
+            mobile: string;
+            /** Name */
+            name: string;
+            /** Open Id */
+            open_id: string;
+        };
+        /**
+         * FeishuDeptOut
+         * @description One department node in the org-tree browser.
+         */
+        FeishuDeptOut: {
+            /** Department Id */
+            department_id: string;
+            /** Member Count */
+            member_count: number;
+            /** Name */
+            name: string;
+            /** Open Department Id */
+            open_department_id: string;
+            /** Parent Department Id */
+            parent_department_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -909,6 +1089,20 @@ export interface components {
             /** User Id */
             user_id: number;
         };
+        /** PartnerIn */
+        PartnerIn: {
+            /** Partner Id */
+            partner_id: number;
+        };
+        /** PartnerRowOut */
+        PartnerRowOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+        };
         /** ProductLineOut */
         ProductLineOut: {
             /** Code */
@@ -985,6 +1179,19 @@ export interface components {
             /** Target */
             target: string;
         };
+        /** ScopeRowOut */
+        ScopeRowOut: {
+            /** Feature */
+            feature?: string | null;
+            /** Id */
+            id: number;
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** User Id */
+            user_id: number;
+        };
         /** SourceOut */
         SourceOut: {
             /** Code */
@@ -996,16 +1203,49 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** SupervisorOut */
-        SupervisorOut: {
-            /** Linked Tickets */
-            linked_tickets: number;
-            /** Relink Count */
-            relink_count: number;
-            /** Relink Rate */
-            relink_rate: number;
-            /** Target */
-            target: string;
+        /** SupervisorIn */
+        SupervisorIn: {
+            /** Deputy Supervisor Id */
+            deputy_supervisor_id?: number | null;
+            /** Supervisor Id */
+            supervisor_id: number;
+        };
+        /**
+         * SyncFromFeishuIn
+         * @description Either pull a whole department or a specific list of open_ids.
+         */
+        SyncFromFeishuIn: {
+            /**
+             * Department Id
+             * @description Feishu department open_id; '0' = root
+             */
+            department_id?: string | null;
+            /**
+             * Open Ids
+             * @description Targeted user list
+             */
+            open_ids?: string[] | null;
+        };
+        /** SyncReportOut */
+        SyncReportOut: {
+            /** Errors */
+            errors: {
+                [key: string]: unknown;
+            }[];
+            /** New Count */
+            new_count: number;
+            /** New User Ids */
+            new_user_ids: number[];
+            /** Revived Count */
+            revived_count: number;
+            /** Skipped Inactive */
+            skipped_inactive: number;
+            /** Total Processed */
+            total_processed: number;
+            /** Touched User Ids */
+            touched_user_ids: number[];
+            /** Updated Count */
+            updated_count: number;
         };
         /** TicketDetail */
         TicketDetail: {
@@ -1124,6 +1364,20 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * UserDetailOut
+         * @description Aggregated profile for /admin/users/:id frontend page.
+         */
+        UserDetailOut: {
+            /** Feature Scopes */
+            feature_scopes: components["schemas"]["ScopeRowOut"][];
+            /** Module Scopes */
+            module_scopes: components["schemas"]["ScopeRowOut"][];
+            /** Partners */
+            partners: components["schemas"]["PartnerRowOut"][];
+            supervisor: components["schemas"]["app__api__admin_users__SupervisorOut"] | null;
+            user: components["schemas"]["UserOut"];
+        };
         /** UserOut */
         UserOut: {
             /** Email */
@@ -1136,10 +1390,39 @@ export interface components {
             id: number;
             /** Is Active */
             is_active: boolean;
+            /** Ksm Account */
+            ksm_account: string | null;
+            /** Linear User Id */
+            linear_user_id: string | null;
+            /** Mobile */
+            mobile: string | null;
             /** Name */
             name: string;
             /** Role */
             role: string;
+            /** Zhichi Agent Id */
+            zhichi_agent_id: string | null;
+        };
+        /** UserPatch */
+        UserPatch: {
+            /** Email */
+            email?: string | null;
+            /** Employee No */
+            employee_no?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Ksm Account */
+            ksm_account?: string | null;
+            /** Linear User Id */
+            linear_user_id?: string | null;
+            /** Mobile */
+            mobile?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Role */
+            role?: string | null;
+            /** Zhichi Agent Id */
+            zhichi_agent_id?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1166,6 +1449,31 @@ export interface components {
             total: number;
             /** Window Hours */
             window_hours: number;
+        };
+        /** SupervisorOut */
+        app__api__admin_users__SupervisorOut: {
+            /** Deputy Supervisor Id */
+            deputy_supervisor_id: number | null;
+            /** Supervisor Id */
+            supervisor_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** User Id */
+            user_id: number;
+        };
+        /** SupervisorOut */
+        app__api__metrics__SupervisorOut: {
+            /** Linked Tickets */
+            linked_tickets: number;
+            /** Relink Count */
+            relink_count: number;
+            /** Relink Rate */
+            relink_rate: number;
+            /** Target */
+            target: string;
         };
     };
     responses: never;
@@ -1454,6 +1762,325 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+        };
+    };
+    list_feishu_departments_api_admin_users_feishu_departments_get: {
+        parameters: {
+            query?: {
+                parent_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuDeptOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuContactUserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_from_feishu_api_admin_users_sync_from_feishu_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncFromFeishuIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_detail_api_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_user_api_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_partner_api_admin_users__user_id__partners_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_partner_api_admin_users__user_id__partners__partner_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                partner_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_supervisor_api_admin_users__user_id__supervisor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupervisorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__api__admin_users__SupervisorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_supervisor_api_admin_users__user_id__supervisor_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

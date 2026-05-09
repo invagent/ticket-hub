@@ -60,6 +60,7 @@ import { HubIssueDetailPage } from "./pages/hub-issues/HubIssueDetailPage";
 import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { UsersPage } from "./pages/admin/users/UsersPage";
+import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 
 const queryClient = new QueryClient({
@@ -84,6 +85,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/customers" element={<CustomersSearchPage />} />
             <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
             <Route path="/admin/users" element={<UsersPage />} />
+            <Route path="/admin/users/:userId" element={<UserDetailPage />} />
             <Route path="/admin/scopes" element={<ScopesPage />} />
           </Route>
         </Routes>

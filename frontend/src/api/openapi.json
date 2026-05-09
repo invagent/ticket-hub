@@ -237,7 +237,7 @@
             "$ref": "#/components/schemas/SLAOut"
           },
           "supervisor": {
-            "$ref": "#/components/schemas/SupervisorOut"
+            "$ref": "#/components/schemas/app__api__metrics__SupervisorOut"
           },
           "webhook_intake": {
             "$ref": "#/components/schemas/WebhookIntakeOut"
@@ -302,6 +302,96 @@
           "created_at"
         ],
         "title": "FeatureScopeOut",
+        "type": "object"
+      },
+      "FeishuContactUserOut": {
+        "description": "One user under a department in the org-tree browser, annotated with\nsync status so the UI can grey-out already-synced rows.",
+        "properties": {
+          "already_synced": {
+            "title": "Already Synced",
+            "type": "boolean"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "employee_no": {
+            "title": "Employee No",
+            "type": "string"
+          },
+          "is_activated": {
+            "title": "Is Activated",
+            "type": "boolean"
+          },
+          "local_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local User Id"
+          },
+          "mobile": {
+            "title": "Mobile",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_id": {
+            "title": "Open Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_id",
+          "name",
+          "employee_no",
+          "email",
+          "mobile",
+          "is_activated",
+          "already_synced",
+          "local_user_id"
+        ],
+        "title": "FeishuContactUserOut",
+        "type": "object"
+      },
+      "FeishuDeptOut": {
+        "description": "One department node in the org-tree browser.",
+        "properties": {
+          "department_id": {
+            "title": "Department Id",
+            "type": "string"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open_department_id": {
+            "title": "Open Department Id",
+            "type": "string"
+          },
+          "parent_department_id": {
+            "title": "Parent Department Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_department_id",
+          "department_id",
+          "name",
+          "parent_department_id",
+          "member_count"
+        ],
+        "title": "FeishuDeptOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1413,6 +1503,43 @@
         "title": "ModuleScopeOut",
         "type": "object"
       },
+      "PartnerIn": {
+        "properties": {
+          "partner_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Partner Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "partner_id"
+        ],
+        "title": "PartnerIn",
+        "type": "object"
+      },
+      "PartnerRowOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "title": "PartnerRowOut",
+        "type": "object"
+      },
       "ProductLineOut": {
         "properties": {
           "code": {
@@ -1613,6 +1740,57 @@
         "title": "SLAOut",
         "type": "object"
       },
+      "ScopeRowOut": {
+        "properties": {
+          "feature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "user_id"
+        ],
+        "title": "ScopeRowOut",
+        "type": "object"
+      },
       "SourceOut": {
         "properties": {
           "code": {
@@ -1641,32 +1819,122 @@
         "title": "SourceOut",
         "type": "object"
       },
-      "SupervisorOut": {
+      "SupervisorIn": {
         "properties": {
-          "linked_tickets": {
-            "title": "Linked Tickets",
+          "deputy_supervisor_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deputy Supervisor Id"
+          },
+          "supervisor_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Supervisor Id",
             "type": "integer"
-          },
-          "relink_count": {
-            "title": "Relink Count",
-            "type": "integer"
-          },
-          "relink_rate": {
-            "title": "Relink Rate",
-            "type": "number"
-          },
-          "target": {
-            "title": "Target",
-            "type": "string"
           }
         },
         "required": [
-          "linked_tickets",
-          "relink_count",
-          "relink_rate",
-          "target"
+          "supervisor_id"
         ],
-        "title": "SupervisorOut",
+        "title": "SupervisorIn",
+        "type": "object"
+      },
+      "SyncFromFeishuIn": {
+        "description": "Either pull a whole department or a specific list of open_ids.",
+        "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Feishu department open_id; '0' = root",
+            "title": "Department Id"
+          },
+          "open_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Targeted user list",
+            "title": "Open Ids"
+          }
+        },
+        "title": "SyncFromFeishuIn",
+        "type": "object"
+      },
+      "SyncReportOut": {
+        "properties": {
+          "errors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "new_count": {
+            "title": "New Count",
+            "type": "integer"
+          },
+          "new_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "New User Ids",
+            "type": "array"
+          },
+          "revived_count": {
+            "title": "Revived Count",
+            "type": "integer"
+          },
+          "skipped_inactive": {
+            "title": "Skipped Inactive",
+            "type": "integer"
+          },
+          "total_processed": {
+            "title": "Total Processed",
+            "type": "integer"
+          },
+          "touched_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Touched User Ids",
+            "type": "array"
+          },
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "new_count",
+          "updated_count",
+          "revived_count",
+          "skipped_inactive",
+          "errors",
+          "new_user_ids",
+          "touched_user_ids",
+          "total_processed"
+        ],
+        "title": "SyncReportOut",
         "type": "object"
       },
       "TicketDetail": {
@@ -2193,6 +2461,54 @@
         "title": "TicketSummary",
         "type": "object"
       },
+      "UserDetailOut": {
+        "description": "Aggregated profile for /admin/users/:id frontend page.",
+        "properties": {
+          "feature_scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRowOut"
+            },
+            "title": "Feature Scopes",
+            "type": "array"
+          },
+          "module_scopes": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRowOut"
+            },
+            "title": "Module Scopes",
+            "type": "array"
+          },
+          "partners": {
+            "items": {
+              "$ref": "#/components/schemas/PartnerRowOut"
+            },
+            "title": "Partners",
+            "type": "array"
+          },
+          "supervisor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/app__api__admin_users__SupervisorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "supervisor",
+          "module_scopes",
+          "feature_scopes",
+          "partners"
+        ],
+        "title": "UserDetailOut",
+        "type": "object"
+      },
       "UserOut": {
         "properties": {
           "email": {
@@ -2229,6 +2545,39 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "ksm_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Account"
+          },
+          "linear_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear User Id"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2236,6 +2585,17 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "zhichi_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zhichi Agent Id"
           }
         },
         "required": [
@@ -2244,10 +2604,124 @@
           "employee_no",
           "name",
           "email",
+          "mobile",
+          "ksm_account",
+          "zhichi_agent_id",
+          "linear_user_id",
           "role",
           "is_active"
         ],
         "title": "UserOut",
+        "type": "object"
+      },
+      "UserPatch": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "employee_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee No"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "ksm_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Account"
+          },
+          "linear_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear User Id"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "pattern": "^(member|assignee|supervisor|admin)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "zhichi_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zhichi Agent Id"
+          }
+        },
+        "title": "UserPatch",
         "type": "object"
       },
       "ValidationError": {
@@ -2319,6 +2793,70 @@
           "deduped_total"
         ],
         "title": "WebhookIntakeOut",
+        "type": "object"
+      },
+      "app__api__admin_users__SupervisorOut": {
+        "properties": {
+          "deputy_supervisor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deputy Supervisor Id"
+          },
+          "supervisor_id": {
+            "title": "Supervisor Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "supervisor_id",
+          "deputy_supervisor_id",
+          "updated_at"
+        ],
+        "title": "SupervisorOut",
+        "type": "object"
+      },
+      "app__api__metrics__SupervisorOut": {
+        "properties": {
+          "linked_tickets": {
+            "title": "Linked Tickets",
+            "type": "integer"
+          },
+          "relink_count": {
+            "title": "Relink Count",
+            "type": "integer"
+          },
+          "relink_rate": {
+            "title": "Relink Rate",
+            "type": "number"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linked_tickets",
+          "relink_count",
+          "relink_rate",
+          "target"
+        ],
+        "title": "SupervisorOut",
         "type": "object"
       }
     }
@@ -2784,7 +3322,454 @@
         },
         "summary": "List Users",
         "tags": [
-          "admin"
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/feishu/departments": {
+      "get": {
+        "description": "List immediate child departments of `parent_id` (default: root='0').\n\nFrontend uses this to lazily expand the org tree node-by-node.",
+        "operationId": "list_feishu_departments_api_admin_users_feishu_departments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "parent_id",
+            "required": false,
+            "schema": {
+              "default": "0",
+              "title": "Parent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeishuDeptOut"
+                  },
+                  "title": "Response List Feishu Departments Api Admin Users Feishu Departments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Feishu Departments",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/feishu/departments/{department_id}/users": {
+      "get": {
+        "description": "List users directly under a Feishu department, marking which are\nalready in our local users table (`already_synced=True`) so the UI can\nshow them differently.\n\nUses `open_department_id` as `department_id` (Feishu accepts both for\nmost contact APIs, but open id is preferred for tenant-scoped browsing).",
+        "operationId": "list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "department_id",
+            "required": true,
+            "schema": {
+              "title": "Department Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeishuContactUserOut"
+                  },
+                  "title": "Response List Feishu Department Users Api Admin Users Feishu Departments  Department Id  Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Feishu Department Users",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/sync-from-feishu": {
+      "post": {
+        "description": "Bulk-pull users from Feishu contact API and upsert into local users.\n\nProvide either `department_id` (sync all members of a Feishu dept) OR\n`open_ids` (sync specific users). Mutually exclusive: must give one.",
+        "operationId": "sync_from_feishu_api_admin_users_sync_from_feishu_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncFromFeishuIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync From Feishu",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}": {
+      "delete": {
+        "operationId": "delete_user_api_admin_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete User",
+        "tags": [
+          "admin-users"
+        ]
+      },
+      "get": {
+        "operationId": "get_user_detail_api_admin_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get User Detail",
+        "tags": [
+          "admin-users"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_user_api_admin_users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch User",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}/partners": {
+      "post": {
+        "operationId": "add_partner_api_admin_users__user_id__partners_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartnerRowOut"
+                  },
+                  "title": "Response Add Partner Api Admin Users  User Id  Partners Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Partner",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}/partners/{partner_id}": {
+      "delete": {
+        "operationId": "remove_partner_api_admin_users__user_id__partners__partner_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "partner_id",
+            "required": true,
+            "schema": {
+              "title": "Partner Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Partner",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/{user_id}/supervisor": {
+      "delete": {
+        "operationId": "clear_supervisor_api_admin_users__user_id__supervisor_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Supervisor",
+        "tags": [
+          "admin-users"
+        ]
+      },
+      "post": {
+        "operationId": "set_supervisor_api_admin_users__user_id__supervisor_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupervisorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__admin_users__SupervisorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Supervisor",
+        "tags": [
+          "admin-users"
         ]
       }
     },
