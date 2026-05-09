@@ -2,9 +2,9 @@
 
   POST /webhook/ksm?access_token=<webhook_token>      → KSMIngester
   POST /webhook/zhichi?access_token=<webhook_token>   → ZhichiIngester
+  POST /webhook/zammad?access_token=<webhook_token>   → ZammadIngester
 
   Future:
-    - /webhook/zammad (D2)
     - /webhook/linear (D4)
 
 Each webhook authenticates via constant-time compare with
@@ -27,6 +27,8 @@ from app.core.trace import get_trace_id
 from app.db import get_session
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
+from app.services.ingest.zammad_ingester import IngestError as ZammadIngestError
+from app.services.ingest.zammad_ingester import ZammadIngester
 from app.services.ingest.zhichi_ingester import IngestError as ZhichiIngestError
 from app.services.ingest.zhichi_ingester import ZhichiIngester
 
@@ -105,6 +107,35 @@ async def zhichi_webhook(
     db.commit()
     logger.info(
         "zhichi_webhook_committed",
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+    )
+    return IngestResponse(
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+        routing_decision=result.routing_decision,
+        assigned_user_ids=result.assigned_user_ids,
+        trace_id=get_trace_id(),
+    )
+
+
+@router.post("/zammad", response_model=IngestResponse)
+async def zammad_webhook(
+    request: Request,
+    access_token: str = Query(...),
+    db: Session = Depends(get_session),
+) -> IngestResponse:
+    _verify_webhook_token(access_token)
+    payload = await _read_object(request)
+    try:
+        result = ZammadIngester(db).ingest(payload)
+    except ZammadIngestError as e:
+        raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
+    db.commit()
+    logger.info(
+        "zammad_webhook_committed",
         ticket_id=result.ticket_id,
         short_code=result.short_code,
         deduped=result.deduped,
