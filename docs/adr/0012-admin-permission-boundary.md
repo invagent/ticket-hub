@@ -101,6 +101,11 @@ OAuth 用户授权（SSO 登录）流程生效，对 tenant_access_token 调用 
 如果上述权限暂时拿不到，**前端会 fallback 用工号 / 邮箱前缀作为 name 占位符**
 （admin 后续可手动改名）。
 
+**状态更新（2026-05-09）**：金蝶租户已审批 `contact:contact:readonly_as_app`
+并发布上线，验证生效 —— `tenant_access_token` 调 `/contact/v3/users/*`
+返回完整 `name` / `en_name` / `avatar` / `department_ids` / `gender` 等
+23 个字段。本地已切到真姓名，工号 fallback 路径只在权限被回收时才触发。
+
 ## 后果
 
 - /admin/users 系统按这个规则上线，前端约束 + 后端兜底
