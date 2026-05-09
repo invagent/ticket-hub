@@ -212,9 +212,9 @@ def test_example_yaml_loads_and_seeds_cleanly(db_session: Session) -> None:
     db_session.commit()
 
     assert rep.warnings == []
-    # Sanity: counts roughly match routing_v1.jsonl expectations
+    # Sanity: counts match routing_v1.jsonl (real KSM ticket-derived) expectations
     assert rep.product_lines_added == 4
-    assert rep.users_added == 21  # 20 assignees + 1 supervisor pool
-    assert rep.module_scopes_added == 15
-    assert rep.feature_scopes_added == 5
-    assert rep.partners_added == 4  # 2 symmetric pairs × 2 directions
+    assert rep.users_added == 7  # 6 assignees + 1 supervisor pool
+    assert rep.module_scopes_added == 10
+    assert rep.feature_scopes_added == 0
+    assert rep.partners_added == 0
