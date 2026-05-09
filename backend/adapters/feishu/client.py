@@ -26,7 +26,7 @@ from app.core.logging import get_logger
 
 from .._token_cache import TokenCache
 from .exceptions import FeishuAuthError, FeishuBusinessError
-from .types import BitableFilterCondition, Employee, FeishuConfig
+from .types import BitableFilterCondition, ContactUser, Department, Employee, FeishuConfig
 
 logger = get_logger(__name__)
 
@@ -307,6 +307,102 @@ class FeishuClient:
             if name:
                 return str(name)
         return None
+
+    # ---- contact v3 (D2-E user sync) ----------------------------------
+
+    def list_users_by_department(
+        self,
+        department_id: str,
+        *,
+        page_size: int = 50,
+    ) -> list[ContactUser]:
+        """List all users directly under a department (paginated).
+
+        Auto-pages through all results. Returns a flat list of ContactUser.
+        Requires app permission `contact:user.id:readonly` (or higher).
+
+        `department_id="0"` is the root tenant department.
+        """
+        url = f"{self._cfg.base_url}/open-apis/contact/v3/users/find_by_department"
+        page_token: str | None = None
+        items: list[ContactUser] = []
+        while True:
+            params: dict[str, Any] = {
+                "department_id": department_id,
+                "page_size": page_size,
+            }
+            if page_token:
+                params["page_token"] = page_token
+            body = self._request("GET", url, params=params)
+            if body.get("code") not in (0, None):
+                raise FeishuBusinessError(
+                    op="list_users_by_department",
+                    code=int(body.get("code", -1)),
+                    message=str(body.get("msg") or body.get("message") or ""),
+                )
+            data = body.get("data") or {}
+            for raw in data.get("items") or []:
+                items.append(ContactUser.from_dict(raw))
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token")
+            if not page_token:
+                break
+        return items
+
+    def get_user_by_open_id(self, open_id: str) -> ContactUser | None:
+        """Fetch a single user by open_id. Returns None if not found."""
+        url = f"{self._cfg.base_url}/open-apis/contact/v3/users/{open_id}"
+        body = self._request("GET", url)
+        if body.get("code") == 0:
+            user = (body.get("data") or {}).get("user")
+            if user:
+                return ContactUser.from_dict(user)
+            return None
+        # 230002 = user not found in飞书 docs
+        if body.get("code") in (230002, 99991664):
+            return None
+        raise FeishuBusinessError(
+            op="get_user_by_open_id",
+            code=int(body.get("code", -1)),
+            message=str(body.get("msg") or ""),
+        )
+
+    def list_child_departments(
+        self,
+        parent_department_id: str = "0",
+        *,
+        fetch_child: bool = False,
+        page_size: int = 50,
+    ) -> list[Department]:
+        """List child departments under a parent. With `fetch_child=True`
+        recursively fetches all descendants in one call (Feishu side)."""
+        url = f"{self._cfg.base_url}/open-apis/contact/v3/departments/{parent_department_id}/children"
+        page_token: str | None = None
+        items: list[Department] = []
+        while True:
+            params: dict[str, Any] = {
+                "page_size": page_size,
+                "fetch_child": str(fetch_child).lower(),
+            }
+            if page_token:
+                params["page_token"] = page_token
+            body = self._request("GET", url, params=params)
+            if body.get("code") not in (0, None):
+                raise FeishuBusinessError(
+                    op="list_child_departments",
+                    code=int(body.get("code", -1)),
+                    message=str(body.get("msg") or ""),
+                )
+            data = body.get("data") or {}
+            for raw in data.get("items") or []:
+                items.append(Department.from_dict(raw))
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token")
+            if not page_token:
+                break
+        return items
 
 
 def _flatten_richtext(field: Any) -> str:
