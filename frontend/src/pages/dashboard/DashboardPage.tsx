@@ -79,6 +79,33 @@ export function DashboardPage() {
               threshold={0.9}
             />
           </section>
+
+          {/* ---- webhook intake (24h) ---- */}
+          <section className="rounded-lg border border-gray-200 dark:border-gray-800 p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">
+                Webhook 入口流量（最近 {data.webhook_intake.window_hours} 小时）
+              </h3>
+              <span className="text-xs text-gray-500">
+                合计 {data.webhook_intake.total} 条
+              </span>
+            </div>
+            {data.webhook_intake.total === 0 ? (
+              <p className="text-xs text-gray-400">尚无 webhook 进单</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {Object.entries(data.webhook_intake.by_source).map(([src, n]) => (
+                  <div
+                    key={src}
+                    className="px-3 py-2 rounded bg-gray-50 dark:bg-gray-900 flex items-baseline justify-between"
+                  >
+                    <span className="text-xs text-gray-500">{src}</span>
+                    <span className="text-lg font-semibold tabular-nums">{n}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>

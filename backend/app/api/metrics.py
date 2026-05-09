@@ -59,12 +59,20 @@ class SLAOut(BaseModel):
     target: str
 
 
+class WebhookIntakeOut(BaseModel):
+    window_hours: int
+    by_source: dict[str, int]
+    total: int
+    deduped_total: int
+
+
 class DashboardOut(BaseModel):
     counts: CountsOut
     routing: RoutingOut
     supervisor: SupervisorOut
     customer_dedup: CustomerDedupOut
     sla: SLAOut
+    webhook_intake: WebhookIntakeOut
 
 
 @router.get("/dashboard", response_model=DashboardOut)
@@ -79,4 +87,5 @@ def dashboard_metrics(
         supervisor=SupervisorOut(**asdict(m.supervisor)),
         customer_dedup=CustomerDedupOut(**asdict(m.customer_dedup)),
         sla=SLAOut(**asdict(m.sla)),
+        webhook_intake=WebhookIntakeOut(**asdict(m.webhook_intake)),
     )

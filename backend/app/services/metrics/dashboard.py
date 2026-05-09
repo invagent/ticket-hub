@@ -83,12 +83,23 @@ class SLABlock:
 
 
 @dataclass(slots=True, frozen=True)
+class WebhookIntakeBlock:
+    """24h ingest volume by source (D2 monitoring) — surface webhook health."""
+
+    window_hours: int
+    by_source: dict[str, int]   # {"ksm": 142, "zhichi": 38, "zammad": 7}
+    total: int
+    deduped_total: int           # tickets received with `source` but already-existed (proxy)
+
+
+@dataclass(slots=True, frozen=True)
 class DashboardMetrics:
     counts: CountsBlock
     routing: RoutingBlock
     supervisor: SupervisorBlock
     customer_dedup: CustomerDedupBlock
     sla: SLABlock
+    webhook_intake: WebhookIntakeBlock
 
 
 _TICKET_ACTIVE_STATUSES = (
@@ -242,10 +253,31 @@ def compute_dashboard_metrics(db: Session) -> DashboardMetrics:
         acknowledgement_rate=round(ack_rate, 4),
     )
 
+    # ---- webhook intake (24h) ---------------------------------------
+    from datetime import UTC, datetime, timedelta
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    by_source_rows = db.execute(
+        select(Ticket.source_code, func.count(Ticket.id))
+        .where(Ticket.deleted_at.is_(None), Ticket.created_at >= cutoff)
+        .group_by(Ticket.source_code)
+    ).all()
+    by_source = {row[0]: int(row[1]) for row in by_source_rows}
+    intake_total = sum(by_source.values())
+    # Approximate dedup rate: tickets sharing source_ticket_id with another row
+    # would have been deduped at ingest time, but we don't keep a counter — surface 0
+    # for now; D3 will record dedup attempts in agent_runs.
+    webhook_intake = WebhookIntakeBlock(
+        window_hours=24,
+        by_source=by_source,
+        total=intake_total,
+        deduped_total=0,
+    )
+
     return DashboardMetrics(
         counts=counts,
         routing=routing,
         supervisor=supervisor,
         customer_dedup=customer_dedup,
         sla=sla,
+        webhook_intake=webhook_intake,
     )

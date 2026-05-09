@@ -422,6 +422,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhook/zammad": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Zammad Webhook */
+        post: operations["zammad_webhook_webhook_zammad_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/zhichi": {
         parameters: {
             query?: never;
@@ -530,6 +547,7 @@ export interface components {
             routing: components["schemas"]["RoutingOut"];
             sla: components["schemas"]["SLAOut"];
             supervisor: components["schemas"]["SupervisorOut"];
+            webhook_intake: components["schemas"]["WebhookIntakeOut"];
         };
         /** FeatureScopeIn */
         FeatureScopeIn: {
@@ -1151,6 +1169,19 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WebhookIntakeOut */
+        WebhookIntakeOut: {
+            /** By Source */
+            by_source: {
+                [key: string]: number;
+            };
+            /** Deduped Total */
+            deduped_total: number;
+            /** Total */
+            total: number;
+            /** Window Hours */
+            window_hours: number;
         };
     };
     responses: never;
@@ -1883,6 +1914,37 @@ export interface operations {
         };
     };
     ksm_webhook_webhook_ksm_post: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    zammad_webhook_webhook_zammad_post: {
         parameters: {
             query: {
                 access_token: string;

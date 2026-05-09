@@ -238,6 +238,9 @@
           },
           "supervisor": {
             "$ref": "#/components/schemas/SupervisorOut"
+          },
+          "webhook_intake": {
+            "$ref": "#/components/schemas/WebhookIntakeOut"
           }
         },
         "required": [
@@ -245,7 +248,8 @@
           "routing",
           "supervisor",
           "customer_dedup",
-          "sla"
+          "sla",
+          "webhook_intake"
         ],
         "title": "DashboardOut",
         "type": "object"
@@ -2328,6 +2332,37 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WebhookIntakeOut": {
+        "properties": {
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Source",
+            "type": "object"
+          },
+          "deduped_total": {
+            "title": "Deduped Total",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_hours",
+          "by_source",
+          "total",
+          "deduped_total"
+        ],
+        "title": "WebhookIntakeOut",
+        "type": "object"
       }
     }
   },
@@ -3607,6 +3642,48 @@
           }
         },
         "summary": "Ksm Webhook",
+        "tags": [
+          "webhook"
+        ]
+      }
+    },
+    "/webhook/zammad": {
+      "post": {
+        "operationId": "zammad_webhook_webhook_zammad_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "title": "Access Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Zammad Webhook",
         "tags": [
           "webhook"
         ]
