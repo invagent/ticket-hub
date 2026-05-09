@@ -180,11 +180,11 @@ def test_billId_must_be_string(ingest_world: Session) -> None:
 # ---- webhook e2e via TestClient -------------------------------------------
 
 
-def test_webhook_ksm_e2e(app_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
-    """End-to-end: POST /webhook/ksm?access_token=test-token with KSM payload.
+def test_webhook_ksm_e2e_full_payload(app_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    """End-to-end: POST /webhook/ksm with FULL payload (legacy / test path).
 
-    The app_client fixture overrides get_session to yield this same db_session,
-    so we can seed via db_session and the request handler reads the same data.
+    Per D2-F: KSM webhook always returns {"code": 0}; verify ingest by
+    querying DB instead of inspecting response shape.
     """
     db_session.add(Source(code="ksm", name="KSM"))
     db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
@@ -209,12 +209,12 @@ def test_webhook_ksm_e2e(app_client, db_session: Session) -> None:  # type: igno
         },
     )
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["short_code"].startswith("TKT-")
-    assert body["routing_decision"] == "assigned"
-    assert body["assigned_user_ids"] == [1]
-    assert body["deduped"] is False
-    assert body["trace_id"]
+    assert resp.json() == {"code": 0}
+
+    # Verify ingest by query
+    t = db_session.query(Ticket).filter_by(source_ticket_id="ksm-bill-e2e").one()
+    assert t.assigned_user_id == 1
+    assert t.product_line_code == "cloud-erp"
 
 
 def test_webhook_ksm_invalid_token_returns_401(app_client) -> None:  # type: ignore[no-untyped-def]
@@ -225,12 +225,15 @@ def test_webhook_ksm_invalid_token_returns_401(app_client) -> None:  # type: ign
     assert resp.status_code == 401
 
 
-def test_webhook_ksm_missing_billId_returns_400(app_client) -> None:  # type: ignore[no-untyped-def]
+def test_webhook_ksm_missing_billId_silently_acks(app_client) -> None:  # type: ignore[no-untyped-def]
+    """Per KSM doc: validate fields; if missing, log + ignore. Don't 4xx
+    (so KSM doesn't retry malformed pushes)."""
     resp = app_client.post(
         "/webhook/ksm?access_token=test-token",
         json={"title": "no billId"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+    assert resp.json() == {"code": 0}
 
 
 def test_webhook_ksm_non_object_payload_returns_400(app_client) -> None:  # type: ignore[no-untyped-def]
@@ -242,7 +245,7 @@ def test_webhook_ksm_non_object_payload_returns_400(app_client) -> None:  # type
 
 
 def test_webhook_ksm_idempotent_replay(app_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
-    """Replay the same billId — second call has deduped=True."""
+    """Replay the same billId via full-payload webhook — second call dedups."""
     db_session.add(Source(code="ksm", name="KSM"))
     db_session.commit()
 
@@ -251,6 +254,9 @@ def test_webhook_ksm_idempotent_replay(app_client, db_session: Session) -> None:
     r2 = app_client.post("/webhook/ksm?access_token=test-token", json=payload)
     assert r1.status_code == 200
     assert r2.status_code == 200
-    assert r1.json()["deduped"] is False
-    assert r2.json()["deduped"] is True
-    assert r1.json()["ticket_id"] == r2.json()["ticket_id"]
+    assert r1.json() == {"code": 0}
+    assert r2.json() == {"code": 0}
+    # Only one ticket exists despite two webhooks
+    assert (
+        db_session.query(Ticket).filter_by(source_ticket_id="replay-001").count() == 1
+    )
