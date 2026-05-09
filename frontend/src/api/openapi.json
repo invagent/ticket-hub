@@ -2193,49 +2193,6 @@
         "title": "TicketSummary",
         "type": "object"
       },
-      "TokenResponse": {
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          },
-          "expires_in": {
-            "title": "Expires In",
-            "type": "integer"
-          },
-          "feishu_uid": {
-            "title": "Feishu Uid",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "token_type": {
-            "default": "bearer",
-            "title": "Token Type",
-            "type": "string"
-          },
-          "user_id": {
-            "title": "User Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "access_token",
-          "expires_in",
-          "user_id",
-          "feishu_uid",
-          "name",
-          "role"
-        ],
-        "title": "TokenResponse",
-        "type": "object"
-      },
       "UserOut": {
         "properties": {
           "email": {
@@ -2832,9 +2789,9 @@
       }
     },
     "/api/auth/feishu/callback": {
-      "post": {
-        "description": "Exchange Feishu auth code for our JWT.\n\nSide effect: upserts users row (creates on first login).",
-        "operationId": "feishu_callback_api_auth_feishu_callback_post",
+      "get": {
+        "description": "Exchange Feishu auth code for our JWT and redirect browser to frontend.\n\nBrowser arrives here as a GET (Feishu's standard OAuth2 redirect). We\nexchange the code, sign a JWT, and 302 to the frontend SPA with token\nin URL fragment (so the token never reaches our server logs).\n\nSide effect: upserts users row (creates on first login).",
+        "operationId": "feishu_callback_api_auth_feishu_callback_get",
         "parameters": [
           {
             "in": "query",
@@ -2850,9 +2807,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"

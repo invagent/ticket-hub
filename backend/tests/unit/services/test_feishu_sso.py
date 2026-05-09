@@ -185,25 +185,35 @@ def test_app_token_failure_propagates(db_session: Session) -> None:
 
 @respx.mock
 def test_callback_endpoint_e2e(app_client) -> None:  # type: ignore[no-untyped-def]
-    """End-to-end through the FastAPI /api/auth/feishu/callback endpoint."""
+    """End-to-end through the FastAPI /api/auth/feishu/callback endpoint.
+
+    D2 fix: callback is GET; on success it 302-redirects to the frontend SPA
+    with a fragment containing the JWT. The token sits in URL hash so server
+    logs / referer headers never see it.
+    """
     _stub_happy_path(respx)
-    resp = app_client.post("/api/auth/feishu/callback?code=abc")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["access_token"]
-    assert body["feishu_uid"] == "ou_alice_001"
-    assert body["name"] == "alice"
-    assert body["role"] == "member"
-    assert body["expires_in"] > 0
+    resp = app_client.get("/api/auth/feishu/callback?code=abc", follow_redirects=False)
+    assert resp.status_code == 302
+    location = resp.headers["location"]
+    # Fragment carries token + user info
+    assert "#token=" in location
+    assert "feishu_uid=ou_alice_001" in location
+    assert "name=alice" in location
+    assert "role=member" in location
+    # Token sits AFTER the # — never goes server-side
+    assert location.split("#", 1)[0].endswith("/")
 
 
 @respx.mock
-def test_callback_endpoint_invalid_code_returns_401(app_client) -> None:  # type: ignore[no-untyped-def]
+def test_callback_endpoint_invalid_code_redirects_to_login(app_client) -> None:  # type: ignore[no-untyped-def]
+    """Bad code → 302 to frontend /login#sso_error=... (was 401 JSON pre-D2)."""
     respx.post(f"{BASE}/open-apis/auth/v3/app_access_token/internal").mock(
         return_value=httpx.Response(200, json={"app_access_token": "ok"})
     )
     respx.post(f"{BASE}/open-apis/authen/v1/oidc/access_token").mock(
         return_value=httpx.Response(200, json={"code": 1, "msg": "bad code"})
     )
-    resp = app_client.post("/api/auth/feishu/callback?code=bad")
-    assert resp.status_code == 401
+    resp = app_client.get("/api/auth/feishu/callback?code=bad", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "sso_error=" in resp.headers["location"]
+    assert "/login#" in resp.headers["location"]

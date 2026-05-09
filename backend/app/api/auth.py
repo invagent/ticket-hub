@@ -1,11 +1,21 @@
 """Feishu SSO login + JWT issuance.
 
 Decision D19 (v0.5.3): Feishu SSO is the only login entry.
+
+Callback flow (D2 fix):
+  Feishu redirects browser → GET /api/auth/feishu/callback?code=xxx
+  → exchange code for JWT
+  → 302 redirect to frontend `${FRONTEND_BASE}#token=<jwt>&user_id=...`
+  Token sits in URL fragment so it never reaches the server (no nginx/access
+  log exposure, no Referer leak). Frontend bootstrap reads location.hash,
+  writes localStorage.auth_token, then clears the hash.
 """
 
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from jose import jwt
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -21,6 +31,22 @@ from app.services.auth.feishu_sso import (
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _frontend_base_from_redirect(redirect_uri: str) -> str:
+    """Derive frontend base URL from the configured callback URI.
+
+    `https://yjcj.online/ticket-hub/api/auth/feishu/callback`
+       → `https://yjcj.online/ticket-hub/`
+    `http://localhost:8080/api/auth/feishu/callback`
+       → `http://localhost:5173/`  (dev fallback uses vite default)
+    """
+    marker = "/api/auth/feishu/callback"
+    if redirect_uri.endswith(marker):
+        base = redirect_uri[: -len(marker)]
+        return base + "/" if not base.endswith("/") else base
+    # Fallback: same origin, root path
+    return "/"
 
 
 class LoginUrlResponse(BaseModel):
@@ -51,9 +77,13 @@ def feishu_login_url() -> LoginUrlResponse:
     return LoginUrlResponse(authorize_url=url)
 
 
-@router.post("/feishu/callback", response_model=TokenResponse)
-def feishu_callback(code: str, db: Session = Depends(get_session)) -> TokenResponse:
-    """Exchange Feishu auth code for our JWT.
+@router.get("/feishu/callback")
+def feishu_callback(code: str, db: Session = Depends(get_session)) -> RedirectResponse:
+    """Exchange Feishu auth code for our JWT and redirect browser to frontend.
+
+    Browser arrives here as a GET (Feishu's standard OAuth2 redirect). We
+    exchange the code, sign a JWT, and 302 to the frontend SPA with token
+    in URL fragment (so the token never reaches our server logs).
 
     Side effect: upserts users row (creates on first login).
     """
@@ -75,18 +105,35 @@ def feishu_callback(code: str, db: Session = Depends(get_session)) -> TokenRespo
             svc.close()
     except FeishuSSOError as e:
         logger.warning("feishu_sso_failed", error=str(e))
-        raise HTTPException(status_code=401, detail=f"sso failed: {e}") from e
+        # Redirect to frontend with error fragment so user sees a friendly page,
+        # rather than raw JSON 401.
+        base = _frontend_base_from_redirect(settings.feishu_sso_redirect_uri)
+        return RedirectResponse(
+            url=f"{base}login#sso_error={quote(str(e))}",
+            status_code=302,
+        )
 
     db.commit()
     token, ttl = issue_jwt(sub=str(authed.user_id), name=authed.name, role=authed.role)
-    return TokenResponse(
-        access_token=token,
-        expires_in=ttl,
+
+    base = _frontend_base_from_redirect(settings.feishu_sso_redirect_uri)
+    fragment = urlencode(
+        {
+            "token": token,
+            "user_id": authed.user_id,
+            "name": authed.name,
+            "role": authed.role,
+            "feishu_uid": authed.feishu_uid,
+            "expires_in": ttl,
+        }
+    )
+    logger.info(
+        "feishu_sso_success",
         user_id=authed.user_id,
         feishu_uid=authed.feishu_uid,
-        name=authed.name,
         role=authed.role,
     )
+    return RedirectResponse(url=f"{base}#{fragment}", status_code=302)
 
 
 def issue_jwt(*, sub: str, name: str, role: str = "member") -> tuple[str, int]:

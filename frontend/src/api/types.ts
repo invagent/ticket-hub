@@ -149,15 +149,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
          * Feishu Callback
-         * @description Exchange Feishu auth code for our JWT.
+         * @description Exchange Feishu auth code for our JWT and redirect browser to frontend.
+         *
+         *     Browser arrives here as a GET (Feishu's standard OAuth2 redirect). We
+         *     exchange the code, sign a JWT, and 302 to the frontend SPA with token
+         *     in URL fragment (so the token never reaches our server logs).
          *
          *     Side effect: upserts users row (creates on first login).
          */
-        post: operations["feishu_callback_api_auth_feishu_callback_post"];
+        get: operations["feishu_callback_api_auth_feishu_callback_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1120,26 +1124,6 @@ export interface components {
             /** Type */
             type: string;
         };
-        /** TokenResponse */
-        TokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /** Expires In */
-            expires_in: number;
-            /** Feishu Uid */
-            feishu_uid: string;
-            /** Name */
-            name: string;
-            /** Role */
-            role: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-            /** User Id */
-            user_id: number;
-        };
         /** UserOut */
         UserOut: {
             /** Email */
@@ -1474,7 +1458,7 @@ export interface operations {
             };
         };
     };
-    feishu_callback_api_auth_feishu_callback_post: {
+    feishu_callback_api_auth_feishu_callback_get: {
         parameters: {
             query: {
                 code: string;
@@ -1491,7 +1475,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

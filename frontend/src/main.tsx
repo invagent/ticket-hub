@@ -3,6 +3,52 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import "./index.css";
+
+// ---- Feishu SSO bootstrap ----
+// After /api/auth/feishu/callback succeeds, backend 302s to this SPA with a
+// fragment like `#token=...&user_id=...&...`. Read it, persist the JWT, then
+// strip the hash so refreshes don't re-process it (and so the token stops
+// showing in the URL bar).
+function consumeSsoFragment(): void {
+  const hash = window.location.hash;
+  if (!hash || !hash.includes("token=")) return;
+  const params = new URLSearchParams(hash.slice(1)); // drop leading '#'
+  const token = params.get("token");
+  if (token) {
+    localStorage.setItem("auth_token", token);
+    const userId = params.get("user_id");
+    const name = params.get("name");
+    const role = params.get("role");
+    const feishuUid = params.get("feishu_uid");
+    if (userId && name && role) {
+      localStorage.setItem(
+        "auth_user",
+        JSON.stringify({
+          id: Number(userId),
+          name,
+          role,
+          feishu_uid: feishuUid ?? "",
+        }),
+      );
+    }
+    // Clear fragment without reloading.
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  } else if (params.has("sso_error")) {
+    // Surface SSO failure in localStorage so the LoginPage can show it.
+    localStorage.setItem("auth_sso_error", params.get("sso_error") ?? "unknown");
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  }
+}
+consumeSsoFragment();
+
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/login/LoginPage";
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
