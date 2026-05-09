@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models — D0 + D1.
+"""SQLAlchemy ORM models — D0 + D1 + D2.
 
 D0 (commit 59e40fc): sources / product_lines / users — already present.
 D1 adds:
@@ -11,6 +11,8 @@ D1 adds:
   history (2):          status_history / hub_issue_reply_history
   KSM mapping (1):      ksm_issue_type_mappings
   notification (1):     notification_log  (originally D2; pulled forward per D6 plan)
+D2 adds:
+  metrics cache (1):    materialized_metrics — Celery-refreshed dashboard snapshot
 
 PK strategy: INT autoincrement throughout (deviates from spec UUID; see ADR-0002).
 Soft-deletion: customers / customer_identities / tickets / hub_issues / users only.
@@ -693,3 +695,26 @@ class NotificationLog(Base):
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# ---- D2 tables -------------------------------------------------------------
+
+
+class MaterializedMetrics(Base):
+    """Cached dashboard snapshot refreshed by Celery beat every 5 minutes.
+
+    Only one "live" row is kept (slot_key='latest'); the materializer does
+    an UPSERT so the table never grows unbounded.  Falls back to on-the-fly
+    computation in `dashboard.py` when the table is empty (e.g. fresh DB).
+    """
+
+    __tablename__ = "materialized_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slot_key: Mapped[str] = mapped_column(
+        String(32), nullable=False, unique=True, default="latest"
+    )
+    refreshed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
