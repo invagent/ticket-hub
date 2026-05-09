@@ -1,8 +1,9 @@
-"""Admin endpoint smoke tests against in-memory SQLite."""
+"""Admin endpoint smoke tests (sources / product-lines).
 
-from datetime import UTC
+Users CRUD moved to test_admin_users.py (D2-E).
+"""
 
-from app.models import ProductLine, Source, User
+from app.models import ProductLine, Source
 
 
 def test_list_sources_empty(app_client) -> None:
@@ -31,26 +32,6 @@ def test_list_product_lines(app_client, db_session) -> None:
     resp = app_client.get("/api/admin/product-lines")
     assert resp.status_code == 200
     assert resp.json()[0]["code"] == "cloud-erp"
-
-
-def test_list_users_excludes_soft_deleted(app_client, db_session) -> None:
-    from datetime import datetime
-
-    db_session.add_all(
-        [
-            User(feishu_uid="u-1", name="alice"),
-            User(
-                feishu_uid="u-2",
-                name="bob",
-                deleted_at=datetime.now(UTC),
-            ),
-        ]
-    )
-    db_session.commit()
-    resp = app_client.get("/api/admin/users")
-    assert resp.status_code == 200
-    names = [r["name"] for r in resp.json()]
-    assert names == ["alice"]
 
 
 def test_health(app_client) -> None:
