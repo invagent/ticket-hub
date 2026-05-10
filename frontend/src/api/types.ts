@@ -84,7 +84,11 @@ export interface paths {
         /** List Product Lines */
         get: operations["list_product_lines_api_admin_product_lines_get"];
         put?: never;
-        post?: never;
+        /**
+         * Add Product Line
+         * @description Create a new product_line. UNIQUE on `code` → 409 on duplicate.
+         */
+        post: operations["add_product_line_api_admin_product_lines_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -101,7 +105,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Product Line
+         * @description Hard delete. Refuses if the product_line still has modules registered
+         *     (catalog FK) — admin must clean up first to prevent orphaned scopes /
+         *     tickets pointing at a vanished product_line.
+         */
+        delete: operations["delete_product_line_api_admin_product_lines__code__delete"];
         options?: never;
         head?: never;
         /**
@@ -1270,6 +1280,20 @@ export interface components {
             /** Role */
             role: string;
         };
+        /**
+         * ProductLineIn
+         * @description POST body for /api/admin/product-lines.
+         */
+        ProductLineIn: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Sla Reply Hours */
+            sla_reply_hours?: number | null;
+            /** Sla Resolve Hours */
+            sla_resolve_hours?: number | null;
+        };
         /** ProductLineOut */
         ProductLineOut: {
             /** Code */
@@ -1873,6 +1897,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductLineOut"][];
+                };
+            };
+        };
+    };
+    add_product_line_api_admin_product_lines_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductLineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductLineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_product_line_api_admin_product_lines__code__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

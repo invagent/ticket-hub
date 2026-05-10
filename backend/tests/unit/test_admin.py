@@ -145,3 +145,90 @@ def test_patch_product_line_validates_range(app_client, db_session) -> None:
         json={"sla_reply_hours": 200},
     )
     assert r.status_code == 422
+
+
+# ---- D2-G2: POST/DELETE /api/admin/product-lines ----
+
+
+def test_post_product_line_creates(app_client, db_session) -> None:
+    from app.models import User
+
+    db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
+    db_session.commit()
+
+    r = app_client.post(
+        "/api/admin/product-lines",
+        headers=_admin_bearer(),
+        json={"code": "cloud-new", "name": "New Cloud", "sla_reply_hours": 8},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["code"] == "cloud-new"
+    assert body["sla_reply_hours"] == 8
+
+    r2 = app_client.get("/api/admin/product-lines")
+    assert any(p["code"] == "cloud-new" for p in r2.json())
+
+
+def test_post_product_line_duplicate_409(app_client, db_session) -> None:
+    from app.models import ProductLine, User
+
+    db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
+    db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
+    db_session.commit()
+
+    r = app_client.post(
+        "/api/admin/product-lines",
+        headers=_admin_bearer(),
+        json={"code": "cloud-erp", "name": "Cloud ERP"},
+    )
+    assert r.status_code == 409
+
+
+def test_post_product_line_requires_admin(app_client, db_session) -> None:
+    from app.models import User
+
+    db_session.add(User(id=2, feishu_uid="ou_member", name="m", role="member"))
+    db_session.commit()
+    from app.api.auth import issue_jwt
+    token, _ = issue_jwt(sub="2", name="m", role="member")
+    r = app_client.post(
+        "/api/admin/product-lines",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "x", "name": "y"},
+    )
+    assert r.status_code == 403
+
+
+def test_delete_product_line_no_modules_ok(app_client, db_session) -> None:
+    from app.models import ProductLine, User
+
+    db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
+    db_session.add(ProductLine(code="empty-pl", name="Empty"))
+    db_session.commit()
+
+    r = app_client.delete("/api/admin/product-lines/empty-pl", headers=_admin_bearer())
+    assert r.status_code == 204
+
+
+def test_delete_product_line_with_modules_409(app_client, db_session) -> None:
+    from app.models import Module, ProductLine, User
+
+    db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
+    db_session.add(ProductLine(code="busy-pl", name="Busy"))
+    db_session.flush()
+    db_session.add(Module(product_line_code="busy-pl", name="some-mod", is_active=True))
+    db_session.commit()
+
+    r = app_client.delete("/api/admin/product-lines/busy-pl", headers=_admin_bearer())
+    assert r.status_code == 409
+    assert "modules" in r.json()["detail"].lower()
+
+
+def test_delete_product_line_404(app_client, db_session) -> None:
+    from app.models import User
+
+    db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
+    db_session.commit()
+    r = app_client.delete("/api/admin/product-lines/nope", headers=_admin_bearer())
+    assert r.status_code == 404

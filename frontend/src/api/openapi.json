@@ -1653,6 +1653,55 @@
         "title": "PartnerRowOut",
         "type": "object"
       },
+      "ProductLineIn": {
+        "description": "POST body for /api/admin/product-lines.",
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sla_reply_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Reply Hours"
+          },
+          "sla_resolve_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Resolve Hours"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "ProductLineIn",
+        "type": "object"
+      },
       "ProductLineOut": {
         "properties": {
           "code": {
@@ -3327,9 +3376,83 @@
         "tags": [
           "admin"
         ]
+      },
+      "post": {
+        "description": "Create a new product_line. UNIQUE on `code` → 409 on duplicate.",
+        "operationId": "add_product_line_api_admin_product_lines_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductLineIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Product Line",
+        "tags": [
+          "admin"
+        ]
       }
     },
     "/api/admin/product-lines/{code}": {
+      "delete": {
+        "description": "Hard delete. Refuses if the product_line still has modules registered\n(catalog FK) — admin must clean up first to prevent orphaned scopes /\ntickets pointing at a vanished product_line.",
+        "operationId": "delete_product_line_api_admin_product_lines__code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Product Line",
+        "tags": [
+          "admin"
+        ]
+      },
       "patch": {
         "description": "Update SLA overrides (and is_active) for a product line.\n\nSend `null` to a field to clear the override (revert to SLAWatcher\nbuiltin default).",
         "operationId": "patch_product_line_api_admin_product_lines__code__patch",
