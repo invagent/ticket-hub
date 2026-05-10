@@ -5,55 +5,17 @@ import { FeatureSelect, UserSelect } from "@/components/selectors";
 
 const QK = ["admin", "scopes", "features"] as const;
 
-interface Filters {
-  user_id?: number;
-  feature?: string;
-}
-
 export function FeatureScopesTab() {
   const qc = useQueryClient();
-  const [filters, setFilters] = useState<Filters>({});
-
   const list = useQuery({
-    queryKey: [...QK, filters],
-    queryFn: () =>
-      api.get("/api/admin/scopes/features", {
-        user_id: filters.user_id,
-        feature: filters.feature,
-      }),
+    queryKey: QK,
+    queryFn: () => api.get("/api/admin/scopes/features"),
   });
-
   const invalidate = () => qc.invalidateQueries({ queryKey: QK });
 
   return (
     <div className="space-y-4 pt-4">
-      <section className="space-y-1">
-        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
-          🔍 筛选（只看符合条件的列表）
-        </div>
-        <div className="flex gap-2 text-sm">
-          <UserSelect
-            value={filters.user_id}
-            onChange={(v) => setFilters({ ...filters, user_id: v })}
-            placeholder="按用户筛选"
-          />
-          <FeatureSelect
-            value={filters.feature}
-            onChange={(v) => setFilters({ ...filters, feature: v })}
-            placeholder="按 feature 筛选"
-          />
-          {(filters.user_id || filters.feature) && (
-            <button
-              onClick={() => setFilters({})}
-              className="text-xs text-blue-600 hover:underline self-center"
-            >
-              清除
-            </button>
-          )}
-        </div>
-      </section>
-
-      <AddForm onAdded={invalidate} prefill={filters} />
+      <AddForm onAdded={invalidate} />
 
       {list.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
       {list.error && (
@@ -64,7 +26,7 @@ export function FeatureScopesTab() {
           <thead className="bg-gray-100 dark:bg-gray-900">
             <tr>
               <th className="text-left p-2">id</th>
-              <th className="text-left p-2">user</th>
+              <th className="text-left p-2">用户</th>
               <th className="text-left p-2">feature</th>
               <th className="text-left p-2">创建时间</th>
               <th className="text-right p-2">操作</th>
@@ -89,18 +51,10 @@ export function FeatureScopesTab() {
   );
 }
 
-function AddForm({
-  onAdded,
-  prefill,
-}: {
-  onAdded: () => void;
-  prefill: Filters;
-}) {
+function AddForm({ onAdded }: { onAdded: () => void }) {
   const [userId, setUserId] = useState<number | undefined>(undefined);
   const [feature, setFeature] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-
-  const hasPrefill = !!prefill.user_id || !!prefill.feature;
 
   const add = useMutation({
     mutationFn: () =>
@@ -133,21 +87,8 @@ function AddForm({
 
   return (
     <section className="space-y-1">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-3">
-        <span>➕ 新增 feature 兜底（写入数据库）</span>
-        {hasPrefill && (
-          <button
-            type="button"
-            onClick={() => {
-              setUserId(prefill.user_id);
-              setFeature(prefill.feature);
-              setError(null);
-            }}
-            className="text-blue-600 hover:underline"
-          >
-            从筛选条件预填 →
-          </button>
-        )}
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        ➕ 新增 feature 兜底
       </div>
       <form
         onSubmit={(e) => {

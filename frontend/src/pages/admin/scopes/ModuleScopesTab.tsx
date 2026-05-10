@@ -1,40 +1,21 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, deleteByPath, ApiError } from "@/api/client";
-import {
-  ModuleSelect,
-  ProductLineSelect,
-  UserSelect,
-} from "@/components/selectors";
+import { ModuleSelect, ProductLineSelect, UserSelect } from "@/components/selectors";
 
 const QK = ["admin", "scopes", "modules"] as const;
 
-interface Filters {
-  user_id?: number;
-  product_line_code?: string;
-  module?: string;
-}
-
 export function ModuleScopesTab() {
   const qc = useQueryClient();
-  const [filters, setFilters] = useState<Filters>({});
-
   const list = useQuery({
-    queryKey: [...QK, filters],
-    queryFn: () =>
-      api.get("/api/admin/scopes/modules", {
-        user_id: filters.user_id,
-        product_line_code: filters.product_line_code,
-        module: filters.module,
-      }),
+    queryKey: QK,
+    queryFn: () => api.get("/api/admin/scopes/modules"),
   });
-
   const invalidate = () => qc.invalidateQueries({ queryKey: QK });
 
   return (
     <div className="space-y-4 pt-4">
-      <FilterBar filters={filters} onChange={setFilters} />
-      <AddForm onAdded={invalidate} prefill={filters} />
+      <AddForm onAdded={invalidate} />
       {list.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
       {list.error && (
         <p className="text-sm text-red-600">
@@ -48,7 +29,7 @@ export function ModuleScopesTab() {
           <thead className="bg-gray-100 dark:bg-gray-900">
             <tr>
               <th className="text-left p-2">id</th>
-              <th className="text-left p-2">user_id</th>
+              <th className="text-left p-2">用户</th>
               <th className="text-left p-2">产品线</th>
               <th className="text-left p-2">module</th>
               <th className="text-left p-2">创建时间</th>
@@ -74,73 +55,13 @@ export function ModuleScopesTab() {
   );
 }
 
-// ---- filter bar ----------------------------------------------------------
-
-function FilterBar({
-  filters,
-  onChange,
-}: {
-  filters: Filters;
-  onChange: (f: Filters) => void;
-}) {
-  return (
-    <section className="space-y-1">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
-        🔍 筛选（只看符合条件的列表）
-      </div>
-      <div className="flex gap-2 text-sm">
-        <UserSelect
-          value={filters.user_id}
-          onChange={(v) => onChange({ ...filters, user_id: v })}
-          placeholder="按用户筛选"
-        />
-        <ProductLineSelect
-          value={filters.product_line_code}
-          onChange={(v) =>
-            onChange({
-              ...filters,
-              product_line_code: v,
-              // module 依赖 product_line — 切产品线就清掉 module
-              module: v === filters.product_line_code ? filters.module : undefined,
-            })
-          }
-          placeholder="按产品线筛选"
-        />
-        <ModuleSelect
-          productLineCode={filters.product_line_code}
-          value={filters.module}
-          onChange={(v) => onChange({ ...filters, module: v })}
-          placeholder="按模块筛选"
-        />
-        {(filters.user_id || filters.product_line_code || filters.module) && (
-          <button
-            onClick={() => onChange({})}
-            className="text-xs text-blue-600 hover:underline self-center"
-          >
-            清除
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
 // ---- add form ------------------------------------------------------------
 
-function AddForm({
-  onAdded,
-  prefill,
-}: {
-  onAdded: () => void;
-  prefill: Filters;
-}) {
+function AddForm({ onAdded }: { onAdded: () => void }) {
   const [userId, setUserId] = useState<number | undefined>(undefined);
   const [productLine, setProductLine] = useState<string | undefined>(undefined);
   const [moduleName, setModuleName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-
-  const hasPrefill =
-    !!prefill.user_id || !!prefill.product_line_code || !!prefill.module;
 
   const add = useMutation({
     mutationFn: () =>
@@ -175,22 +96,8 @@ function AddForm({
 
   return (
     <section className="space-y-1">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-3">
-        <span>➕ 新增分工（写入数据库）</span>
-        {hasPrefill && (
-          <button
-            type="button"
-            onClick={() => {
-              setUserId(prefill.user_id);
-              setProductLine(prefill.product_line_code);
-              setModuleName(prefill.module);
-              setError(null);
-            }}
-            className="text-blue-600 hover:underline"
-          >
-            从筛选条件预填 →
-          </button>
-        )}
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        ➕ 新增分工
       </div>
       <form
         onSubmit={(e) => {
@@ -208,7 +115,7 @@ function AddForm({
           value={productLine}
           onChange={(v) => {
             setProductLine(v);
-            setModuleName(undefined);
+            setModuleName(undefined); // 切产品线 → 清模块
           }}
           placeholder="选择产品线"
         />
