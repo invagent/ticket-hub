@@ -27,28 +27,33 @@ export function FeatureScopesTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex gap-2 text-sm">
-        <UserSelect
-          value={filters.user_id}
-          onChange={(v) => setFilters({ ...filters, user_id: v })}
-          placeholder="按用户筛选"
-        />
-        <FeatureSelect
-          value={filters.feature}
-          onChange={(v) => setFilters({ ...filters, feature: v })}
-          placeholder="按 feature 筛选"
-        />
-        {(filters.user_id || filters.feature) && (
-          <button
-            onClick={() => setFilters({})}
-            className="text-xs text-blue-600 hover:underline self-center"
-          >
-            清除
-          </button>
-        )}
-      </div>
+      <section className="space-y-1">
+        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          🔍 筛选（只看符合条件的列表）
+        </div>
+        <div className="flex gap-2 text-sm">
+          <UserSelect
+            value={filters.user_id}
+            onChange={(v) => setFilters({ ...filters, user_id: v })}
+            placeholder="按用户筛选"
+          />
+          <FeatureSelect
+            value={filters.feature}
+            onChange={(v) => setFilters({ ...filters, feature: v })}
+            placeholder="按 feature 筛选"
+          />
+          {(filters.user_id || filters.feature) && (
+            <button
+              onClick={() => setFilters({})}
+              className="text-xs text-blue-600 hover:underline self-center"
+            >
+              清除
+            </button>
+          )}
+        </div>
+      </section>
 
-      <AddForm onAdded={invalidate} />
+      <AddForm onAdded={invalidate} prefill={filters} />
 
       {list.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
       {list.error && (
@@ -84,10 +89,18 @@ export function FeatureScopesTab() {
   );
 }
 
-function AddForm({ onAdded }: { onAdded: () => void }) {
+function AddForm({
+  onAdded,
+  prefill,
+}: {
+  onAdded: () => void;
+  prefill: Filters;
+}) {
   const [userId, setUserId] = useState<number | undefined>(undefined);
   const [feature, setFeature] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+
+  const hasPrefill = !!prefill.user_id || !!prefill.feature;
 
   const add = useMutation({
     mutationFn: () =>
@@ -119,28 +132,46 @@ function AddForm({ onAdded }: { onAdded: () => void }) {
   });
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!userId || !feature) {
-          setError("用户 / feature 都必须选");
-          return;
-        }
-        add.mutate();
-      }}
-      className="flex gap-2 text-sm items-start p-3 border border-dashed border-gray-200 dark:border-gray-800 rounded"
-    >
-      <UserSelect value={userId} onChange={setUserId} placeholder="选择用户" />
-      <FeatureSelect value={feature} onChange={setFeature} placeholder="选择 feature" />
-      <button
-        type="submit"
-        disabled={add.isPending}
-        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
+    <section className="space-y-1">
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-3">
+        <span>➕ 新增 feature 兜底（写入数据库）</span>
+        {hasPrefill && (
+          <button
+            type="button"
+            onClick={() => {
+              setUserId(prefill.user_id);
+              setFeature(prefill.feature);
+              setError(null);
+            }}
+            className="text-blue-600 hover:underline"
+          >
+            从筛选条件预填 →
+          </button>
+        )}
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!userId || !feature) {
+            setError("用户 / feature 都必须选");
+            return;
+          }
+          add.mutate();
+        }}
+        className="flex gap-2 text-sm items-start p-3 border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 rounded"
       >
-        {add.isPending ? "提交中…" : "添加"}
-      </button>
-      {error && <p className="text-xs text-red-600 self-center">{error}</p>}
-    </form>
+        <UserSelect value={userId} onChange={setUserId} placeholder="选择用户" />
+        <FeatureSelect value={feature} onChange={setFeature} placeholder="选择 feature" />
+        <button
+          type="submit"
+          disabled={add.isPending}
+          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
+        >
+          {add.isPending ? "提交中…" : "添加"}
+        </button>
+        {error && <p className="text-xs text-red-600 self-center">{error}</p>}
+      </form>
+    </section>
   );
 }
 
