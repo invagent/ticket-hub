@@ -14,6 +14,8 @@ D1 adds:
 D2 adds:
   metrics cache (1):    materialized_metrics — Celery-refreshed dashboard snapshot
   catalog (2):          modules / features — admin-maintained dropdown source
+D3 adds:
+  audit (1):            agent_decisions — Agent decisions + supervisor revert state
 
 PK strategy: INT autoincrement throughout (deviates from spec UUID; see ADR-0002).
 Soft-deletion: customers / customer_identities / tickets / hub_issues / users only.
@@ -398,9 +400,7 @@ class Ticket(Base):
     # CHECK constraint enforced at the DB level — see migration 0006.
     predicted_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     predicted_confidence: Mapped[Numeric | None] = mapped_column(Numeric(3, 2), nullable=True)
-    classified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Misc
     received_at: Mapped[datetime] = mapped_column(
@@ -724,9 +724,7 @@ class MaterializedMetrics(Base):
     __tablename__ = "materialized_metrics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    slot_key: Mapped[str] = mapped_column(
-        String(32), nullable=False, unique=True, default="latest"
-    )
+    slot_key: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, default="latest")
     refreshed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -774,4 +772,58 @@ class Feature(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+# ---- D3-A: agent decision audit -------------------------------------------
+
+
+class AgentDecision(Base):
+    """One row per Agent decision (classify / split / dedup / ...).
+
+    Supervisor revert flips status='reverted' + sets reverted_at/reverted_by.
+    Multi-target cases (e.g. dedup_link) put related entity ids in
+    proposal['related_ids']; subject is the primary entity acted upon.
+    """
+
+    __tablename__ = "agent_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "decision_type IN ("
+            "'classify_type','split_ticket','no_split',"
+            "'dedup_link','dedup_new','supersede',"
+            "'merge_identity','relink','auto_reply')",
+            name="ck_agent_decisions_type",
+        ),
+        CheckConstraint(
+            "subject_type IN ('ticket','hub_issue')",
+            name="ck_agent_decisions_subject_type",
+        ),
+        CheckConstraint(
+            "status IN ('executed','reverted')",
+            name="ck_agent_decisions_status",
+        ),
+        CheckConstraint(
+            "(status='executed' AND reverted_at IS NULL) "
+            "OR (status='reverted' AND reverted_at IS NOT NULL)",
+            name="ck_agent_decisions_reverted_consistency",
+        ),
+        Index("ix_agent_decisions_subject", "subject_type", "subject_id"),
+        Index("ix_agent_decisions_type_created", "decision_type", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    decision_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    proposal: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="executed", nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    reverted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reverted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revert_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

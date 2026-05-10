@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.db import make_session
-from app.models import Ticket
+from app.models import AgentDecision, Ticket
 
 logger = get_logger(__name__)
 
@@ -100,11 +100,7 @@ def classify_payload(
 def _format_user_prompt(*, title: str, body: str, product_line: str, module: str) -> str:
     # Trim body — long工单 body wastes tokens and rarely changes the verdict.
     snippet = (body or "")[:1500]
-    return (
-        f"title={title!r}\n"
-        f"product_line={product_line!r}, module={module!r}\n"
-        f"body={snippet!r}"
-    )
+    return f"title={title!r}\nproduct_line={product_line!r}, module={module!r}\nbody={snippet!r}"
 
 
 def _parse_response(content: str) -> dict[str, Any]:
@@ -160,10 +156,24 @@ def classify_ticket(ticket_id: int, db: Session | None = None) -> ClassifyResult
                 error=str(e),
             )
             return None
-        # Persist
+        # Persist (ticket fields + audit row, single transaction)
         t.predicted_type = result.type
         t.predicted_confidence = Decimal(f"{result.confidence:.2f}")
         t.classified_at = datetime.now(UTC)
+        db.add(
+            AgentDecision(
+                decision_type="classify_type",
+                subject_type="ticket",
+                subject_id=t.id,
+                proposal={
+                    "predicted_type": result.type,
+                    "confidence": result.confidence,
+                    "reason": result.reason,
+                    "model": result.model,
+                    "cost_usd": result.cost_usd,
+                },
+            )
+        )
         db.commit()
         logger.info(
             "classify_ticket_committed",
@@ -175,7 +185,7 @@ def classify_ticket(ticket_id: int, db: Session | None = None) -> ClassifyResult
             model=result.model,
         )
         return result
-    except Exception:  # noqa: BLE001 — defensive: BG task must not propagate
+    except Exception:  # defensive: BG task must not propagate
         if own_session:
             db.rollback()
         logger.exception("classify_ticket_unexpected_failure", ticket_id=ticket_id)

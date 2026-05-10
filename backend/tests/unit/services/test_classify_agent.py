@@ -12,10 +12,10 @@ import pytest
 import respx
 from sqlalchemy.orm import Session
 
-from app.core.llm_router import LLMMessage, LLMResponse
+from app.core.llm_router import LLMResponse
 from app.core.llm_router.providers import LLMProvider, ProviderError
 from app.core.llm_router.router import LLMRouter
-from app.models import Source, Ticket
+from app.models import AgentDecision, Source, Ticket
 from app.services.agents.classify import (
     ClassifyError,
     classify_payload,
@@ -55,9 +55,7 @@ def _router_with(content: str) -> LLMRouter:
 
 
 def test_classify_payload_happy_path() -> None:
-    router = _router_with(
-        '{"type": "Bug_fix", "confidence": 0.95, "reason": "明显报错"}'
-    )
+    router = _router_with('{"type": "Bug_fix", "confidence": 0.95, "reason": "明显报错"}')
     res = classify_payload(
         title="接口报错",
         body="调用发票云接口返回 500",
@@ -107,17 +105,17 @@ def world(db_session: Session) -> Session:
 
 
 def _make_ticket(db: Session, **overrides) -> Ticket:  # type: ignore[no-untyped-def]
-    base = dict(
-        short_code="TKT-CLS-1",
-        source_code="ksm",
-        source_ticket_id="cls-1",
-        type="Raw",
-        status="received",
-        title="接口报错",
-        body="调用发票云接口失败",
-        product_line_code=None,
-        module="接口集成",
-    )
+    base = {
+        "short_code": "TKT-CLS-1",
+        "source_code": "ksm",
+        "source_ticket_id": "cls-1",
+        "type": "Raw",
+        "status": "received",
+        "title": "接口报错",
+        "body": "调用发票云接口失败",
+        "product_line_code": None,
+        "module": "接口集成",
+    }
     base.update(overrides)
     t = Ticket(**base)
     db.add(t)
@@ -134,9 +132,7 @@ def test_classify_ticket_writes_back(world: Session, monkeypatch) -> None:  # ty
         cls_mod.LLMRouter,
         "from_settings",
         classmethod(
-            lambda _cls: _router_with(
-                '{"type": "Bug_fix", "confidence": 0.92, "reason": "ok"}'
-            )
+            lambda _cls: _router_with('{"type": "Bug_fix", "confidence": 0.92, "reason": "ok"}')
         ),
     )
     t = _make_ticket(world)
@@ -148,9 +144,22 @@ def test_classify_ticket_writes_back(world: Session, monkeypatch) -> None:  # ty
     assert t.predicted_confidence == Decimal("0.92")
     assert t.classified_at is not None
 
+    # D3-A: an agent_decisions row was written in the same transaction.
+    decisions = world.query(AgentDecision).filter_by(subject_type="ticket", subject_id=t.id).all()
+    assert len(decisions) == 1
+    d = decisions[0]
+    assert d.decision_type == "classify_type"
+    assert d.status == "executed"
+    assert d.reverted_at is None
+    assert d.proposal["predicted_type"] == "Bug_fix"
+    assert d.proposal["confidence"] == 0.92
+    assert d.proposal["reason"] == "ok"
+    assert d.proposal["model"] == "fake-model"
+
 
 def test_classify_ticket_swallows_router_error(
-    world: Session, monkeypatch  # type: ignore[no-untyped-def]
+    world: Session,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     """All-providers-failed → returns None, ticket left unchanged."""
     from app.services.agents import classify as cls_mod
@@ -167,6 +176,8 @@ def test_classify_ticket_swallows_router_error(
     world.refresh(t)
     assert t.predicted_type is None
     assert t.classified_at is None
+    # D3-A: failed classification must not leave an audit row.
+    assert world.query(AgentDecision).filter_by(subject_id=t.id).count() == 0
 
 
 def test_classify_ticket_404_silent(world: Session) -> None:
@@ -176,7 +187,8 @@ def test_classify_ticket_404_silent(world: Session) -> None:
 
 
 def test_classify_ticket_invalid_llm_output_silent(
-    world: Session, monkeypatch  # type: ignore[no-untyped-def]
+    world: Session,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     from app.services.agents import classify as cls_mod
 
