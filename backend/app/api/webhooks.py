@@ -32,6 +32,7 @@ from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.trace import get_trace_id
 from app.db import get_session, make_session
+from app.services.agents.classify import classify_ticket
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -141,6 +142,7 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         return
 
     db = make_session()
+    ingested_ticket_id: int | None = None
     try:
         try:
             result = KSMIngester(db).ingest(payload)
@@ -151,6 +153,7 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
             )
             return
         db.commit()
+        ingested_ticket_id = result.ticket_id if not result.deduped else None
         logger.info(
             "ksm_async_ingest_committed",
             bill_id=bill_id,
@@ -164,6 +167,12 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
     finally:
         db.close()
+
+    # D3-C: classify the freshly-ingested ticket. Skip on dedupe (already
+    # classified previously) and on ingest failure. Errors swallowed inside
+    # classify_ticket.
+    if ingested_ticket_id is not None:
+        classify_ticket(ingested_ticket_id)
 
 
 @router.post("/ksm", response_model=KSMAck)
@@ -247,6 +256,9 @@ async def ksm_webhook(
         deduped=result.deduped,
         trace_id=get_trace_id(),
     )
+    # D3-C: classify after sync ingest (skip dedup so we don't re-classify).
+    if not result.deduped:
+        background_tasks.add_task(classify_ticket, result.ticket_id)
     return KSMAck(code=0)
 
 
@@ -256,6 +268,7 @@ async def ksm_webhook(
 @router.post("/zhichi", response_model=IngestResponse)
 async def zhichi_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     access_token: str = Query(...),
     db: Session = Depends(get_session),
 ) -> IngestResponse:
@@ -272,6 +285,9 @@ async def zhichi_webhook(
         short_code=result.short_code,
         deduped=result.deduped,
     )
+    # D3-C: classify after ingest (skip dedup).
+    if not result.deduped:
+        background_tasks.add_task(classify_ticket, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,
@@ -288,6 +304,7 @@ async def zhichi_webhook(
 @router.post("/zammad", response_model=IngestResponse)
 async def zammad_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     access_token: str = Query(...),
     db: Session = Depends(get_session),
 ) -> IngestResponse:
@@ -304,6 +321,9 @@ async def zammad_webhook(
         short_code=result.short_code,
         deduped=result.deduped,
     )
+    # D3-C: classify after ingest (skip dedup).
+    if not result.deduped:
+        background_tasks.add_task(classify_ticket, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,

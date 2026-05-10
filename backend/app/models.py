@@ -394,6 +394,14 @@ class Ticket(Base):
     module: Mapped[str | None] = mapped_column(String(128), nullable=True)
     feature: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    # D3-C: LLM classification (predicted hub_issue type + confidence)
+    # CHECK constraint enforced at the DB level — see migration 0006.
+    predicted_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    predicted_confidence: Mapped[Numeric | None] = mapped_column(Numeric(3, 2), nullable=True)
+    classified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Misc
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
