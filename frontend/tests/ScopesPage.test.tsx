@@ -23,8 +23,39 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
+/** Stub the dropdown data sources (D2-G). All three lists must respond
+ *  before the form selects are populated. */
+function stubDropdowns() {
+  server.use(
+    http.get("*/api/admin/users", () =>
+      HttpResponse.json([
+        { id: 5, name: "alice", feishu_uid: "ou_a", employee_no: "K0005", email: null, role: "assignee" },
+        { id: 7, name: "bob",   feishu_uid: "ou_b", employee_no: "K0007", email: null, role: "assignee" },
+        { id: 1, name: "admin", feishu_uid: "ou_x", employee_no: null, email: null, role: "admin" },
+      ]),
+    ),
+    http.get("*/api/admin/product-lines", () =>
+      HttpResponse.json([
+        { id: 1, code: "cloud-erp", name: "Cloud ERP", is_active: true },
+        { id: 2, code: "hcm",       name: "HCM",       is_active: true },
+      ]),
+    ),
+    http.get("*/api/admin/modules", ({ request }) => {
+      const u = new URL(request.url);
+      const pl = u.searchParams.get("product_line_code");
+      const all = [
+        { id: 10, product_line_code: "cloud-erp", name: "应付管理", is_active: true, created_at: "" },
+        { id: 11, product_line_code: "hcm",       name: "薪资管理", is_active: true, created_at: "" },
+      ];
+      return HttpResponse.json(pl ? all.filter((m) => m.product_line_code === pl) : all);
+    }),
+    http.get("*/api/admin/features", () => HttpResponse.json([])),
+  );
+}
+
 describe("ScopesPage", () => {
   it("loads + adds + deletes a module scope; refetches list each time", async () => {
+    stubDropdowns();
     const rows: Array<{
       id: number;
       user_id: number;
@@ -66,36 +97,57 @@ describe("ScopesPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    // Initial row visible
-    expect(await screen.findByText("应付管理")).toBeInTheDocument();
+    // Initial row visible — disambiguate from <option>s in the module dropdown
+    // by checking inside the table.
+    const initialRows = await screen.findAllByText("应付管理");
+    // table cells are <td>, dropdown options are <option>
+    expect(initialRows.some((el) => el.tagName === "TD")).toBe(true);
 
-    // Add a new scope (use the add form's input scope, not the filter bar)
+    // Add a new scope using the add form's dropdowns.
     const addForm = screen.getByRole("button", { name: "添加" }).closest("form")!;
-    await user.type(within(addForm).getByPlaceholderText("user_id"), "7");
-    await user.type(within(addForm).getByPlaceholderText("product_line_code"), "hcm");
-    await user.type(within(addForm).getByPlaceholderText("module"), "薪资管理");
+    // wait for users list to populate the user select
+    await waitFor(() =>
+      expect(within(addForm).getAllByRole("combobox")[0].children.length).toBeGreaterThan(1),
+    );
+    const selects = within(addForm).getAllByRole("combobox");
+    // [user, product_line, module]
+    await user.selectOptions(selects[0], "7");          // bob (uid=7)
+    await user.selectOptions(selects[1], "hcm");
+    // module list filters by product_line; wait for it to repopulate
+    await waitFor(() =>
+      expect(within(addForm).getAllByRole("combobox")[2].children.length).toBeGreaterThan(1),
+    );
+    await user.selectOptions(within(addForm).getAllByRole("combobox")[2], "薪资管理");
     await user.click(within(addForm).getByRole("button", { name: "添加" }));
 
-    await waitFor(() => expect(screen.getByText("薪资管理")).toBeInTheDocument());
-    expect(screen.getByText("hcm")).toBeInTheDocument();
+    await waitFor(() => {
+      const matches = screen.getAllByText("薪资管理");
+      expect(matches.some((el) => el.tagName === "TD")).toBe(true);
+    });
 
-    // Delete it
+    // Delete the just-added row
     const deleteButtons = screen.getAllByRole("button", { name: "删除" });
-    await user.click(deleteButtons[deleteButtons.length - 1]); // delete last row
+    await user.click(deleteButtons[deleteButtons.length - 1]);
 
-    await waitFor(() => expect(screen.queryByText("薪资管理")).not.toBeInTheDocument());
-    // Original row still there
-    expect(screen.getByText("应付管理")).toBeInTheDocument();
+    await waitFor(() => {
+      const tds = screen.queryAllByText("薪资管理").filter((el) => el.tagName === "TD");
+      expect(tds.length).toBe(0);
+    });
+    // Original row (in table TD) still there
+    expect(
+      screen.getAllByText("应付管理").some((el) => el.tagName === "TD"),
+    ).toBe(true);
   });
 
   it("shows 409 inline when adding a duplicate scope", async () => {
+    stubDropdowns();
     server.use(
       http.get("*/api/admin/scopes/modules", () => HttpResponse.json([])),
       http.post("*/api/admin/scopes/modules", () =>
         HttpResponse.json(
           {
             detail:
-              "scope already exists: user_id=1 product_line_code=cloud-erp module=应付",
+              "scope already exists: user_id=1 product_line_code=cloud-erp module=应付管理",
           },
           { status: 409 },
         ),
@@ -106,12 +158,21 @@ describe("ScopesPage", () => {
     renderPage();
 
     const addForm = screen.getByRole("button", { name: "添加" }).closest("form")!;
-    await user.type(within(addForm).getByPlaceholderText("user_id"), "1");
-    await user.type(within(addForm).getByPlaceholderText("product_line_code"), "cloud-erp");
-    await user.type(within(addForm).getByPlaceholderText("module"), "应付");
+    await waitFor(() =>
+      expect(within(addForm).getAllByRole("combobox")[0].children.length).toBeGreaterThan(1),
+    );
+    const selects = within(addForm).getAllByRole("combobox");
+    await user.selectOptions(selects[0], "1");           // admin (uid=1)
+    await user.selectOptions(selects[1], "cloud-erp");
+    await waitFor(() =>
+      expect(within(addForm).getAllByRole("combobox")[2].children.length).toBeGreaterThan(1),
+    );
+    await user.selectOptions(within(addForm).getAllByRole("combobox")[2], "应付管理");
     await user.click(within(addForm).getByRole("button", { name: "添加" }));
 
-    expect(await screen.findByText(/已存在：该 \(user, product_line, module\)/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/已存在：该 \(user, product_line, module\)/),
+    ).toBeInTheDocument();
   });
 
   it("history tab renders add/remove events with color coding", async () => {

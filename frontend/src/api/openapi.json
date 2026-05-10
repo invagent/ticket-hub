@@ -254,6 +254,50 @@
         "title": "DashboardOut",
         "type": "object"
       },
+      "FeatureIn": {
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FeatureIn",
+        "type": "object"
+      },
+      "FeatureOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_active",
+          "created_at"
+        ],
+        "title": "FeatureOut",
+        "type": "object"
+      },
       "FeatureScopeIn": {
         "properties": {
           "feature": {
@@ -1335,6 +1379,7 @@
         "type": "object"
       },
       "IngestResponse": {
+        "description": "Used by zhichi / zammad webhooks (synchronous response shape).",
         "properties": {
           "assigned_user_ids": {
             "default": [],
@@ -1379,6 +1424,18 @@
           "routing_decision"
         ],
         "title": "IngestResponse",
+        "type": "object"
+      },
+      "KSMAck": {
+        "description": "KSM expects {\"code\": 0} as the ack — anything else is treated as a\ndelivery failure and KSM will retry.",
+        "properties": {
+          "code": {
+            "default": 0,
+            "title": "Code",
+            "type": "integer"
+          }
+        },
+        "title": "KSMAck",
         "type": "object"
       },
       "LinkedTicket": {
@@ -1439,6 +1496,62 @@
           "authorize_url"
         ],
         "title": "LoginUrlResponse",
+        "type": "object"
+      },
+      "ModuleIn": {
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "product_line_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Product Line Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_line_code",
+          "name"
+        ],
+        "title": "ModuleIn",
+        "type": "object"
+      },
+      "ModuleOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "product_line_code": {
+            "title": "Product Line Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "product_line_code",
+          "name",
+          "is_active",
+          "created_at"
+        ],
+        "title": "ModuleOut",
         "type": "object"
       },
       "ModuleScopeIn": {
@@ -1557,6 +1670,28 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sla_reply_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Reply Hours"
+          },
+          "sla_resolve_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Resolve Hours"
           }
         },
         "required": [
@@ -1566,6 +1701,50 @@
           "is_active"
         ],
         "title": "ProductLineOut",
+        "type": "object"
+      },
+      "ProductLinePatch": {
+        "description": "PATCH body for /api/admin/product-lines/{code}.\n\nNULL on either field clears the override (falls back to SLAWatcher\ndefaults). Pass `0` is rejected — use `null` to clear.",
+        "properties": {
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "sla_reply_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Reply Hours"
+          },
+          "sla_resolve_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Resolve Hours"
+          }
+        },
+        "title": "ProductLinePatch",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -2867,6 +3046,264 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/features": {
+      "get": {
+        "operationId": "list_features_api_admin_features_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FeatureOut"
+                  },
+                  "title": "Response List Features Api Admin Features Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Features",
+        "tags": [
+          "admin-catalog"
+        ]
+      },
+      "post": {
+        "operationId": "add_feature_api_admin_features_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Feature",
+        "tags": [
+          "admin-catalog"
+        ]
+      }
+    },
+    "/api/admin/features/{feature_id}": {
+      "delete": {
+        "operationId": "delete_feature_api_admin_features__feature_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "title": "Feature Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Feature",
+        "tags": [
+          "admin-catalog"
+        ]
+      }
+    },
+    "/api/admin/modules": {
+      "get": {
+        "operationId": "list_modules_api_admin_modules_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product_line_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Line Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModuleOut"
+                  },
+                  "title": "Response List Modules Api Admin Modules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Modules",
+        "tags": [
+          "admin-catalog"
+        ]
+      },
+      "post": {
+        "operationId": "add_module_api_admin_modules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Module",
+        "tags": [
+          "admin-catalog"
+        ]
+      }
+    },
+    "/api/admin/modules/{module_id}": {
+      "delete": {
+        "operationId": "delete_module_api_admin_modules__module_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Module",
+        "tags": [
+          "admin-catalog"
+        ]
+      }
+    },
     "/api/admin/product-lines": {
       "get": {
         "operationId": "list_product_lines_api_admin_product_lines_get",
@@ -2887,6 +3324,59 @@
           }
         },
         "summary": "List Product Lines",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/product-lines/{code}": {
+      "patch": {
+        "description": "Update SLA overrides (and is_active) for a product line.\n\nSend `null` to a field to clear the override (revert to SLAWatcher\nbuiltin default).",
+        "operationId": "patch_product_line_api_admin_product_lines__code__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductLinePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductLineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Product Line",
         "tags": [
           "admin"
         ]
@@ -4547,6 +5037,7 @@
     },
     "/webhook/ksm": {
       "post": {
+        "description": "KSM webhook receiver.\n\nTwo payload modes (the endpoint accepts both, KSM only sends the first):\n\n1. **Lightweight ping** (production KSM contract per doc § 二):\n   `{billId|id, noticeNum, subscribeNum}` → store latest pair → schedule\n   BackgroundTask to call subscribeCallback and ingest → return\n   `{\"code\": 0}` immediately.\n\n2. **Full payload** (legacy / tests / xlsx replay):\n   caller already provides title/content/productLineCode/...; ingest\n   synchronously and still return `{\"code\": 0}` (KSM contract).\n\nPer doc: 校验三个字段均不为空，否则忽略（log warning + 200）—\nimportant so KSM doesn't retry malformed pushes.",
         "operationId": "ksm_webhook_webhook_ksm_post",
         "parameters": [
           {
@@ -4564,7 +5055,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IngestResponse"
+                  "$ref": "#/components/schemas/KSMAck"
                 }
               }
             },

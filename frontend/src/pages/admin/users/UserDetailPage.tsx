@@ -2,6 +2,12 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, deleteByPath, getByPath, rawRequest } from "@/api/client";
+import {
+  FeatureSelect,
+  ModuleSelect,
+  ProductLineSelect,
+  UserSelect,
+} from "@/components/selectors";
 
 interface UserDetail {
   user: {
@@ -145,8 +151,8 @@ function ModuleScopesSection({
   scopes: UserDetail["module_scopes"];
 }) {
   const qc = useQueryClient();
-  const [pl, setPl] = useState("");
-  const [mod, setMod] = useState("");
+  const [pl, setPl] = useState<string | undefined>(undefined);
+  const [mod, setMod] = useState<string | undefined>(undefined);
 
   const add = useMutation({
     mutationFn: async () =>
@@ -155,8 +161,8 @@ function ModuleScopesSection({
         body: JSON.stringify({ user_id: userId, product_line_code: pl, module: mod }),
       }),
     onSuccess: () => {
-      setPl("");
-      setMod("");
+      setPl(undefined);
+      setMod(undefined);
       qc.invalidateQueries({ queryKey: ["admin", "user-detail", userId] });
     },
   });
@@ -202,17 +208,19 @@ function ModuleScopesSection({
         </tbody>
       </table>
       <div className="flex gap-2 text-sm">
-        <input
-          placeholder="product_line_code (e.g. cloud-fapiao)"
+        <ProductLineSelect
           value={pl}
-          onChange={(e) => setPl(e.target.value)}
-          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          onChange={(v) => {
+            setPl(v);
+            setMod(undefined); // product_line 切换 → 清 module
+          }}
+          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
         />
-        <input
-          placeholder="module (e.g. 数电开票)"
+        <ModuleSelect
+          productLineCode={pl}
           value={mod}
-          onChange={(e) => setMod(e.target.value)}
-          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          onChange={setMod}
+          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
         />
         <button
           onClick={() => pl && mod && add.mutate()}
@@ -239,7 +247,7 @@ function FeatureScopesSection({
   scopes: UserDetail["feature_scopes"];
 }) {
   const qc = useQueryClient();
-  const [feature, setFeature] = useState("");
+  const [feature, setFeature] = useState<string | undefined>(undefined);
 
   const add = useMutation({
     mutationFn: async () =>
@@ -248,7 +256,7 @@ function FeatureScopesSection({
         body: JSON.stringify({ user_id: userId, feature }),
       }),
     onSuccess: () => {
-      setFeature("");
+      setFeature(undefined);
       qc.invalidateQueries({ queryKey: ["admin", "user-detail", userId] });
     },
   });
@@ -292,11 +300,10 @@ function FeatureScopesSection({
         </tbody>
       </table>
       <div className="flex gap-2 text-sm">
-        <input
-          placeholder="feature (e.g. 数据导入)"
+        <FeatureSelect
           value={feature}
-          onChange={(e) => setFeature(e.target.value)}
-          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          onChange={setFeature}
+          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
         />
         <button
           onClick={() => feature && add.mutate()}
@@ -318,20 +325,34 @@ function SupervisorSection({
   supervisor: UserDetail["supervisor"];
 }) {
   const qc = useQueryClient();
-  const [supId, setSupId] = useState<string>(
-    supervisor ? String(supervisor.supervisor_id) : "",
+  const [supId, setSupId] = useState<number | undefined>(
+    supervisor?.supervisor_id ?? undefined,
   );
-  const [depId, setDepId] = useState<string>(
-    supervisor?.deputy_supervisor_id ? String(supervisor.deputy_supervisor_id) : "",
+  const [depId, setDepId] = useState<number | undefined>(
+    supervisor?.deputy_supervisor_id ?? undefined,
   );
+
+  // Look up names for the current supervisor / deputy displayed in the
+  // "当前主管…" line so the admin sees real names not bare IDs.
+  const users = useQuery({
+    queryKey: ["admin", "users", "select-list"] as const,
+    queryFn: () => rawRequest("/api/admin/users?active_only=true&limit=500"),
+    staleTime: 60_000,
+  });
+  const nameById = (id: number | null | undefined) =>
+    id == null
+      ? null
+      : (users.data as { id: number; name: string }[] | undefined)?.find(
+          (u) => u.id === id,
+        )?.name ?? `#${id}`;
 
   const save = useMutation({
     mutationFn: async () =>
       rawRequest(`/api/admin/users/${userId}/supervisor`, {
         method: "POST",
         body: JSON.stringify({
-          supervisor_id: Number(supId),
-          deputy_supervisor_id: depId ? Number(depId) : null,
+          supervisor_id: supId,
+          deputy_supervisor_id: depId ?? null,
         }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "user-detail", userId] }),
@@ -347,34 +368,40 @@ function SupervisorSection({
     <Section title="主管 / 副手" description="SLA 升级链：超时未确认 → 副手 → 主管 → 兜底池">
       {supervisor ? (
         <p className="text-sm text-gray-500">
-          当前主管 user_id = <span className="font-mono">{supervisor.supervisor_id}</span>
+          当前主管：<span className="font-medium">{nameById(supervisor.supervisor_id)}</span>
+          <span className="text-xs text-gray-400 ml-1">#{supervisor.supervisor_id}</span>
           {supervisor.deputy_supervisor_id != null && (
             <>
-              ；副手 = <span className="font-mono">{supervisor.deputy_supervisor_id}</span>
+              {" "}；副手：
+              <span className="font-medium">{nameById(supervisor.deputy_supervisor_id)}</span>
+              <span className="text-xs text-gray-400 ml-1">
+                #{supervisor.deputy_supervisor_id}
+              </span>
             </>
           )}
         </p>
       ) : (
         <p className="text-sm text-gray-500">未设置主管</p>
       )}
-      <div className="flex gap-2 text-sm">
-        <input
-          type="number"
-          placeholder="supervisor_id"
+      <div className="flex gap-2 text-sm flex-wrap">
+        <UserSelect
           value={supId}
-          onChange={(e) => setSupId(e.target.value)}
-          className="w-32 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          onChange={setSupId}
+          placeholder="选主管"
         />
-        <input
-          type="number"
-          placeholder="deputy_supervisor_id (optional)"
+        <UserSelect
           value={depId}
-          onChange={(e) => setDepId(e.target.value)}
-          className="w-44 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          onChange={setDepId}
+          placeholder="选副手（可选）"
         />
         <button
           onClick={() => supId && save.mutate()}
-          disabled={!supId || save.isPending}
+          disabled={!supId || save.isPending || supId === userId || depId === userId}
+          title={
+            supId === userId || depId === userId
+              ? "不能把自己设为自己的主管 / 副手"
+              : undefined
+          }
           className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
         >
           保存
@@ -400,16 +427,16 @@ function PartnersSection({
   partners: UserDetail["partners"];
 }) {
   const qc = useQueryClient();
-  const [pid, setPid] = useState("");
+  const [pid, setPid] = useState<number | undefined>(undefined);
 
   const add = useMutation({
     mutationFn: async () =>
       rawRequest(`/api/admin/users/${userId}/partners`, {
         method: "POST",
-        body: JSON.stringify({ partner_id: Number(pid) }),
+        body: JSON.stringify({ partner_id: pid }),
       }),
     onSuccess: () => {
-      setPid("");
+      setPid(undefined);
       qc.invalidateQueries({ queryKey: ["admin", "user-detail", userId] });
     },
   });
@@ -433,7 +460,7 @@ function PartnersSection({
             className="flex items-center gap-2 px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-sm"
           >
             <span>
-              {p.name} <span className="text-xs text-gray-500">(id={p.id})</span>
+              {p.name} <span className="text-xs text-gray-500">#{p.id}</span>
             </span>
             <button onClick={() => del.mutate(p.id)} className="text-red-600 hover:underline">
               ×
@@ -442,16 +469,22 @@ function PartnersSection({
         ))}
       </div>
       <div className="flex gap-2 text-sm">
-        <input
-          type="number"
-          placeholder="partner user_id"
-          value={pid}
-          onChange={(e) => setPid(e.target.value)}
-          className="w-44 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-        />
+        <UserSelect value={pid} onChange={setPid} placeholder="选 partner" />
         <button
           onClick={() => pid && add.mutate()}
-          disabled={!pid || add.isPending}
+          disabled={
+            !pid ||
+            add.isPending ||
+            pid === userId ||
+            partners.some((p) => p.id === pid)
+          }
+          title={
+            pid === userId
+              ? "不能把自己设为 partner"
+              : partners.some((p) => p.id === pid)
+                ? "已在 partner 列表"
+                : undefined
+          }
           className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
         >
           添加 partner

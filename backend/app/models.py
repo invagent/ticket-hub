@@ -13,6 +13,7 @@ D1 adds:
   notification (1):     notification_log  (originally D2; pulled forward per D6 plan)
 D2 adds:
   metrics cache (1):    materialized_metrics — Celery-refreshed dashboard snapshot
+  catalog (2):          modules / features — admin-maintained dropdown source
 
 PK strategy: INT autoincrement throughout (deviates from spec UUID; see ADR-0002).
 Soft-deletion: customers / customer_identities / tickets / hub_issues / users only.
@@ -722,3 +723,47 @@ class MaterializedMetrics(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
+class Module(Base):
+    """D2-G: canonical module catalog. Bound to a product_line.
+
+    Source-of-truth for the dropdown that backs assignment_scopes_module.module
+    + tickets.module + hub_issues.module. Admin maintains via /admin/catalog UI.
+    """
+
+    __tablename__ = "modules"
+    __table_args__ = (
+        UniqueConstraint("product_line_code", "name", name="uq_modules_pl_name"),
+        Index("ix_modules_pl_code", "product_line_code"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    product_line_code: Mapped[str] = mapped_column(
+        String(64), ForeignKey("product_lines.code"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Feature(Base):
+    """D2-G: canonical feature catalog. Cross-product (matches the
+    assignment_scopes_feature semantics: feature 兜底 跨产品线)."""
+
+    __tablename__ = "features"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

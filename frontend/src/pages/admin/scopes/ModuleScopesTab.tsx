@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, deleteByPath, ApiError } from "@/api/client";
+import {
+  ModuleSelect,
+  ProductLineSelect,
+  UserSelect,
+} from "@/components/selectors";
 
 const QK = ["admin", "scopes", "modules"] as const;
 
@@ -80,40 +85,33 @@ function FilterBar({
 }) {
   return (
     <div className="flex gap-2 text-sm">
-      <input
-        type="number"
-        placeholder="user_id"
-        value={filters.user_id ?? ""}
-        onChange={(e) =>
+      <UserSelect
+        value={filters.user_id}
+        onChange={(v) => onChange({ ...filters, user_id: v })}
+        placeholder="按用户筛选"
+      />
+      <ProductLineSelect
+        value={filters.product_line_code}
+        onChange={(v) =>
           onChange({
             ...filters,
-            user_id: e.target.value ? Number(e.target.value) : undefined,
+            product_line_code: v,
+            // module 依赖 product_line — 切产品线就清掉 module
+            module: v === filters.product_line_code ? filters.module : undefined,
           })
         }
-        className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        placeholder="按产品线筛选"
       />
-      <input
-        type="text"
-        placeholder="product_line_code"
-        value={filters.product_line_code ?? ""}
-        onChange={(e) =>
-          onChange({ ...filters, product_line_code: e.target.value || undefined })
-        }
-        className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-      />
-      <input
-        type="text"
-        placeholder="module"
-        value={filters.module ?? ""}
-        onChange={(e) =>
-          onChange({ ...filters, module: e.target.value || undefined })
-        }
-        className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+      <ModuleSelect
+        productLineCode={filters.product_line_code}
+        value={filters.module}
+        onChange={(v) => onChange({ ...filters, module: v })}
+        placeholder="按模块筛选"
       />
       {(filters.user_id || filters.product_line_code || filters.module) && (
         <button
           onClick={() => onChange({})}
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs text-blue-600 hover:underline self-center"
         >
           清除
         </button>
@@ -125,22 +123,22 @@ function FilterBar({
 // ---- add form ------------------------------------------------------------
 
 function AddForm({ onAdded }: { onAdded: () => void }) {
-  const [userId, setUserId] = useState("");
-  const [productLine, setProductLine] = useState("");
-  const [moduleName, setModuleName] = useState("");
+  const [userId, setUserId] = useState<number | undefined>(undefined);
+  const [productLine, setProductLine] = useState<string | undefined>(undefined);
+  const [moduleName, setModuleName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   const add = useMutation({
     mutationFn: () =>
       api.post("/api/admin/scopes/modules", {
-        user_id: Number(userId),
-        product_line_code: productLine.trim(),
-        module: moduleName.trim(),
+        user_id: userId!,
+        product_line_code: productLine!,
+        module: moduleName!,
       }),
     onSuccess: () => {
-      setUserId("");
-      setProductLine("");
-      setModuleName("");
+      setUserId(undefined);
+      setProductLine(undefined);
+      setModuleName(undefined);
       setError(null);
       onAdded();
     },
@@ -165,34 +163,29 @@ function AddForm({ onAdded }: { onAdded: () => void }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (!userId || !productLine.trim() || !moduleName.trim()) {
-          setError("user_id / product_line / module 都必须填");
+        if (!userId || !productLine || !moduleName) {
+          setError("用户 / 产品线 / 模块 都必须选");
           return;
         }
         add.mutate();
       }}
       className="flex gap-2 text-sm items-start p-3 border border-dashed border-gray-200 dark:border-gray-800 rounded"
     >
-      <input
-        type="number"
-        placeholder="user_id"
-        value={userId}
-        onChange={(e) => setUserId(e.target.value)}
-        className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-      />
-      <input
-        type="text"
-        placeholder="product_line_code"
+      <UserSelect value={userId} onChange={setUserId} placeholder="选择用户" />
+      <ProductLineSelect
         value={productLine}
-        onChange={(e) => setProductLine(e.target.value)}
-        className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        onChange={(v) => {
+          setProductLine(v);
+          // product_line 切换 → 清空 module
+          setModuleName(undefined);
+        }}
+        placeholder="选择产品线"
       />
-      <input
-        type="text"
-        placeholder="module"
+      <ModuleSelect
+        productLineCode={productLine}
         value={moduleName}
-        onChange={(e) => setModuleName(e.target.value)}
-        className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        onChange={setModuleName}
+        placeholder="选择模块"
       />
       <button
         type="submit"
@@ -222,6 +215,13 @@ function Row({
   onDeleted: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const users = useQuery({
+    queryKey: ["admin", "users", "select-list"] as const,
+    queryFn: () => api.get("/api/admin/users", { active_only: true, limit: 500 }),
+    staleTime: 60_000,
+  });
+  const userName =
+    users.data?.find((u) => u.id === row.user_id)?.name ?? `#${row.user_id}`;
 
   const del = useMutation({
     mutationFn: () =>
@@ -237,7 +237,10 @@ function Row({
   return (
     <tr className="border-t border-gray-200 dark:border-gray-800">
       <td className="p-2 font-mono text-xs">{row.id}</td>
-      <td className="p-2">{row.user_id}</td>
+      <td className="p-2">
+        {userName}
+        <span className="text-xs text-gray-400 ml-1">#{row.user_id}</span>
+      </td>
       <td className="p-2">{row.product_line_code}</td>
       <td className="p-2">{row.module}</td>
       <td className="p-2 text-xs text-gray-500">

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.api import (
     admin,
+    admin_catalog,
     admin_scopes,
     admin_users,
     auth,
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
     app.include_router(admin_users.router, prefix="/api/admin/users", tags=["admin-users"])
     app.include_router(admin_scopes.router, prefix="/api/admin/scopes", tags=["admin-scopes"])
+    app.include_router(admin_catalog.router, prefix="/api/admin", tags=["admin-catalog"])
     app.include_router(supervisor.router, prefix="/api/supervisor", tags=["supervisor"])
     app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
     app.include_router(hub_issues.router, prefix="/api/hub-issues", tags=["hub-issues"])

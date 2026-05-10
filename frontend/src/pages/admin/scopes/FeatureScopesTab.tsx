@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, deleteByPath, ApiError } from "@/api/client";
+import { FeatureSelect, UserSelect } from "@/components/selectors";
 
 const QK = ["admin", "scopes", "features"] as const;
 
@@ -27,31 +28,20 @@ export function FeatureScopesTab() {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex gap-2 text-sm">
-        <input
-          type="number"
-          placeholder="user_id"
-          value={filters.user_id ?? ""}
-          onChange={(e) =>
-            setFilters({
-              ...filters,
-              user_id: e.target.value ? Number(e.target.value) : undefined,
-            })
-          }
-          className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        <UserSelect
+          value={filters.user_id}
+          onChange={(v) => setFilters({ ...filters, user_id: v })}
+          placeholder="按用户筛选"
         />
-        <input
-          type="text"
-          placeholder="feature"
-          value={filters.feature ?? ""}
-          onChange={(e) =>
-            setFilters({ ...filters, feature: e.target.value || undefined })
-          }
-          className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        <FeatureSelect
+          value={filters.feature}
+          onChange={(v) => setFilters({ ...filters, feature: v })}
+          placeholder="按 feature 筛选"
         />
         {(filters.user_id || filters.feature) && (
           <button
             onClick={() => setFilters({})}
-            className="text-xs text-blue-600 hover:underline"
+            className="text-xs text-blue-600 hover:underline self-center"
           >
             清除
           </button>
@@ -69,7 +59,7 @@ export function FeatureScopesTab() {
           <thead className="bg-gray-100 dark:bg-gray-900">
             <tr>
               <th className="text-left p-2">id</th>
-              <th className="text-left p-2">user_id</th>
+              <th className="text-left p-2">user</th>
               <th className="text-left p-2">feature</th>
               <th className="text-left p-2">创建时间</th>
               <th className="text-right p-2">操作</th>
@@ -95,19 +85,19 @@ export function FeatureScopesTab() {
 }
 
 function AddForm({ onAdded }: { onAdded: () => void }) {
-  const [userId, setUserId] = useState("");
-  const [feature, setFeature] = useState("");
+  const [userId, setUserId] = useState<number | undefined>(undefined);
+  const [feature, setFeature] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   const add = useMutation({
     mutationFn: () =>
       api.post("/api/admin/scopes/features", {
-        user_id: Number(userId),
-        feature: feature.trim(),
+        user_id: userId!,
+        feature: feature!,
       }),
     onSuccess: () => {
-      setUserId("");
-      setFeature("");
+      setUserId(undefined);
+      setFeature(undefined);
       setError(null);
       onAdded();
     },
@@ -132,28 +122,16 @@ function AddForm({ onAdded }: { onAdded: () => void }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (!userId || !feature.trim()) {
-          setError("user_id / feature 都必须填");
+        if (!userId || !feature) {
+          setError("用户 / feature 都必须选");
           return;
         }
         add.mutate();
       }}
       className="flex gap-2 text-sm items-start p-3 border border-dashed border-gray-200 dark:border-gray-800 rounded"
     >
-      <input
-        type="number"
-        placeholder="user_id"
-        value={userId}
-        onChange={(e) => setUserId(e.target.value)}
-        className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-      />
-      <input
-        type="text"
-        placeholder="feature"
-        value={feature}
-        onChange={(e) => setFeature(e.target.value)}
-        className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
-      />
+      <UserSelect value={userId} onChange={setUserId} placeholder="选择用户" />
+      <FeatureSelect value={feature} onChange={setFeature} placeholder="选择 feature" />
       <button
         type="submit"
         disabled={add.isPending}
@@ -179,6 +157,13 @@ function Row({
   onDeleted: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const users = useQuery({
+    queryKey: ["admin", "users", "select-list"] as const,
+    queryFn: () => api.get("/api/admin/users", { active_only: true, limit: 500 }),
+    staleTime: 60_000,
+  });
+  const userName =
+    users.data?.find((u) => u.id === row.user_id)?.name ?? `#${row.user_id}`;
 
   const del = useMutation({
     mutationFn: () =>
@@ -194,7 +179,10 @@ function Row({
   return (
     <tr className="border-t border-gray-200 dark:border-gray-800">
       <td className="p-2 font-mono text-xs">{row.id}</td>
-      <td className="p-2">{row.user_id}</td>
+      <td className="p-2">
+        {userName}
+        <span className="text-xs text-gray-400 ml-1">#{row.user_id}</span>
+      </td>
       <td className="p-2">{row.feature}</td>
       <td className="p-2 text-xs text-gray-500">
         {new Date(row.created_at).toLocaleString()}

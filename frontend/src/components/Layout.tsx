@@ -8,6 +8,7 @@ const navItems = [
   { to: "/customers", label: "客户搜索" },
   { to: "/admin/users", label: "用户管理" },
   { to: "/admin/scopes", label: "分工管理" },
+  { to: "/admin/catalog", label: "目录管理" },
 ];
 
 export function Layout() {

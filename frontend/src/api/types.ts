@@ -4,6 +4,76 @@
  */
 
 export interface paths {
+    "/api/admin/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Features */
+        get: operations["list_features_api_admin_features_get"];
+        put?: never;
+        /** Add Feature */
+        post: operations["add_feature_api_admin_features_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/features/{feature_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Feature */
+        delete: operations["delete_feature_api_admin_features__feature_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Modules */
+        get: operations["list_modules_api_admin_modules_get"];
+        put?: never;
+        /** Add Module */
+        post: operations["add_module_api_admin_modules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/modules/{module_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Module */
+        delete: operations["delete_module_api_admin_modules__module_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/product-lines": {
         parameters: {
             query?: never;
@@ -19,6 +89,29 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/admin/product-lines/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Product Line
+         * @description Update SLA overrides (and is_active) for a product line.
+         *
+         *     Send `null` to a field to clear the override (revert to SLAWatcher
+         *     builtin default).
+         */
+        patch: operations["patch_product_line_api_admin_product_lines__code__patch"];
         trace?: never;
     };
     "/api/admin/scopes/features": {
@@ -559,7 +652,24 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ksm Webhook */
+        /**
+         * Ksm Webhook
+         * @description KSM webhook receiver.
+         *
+         *     Two payload modes (the endpoint accepts both, KSM only sends the first):
+         *
+         *     1. **Lightweight ping** (production KSM contract per doc § 二):
+         *        `{billId|id, noticeNum, subscribeNum}` → store latest pair → schedule
+         *        BackgroundTask to call subscribeCallback and ingest → return
+         *        `{"code": 0}` immediately.
+         *
+         *     2. **Full payload** (legacy / tests / xlsx replay):
+         *        caller already provides title/content/productLineCode/...; ingest
+         *        synchronously and still return `{"code": 0}` (KSM contract).
+         *
+         *     Per doc: 校验三个字段均不为空，否则忽略（log warning + 200）—
+         *     important so KSM doesn't retry malformed pushes.
+         */
         post: operations["ksm_webhook_webhook_ksm_post"];
         delete?: never;
         options?: never;
@@ -693,6 +803,25 @@ export interface components {
             sla: components["schemas"]["SLAOut"];
             supervisor: components["schemas"]["app__api__metrics__SupervisorOut"];
             webhook_intake: components["schemas"]["WebhookIntakeOut"];
+        };
+        /** FeatureIn */
+        FeatureIn: {
+            /** Name */
+            name: string;
+        };
+        /** FeatureOut */
+        FeatureOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
         };
         /** FeatureScopeIn */
         FeatureScopeIn: {
@@ -1028,7 +1157,10 @@ export interface components {
             /** Items */
             items: components["schemas"]["InboxItem"][];
         };
-        /** IngestResponse */
+        /**
+         * IngestResponse
+         * @description Used by zhichi / zammad webhooks (synchronous response shape).
+         */
         IngestResponse: {
             /**
              * Assigned User Ids
@@ -1045,6 +1177,18 @@ export interface components {
             ticket_id: number;
             /** Trace Id */
             trace_id?: string | null;
+        };
+        /**
+         * KSMAck
+         * @description KSM expects {"code": 0} as the ack — anything else is treated as a
+         *     delivery failure and KSM will retry.
+         */
+        KSMAck: {
+            /**
+             * Code
+             * @default 0
+             */
+            code: number;
         };
         /** LinkedTicket */
         LinkedTicket: {
@@ -1063,6 +1207,29 @@ export interface components {
         LoginUrlResponse: {
             /** Authorize Url */
             authorize_url: string;
+        };
+        /** ModuleIn */
+        ModuleIn: {
+            /** Name */
+            name: string;
+            /** Product Line Code */
+            product_line_code: string;
+        };
+        /** ModuleOut */
+        ModuleOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Product Line Code */
+            product_line_code: string;
         };
         /** ModuleScopeIn */
         ModuleScopeIn: {
@@ -1113,6 +1280,25 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+            /** Sla Reply Hours */
+            sla_reply_hours?: number | null;
+            /** Sla Resolve Hours */
+            sla_resolve_hours?: number | null;
+        };
+        /**
+         * ProductLinePatch
+         * @description PATCH body for /api/admin/product-lines/{code}.
+         *
+         *     NULL on either field clears the override (falls back to SLAWatcher
+         *     defaults). Pass `0` is rejected — use `null` to clear.
+         */
+        ProductLinePatch: {
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Sla Reply Hours */
+            sla_reply_hours?: number | null;
+            /** Sla Resolve Hours */
+            sla_resolve_hours?: number | null;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
@@ -1484,6 +1670,193 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_features_api_admin_features_get: {
+        parameters: {
+            query?: {
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_feature_api_admin_features_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feature_api_admin_features__feature_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_modules_api_admin_modules_get: {
+        parameters: {
+            query?: {
+                product_line_code?: string | null;
+                active_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_module_api_admin_modules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_module_api_admin_modules__module_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_product_lines_api_admin_product_lines_get: {
         parameters: {
             query?: never;
@@ -1500,6 +1873,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductLineOut"][];
+                };
+            };
+        };
+    };
+    patch_product_line_api_admin_product_lines__code__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductLinePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductLineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2541,7 +2949,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IngestResponse"];
+                    "application/json": components["schemas"]["KSMAck"];
                 };
             };
             /** @description Validation Error */

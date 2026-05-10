@@ -62,6 +62,7 @@ import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { UsersPage } from "./pages/admin/users/UsersPage";
 import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
+import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,6 +88,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/admin/users" element={<UsersPage />} />
             <Route path="/admin/users/:userId" element={<UserDetailPage />} />
             <Route path="/admin/scopes" element={<ScopesPage />} />
+            <Route path="/admin/catalog" element={<CatalogPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
