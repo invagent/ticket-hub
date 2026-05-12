@@ -35,7 +35,8 @@ export function UsersPage() {
       if (roleFilter && u.role !== roleFilter) return false;
       if (search) {
         const q = search.toLowerCase();
-        const hay = `${u.name ?? ""} ${u.email ?? ""} ${u.employee_no ?? ""}`.toLowerCase();
+        const hay =
+          `${u.name ?? ""} ${u.email ?? ""} ${u.employee_no ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -54,7 +55,8 @@ export function UsersPage() {
         <div>
           <h1 className="text-2xl font-semibold">用户管理</h1>
           <p className="text-sm text-gray-500">
-            飞书 SSO 自动建账户；admin 可配置角色 / 分工 / 主管 / partner（D2-E）。
+            飞书 SSO 自动建账户；admin 可配置角色 / 分工 / 主管 /
+            partner（D2-E）。
           </p>
         </div>
         <button
@@ -77,13 +79,13 @@ export function UsersPage() {
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="w-32 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          className="w-36 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
         >
           <option value="">全部角色</option>
-          <option value="admin">admin</option>
-          <option value="supervisor">supervisor</option>
-          <option value="assignee">assignee</option>
-          <option value="member">member</option>
+          <option value="admin">管理员</option>
+          <option value="supervisor">主管</option>
+          <option value="assignee">处理人</option>
+          <option value="member">普通成员</option>
         </select>
       </div>
 
@@ -113,16 +115,25 @@ export function UsersPage() {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-3 text-center text-sm text-gray-400">
+                <td
+                  colSpan={8}
+                  className="p-3 text-center text-sm text-gray-400"
+                >
                   暂无用户
                 </td>
               </tr>
             ) : (
               filtered.map((u) => (
-                <tr key={u.id} className="border-t border-gray-200 dark:border-gray-800">
+                <tr
+                  key={u.id}
+                  className="border-t border-gray-200 dark:border-gray-800"
+                >
                   <td className="p-2 text-gray-500">{u.id}</td>
                   <td className="p-2 font-medium">
-                    <Link to={`/admin/users/${u.id}`} className="hover:underline text-blue-600">
+                    <Link
+                      to={`/admin/users/${u.id}`}
+                      className="hover:underline text-blue-600"
+                    >
                       {u.name}
                     </Link>
                   </td>
@@ -130,8 +141,12 @@ export function UsersPage() {
                     <RoleBadge role={u.role} />
                   </td>
                   <td className="p-2">{u.employee_no ?? "—"}</td>
-                  <td className="p-2 text-gray-600 dark:text-gray-400">{u.email ?? "—"}</td>
-                  <td className="p-2 text-gray-600 dark:text-gray-400">{u.mobile ?? "—"}</td>
+                  <td className="p-2 text-gray-600 dark:text-gray-400">
+                    {u.email ?? "—"}
+                  </td>
+                  <td className="p-2 text-gray-600 dark:text-gray-400">
+                    {u.mobile ?? "—"}
+                  </td>
                   <td className="p-2">
                     {u.is_active ? (
                       <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
@@ -213,14 +228,28 @@ export interface UserRow {
   is_active: boolean;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  supervisor: "主管",
+  assignee: "处理人",
+  member: "普通成员",
+};
+
 function RoleBadge({ role }: { role: string }) {
   const cls: Record<string, string> = {
-    admin: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
-    supervisor: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    admin:
+      "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+    supervisor:
+      "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
     assignee: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
     member: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded ${cls[role] ?? cls.member}`}>{role}</span>
+    <span
+      className={`text-xs px-2 py-0.5 rounded ${cls[role] ?? cls.member}`}
+      title={role}
+    >
+      {ROLE_LABELS[role] ?? role}
+    </span>
   );
 }

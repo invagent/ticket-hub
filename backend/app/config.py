@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # ---- Auth ----
     jwt_secret: str = Field(default="change-me-in-prod-please-use-env")
     jwt_algorithm: str = "HS256"
-    jwt_ttl_seconds: int = 60 * 60 * 8
+    jwt_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
 
     # ---- Postgres ----
     pg_dsn: str = "postgresql+psycopg://hub:hub@localhost:5432/ticket_hub"

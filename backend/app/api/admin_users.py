@@ -96,7 +96,9 @@ class UserDetailOut(BaseModel):
 
 
 class UserPatch(BaseModel):
-    role: str | None = Field(default=None, pattern="^(member|assignee|supervisor|admin)$")
+    role: str | None = Field(
+        default=None, pattern="^(member|assignee|supervisor|admin)$"
+    )
     is_active: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)
     email: str | None = Field(default=None, max_length=255)
@@ -119,7 +121,9 @@ class PartnerIn(BaseModel):
 class SyncFromFeishuIn(BaseModel):
     """Either pull a whole department or a specific list of open_ids."""
 
-    department_id: str | None = Field(default=None, description="Feishu department open_id; '0' = root")
+    department_id: str | None = Field(
+        default=None, description="Feishu department open_id; '0' = root"
+    )
     open_ids: list[str] | None = Field(default=None, description="Targeted user list")
 
 
@@ -154,8 +158,171 @@ class FeishuContactUserOut(BaseModel):
     email: str
     mobile: str
     is_activated: bool
-    already_synced: bool          # already exists in local users (any active state)
-    local_user_id: int | None     # if synced, this is the local users.id
+    already_synced: bool  # already exists in local users (any active state)
+    local_user_id: int | None  # if synced, this is the local users.id
+
+
+# ---- Feishu org-tree browse (read-only) -------------------------------
+
+
+@router.get("/feishu/departments/tree", response_model=list[FeishuDeptOut])
+def list_feishu_departments_tree(
+    _admin: AuthedUser = Depends(require_admin),
+) -> list[FeishuDeptOut]:
+    """Return all departments under root as a flat list with parent_department_id.
+
+    Uses fetch_child=True so Feishu returns the full hierarchy in one call.
+    Frontend builds the tree from parent_department_id relationships.
+    """
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise HTTPException(status_code=503, detail="feishu credentials not configured")
+
+    client = FeishuClient(FeishuConfig.from_settings(settings))
+    try:
+        try:
+            depts = client.list_child_departments("0", fetch_child=True)
+        except FeishuError as e:
+            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
+    finally:
+        client.close()
+    return [
+        FeishuDeptOut(
+            open_department_id=d.open_department_id,
+            department_id=d.department_id,
+            name=d.name,
+            parent_department_id=d.parent_department_id,
+            member_count=d.member_count,
+        )
+        for d in depts
+    ]
+
+
+@router.get("/feishu/departments", response_model=list[FeishuDeptOut])
+def list_feishu_departments(
+    parent_id: str = "0",
+    _admin: AuthedUser = Depends(require_admin),
+) -> list[FeishuDeptOut]:
+    """List immediate child departments of `parent_id` (default: root='0')."""
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise HTTPException(status_code=503, detail="feishu credentials not configured")
+
+    client = FeishuClient(FeishuConfig.from_settings(settings))
+    try:
+        try:
+            depts = client.list_child_departments(parent_id)
+        except FeishuError as e:
+            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
+    finally:
+        client.close()
+    return [
+        FeishuDeptOut(
+            open_department_id=d.open_department_id,
+            department_id=d.department_id,
+            name=d.name,
+            parent_department_id=d.parent_department_id,
+            member_count=d.member_count,
+        )
+        for d in depts
+    ]
+
+
+@router.get(
+    "/feishu/departments/{department_id}/users",
+    response_model=list[FeishuContactUserOut],
+)
+def list_feishu_department_users(
+    department_id: str,
+    _admin: AuthedUser = Depends(require_admin),
+    db: Session = Depends(get_session),
+) -> list[FeishuContactUserOut]:
+    """List users directly under a Feishu department, annotated with sync status."""
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise HTTPException(status_code=503, detail="feishu credentials not configured")
+
+    client = FeishuClient(FeishuConfig.from_settings(settings))
+    try:
+        try:
+            users = client.list_users_by_department(department_id)
+        except FeishuError as e:
+            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
+    finally:
+        client.close()
+
+    user_repo = UserRepository(db)
+    out: list[FeishuContactUserOut] = []
+    for u in users:
+        local = user_repo.get_by_feishu_uid(u.open_id, include_deleted=True)
+        out.append(
+            FeishuContactUserOut(
+                open_id=u.open_id,
+                name=u.name,
+                employee_no=u.employee_no,
+                email=u.email,
+                mobile=u.mobile,
+                is_activated=u.is_activated,
+                already_synced=local is not None,
+                local_user_id=local.id if local else None,
+            )
+        )
+    return out
+
+
+@router.post("/sync-from-feishu", response_model=SyncReportOut)
+def sync_from_feishu(
+    body: SyncFromFeishuIn,
+    admin: AuthedUser = Depends(require_admin),
+    db: Session = Depends(get_session),
+) -> SyncReportOut:
+    """Bulk-pull users from Feishu contact API and upsert into local users."""
+    if (body.department_id is None) == (body.open_ids is None):
+        raise HTTPException(
+            status_code=400,
+            detail="provide exactly one of department_id or open_ids",
+        )
+    if body.open_ids is not None and len(body.open_ids) == 0:
+        raise HTTPException(status_code=400, detail="open_ids must be non-empty")
+
+    settings = get_settings()
+    if not (settings.feishu_app_id and settings.feishu_app_secret):
+        raise HTTPException(status_code=503, detail="feishu credentials not configured")
+
+    client = FeishuClient(FeishuConfig.from_settings(settings))
+    try:
+        svc = FeishuUserSyncService(db, client=client)
+        try:
+            if body.department_id is not None:
+                report = svc.sync_from_department(body.department_id)
+            else:
+                assert body.open_ids is not None
+                report = svc.sync_from_open_ids(body.open_ids)
+        except FeishuError as e:
+            db.rollback()
+            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
+    finally:
+        client.close()
+
+    db.commit()
+    logger.info(
+        "admin_user_feishu_sync_done",
+        by=admin.user_id,
+        new=report.new_count,
+        updated=report.updated_count,
+        revived=report.revived_count,
+        errors=len(report.errors),
+    )
+    return SyncReportOut(
+        new_count=report.new_count,
+        updated_count=report.updated_count,
+        revived_count=report.revived_count,
+        skipped_inactive=report.skipped_inactive,
+        errors=report.errors,
+        new_user_ids=report.new_user_ids,
+        touched_user_ids=report.touched_user_ids,
+        total_processed=report.total_processed,
+    )
 
 
 # ---- list / detail ---------------------------------------------------
@@ -200,7 +367,8 @@ def get_user_detail(
             for r in module_scopes
         ],
         feature_scopes=[
-            ScopeRowOut(id=r.id, user_id=r.user_id, feature=r.feature) for r in feature_scopes
+            ScopeRowOut(id=r.id, user_id=r.user_id, feature=r.feature)
+            for r in feature_scopes
         ],
         partners=[PartnerRowOut(id=p.id, name=p.name, role=p.role) for p in partners],
     )
@@ -270,7 +438,9 @@ def set_supervisor(
     if user_repo.get(user_id) is None:
         raise HTTPException(status_code=404, detail="user not found")
     if user_repo.get(body.supervisor_id) is None:
-        raise HTTPException(status_code=400, detail="supervisor_id refers to unknown user")
+        raise HTTPException(
+            status_code=400, detail="supervisor_id refers to unknown user"
+        )
     if body.deputy_supervisor_id and user_repo.get(body.deputy_supervisor_id) is None:
         raise HTTPException(
             status_code=400, detail="deputy_supervisor_id refers to unknown user"
@@ -302,9 +472,13 @@ def clear_supervisor(
     db: Session = Depends(get_session),
 ) -> None:
     if not UserSupervisorRepository(db).clear(user_id):
-        raise HTTPException(status_code=404, detail="no supervisor relationship to clear")
+        raise HTTPException(
+            status_code=404, detail="no supervisor relationship to clear"
+        )
     db.commit()
-    logger.info("admin_user_supervisor_cleared", target_user_id=user_id, by=admin.user_id)
+    logger.info(
+        "admin_user_supervisor_cleared", target_user_id=user_id, by=admin.user_id
+    )
 
 
 # ---- partners --------------------------------------------------------
@@ -329,7 +503,9 @@ def add_partner(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(status_code=409, detail="partner pair already exists") from e
+        raise HTTPException(
+            status_code=409, detail="partner pair already exists"
+        ) from e
     if not added:
         # Idempotent — return current list with 200 instead of 201
         # Actually keep 201 for consistency; the row exists so caller can ignore
@@ -362,152 +538,4 @@ def remove_partner(
         target_user_id=user_id,
         partner_id=partner_id,
         by=admin.user_id,
-    )
-
-
-# ---- Feishu org-tree browse (read-only) -------------------------------
-
-
-@router.get("/feishu/departments", response_model=list[FeishuDeptOut])
-def list_feishu_departments(
-    parent_id: str = "0",
-    _admin: AuthedUser = Depends(require_admin),
-) -> list[FeishuDeptOut]:
-    """List immediate child departments of `parent_id` (default: root='0').
-
-    Frontend uses this to lazily expand the org tree node-by-node.
-    """
-    settings = get_settings()
-    if not (settings.feishu_app_id and settings.feishu_app_secret):
-        raise HTTPException(status_code=503, detail="feishu credentials not configured")
-
-    client = FeishuClient(FeishuConfig.from_settings(settings))
-    try:
-        try:
-            depts = client.list_child_departments(parent_id)
-        except FeishuError as e:
-            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
-    finally:
-        client.close()
-    return [
-        FeishuDeptOut(
-            open_department_id=d.open_department_id,
-            department_id=d.department_id,
-            name=d.name,
-            parent_department_id=d.parent_department_id,
-            member_count=d.member_count,
-        )
-        for d in depts
-    ]
-
-
-@router.get(
-    "/feishu/departments/{department_id}/users",
-    response_model=list[FeishuContactUserOut],
-)
-def list_feishu_department_users(
-    department_id: str,
-    _admin: AuthedUser = Depends(require_admin),
-    db: Session = Depends(get_session),
-) -> list[FeishuContactUserOut]:
-    """List users directly under a Feishu department, marking which are
-    already in our local users table (`already_synced=True`) so the UI can
-    show them differently.
-
-    Uses `open_department_id` as `department_id` (Feishu accepts both for
-    most contact APIs, but open id is preferred for tenant-scoped browsing).
-    """
-    settings = get_settings()
-    if not (settings.feishu_app_id and settings.feishu_app_secret):
-        raise HTTPException(status_code=503, detail="feishu credentials not configured")
-
-    client = FeishuClient(FeishuConfig.from_settings(settings))
-    try:
-        try:
-            users = client.list_users_by_department(department_id)
-        except FeishuError as e:
-            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
-    finally:
-        client.close()
-
-    # Annotate sync status using local DB lookup (one query per user is OK
-    # for departments under ~500; switch to bulk IN-query if it gets slow).
-    user_repo = UserRepository(db)
-    out: list[FeishuContactUserOut] = []
-    for u in users:
-        local = user_repo.get_by_feishu_uid(u.open_id, include_deleted=True)
-        out.append(
-            FeishuContactUserOut(
-                open_id=u.open_id,
-                name=u.name,
-                employee_no=u.employee_no,
-                email=u.email,
-                mobile=u.mobile,
-                is_activated=u.is_activated,
-                already_synced=local is not None,
-                local_user_id=local.id if local else None,
-            )
-        )
-    return out
-
-
-# ---- Feishu sync -----------------------------------------------------
-
-
-@router.post("/sync-from-feishu", response_model=SyncReportOut)
-def sync_from_feishu(
-    body: SyncFromFeishuIn,
-    admin: AuthedUser = Depends(require_admin),
-    db: Session = Depends(get_session),
-) -> SyncReportOut:
-    """Bulk-pull users from Feishu contact API and upsert into local users.
-
-    Provide either `department_id` (sync all members of a Feishu dept) OR
-    `open_ids` (sync specific users). Mutually exclusive: must give one.
-    """
-    if (body.department_id is None) == (body.open_ids is None):
-        raise HTTPException(
-            status_code=400,
-            detail="provide exactly one of department_id or open_ids",
-        )
-    if body.open_ids is not None and len(body.open_ids) == 0:
-        raise HTTPException(status_code=400, detail="open_ids must be non-empty")
-
-    settings = get_settings()
-    if not (settings.feishu_app_id and settings.feishu_app_secret):
-        raise HTTPException(status_code=503, detail="feishu credentials not configured")
-
-    client = FeishuClient(FeishuConfig.from_settings(settings))
-    try:
-        svc = FeishuUserSyncService(db, client=client)
-        try:
-            if body.department_id is not None:
-                report = svc.sync_from_department(body.department_id)
-            else:
-                assert body.open_ids is not None
-                report = svc.sync_from_open_ids(body.open_ids)
-        except FeishuError as e:
-            db.rollback()
-            raise HTTPException(status_code=502, detail=f"feishu API error: {e}") from e
-    finally:
-        client.close()
-
-    db.commit()
-    logger.info(
-        "admin_user_feishu_sync_done",
-        by=admin.user_id,
-        new=report.new_count,
-        updated=report.updated_count,
-        revived=report.revived_count,
-        errors=len(report.errors),
-    )
-    return SyncReportOut(
-        new_count=report.new_count,
-        updated_count=report.updated_count,
-        revived_count=report.revived_count,
-        skipped_inactive=report.skipped_inactive,
-        errors=report.errors,
-        new_user_ids=report.new_user_ids,
-        touched_user_ids=report.touched_user_ids,
-        total_processed=report.total_processed,
     )

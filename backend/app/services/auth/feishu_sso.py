@@ -156,24 +156,32 @@ class FeishuSSOService:
             )
             db.add(user)
             db.flush()
-            logger.info("feishu_sso_user_created", feishu_uid=feishu_uid, user_id=user.id)
+            logger.info(
+                "feishu_sso_user_created", feishu_uid=feishu_uid, user_id=user.id
+            )
         else:
             # Reactivate soft-deleted users on re-login (per upgrade_plan §4.12)
-            changed = False
+            changed: list[str] = []
             if user.deleted_at is not None:
                 user.deleted_at = None
-                changed = True
-            new_name = profile.get("name") or profile.get("en_name")
-            if new_name and user.name != new_name:
-                user.name = new_name
-                changed = True
-            new_email = profile.get("email")
-            if new_email and user.email != new_email:
-                user.email = new_email
-                changed = True
+                changed.append("deleted_at")
+            for attr, value in (
+                ("name", profile.get("name") or profile.get("en_name")),
+                ("email", profile.get("email")),
+                ("mobile", profile.get("mobile")),
+                ("employee_no", profile.get("employee_no")),
+            ):
+                if value and getattr(user, attr) != value:
+                    setattr(user, attr, value)
+                    changed.append(attr)
             if changed:
                 db.flush()
-                logger.info("feishu_sso_user_updated", feishu_uid=feishu_uid, user_id=user.id)
+                logger.info(
+                    "feishu_sso_user_updated",
+                    feishu_uid=feishu_uid,
+                    user_id=user.id,
+                    fields=changed,
+                )
         return user
 
     # ---- public entrypoint -------------------------------------------

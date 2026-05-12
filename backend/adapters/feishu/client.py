@@ -26,7 +26,13 @@ from app.core.logging import get_logger
 
 from .._token_cache import TokenCache
 from .exceptions import FeishuAuthError, FeishuBusinessError
-from .types import BitableFilterCondition, ContactUser, Department, Employee, FeishuConfig
+from .types import (
+    BitableFilterCondition,
+    ContactUser,
+    Department,
+    Employee,
+    FeishuConfig,
+)
 
 logger = get_logger(__name__)
 
@@ -98,12 +104,16 @@ class FeishuClient:
                 body = resp.json()
             except (ValueError, json.JSONDecodeError):
                 resp.raise_for_status()
-                raise FeishuBusinessError(op=method.upper(), code=-1, message=resp.text) from None
+                raise FeishuBusinessError(
+                    op=method.upper(), code=-1, message=resp.text
+                ) from None
             # 99991663 may come with HTTP 400 — keep parsing first
             if body.get("code") == _TOKEN_EXPIRED_CODE:
                 return dict(body)
             if not resp.is_success:
-                logger.error("feishu_request_failed", url=url, status=resp.status_code, body=body)
+                logger.error(
+                    "feishu_request_failed", url=url, status=resp.status_code, body=body
+                )
                 resp.raise_for_status()
             return dict(body)
 
@@ -126,7 +136,8 @@ class FeishuClient:
     ) -> list[dict[str, Any]]:
         """AND search; non-paginated (legacy parity — used for unique-key lookups)."""
         cond_dicts = [
-            c.to_dict() if isinstance(c, BitableFilterCondition) else c for c in conditions
+            c.to_dict() if isinstance(c, BitableFilterCondition) else c
+            for c in conditions
         ]
         body = self._request(
             "POST",
@@ -140,7 +151,8 @@ class FeishuClient:
     ) -> list[dict[str, Any]]:
         """OR search with pagination — returns all matching records."""
         cond_dicts = [
-            c.to_dict() if isinstance(c, BitableFilterCondition) else c for c in conditions
+            c.to_dict() if isinstance(c, BitableFilterCondition) else c
+            for c in conditions
         ]
         results: list[dict[str, Any]] = []
         page_token: str | None = None
@@ -151,7 +163,9 @@ class FeishuClient:
             }
             if page_token:
                 payload["page_token"] = page_token
-            body = self._request("POST", self._table_records_url("/search"), json=payload)
+            body = self._request(
+                "POST", self._table_records_url("/search"), json=payload
+            )
             data = body.get("data", {})
             results.extend(data.get("items", []))
             if not data.get("has_more"):
@@ -165,7 +179,9 @@ class FeishuClient:
         body = self._request("POST", self._table_records_url(), json={"fields": fields})
         if body.get("code") != 0:
             raise FeishuBusinessError(
-                op="create_record", code=int(body.get("code") or -1), message=str(body.get("msg"))
+                op="create_record",
+                code=int(body.get("code") or -1),
+                message=str(body.get("msg")),
             )
         return body.get("data", {}).get("record", {}).get("record_id", "")  # type: ignore[no-any-return]
 
@@ -175,7 +191,9 @@ class FeishuClient:
         )
         if body.get("code") != 0:
             raise FeishuBusinessError(
-                op="update_record", code=int(body.get("code") or -1), message=str(body.get("msg"))
+                op="update_record",
+                code=int(body.get("code") or -1),
+                message=str(body.get("msg")),
             )
 
     def get_record(self, record_id: str) -> dict[str, Any] | None:
@@ -183,7 +201,9 @@ class FeishuClient:
         return body.get("data", {}).get("record", {}).get("fields")  # type: ignore[no-any-return]
 
     def get_record_by_order_id(self, order_id: str) -> dict[str, Any] | None:
-        records = self.search_records([BitableFilterCondition("工单来源编号", "is", [order_id])])
+        records = self.search_records(
+            [BitableFilterCondition("工单来源编号", "is", [order_id])]
+        )
         return records[0] if records else None
 
     def set_parent_record(self, child_record_id: str, parent_record_id: str) -> None:
@@ -322,13 +342,18 @@ class FeishuClient:
         Requires app permission `contact:user.id:readonly` (or higher).
 
         `department_id="0"` is the root tenant department.
+        Accepts both numeric department_id ("0", "7886...") and open_department_id ("od-xxx").
         """
         url = f"{self._cfg.base_url}/open-apis/contact/v3/users/find_by_department"
         page_token: str | None = None
         items: list[ContactUser] = []
+        id_type = (
+            "open_department_id" if department_id.startswith("od-") else "department_id"
+        )
         while True:
             params: dict[str, Any] = {
                 "department_id": department_id,
+                "department_id_type": id_type,
                 "page_size": page_size,
             }
             if page_token:
@@ -376,14 +401,23 @@ class FeishuClient:
         page_size: int = 50,
     ) -> list[Department]:
         """List child departments under a parent. With `fetch_child=True`
-        recursively fetches all descendants in one call (Feishu side)."""
+        recursively fetches all descendants in one call (Feishu side).
+
+        Accepts both numeric department_id ("0", "7886...") and open_department_id ("od-xxx").
+        """
         url = f"{self._cfg.base_url}/open-apis/contact/v3/departments/{parent_department_id}/children"
         page_token: str | None = None
         items: list[Department] = []
+        id_type = (
+            "open_department_id"
+            if parent_department_id.startswith("od-")
+            else "department_id"
+        )
         while True:
             params: dict[str, Any] = {
                 "page_size": page_size,
                 "fetch_child": str(fetch_child).lower(),
+                "department_id_type": id_type,
             }
             if page_token:
                 params["page_token"] = page_token
@@ -408,5 +442,7 @@ class FeishuClient:
 def _flatten_richtext(field: Any) -> str:
     """Feishu rich-text formula field → plain string."""
     if isinstance(field, dict):
-        return "".join(v.get("text", "") for v in (field.get("value") or []) if isinstance(v, dict))
+        return "".join(
+            v.get("text", "") for v in (field.get("value") or []) if isinstance(v, dict)
+        )
     return str(field or "")

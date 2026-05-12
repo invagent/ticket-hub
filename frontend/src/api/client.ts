@@ -47,6 +47,12 @@ async function request<T>(
     },
   });
   if (!resp.ok) {
+    if (resp.status === 401) {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("auth_user");
+      window.location.href = "/login";
+      throw new ApiError(401, "session expired");
+    }
     let body: unknown = undefined;
     try {
       body = await resp.json();
@@ -66,9 +72,13 @@ type PathOf<M extends "get" | "post" | "put" | "delete"> = {
 }[keyof paths];
 
 type ResponseOf<P, M extends string> = P extends { [K in M]: infer Op }
-  ? Op extends { responses: { 200: { content: { "application/json": infer T } } } }
+  ? Op extends {
+      responses: { 200: { content: { "application/json": infer T } } };
+    }
     ? T
-    : Op extends { responses: { 201: { content: { "application/json": infer T } } } }
+    : Op extends {
+          responses: { 201: { content: { "application/json": infer T } } };
+        }
       ? T
       : unknown
   : never;
@@ -89,7 +99,10 @@ export const api = {
   ): Promise<ResponseOf<paths[P], "post">> {
     return request(
       path as string,
-      { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined },
+      {
+        method: "POST",
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      },
       query,
     );
   },
@@ -104,7 +117,9 @@ export const api = {
     });
   },
 
-  async delete<P extends PathOf<"delete">>(path: P): Promise<ResponseOf<paths[P], "delete">> {
+  async delete<P extends PathOf<"delete">>(
+    path: P,
+  ): Promise<ResponseOf<paths[P], "delete">> {
     return request(path as string, { method: "DELETE" });
   },
 };

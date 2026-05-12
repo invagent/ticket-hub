@@ -5,6 +5,19 @@ import type { UserRow } from "./UsersPage";
 
 const ROLES = ["member", "assignee", "supervisor", "admin"] as const;
 
+const ROLE_LABELS: Record<string, { label: string; desc: string }> = {
+  member: { label: "普通成员", desc: "可查看工单和仪表板，无管理权限" },
+  assignee: { label: "处理人", desc: "可查看工单，被分配处理工单" },
+  supervisor: {
+    label: "主管",
+    desc: "可使用主管工作台、修正 Agent 决策、重新关联工单",
+  },
+  admin: {
+    label: "管理员",
+    desc: "拥有全部权限，含用户管理、分工配置、目录管理",
+  },
+};
+
 export function UserEditModal({
   user,
   onClose,
@@ -32,7 +45,8 @@ export function UserEditModal({
       if (form.role !== user.role) patch.role = form.role;
       if (form.name !== user.name) patch.name = form.name;
       if (form.email !== (user.email ?? "")) patch.email = form.email || null;
-      if (form.mobile !== (user.mobile ?? "")) patch.mobile = form.mobile || null;
+      if (form.mobile !== (user.mobile ?? ""))
+        patch.mobile = form.mobile || null;
       if (form.employee_no !== (user.employee_no ?? ""))
         patch.employee_no = form.employee_no || null;
       if (form.ksm_account !== (user.ksm_account ?? ""))
@@ -55,7 +69,10 @@ export function UserEditModal({
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">编辑用户 #{user.id}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             ✕
           </button>
         </div>
@@ -75,7 +92,7 @@ export function UserEditModal({
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {ROLE_LABELS[r].label} — {ROLE_LABELS[r].desc}
                 </option>
               ))}
             </select>
@@ -83,7 +100,9 @@ export function UserEditModal({
           <Field label="工号">
             <input
               value={form.employee_no}
-              onChange={(e) => setForm({ ...form, employee_no: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, employee_no: e.target.value })
+              }
               className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
               placeholder="K0030"
             />
@@ -106,21 +125,27 @@ export function UserEditModal({
           <Field label="KSM account">
             <input
               value={form.ksm_account}
-              onChange={(e) => setForm({ ...form, ksm_account: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, ksm_account: e.target.value })
+              }
               className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
             />
           </Field>
           <Field label="智齿 agent_id">
             <input
               value={form.zhichi_agent_id}
-              onChange={(e) => setForm({ ...form, zhichi_agent_id: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, zhichi_agent_id: e.target.value })
+              }
               className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
             />
           </Field>
           <Field label="Linear user_id">
             <input
               value={form.linear_user_id}
-              onChange={(e) => setForm({ ...form, linear_user_id: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, linear_user_id: e.target.value })
+              }
               className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-800"
             />
           </Field>
@@ -152,7 +177,13 @@ export function UserEditModal({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
       <div className="text-xs text-gray-500 mb-1">{label}</div>

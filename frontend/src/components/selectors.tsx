@@ -41,7 +41,8 @@ const USER_QK = ["admin", "users", "select-list"] as const;
 function useUserOptions() {
   return useQuery({
     queryKey: USER_QK,
-    queryFn: () => api.get("/api/admin/users", { active_only: true, limit: 500 }),
+    queryFn: () =>
+      api.get("/api/admin/users", { active_only: true, limit: 500 }),
     staleTime: 60_000, // 1 min — re-fetch when staletime expires
   });
 }
@@ -77,8 +78,15 @@ export function UserSelect({
   );
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  supervisor: "主管",
+  assignee: "处理人",
+  member: "普通成员",
+};
+
 function labelForUser(u: UserOpt): string {
-  const role = u.role !== "member" ? ` · ${u.role}` : "";
+  const role = u.role !== "member" ? ` · ${ROLE_LABELS[u.role] ?? u.role}` : "";
   const empno = u.employee_no ? ` (${u.employee_no})` : "";
   return `${u.name}${empno}${role}`;
 }
@@ -153,7 +161,9 @@ export function ProductLineSelect({
   return (
     <select
       value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+      onChange={(e) =>
+        onChange(e.target.value === "" ? undefined : e.target.value)
+      }
       disabled={q.isLoading}
       className={
         className ??
@@ -206,7 +216,9 @@ export function ModuleSelect({
   return (
     <select
       value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+      onChange={(e) =>
+        onChange(e.target.value === "" ? undefined : e.target.value)
+      }
       disabled={q.isLoading || !productLineCode}
       title={!productLineCode ? "先选择产品线" : undefined}
       className={
@@ -247,7 +259,9 @@ export function FeatureSelect({
   return (
     <select
       value={value ?? ""}
-      onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+      onChange={(e) =>
+        onChange(e.target.value === "" ? undefined : e.target.value)
+      }
       disabled={q.isLoading}
       className={
         className ??

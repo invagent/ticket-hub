@@ -130,12 +130,58 @@ app/db.py         engine + session（StaticPool for SQLite in tests）
 
 `app/core/llm_router/router.py` 抽象多 Provider，当前只实现 GLM（`providers/glm.py`）。新增 Provider 约 80 行，实现 `BaseLLMProvider` 接口。接入 OpenAI/Anthropic 等外部 LLM 前必须先补 PII 脱敏（`app/core/pii/` 的 AES-GCM encryptor 目前是 Protocol 占位）。
 
+## 前端 Auth Guard
+
+`frontend/src/main.tsx` 中 `RequireAuth` 组件保护所有非登录路由，未登录或 token 过期自动跳转 `/login`（解析 JWT `exp` 字段判断）。auth token 存储在 `localStorage.auth_token`，飞书 SSO 回调后由 `consumeSsoFragment()` 写入。
+
+`frontend/src/api/client.ts` 中所有 API 请求收到 401 响应时，自动清除 localStorage 并跳转 `/login`。
+
+JWT TTL 为 7 天（`backend/app/config.py` 中 `jwt_ttl_seconds = 60 * 60 * 24 * 7`）。
+
+## 服务器部署
+
+详见 `CLAUDE.local.md`（不提交 git）。生产服务器 `123.57.100.193`，nginx 配置在 `/etc/nginx/sites-enabled/reverse-proxy`。
+
+- shaobin 原版：端口 9093，路径 `/ticket-hub/`，DB `ticket_hub`
+- panda_li v2：端口 9094，路径 `/ticket-hub-v2/`，DB `ticket_hub_v2`，Python 3.12
+
+前端 build 需指定环境变量：
+```bash
+VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
+```
+
 ## 当前技术债（D3-A 后）
 
 - `make lint` 当前红灯：约 20 个 ruff 错 + 17 个 mypy 错（主要在 `app/api/webhooks.py`）
 - `backend/tests/eval/dataset_v1.jsonl` 只有 4 条占位，classify 准确率未量化
 - `HANDOFF.md` 严重过时（D0 时期），以 `docs/progress/2026-05-11-status.md` 为准
 - PII encryptor 未实现（接外部 LLM 前必须补）
+
+## 飞书工号同步说明（2026-05-12）
+
+- 飞书 `/authen/v1/user_info`（SSO 登录接口）**不返回 `employee_no`**，这是飞书接口本身限制
+- 工号只能通过「从飞书同步」（`/contact/v3/users/find_by_department`）批量补全
+- 需要在飞书开放平台开通 `contact:user.employee_number:read` 权限
+- `feishu_sso.py` 的 `upsert_user` 更新分支已修复，统一同步 name/email/mobile/employee_no 四个字段
+
+## 用户角色说明（2026-05-12）
+
+系统有四个角色，前端统一显示中文名：
+
+| 英文值 | 中文名 | 职责 |
+|--------|--------|------|
+| `member` | 普通成员 | 可查看工单和仪表板，无管理权限 |
+| `assignee` | 处理人 | 可查看工单，被分配处理工单 |
+| `supervisor` | 主管 | 可使用主管工作台、修正 Agent 决策、重新关联工单 |
+| `admin` | 管理员 | 拥有全部权限，含用户管理、分工配置、目录管理 |
+
+权限校验在 `backend/app/api/deps/auth.py`：`require_admin()`、`require_supervisor()`、`require_user()`。
+
+## 飞书同步对话框（2026-05-12）
+
+- 对话框打开后自动分批并发（每批 5 个）预加载所有部门成员，左侧树顶部显示进度条
+- 树节点支持 checkbox 勾选，递归选中子部门所有可同步成员，支持三态（未选/半选/全选）
+- 未加载完的节点 checkbox 禁用，加载失败的节点持续禁用不阻塞其他节点
 
 ## 阶段进度
 

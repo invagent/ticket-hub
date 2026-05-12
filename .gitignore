@@ -50,3 +50,6 @@ playwright/.cache/
 
 # NOTE: frontend/src/api/types.ts IS committed (CI drift gate diffs against it).
 # Do not add it to .gitignore.
+
+# Local private memory (personal notes, not for sharing)
+CLAUDE.local.md
