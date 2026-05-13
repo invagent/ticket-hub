@@ -547,6 +547,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/config-warnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Config Warnings */
+        get: operations["list_config_warnings_api_supervisor_config_warnings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/reroute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reroute Tickets */
+        post: operations["reroute_tickets_api_supervisor_reroute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets": {
         parameters: {
             query?: never;
@@ -777,6 +811,22 @@ export interface components {
             error?: string | null;
             /** Required */
             required: boolean;
+        };
+        /** ConfigWarningItem */
+        ConfigWarningItem: {
+            /** Code */
+            code: string;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Module */
+            module: string | null;
+            /** Detail */
+            detail: string;
+        };
+        /** ConfigWarningsResponse */
+        ConfigWarningsResponse: {
+            /** Warnings */
+            warnings: components["schemas"]["ConfigWarningItem"][];
         };
         /** CountsOut */
         CountsOut: {
@@ -1392,6 +1442,35 @@ export interface components {
             closed_history_id: number | null;
             /** New History Id */
             new_history_id: number;
+        };
+        /** RerouteBody */
+        RerouteBody: {
+            /** Ticket Ids */
+            ticket_ids: number[];
+        };
+        /** RerouteItemOut */
+        RerouteItemOut: {
+            /** Ticket Id */
+            ticket_id: number;
+            /** Short Code */
+            short_code: string;
+            /** Success */
+            success: boolean;
+            /** Decision */
+            decision: string;
+            /** Assigned User Ids */
+            assigned_user_ids: number[];
+            /** Message */
+            message: string;
+        };
+        /** RerouteResponse */
+        RerouteResponse: {
+            /** Results */
+            results: components["schemas"]["RerouteItemOut"][];
+            /** Assigned Count */
+            assigned_count: number;
+            /** No Match Count */
+            no_match_count: number;
         };
         /** RoutingOut */
         RoutingOut: {
@@ -2852,6 +2931,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RelinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_config_warnings_api_supervisor_config_warnings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigWarningsResponse"];
+                };
+            };
+        };
+    };
+    reroute_tickets_api_supervisor_reroute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerouteResponse"];
                 };
             };
             /** @description Validation Error */
