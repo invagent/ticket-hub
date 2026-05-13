@@ -48,9 +48,6 @@ export interface paths {
         /**
          * Feishu Login Url
          * @description Return the Feishu OAuth2 authorize URL.
-         *
-         *     D0: returns the URL deterministically; full state token + nonce
-         *     handling lands in D1.
          */
         get: operations["feishu_login_url_api_auth_feishu_login_get"];
         put?: never;
@@ -68,15 +65,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
          * Feishu Callback
-         * @description Exchange Feishu auth code for our JWT.
+         * @description Exchange Feishu auth code for our JWT and redirect browser to frontend.
          *
-         *     D0: NOT IMPLEMENTED — returns 501. D1 wires the full flow.
+         *     Browser arrives here as a GET (Feishu's standard OAuth2 redirect). We
+         *     exchange the code, sign a JWT, and 302 to the frontend SPA with token
+         *     in URL fragment (so the token never reaches our server logs).
+         *
+         *     Side effect: upserts users row (creates on first login).
          */
-        post: operations["feishu_callback_api_auth_feishu_callback_post"];
+        get: operations["feishu_callback_api_auth_feishu_callback_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -110,7 +111,11 @@ export interface paths {
         /** List Product Lines */
         get: operations["list_product_lines_api_admin_product_lines_get"];
         put?: never;
-        post?: never;
+        /**
+         * Add Product Line
+         * @description Create a new product_line. UNIQUE on `code` → 409 on duplicate.
+         */
+        post: operations["add_product_line_api_admin_product_lines_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -491,6 +496,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings/default-pool-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Default Pool User */
+        get: operations["get_default_pool_user_api_admin_settings_default_pool_user_get"];
+        /** Put Default Pool User */
+        put: operations["put_default_pool_user_api_admin_settings_default_pool_user_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/inbox": {
         parameters: {
             query?: never;
@@ -780,24 +803,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/settings/default-pool-user": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Default Pool User */
-        get: operations["get_default_pool_user_api_admin_settings_default_pool_user_get"];
-        /** Put Default Pool User */
-        put: operations["put_default_pool_user_api_admin_settings_default_pool_user_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -906,6 +911,18 @@ export interface components {
             customer_dedup: components["schemas"]["CustomerDedupOut"];
             sla: components["schemas"]["SLAOut"];
             webhook_intake: components["schemas"]["WebhookIntakeOut"];
+        };
+        /** DefaultPoolUserIn */
+        DefaultPoolUserIn: {
+            /** User Id */
+            user_id: number | null;
+        };
+        /** DefaultPoolUserOut */
+        DefaultPoolUserOut: {
+            /** User Id */
+            user_id: number | null;
+            /** User Name */
+            user_name: string | null;
         };
         /** FeatureIn */
         FeatureIn: {
@@ -1397,6 +1414,10 @@ export interface components {
             name: string;
             /** Is Active */
             is_active: boolean;
+            /** Sla Reply Hours */
+            sla_reply_hours?: number | null;
+            /** Sla Resolve Hours */
+            sla_resolve_hours?: number | null;
         };
         /**
          * ProductLinePatch
@@ -1734,6 +1755,14 @@ export interface components {
             name: string;
             /** Email */
             email: string | null;
+            /** Mobile */
+            mobile: string | null;
+            /** Ksm Account */
+            ksm_account: string | null;
+            /** Zhichi Agent Id */
+            zhichi_agent_id: string | null;
+            /** Linear User Id */
+            linear_user_id: string | null;
             /** Role */
             role: string;
             /** Is Active */
@@ -1811,30 +1840,6 @@ export interface components {
             /** Target */
             target: string;
         };
-        /** DefaultPoolUserIn */
-        DefaultPoolUserIn: {
-            /** User Id */
-            user_id: number | null;
-        };
-        /** DefaultPoolUserOut */
-        DefaultPoolUserOut: {
-            /** User Id */
-            user_id: number | null;
-            /** User Name */
-            user_name: string | null;
-        };
-        /** TokenResponse */
-        TokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-            /** Expires In */
-            expires_in: number;
-        };
     };
     responses: never;
     parameters: never;
@@ -1906,7 +1911,7 @@ export interface operations {
             };
         };
     };
-    feishu_callback_api_auth_feishu_callback_post: {
+    feishu_callback_api_auth_feishu_callback_get: {
         parameters: {
             query: {
                 code: string;
@@ -1923,7 +1928,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1973,6 +1978,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductLineOut"][];
+                };
+            };
+        };
+    };
+    add_product_line_api_admin_product_lines_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductLineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductLineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2158,7 +2196,9 @@ export interface operations {
     };
     list_users_api_admin_users_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_inactive?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2172,6 +2212,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2840,6 +2889,59 @@ export interface operations {
             };
         };
     };
+    get_default_pool_user_api_admin_settings_default_pool_user_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultPoolUserOut"];
+                };
+            };
+        };
+    };
+    put_default_pool_user_api_admin_settings_default_pool_user_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultPoolUserIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultPoolUserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_inbox_api_supervisor_inbox_get: {
         parameters: {
             query?: {
@@ -3319,59 +3421,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IngestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_default_pool_user_api_admin_settings_default_pool_user_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DefaultPoolUserOut"];
-                };
-            };
-        };
-    };
-    put_default_pool_user_api_admin_settings_default_pool_user_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DefaultPoolUserIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DefaultPoolUserOut"];
                 };
             };
             /** @description Validation Error */
