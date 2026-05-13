@@ -18,7 +18,8 @@ export function TicketDetailPage() {
 
   const history = useQuery({
     queryKey: ["ticket-history", id],
-    queryFn: () => getByPath("/api/tickets/{ticket_id}/history", { ticket_id: id }),
+    queryFn: () =>
+      getByPath("/api/tickets/{ticket_id}/history", { ticket_id: id }),
     enabled: !Number.isNaN(id) && detail.isSuccess,
   });
 
@@ -28,7 +29,9 @@ export function TicketDetailPage() {
         ← 返回列表
       </Link>
       {detail.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
-      {detail.error && <p className="text-sm text-red-600">{String(detail.error)}</p>}
+      {detail.error && (
+        <p className="text-sm text-red-600">{String(detail.error)}</p>
+      )}
       {detail.data && (
         <>
           <header className="space-y-1">
@@ -49,7 +52,12 @@ export function TicketDetailPage() {
             <Field label="模块">{detail.data.module ?? "—"}</Field>
             <Field label="特性">{detail.data.feature ?? "—"}</Field>
             <Field label="产品线">{detail.data.product_line_code ?? "—"}</Field>
-            <Field label="负责人">{detail.data.assigned_user_id ?? "—"}</Field>
+            <Field label="负责人">
+              {detail.data.assigned_user_id
+                ? (detail.data.assigned_user_name ??
+                  `用户 #${detail.data.assigned_user_id}`)
+                : "—"}
+            </Field>
             <Field label="hub_issue">
               {detail.data.hub_issue_id ? (
                 <Link
@@ -62,7 +70,24 @@ export function TicketDetailPage() {
                 "—"
               )}
             </Field>
-            <Field label="客户">{detail.data.customer_identity_id ?? "—"}</Field>
+            <Field label="客户">
+              {detail.data.customer_identity_id ? (
+                detail.data.customer_id ? (
+                  <Link
+                    to={`/customers/${detail.data.customer_id}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {detail.data.customer_display_name ??
+                      `客户 #${detail.data.customer_id}`}
+                  </Link>
+                ) : (
+                  (detail.data.customer_display_name ??
+                  `身份 #${detail.data.customer_identity_id}`)
+                )
+              ) : (
+                "—"
+              )}
+            </Field>
             <Field label="收到时间">
               {detail.data.received_at
                 ? new Date(detail.data.received_at).toLocaleString()
@@ -101,7 +126,9 @@ export function TicketDetailPage() {
               <p className="text-xs text-gray-400">加载时间线…</p>
             )}
             {history.error && (
-              <p className="text-xs text-red-600">时间线加载失败：{String(history.error)}</p>
+              <p className="text-xs text-red-600">
+                时间线加载失败：{String(history.error)}
+              </p>
             )}
             {history.data && history.data.items.length === 0 && (
               <p className="text-xs text-gray-400">暂无变更记录</p>
@@ -131,7 +158,9 @@ function TimelineRow({ event }: { event: HistoryEvent }) {
         </span>
         <div className="space-y-0.5 flex-1">
           <div>
-            <span className="font-mono text-gray-500">{event.from_status ?? "∅"}</span>
+            <span className="font-mono text-gray-500">
+              {event.from_status ?? "∅"}
+            </span>
             <span className="mx-2">→</span>
             <span className="font-mono">{event.to_status}</span>
           </div>
@@ -174,7 +203,13 @@ function TimelineRow({ event }: { event: HistoryEvent }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <div className="text-xs text-gray-500">{label}</div>
