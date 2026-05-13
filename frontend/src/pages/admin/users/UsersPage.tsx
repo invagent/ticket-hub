@@ -56,6 +56,12 @@ export function UsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 
+  const revive = useMutation({
+    mutationFn: async (id: number) =>
+      api.post("/api/admin/users/{user_id}/revive", { user_id: id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
@@ -187,7 +193,7 @@ export function UsersPage() {
                     >
                       详情
                     </Link>
-                    {u.is_active && (
+                    {u.is_active ? (
                       <button
                         onClick={() => {
                           if (confirm(`停用 ${u.name}（id=${u.id}）？`)) {
@@ -198,6 +204,18 @@ export function UsersPage() {
                         disabled={del.isPending}
                       >
                         停用
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (confirm(`启用 ${u.name}（id=${u.id}）？`)) {
+                            revive.mutate(u.id);
+                          }
+                        }}
+                        className="text-green-600 hover:underline disabled:opacity-50"
+                        disabled={revive.isPending}
+                      >
+                        启用
                       </button>
                     )}
                   </td>

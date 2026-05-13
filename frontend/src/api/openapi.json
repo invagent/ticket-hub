@@ -4492,6 +4492,48 @@
         ]
       }
     },
+    "/api/admin/users/{user_id}/revive": {
+      "post": {
+        "operationId": "revive_user_api_admin_users__user_id__revive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revive User",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
     "/api/admin/users/{user_id}/supervisor": {
       "delete": {
         "operationId": "clear_supervisor_api_admin_users__user_id__supervisor_delete",

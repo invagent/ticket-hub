@@ -426,6 +426,22 @@ def delete_user(
     logger.info("admin_user_soft_deleted", target_user_id=user_id, by=admin.user_id)
 
 
+@router.post("/{user_id}/revive", response_model=UserOut)
+def revive_user(
+    user_id: int,
+    admin: AuthedUser = Depends(require_admin),
+    db: Session = Depends(get_session),
+) -> UserOut:
+    repo = UserRepository(db)
+    user = repo.revive(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    db.commit()
+    db.refresh(user)
+    logger.info("admin_user_revived", target_user_id=user_id, by=admin.user_id)
+    return UserOut.model_validate(user)
+
+
 # ---- supervisor ------------------------------------------------------
 
 

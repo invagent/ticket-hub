@@ -28,7 +28,7 @@ class UpsertResult:
     """Outcome of a single upsert operation."""
 
     user: User
-    created: bool       # True = new row, False = existing row (possibly updated)
+    created: bool  # True = new row, False = existing row (possibly updated)
     fields_updated: list[str]  # field names changed on existing row (empty if created)
 
 
@@ -160,5 +160,15 @@ class UserRepository:
             return None
         u.is_active = False
         u.deleted_at = datetime.now(UTC)
+        self._db.flush()
+        return u
+
+    def revive(self, user_id: int) -> User | None:
+        """Restore a soft-deleted user; returns the row, or None if not found."""
+        u = self._db.get(User, user_id)
+        if u is None:
+            return None
+        u.is_active = True
+        u.deleted_at = None
         self._db.flush()
         return u
