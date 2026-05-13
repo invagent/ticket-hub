@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, type InboxItem, ApiError } from "@/api/client";
+import type { components } from "@/api/types";
+
+type ConfigWarningItem = components["schemas"]["ConfigWarningItem"];
 
 /**
  * Supervisor work-bench: pending notifications + inline actions.
@@ -17,6 +20,11 @@ export function SupervisorPage() {
     queryKey: ["supervisor", "inbox"],
     queryFn: () => api.get("/api/supervisor/inbox"),
   });
+  const warnings = useQuery({
+    queryKey: ["supervisor", "config-warnings"],
+    queryFn: () => api.get("/api/supervisor/config-warnings"),
+    staleTime: 60_000,
+  });
 
   return (
     <div className="space-y-4">
@@ -29,6 +37,12 @@ export function SupervisorPage() {
           刷新
         </button>
       </header>
+      {warnings.data && warnings.data.warnings.length > 0 && (
+        <ConfigWarningsBanner
+          warnings={warnings.data.warnings}
+          onWarningsChange={() => warnings.refetch()}
+        />
+      )}
       {inbox.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
       {inbox.error && (
         <p className="text-sm text-red-600">加载失败：{String(inbox.error)}</p>
@@ -41,11 +55,128 @@ export function SupervisorPage() {
           <NotificationCard
             key={item.id}
             item={item}
-            onAck={() => qc.invalidateQueries({ queryKey: ["supervisor", "inbox"] })}
+            onAck={() =>
+              qc.invalidateQueries({ queryKey: ["supervisor", "inbox"] })
+            }
           />
         ))}
       </ul>
     </div>
+  );
+}
+
+function ConfigWarningsBanner({
+  warnings,
+  onWarningsChange,
+}: {
+  warnings: ConfigWarningItem[];
+  onWarningsChange: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="border border-yellow-400 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-700 rounded-lg p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+          配置警告（{warnings.length} 项）
+        </span>
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          className="text-xs text-yellow-700 dark:text-yellow-300 hover:underline"
+        >
+          {collapsed ? "展开" : "收起"}
+        </button>
+      </div>
+      {!collapsed && (
+        <ul className="space-y-2">
+          {warnings.map((w, i) =>
+            w.code === "no_default_pool" ? (
+              <DefaultPoolWarningItem key={i} onSaved={onWarningsChange} />
+            ) : (
+              <li
+                key={i}
+                className="text-xs text-yellow-700 dark:text-yellow-300 flex gap-2"
+              >
+                <span className="font-mono bg-yellow-100 dark:bg-yellow-900 px-1 rounded shrink-0">
+                  {w.code}
+                </span>
+                <span>{w.detail}</span>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function DefaultPoolWarningItem({ onSaved }: { onSaved: () => void }) {
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const users = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+  });
+
+  const currentSetting = useQuery({
+    queryKey: ["admin", "settings", "default-pool-user"],
+    queryFn: () => api.get("/api/admin/settings/default-pool-user"),
+    staleTime: 30_000,
+  });
+
+  // Pre-fill selector with current DB value when loaded
+  if (currentSetting.data?.user_id != null && selectedUserId === "") {
+    setSelectedUserId(String(currentSetting.data.user_id));
+  }
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put("/api/admin/settings/default-pool-user", {
+        user_id: selectedUserId ? Number(selectedUserId) : null,
+      }),
+    onSuccess: () => {
+      setSaveError(null);
+      onSaved();
+    },
+    onError: (e) => setSaveError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <li className="text-xs text-yellow-700 dark:text-yellow-300 space-y-2">
+      <div className="flex gap-2 items-start">
+        <span className="font-mono bg-yellow-100 dark:bg-yellow-900 px-1 rounded shrink-0 mt-0.5">
+          no_default_pool
+        </span>
+        <span>系统未配置兜底处理人，无分工匹配的工单将无人处理。</span>
+      </div>
+      <div className="flex gap-2 items-center">
+        <select
+          value={selectedUserId}
+          onChange={(e) => setSelectedUserId(e.target.value)}
+          disabled={save.isPending || users.isLoading}
+          className="text-xs border border-yellow-400 dark:border-yellow-600 rounded px-2 py-1 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 disabled:opacity-50"
+        >
+          <option value="">— 选择处理人 —</option>
+          {(
+            users.data as { users?: { id: number; name: string }[] } | undefined
+          )?.users?.map((u) => (
+            <option key={u.id} value={String(u.id)}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => save.mutate()}
+          disabled={save.isPending || !selectedUserId}
+          className="text-xs px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded disabled:opacity-50"
+        >
+          {save.isPending ? "保存中…" : "保存"}
+        </button>
+      </div>
+      {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+    </li>
   );
 }
 
@@ -108,12 +239,13 @@ function NotificationCard({
           >
             {ack.isPending ? "处理中…" : "已确认"}
           </button>
-          {item.related_entity_type === "ticket" && item.related_entity_id != null && (
-            <RelinkButton
-              ticketId={item.related_entity_id}
-              onSuccess={() => onAck()}
-            />
-          )}
+          {item.related_entity_type === "ticket" &&
+            item.related_entity_id != null && (
+              <RelinkButton
+                ticketId={item.related_entity_id}
+                onSuccess={() => onAck()}
+              />
+            )}
         </div>
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
