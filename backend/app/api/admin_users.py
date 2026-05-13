@@ -330,10 +330,12 @@ def sync_from_feishu(
 
 @router.get("", response_model=list[UserOut])
 def list_users(
+    include_inactive: bool = False,
     _admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> list[UserOut]:
-    rows = UserRepository(db).list_active()
+    repo = UserRepository(db)
+    rows = repo.list_all() if include_inactive else repo.list_active()
     return [UserOut.model_validate(r) for r in rows]
 
 

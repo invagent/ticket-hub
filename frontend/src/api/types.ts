@@ -255,10 +255,31 @@ export interface paths {
         /**
          * List Feishu Departments
          * @description List immediate child departments of `parent_id` (default: root='0').
-         *
-         *     Frontend uses this to lazily expand the org tree node-by-node.
          */
         get: operations["list_feishu_departments_api_admin_users_feishu_departments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/feishu/departments/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Departments Tree
+         * @description Return all departments under root as a flat list with parent_department_id.
+         *
+         *     Uses fetch_child=True so Feishu returns the full hierarchy in one call.
+         *     Frontend builds the tree from parent_department_id relationships.
+         */
+        get: operations["list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -276,12 +297,7 @@ export interface paths {
         };
         /**
          * List Feishu Department Users
-         * @description List users directly under a Feishu department, marking which are
-         *     already in our local users table (`already_synced=True`) so the UI can
-         *     show them differently.
-         *
-         *     Uses `open_department_id` as `department_id` (Feishu accepts both for
-         *     most contact APIs, but open id is preferred for tenant-scoped browsing).
+         * @description List users directly under a Feishu department, annotated with sync status.
          */
         get: operations["list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get"];
         put?: never;
@@ -304,9 +320,6 @@ export interface paths {
         /**
          * Sync From Feishu
          * @description Bulk-pull users from Feishu contact API and upsert into local users.
-         *
-         *     Provide either `department_id` (sync all members of a Feishu dept) OR
-         *     `open_ids` (sync specific users). Mutually exclusive: must give one.
          */
         post: operations["sync_from_feishu_api_admin_users_sync_from_feishu_post"];
         delete?: never;
@@ -517,6 +530,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/config-warnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Config Warnings */
+        get: operations["list_config_warnings_api_supervisor_config_warnings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/inbox": {
         parameters: {
             query?: never;
@@ -562,6 +592,23 @@ export interface paths {
         put?: never;
         /** Relink Ticket */
         post: operations["relink_ticket_api_supervisor_relink_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/reroute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reroute Tickets */
+        post: operations["reroute_tickets_api_supervisor_reroute_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -747,6 +794,22 @@ export interface components {
             ok: boolean;
             /** Required */
             required: boolean;
+        };
+        /** ConfigWarningItem */
+        ConfigWarningItem: {
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+        };
+        /** ConfigWarningsResponse */
+        ConfigWarningsResponse: {
+            /** Warnings */
+            warnings: components["schemas"]["ConfigWarningItem"][];
         };
         /** CountsOut */
         CountsOut: {
@@ -1362,6 +1425,35 @@ export interface components {
             old_hub_issue_id: number | null;
             /** Ticket Id */
             ticket_id: number;
+        };
+        /** RerouteBody */
+        RerouteBody: {
+            /** Ticket Ids */
+            ticket_ids: number[];
+        };
+        /** RerouteItemOut */
+        RerouteItemOut: {
+            /** Assigned User Ids */
+            assigned_user_ids: number[];
+            /** Decision */
+            decision: string;
+            /** Message */
+            message: string;
+            /** Short Code */
+            short_code: string;
+            /** Success */
+            success: boolean;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** RerouteResponse */
+        RerouteResponse: {
+            /** Assigned Count */
+            assigned_count: number;
+            /** No Match Count */
+            no_match_count: number;
+            /** Results */
+            results: components["schemas"]["RerouteItemOut"][];
         };
         /** RoutingOut */
         RoutingOut: {
@@ -2242,7 +2334,9 @@ export interface operations {
     };
     list_users_api_admin_users_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_inactive?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2256,6 +2350,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2287,6 +2390,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuDeptOut"][];
                 };
             };
         };
@@ -2781,6 +2904,26 @@ export interface operations {
             };
         };
     };
+    list_config_warnings_api_supervisor_config_warnings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigWarningsResponse"];
+                };
+            };
+        };
+    };
     list_inbox_api_supervisor_inbox_get: {
         parameters: {
             query?: {
@@ -2876,6 +3019,39 @@ export interface operations {
             };
         };
     };
+    reroute_tickets_api_supervisor_reroute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerouteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerouteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_tickets_api_tickets_get: {
         parameters: {
             query?: {
@@ -2883,6 +3059,7 @@ export interface operations {
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
+                unassigned_only?: boolean;
                 customer_identity_id?: number | null;
                 hub_issue_id?: number | null;
                 page?: number;

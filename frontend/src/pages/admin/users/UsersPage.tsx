@@ -26,8 +26,12 @@ export function UsersPage() {
   const [showSync, setShowSync] = useState(false);
 
   const list = useQuery({
-    queryKey: QK,
-    queryFn: () => api.get("/api/admin/users"),
+    queryKey: [...QK, statusFilter],
+    queryFn: () =>
+      api.get(
+        "/api/admin/users",
+        statusFilter !== "active" ? { include_inactive: true } : undefined,
+      ),
   });
 
   const filtered = useMemo<UserRow[]>(() => {
