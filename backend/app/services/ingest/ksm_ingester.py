@@ -79,10 +79,15 @@ class KSMIngester:
             return IngestResult(
                 ticket_id=existing.id,
                 short_code=existing.short_code,
-                customer_id=(existing.customer_identity_id and self._customer_id_of(existing)) or 0,
+                customer_id=(
+                    existing.customer_identity_id and self._customer_id_of(existing)
+                )
+                or 0,
                 customer_identity_id=existing.customer_identity_id or 0,
                 routing_decision="dedup",
-                assigned_user_ids=[existing.assigned_user_id] if existing.assigned_user_id else [],
+                assigned_user_ids=(
+                    [existing.assigned_user_id] if existing.assigned_user_id else []
+                ),
                 deduped=True,
             )
 
@@ -100,13 +105,18 @@ class KSMIngester:
             status="received",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
+            product_line_code=payload.get("productLineCode")
+            or payload.get("product_line"),
             module=payload.get("moduleName") or payload.get("module"),
             feature=payload.get("featureName") or payload.get("feature"),
             title=payload.get("title"),
             body=payload.get("content") or payload.get("description"),
             reporter={
                 "name": payload.get("accountName"),
+                "feedback_user": payload.get("feedbackUser"),
+                "linkman": (payload.get("_subscribe_callback") or {})
+                .get("customerInfo", {})
+                .get("linkman"),
                 "email": payload.get("email"),
                 "mobile": payload.get("mobile"),
                 "source_user_id": payload.get("account"),

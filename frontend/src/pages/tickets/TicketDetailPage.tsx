@@ -88,6 +88,7 @@ export function TicketDetailPage() {
                 "—"
               )}
             </Field>
+            <Field label="提交人">{detail.data.reporter_name ?? "—"}</Field>
             <Field label="收到时间">
               {detail.data.received_at
                 ? new Date(detail.data.received_at).toLocaleString()
@@ -215,5 +216,39 @@ function Field({
       <div className="text-xs text-gray-500">{label}</div>
       <div className="text-sm">{children}</div>
     </div>
+  );
+}
+
+const TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  Operation: {
+    label: "运营",
+    color:
+      "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200",
+  },
+  Bug_fix: {
+    label: "Bug",
+    color: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200",
+  },
+  Demand: {
+    label: "需求",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",
+  },
+  Internal_task: {
+    label: "内部",
+    color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  },
+};
+
+export function PredictedTypeBadge({ type }: { type: string }) {
+  const meta = TYPE_LABELS[type] ?? {
+    label: type,
+    color: "bg-gray-100 text-gray-600",
+  };
+  return (
+    <span
+      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${meta.color}`}
+    >
+      {meta.label}
+    </span>
   );
 }

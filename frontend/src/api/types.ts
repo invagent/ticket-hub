@@ -1393,10 +1393,12 @@ export interface components {
          * ProductLinePatch
          * @description PATCH body for /api/admin/product-lines/{code}.
          *
-         *     NULL on either field clears the override (falls back to SLAWatcher
+         *     NULL on SLA fields clears the override (falls back to SLAWatcher
          *     defaults). Pass `0` is rejected — use `null` to clear.
          */
         ProductLinePatch: {
+            /** Name */
+            name?: string | null;
             /** Sla Reply Hours */
             sla_reply_hours?: number | null;
             /** Sla Resolve Hours */
@@ -1592,6 +1594,10 @@ export interface components {
             feature: string | null;
             /** Assigned User Id */
             assigned_user_id: number | null;
+            /** Assigned User Name */
+            assigned_user_name?: string | null;
+            /** Predicted Type */
+            predicted_type?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
             /** Received At */
@@ -1631,12 +1637,12 @@ export interface components {
             cached_reply_content: string | null;
             /** Cached Reply Version */
             cached_reply_version: number | null;
-            /** Assigned User Name */
-            assigned_user_name?: string | null;
             /** Customer Display Name */
             customer_display_name?: string | null;
             /** Customer Id */
             customer_id?: number | null;
+            /** Reporter Name */
+            reporter_name?: string | null;
         };
         /** TicketListResponse */
         TicketListResponse: {
@@ -1677,6 +1683,10 @@ export interface components {
             feature: string | null;
             /** Assigned User Id */
             assigned_user_id: number | null;
+            /** Assigned User Name */
+            assigned_user_name?: string | null;
+            /** Predicted Type */
+            predicted_type?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
             /** Received At */

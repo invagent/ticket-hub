@@ -24,6 +24,8 @@ from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
 
+from sqlalchemy import select
+
 router = APIRouter()
 
 
@@ -40,6 +42,8 @@ class TicketSummary(BaseModel):
     module: str | None
     feature: str | None
     assigned_user_id: int | None
+    assigned_user_name: str | None = None
+    predicted_type: str | None = None
     hub_issue_id: int | None
     received_at: datetime | None
     customer_replied_at: datetime | None
@@ -65,6 +69,7 @@ class TicketDetail(TicketSummary):
     assigned_user_name: str | None = None
     customer_display_name: str | None = None
     customer_id: int | None = None
+    reporter_name: str | None = None
 
 
 class TicketListResponse(BaseModel):
@@ -98,8 +103,21 @@ def list_tickets(
         page=page,
         page_size=page_size,
     )
+    # batch-load user names to avoid N+1
+    user_ids = {t.assigned_user_id for t in p.items if t.assigned_user_id is not None}
+    user_name_map: dict[int, str] = {}
+    if user_ids:
+        rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
+        user_name_map = {r.id: r.name for r in rows}
+
+    def _to_summary(t: Any) -> TicketSummary:
+        s = TicketSummary.model_validate(t)
+        if t.assigned_user_id is not None:
+            s.assigned_user_name = user_name_map.get(t.assigned_user_id)
+        return s
+
     return TicketListResponse(
-        items=[TicketSummary.model_validate(t) for t in p.items],
+        items=[_to_summary(t) for t in p.items],
         total=p.total,
         page=p.page,
         page_size=p.page_size,
@@ -131,6 +149,10 @@ def get_ticket(
                 )
             else:
                 detail.customer_display_name = identity.raw_name
+    if ticket.reporter and isinstance(ticket.reporter, dict):
+        detail.reporter_name = ticket.reporter.get(
+            "feedback_user"
+        ) or ticket.reporter.get("linkman")
     return detail
 
 
