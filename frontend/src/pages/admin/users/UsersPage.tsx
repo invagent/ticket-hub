@@ -21,6 +21,7 @@ export function UsersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [showSync, setShowSync] = useState(false);
 
@@ -32,6 +33,8 @@ export function UsersPage() {
   const filtered = useMemo<UserRow[]>(() => {
     const items = (list.data ?? []) as UserRow[];
     return items.filter((u) => {
+      if (statusFilter === "active" && !u.is_active) return false;
+      if (statusFilter === "inactive" && u.is_active) return false;
       if (roleFilter && u.role !== roleFilter) return false;
       if (search) {
         const q = search.toLowerCase();
@@ -41,7 +44,7 @@ export function UsersPage() {
       }
       return true;
     });
-  }, [list.data, search, roleFilter]);
+  }, [list.data, search, roleFilter, statusFilter]);
 
   const del = useMutation({
     mutationFn: async (id: number) =>
@@ -86,6 +89,15 @@ export function UsersPage() {
           <option value="supervisor">主管</option>
           <option value="assignee">处理人</option>
           <option value="member">普通成员</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-28 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+        >
+          <option value="active">在岗</option>
+          <option value="inactive">已停用</option>
+          <option value="">全部状态</option>
         </select>
       </div>
 
