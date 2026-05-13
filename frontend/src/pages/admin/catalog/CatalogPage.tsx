@@ -31,7 +31,10 @@ export function CatalogPage() {
           >
             产品线 / 模块
           </TabButton>
-          <TabButton active={tab === "features"} onClick={() => setTab("features")}>
+          <TabButton
+            active={tab === "features"}
+            onClick={() => setTab("features")}
+          >
             Feature
           </TabButton>
         </nav>
@@ -105,10 +108,7 @@ function ProductLineModulesTab() {
   return (
     <div className="space-y-6 pt-4">
       <ProductLineAddForm onAdded={invalidate} />
-      <ModuleAddForm
-        productLines={lines.data ?? []}
-        onAdded={invalidate}
-      />
+      <ModuleAddForm productLines={lines.data ?? []} onAdded={invalidate} />
 
       {(lines.isLoading || modules.isLoading) && (
         <p className="text-sm text-gray-500">加载中…</p>
@@ -280,7 +280,11 @@ function ModuleAddForm({
         }}
         className="flex gap-2 text-sm items-start p-3 border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 rounded"
       >
-        <ProductLineSelect value={pl} onChange={setPl} placeholder="选择产品线" />
+        <ProductLineSelect
+          value={pl}
+          onChange={setPl}
+          placeholder="选择产品线"
+        />
         <input
           placeholder="模块名 (e.g. 数电开票)"
           value={name}
@@ -360,7 +364,7 @@ function ProductLineGroup({
   modules: Module[];
   onChanged: () => void;
 }) {
-  // Inline editable SLA inputs.
+  const [name, setName] = useState(pl.name);
   const [reply, setReply] = useState(
     pl.sla_reply_hours == null ? "" : String(pl.sla_reply_hours),
   );
@@ -374,6 +378,7 @@ function ProductLineGroup({
       rawRequest(`/api/admin/product-lines/${encodeURIComponent(pl.code)}`, {
         method: "PATCH",
         body: JSON.stringify({
+          name: name.trim() || pl.name,
           sla_reply_hours: reply === "" ? null : Number(reply),
           sla_resolve_hours: resolve === "" ? null : Number(resolve),
         }),
@@ -394,7 +399,8 @@ function ProductLineGroup({
     onSuccess: onChanged,
     onError: (e) => {
       if (e instanceof ApiError) {
-        if (e.status === 409) setError("该产品线还有模块，先删完模块再删产品线");
+        if (e.status === 409)
+          setError("该产品线还有模块，先删完模块再删产品线");
         else setError(`${e.status} ${e.message}`);
       } else setError(String(e));
     },
@@ -421,14 +427,16 @@ function ProductLineGroup({
         >
           {i === 0 && (
             <>
-              <td
-                className="p-2 font-mono text-xs align-top"
-                rowSpan={rowSpan}
-              >
+              <td className="p-2 font-mono text-xs align-top" rowSpan={rowSpan}>
                 {pl.code}
               </td>
               <td className="p-2 align-top" rowSpan={rowSpan}>
-                {pl.name}
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="产品线名称"
+                  className="w-36 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
+                />
               </td>
               <td className="p-2 align-top" rowSpan={rowSpan}>
                 <input
@@ -470,11 +478,13 @@ function ProductLineGroup({
                   disabled={patch.isPending}
                   className="text-xs text-blue-600 hover:underline disabled:opacity-50"
                 >
-                  {patch.isPending ? "保存中…" : "保存 SLA"}
+                  {patch.isPending ? "保存中…" : "保存"}
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`删除产品线 ${pl.code}？该产品线下不能有模块`)) {
+                    if (
+                      confirm(`删除产品线 ${pl.code}？该产品线下不能有模块`)
+                    ) {
                       delPl.mutate();
                     }
                   }}
@@ -516,7 +526,8 @@ function FeaturesTab() {
     queryKey: ["admin", "features", "all"] as const,
     queryFn: () => api.get("/api/admin/features", { active_only: false }),
   });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "features"] });
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ["admin", "features"] });
 
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -590,12 +601,17 @@ function FeaturesTab() {
           <tbody>
             {list.data.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-3 text-center text-sm text-gray-400">
+                <td
+                  colSpan={4}
+                  className="p-3 text-center text-sm text-gray-400"
+                >
                   无
                 </td>
               </tr>
             ) : (
-              list.data.map((f) => <FeatureRow key={f.id} f={f} onDeleted={invalidate} />)
+              list.data.map((f) => (
+                <FeatureRow key={f.id} f={f} onDeleted={invalidate} />
+              ))
             )}
           </tbody>
         </table>
@@ -612,7 +628,8 @@ function FeatureRow({
   onDeleted: () => void;
 }) {
   const del = useMutation({
-    mutationFn: () => deleteByPath("/api/admin/features/{feature_id}", { feature_id: f.id }),
+    mutationFn: () =>
+      deleteByPath("/api/admin/features/{feature_id}", { feature_id: f.id }),
     onSuccess: onDeleted,
   });
   return (

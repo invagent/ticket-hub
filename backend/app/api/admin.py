@@ -46,10 +46,11 @@ class ProductLineOut(BaseModel):
 class ProductLinePatch(BaseModel):
     """PATCH body for /api/admin/product-lines/{code}.
 
-    NULL on either field clears the override (falls back to SLAWatcher
+    NULL on SLA fields clears the override (falls back to SLAWatcher
     defaults). Pass `0` is rejected — use `null` to clear.
     """
 
+    name: str | None = Field(default=None, min_length=1, max_length=128)
     sla_reply_hours: int | None = Field(default=None, ge=1, le=168)
     sla_resolve_hours: int | None = Field(default=None, ge=1, le=168)
     is_active: bool | None = None
@@ -118,7 +119,9 @@ def delete_product_line(
     """Hard delete. Refuses if the product_line still has modules registered
     (catalog FK) — admin must clean up first to prevent orphaned scopes /
     tickets pointing at a vanished product_line."""
-    pl = db.execute(select(ProductLine).where(ProductLine.code == code)).scalar_one_or_none()
+    pl = db.execute(
+        select(ProductLine).where(ProductLine.code == code)
+    ).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404, detail="product_line not found")
     has_modules = db.execute(
@@ -156,7 +159,9 @@ def patch_product_line(
     Send `null` to a field to clear the override (revert to SLAWatcher
     builtin default).
     """
-    pl = db.execute(select(ProductLine).where(ProductLine.code == code)).scalar_one_or_none()
+    pl = db.execute(
+        select(ProductLine).where(ProductLine.code == code)
+    ).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404, detail="product_line not found")
 

@@ -3,6 +3,8 @@
   GET  /api/supervisor/inbox                       — pending notifications
   POST /api/supervisor/notifications/{id}/ack      — mark acknowledged
   POST /api/supervisor/relink                      — re-link ticket↔hub_issue
+  GET  /api/supervisor/config-warnings             — system configuration gaps
+  POST /api/supervisor/reroute                     — re-trigger routing for unassigned tickets
 
 All endpoints require role IN ('supervisor', 'admin').
 """
@@ -13,13 +15,14 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.logging import get_logger
 from app.db import get_session
 from app.repositories.notification_log import NotificationLogRepository
+from app.services.supervisor.config_warnings import get_config_warnings
 from app.services.supervisor.relink import (
     HubIssueNotFoundError,
     PermissionDeniedError,
@@ -27,6 +30,7 @@ from app.services.supervisor.relink import (
     SupervisorRelinkService,
     TicketNotFoundError,
 )
+from app.services.supervisor.reroute import RerouteRequest, RerouteService
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -67,6 +71,36 @@ class RelinkResponse(BaseModel):
     no_op: bool
     closed_history_id: int | None
     new_history_id: int
+
+
+class ConfigWarningItem(BaseModel):
+    code: str
+    product_line_code: str | None
+    module: str | None
+    detail: str
+
+
+class ConfigWarningsResponse(BaseModel):
+    warnings: list[ConfigWarningItem]
+
+
+class RerouteBody(BaseModel):
+    ticket_ids: list[int] = Field(..., min_length=1, max_length=50)
+
+
+class RerouteItemOut(BaseModel):
+    ticket_id: int
+    short_code: str
+    success: bool
+    decision: str
+    assigned_user_ids: list[int]
+    message: str
+
+
+class RerouteResponse(BaseModel):
+    results: list[RerouteItemOut]
+    assigned_count: int
+    no_match_count: int
 
 
 # ---- endpoints ------------------------------------------------------------
@@ -111,7 +145,8 @@ def ack_notification(
         # Non-recipients cannot ack each other's notifications (audit cleanliness).
         # Admin override could be added later if needed.
         raise HTTPException(
-            status_code=403, detail="cannot ack a notification addressed to another user"
+            status_code=403,
+            detail="cannot ack a notification addressed to another user",
         )
     if row.acknowledged_at is not None:
         return AckResponse(notification_id=row.id, acknowledged_at=row.acknowledged_at)
@@ -156,4 +191,60 @@ def relink_ticket(
         no_op=result.no_op,
         closed_history_id=result.closed_history_id,
         new_history_id=result.new_history_id,
+    )
+
+
+@router.get("/config-warnings", response_model=ConfigWarningsResponse)
+def list_config_warnings(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ConfigWarningsResponse:
+    items = get_config_warnings(db)
+    return ConfigWarningsResponse(
+        warnings=[
+            ConfigWarningItem(
+                code=w.code,
+                product_line_code=w.product_line_code,
+                module=w.module,
+                detail=w.detail,
+            )
+            for w in items
+        ]
+    )
+
+
+@router.post("/reroute", response_model=RerouteResponse)
+def reroute_tickets(
+    body: RerouteBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> RerouteResponse:
+    result = RerouteService(db).reroute(
+        RerouteRequest(
+            ticket_ids=body.ticket_ids,
+            operator_user_id=user.user_id,
+        )
+    )
+    db.commit()
+    logger.info(
+        "supervisor_reroute",
+        ticket_ids=body.ticket_ids,
+        assigned_count=result.assigned_count,
+        no_match_count=result.no_match_count,
+        operator_user_id=user.user_id,
+    )
+    return RerouteResponse(
+        results=[
+            RerouteItemOut(
+                ticket_id=r.ticket_id,
+                short_code=r.short_code,
+                success=r.success,
+                decision=r.decision,
+                assigned_user_ids=r.assigned_user_ids,
+                message=r.message,
+            )
+            for r in result.results
+        ],
+        assigned_count=result.assigned_count,
+        no_match_count=result.no_match_count,
     )

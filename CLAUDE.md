@@ -183,6 +183,61 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 - 树节点支持 checkbox 勾选，递归选中子部门所有可同步成员，支持三态（未选/半选/全选）
 - 未加载完的节点 checkbox 禁用，加载失败的节点持续禁用不阻塞其他节点
 
+## 工单入库自动 upsert 产品线/模块（2026-05-12）
+
+- 工单入库时，若 `product_line_code` 或 `module` 不在 `product_lines`/`modules` 表，自动创建（`catalog_upsert.py`）
+- 使用 `INSERT ... ON CONFLICT DO NOTHING`，并发安全，不需要手动维护种子数据
+- 新创建的产品线/模块无处理人，路由落 `default_pool`
+- 三个 Ingester（KSM/Zhichi/Zammad）均已接入，在 dedup 检查之后、Ticket 构造之前调用
+
+## 主管工作台配置警告（2026-05-12）
+
+- `GET /api/supervisor/config-warnings` 返回系统配置问题列表（require_supervisor）
+- 检查项1：有 module 但 `assignment_scopes_module` 无处理人 → 提示去「管理后台 → 分工配置」
+- 检查项2：未配置 `DEFAULT_POOL_USER_ID` → 提示联系运维设置 `.env`
+- 前端主管工作台顶部显示黄色警告 Banner（可折叠）
+
+## 重新触发分配（2026-05-13）
+
+- `POST /api/supervisor/reroute`（require_supervisor）：对 1-50 条工单重新执行路由
+- 复用现有 `Router` 逻辑，写 `status_history` 审计（changed_by="system:reroute"）
+- 路由仍无匹配时返回 `no_match` 提示，不报错
+- 前端工单列表页新增：「仅未分配」筛选、checkbox 多选（仅主管/管理员）、底部浮动操作栏、结果弹窗
+
+## `sources` 表种子数据（2026-05-12）
+
+生产数据库 `sources` 表需手动插入种子数据，否则 `customer_identities` FK 约束失败：
+```python
+# 在服务器上执行
+from app.models import Source
+db.add(Source(code="ksm", name="KSM"))
+db.add(Source(code="zhichi", name="智齿"))
+db.add(Source(code="zammad", name="Zammad"))
+db.add(Source(code="linear", name="Linear"))
+db.commit()
+```
+
+## `DEFAULT_POOL_USER_ID` 配置
+
+`backend/app/config.py` 中 `default_pool_user_id: int | None = None`，通过 `.env` 设置 `DEFAULT_POOL_USER_ID=<用户ID>`。未配置时路由无匹配的工单 `assigned_user_id` 为 NULL，主管工作台会显示警告。
+
+## 用户管理状态筛选与启用（2026-05-13）
+
+- 用户列表页新增状态筛选下拉（在岗 / 已停用 / 全部状态），默认显示"在岗"
+- `GET /api/admin/users` 新增 `include_inactive: bool = False` 参数，切到"已停用"或"全部"时前端传 `include_inactive=true`
+- 已停用用户行显示绿色"启用"按钮，调用 `POST /api/admin/users/{user_id}/revive` 恢复
+- `UserRepository` 新增 `revive()` 方法（清除 `deleted_at`，设 `is_active=True`）
+- 注意：前端路径参数替换必须用 `postByPath`，不能用 `api.post`（后者不替换 `{user_id}`）
+
 ## 阶段进度
 
 D0✅ D1✅ D2✅ D3🟡（A/B/C 完成，D/E 待开工）D4~收尾⬜。当前分支：`feat/d1-identity-routing`。
+
+## AI 分类结果展示（2026-05-13）
+
+- `TicketSummary` 新增 `predicted_type`、`predicted_confidence`、`classified_at`、`assigned_user_name` 四个字段
+- `list_tickets` 接口批量查询 `assigned_user_name`（一次额外 IN 查询，不影响性能）
+- 工单列表页新增「AI 分类」列，显示彩色标签（Bug 修复=红、需求=蓝、运营=黄、内部任务=灰），未分类显示「未分类」
+- 工单列表页「分配」列改为显示用户名，找不到时降级显示 `#ID`
+- 工单详情页基本信息区新增「AI 分类」（标签+置信度百分比）和「分类时间」字段
+- `PredictedTypeBadge` 组件定义在 `TicketDetailPage.tsx`，列表页 import 复用

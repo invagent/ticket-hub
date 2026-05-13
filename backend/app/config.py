@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # ---- Webhook auth ----
     webhook_access_token: str = ""
 
+    # ---- Routing ----
+    default_pool_user_id: int | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

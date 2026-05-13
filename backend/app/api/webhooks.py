@@ -145,7 +145,9 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
     ingested_ticket_id: int | None = None
     try:
         try:
-            result = KSMIngester(db).ingest(payload)
+            result = KSMIngester(
+                db, default_pool_user_id=settings.default_pool_user_id
+            ).ingest(payload)
         except KSMIngestError as e:
             db.rollback()
             logger.warning(
@@ -206,9 +208,7 @@ async def ksm_webhook(
     subscribe_num = payload.get("subscribeNum")
 
     is_lightweight_ping = bool(bill_id and notice_num and subscribe_num)
-    looks_like_lightweight = any(
-        payload.get(k) for k in ("noticeNum", "subscribeNum")
-    )
+    looks_like_lightweight = any(payload.get(k) for k in ("noticeNum", "subscribeNum"))
 
     if is_lightweight_ping:
         # Store the LATEST pair (overwrite on every push) so concurrent
@@ -242,7 +242,9 @@ async def ksm_webhook(
         logger.warning("ksm_webhook_full_payload_missing_billid")
         return KSMAck(code=0)
     try:
-        result = KSMIngester(db).ingest(payload)
+        result = KSMIngester(
+            db, default_pool_user_id=get_settings().default_pool_user_id
+        ).ingest(payload)
     except KSMIngestError as e:
         logger.warning(
             "ksm_webhook_sync_validation_failed", bill_id=bill_id, error=str(e)
@@ -275,7 +277,9 @@ async def zhichi_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZhichiIngester(db).ingest(payload)
+        result = ZhichiIngester(
+            db, default_pool_user_id=get_settings().default_pool_user_id
+        ).ingest(payload)
     except ZhichiIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()
@@ -311,7 +315,9 @@ async def zammad_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZammadIngester(db).ingest(payload)
+        result = ZammadIngester(
+            db, default_pool_user_id=get_settings().default_pool_user_id
+        ).ingest(payload)
     except ZammadIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()

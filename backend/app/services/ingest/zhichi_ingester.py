@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.ingest.catalog_upsert import upsert_catalog
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.routing.router import Router, RouteRequest
@@ -67,12 +68,23 @@ class ZhichiIngester:
                 customer_id=self._customer_id_of(existing),
                 customer_identity_id=existing.customer_identity_id or 0,
                 routing_decision="dedup",
-                assigned_user_ids=[existing.assigned_user_id] if existing.assigned_user_id else [],
+                assigned_user_ids=(
+                    [existing.assigned_user_id] if existing.assigned_user_id else []
+                ),
                 deduped=True,
             )
 
         identity_input = self._extract_identity(payload)
         resolve = self._resolver.resolve(identity_input)
+
+        # Ensure product_line and module rows exist (auto-create if new)
+        upsert_catalog(
+            self._db,
+            product_line_code=payload.get("productLineCode") or payload.get("product"),
+            module=payload.get("moduleName")
+            or payload.get("category")
+            or payload.get("subcategory"),
+        )
 
         short_code = self._tickets.next_short_code()
         ticket = Ticket(
@@ -160,7 +172,8 @@ class ZhichiIngester:
     def _extract_identity(payload: dict[str, Any]) -> IdentityInput:
         return IdentityInput(
             source_code="zhichi",
-            source_user_id=payload.get("customerid") or _customer_field(payload, "customerid"),
+            source_user_id=payload.get("customerid")
+            or _customer_field(payload, "customerid"),
             erp_uid=payload.get("erp_uid") or _customer_field(payload, "erp_uid"),
             email=_customer_field(payload, "email"),
             mobile=_customer_field(payload, "mobile"),

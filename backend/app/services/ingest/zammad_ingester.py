@@ -27,6 +27,7 @@ from adapters.zammad.types import ZammadTicket
 from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.ingest.catalog_upsert import upsert_catalog
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.routing.router import Router, RouteRequest
@@ -92,6 +93,13 @@ class ZammadIngester:
             raw_payload=payload,
         )
         resolve = self._resolver.resolve(identity_input)
+
+        # Ensure product_line and module rows exist (auto-create if new)
+        upsert_catalog(
+            self._db,
+            product_line_code=zt.product_line_code,
+            module=zt.group or None,
+        )
 
         short_code = self._tickets.next_short_code()
         ticket = Ticket(
