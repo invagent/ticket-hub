@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
+from app.models import Customer, CustomerIdentity, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -60,6 +61,10 @@ class TicketDetail(TicketSummary):
     actual_replied_at: datetime | None
     cached_reply_content: str | None
     cached_reply_version: int | None
+    # enriched display fields (not on ORM, set manually in get_ticket)
+    assigned_user_name: str | None = None
+    customer_display_name: str | None = None
+    customer_id: int | None = None
 
 
 class TicketListResponse(BaseModel):
@@ -111,7 +116,22 @@ def get_ticket(
     ticket = TicketRepository(db).get(ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
-    return TicketDetail.model_validate(ticket)
+    detail = TicketDetail.model_validate(ticket)
+    if ticket.assigned_user_id is not None:
+        user = db.get(User, ticket.assigned_user_id)
+        detail.assigned_user_name = user.name if user else None
+    if ticket.customer_identity_id is not None:
+        identity = db.get(CustomerIdentity, ticket.customer_identity_id)
+        if identity is not None:
+            detail.customer_id = identity.customer_id
+            customer = db.get(Customer, identity.customer_id)
+            if customer is not None:
+                detail.customer_display_name = (
+                    customer.display_name or identity.raw_name
+                )
+            else:
+                detail.customer_display_name = identity.raw_name
+    return detail
 
 
 # ---- /history -------------------------------------------------------------
