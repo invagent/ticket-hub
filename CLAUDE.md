@@ -236,7 +236,7 @@ db.commit()
 
 ## 阶段进度
 
-D0✅ D1✅ D2✅ D3🟡（A/B/C 完成，D/E 待开工）D4~收尾⬜。当前分支：`feat/d1-identity-routing`。
+D0✅ D1✅ D2✅ D3🟡（A/B/C 完成，D/E 待开工）D4~收尾⬜。当前分支：`panda_li`。
 
 ## AI 分类结果展示（2026-05-13）
 
