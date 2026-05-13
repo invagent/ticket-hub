@@ -217,9 +217,14 @@ db.add(Source(code="linear", name="Linear"))
 db.commit()
 ```
 
-## `DEFAULT_POOL_USER_ID` 配置
+## 兜底处理人配置（2026-05-13）
 
-`backend/app/config.py` 中 `default_pool_user_id: int | None = None`，通过 `.env` 设置 `DEFAULT_POOL_USER_ID=<用户ID>`。未配置时路由无匹配的工单 `assigned_user_id` 为 NULL，主管工作台会显示警告。
+- 兜底处理人现在可在主管工作台直接配置，无需修改 `.env` 或重启服务
+- 配置存储在 `system_settings` 表（`key='default_pool_user_id'`），立即生效
+- 读取优先级：数据库 > `.env` `DEFAULT_POOL_USER_ID` > NULL
+- API：`GET/PUT /api/admin/settings/default-pool-user`（require_supervisor）
+- 主管工作台 `no_default_pool` 警告 Banner 内联用户下拉选择器，保存后 Banner 消失
+- 数据库迁移：`0002_system_settings.py` + `0008_merge_system_settings.py`（合并迁移）
 
 ## 用户管理状态筛选与启用（2026-05-13）
 
