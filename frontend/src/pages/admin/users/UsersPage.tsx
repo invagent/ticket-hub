@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, deleteByPath } from "@/api/client";
+import { api, ApiError, deleteByPath, postByPath } from "@/api/client";
 import { FeishuSyncDialog } from "./FeishuSyncDialog";
 import { UserEditModal } from "./UserEditModal";
 
@@ -58,7 +58,7 @@ export function UsersPage() {
 
   const revive = useMutation({
     mutationFn: async (id: number) =>
-      api.post("/api/admin/users/{user_id}/revive", { user_id: id }),
+      postByPath("/api/admin/users/{user_id}/revive", { user_id: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 
