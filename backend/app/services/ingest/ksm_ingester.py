@@ -28,6 +28,7 @@ from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
+from app.services.ingest.catalog_upsert import upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -95,7 +96,14 @@ class KSMIngester:
         identity_input = self._extract_identity(payload)
         resolve = self._resolver.resolve(identity_input)
 
-        # 3. Create ticket (type=Raw, status=received)
+        # 3. Ensure product_line + module exist (auto-create if unknown)
+        upsert_catalog(
+            self._db,
+            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
+            module=payload.get("moduleName") or payload.get("module"),
+        )
+
+        # 4. Create ticket (type=Raw, status=received)
         short_code = self._tickets.next_short_code()
         ticket = Ticket(
             short_code=short_code,

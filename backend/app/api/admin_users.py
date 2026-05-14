@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from adapters.feishu import FeishuClient, FeishuConfig, FeishuError
-from app.api.deps.auth import AuthedUser, require_admin
+from app.api.deps.auth import AuthedUser, require_admin, require_supervisor
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import get_session
@@ -331,7 +331,7 @@ def sync_from_feishu(
 @router.get("", response_model=list[UserOut])
 def list_users(
     include_inactive: bool = False,
-    _admin: AuthedUser = Depends(require_admin),
+    _user: AuthedUser = Depends(require_supervisor),
     db: Session = Depends(get_session),
 ) -> list[UserOut]:
     repo = UserRepository(db)

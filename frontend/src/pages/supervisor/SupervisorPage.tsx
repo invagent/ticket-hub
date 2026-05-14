@@ -159,9 +159,7 @@ function DefaultPoolWarningItem({ onSaved }: { onSaved: () => void }) {
           className="text-xs border border-yellow-400 dark:border-yellow-600 rounded px-2 py-1 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 disabled:opacity-50"
         >
           <option value="">— 选择处理人 —</option>
-          {(
-            users.data as { users?: { id: number; name: string }[] } | undefined
-          )?.users?.map((u) => (
+          {(users.data as { id: number; name: string }[] | undefined)?.map((u) => (
             <option key={u.id} value={String(u.id)}>
               {u.name}
             </option>

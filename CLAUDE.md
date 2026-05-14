@@ -204,18 +204,9 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 - 路由仍无匹配时返回 `no_match` 提示，不报错
 - 前端工单列表页新增：「仅未分配」筛选、checkbox 多选（仅主管/管理员）、底部浮动操作栏、结果弹窗
 
-## `sources` 表种子数据（2026-05-12）
+## `sources` 表种子数据（2026-05-13 已自动化）
 
-生产数据库 `sources` 表需手动插入种子数据，否则 `customer_identities` FK 约束失败：
-```python
-# 在服务器上执行
-from app.models import Source
-db.add(Source(code="ksm", name="KSM"))
-db.add(Source(code="zhichi", name="智齿"))
-db.add(Source(code="zammad", name="Zammad"))
-db.add(Source(code="linear", name="Linear"))
-db.commit()
-```
+`sources` 种子数据已内置到 `0001_d0_initial` 迁移中（`ON CONFLICT DO NOTHING`），`alembic upgrade head` 后自动写入，无需手动操作。
 
 ## 兜底处理人配置（2026-05-13）
 
@@ -225,6 +216,8 @@ db.commit()
 - API：`GET/PUT /api/admin/settings/default-pool-user`（require_supervisor）
 - 主管工作台 `no_default_pool` 警告 Banner 内联用户下拉选择器，保存后 Banner 消失
 - 数据库迁移：`0002_system_settings.py` + `0008_merge_system_settings.py`（合并迁移）
+- `GET /api/admin/users` 权限为 `require_supervisor`（非 require_admin），主管可获取用户列表用于下拉选择
+- 前端 `SupervisorPage.tsx` 中用户列表解析直接用数组（`users.data as UserOut[]`），不是 `{ users: [] }` 对象
 
 ## 用户管理状态筛选与启用（2026-05-13）
 

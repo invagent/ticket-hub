@@ -41,6 +41,7 @@ from app.services.ingest.zammad_ingester import ZammadIngester
 from app.services.ingest.zhichi_ingester import IngestError as ZhichiIngestError
 from app.services.ingest.zhichi_ingester import ZhichiIngester
 from app.services.ksm.notice_store import NoticeInfo, NoticeStore
+from app.services.system_settings import get_default_pool_user_id
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -146,7 +147,7 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
     try:
         try:
             result = KSMIngester(
-                db, default_pool_user_id=settings.default_pool_user_id
+                db, default_pool_user_id=get_default_pool_user_id(db)
             ).ingest(payload)
         except KSMIngestError as e:
             db.rollback()
@@ -243,7 +244,7 @@ async def ksm_webhook(
         return KSMAck(code=0)
     try:
         result = KSMIngester(
-            db, default_pool_user_id=get_settings().default_pool_user_id
+            db, default_pool_user_id=get_default_pool_user_id(db)
         ).ingest(payload)
     except KSMIngestError as e:
         logger.warning(
@@ -278,7 +279,7 @@ async def zhichi_webhook(
     payload = await _read_object(request)
     try:
         result = ZhichiIngester(
-            db, default_pool_user_id=get_settings().default_pool_user_id
+            db, default_pool_user_id=get_default_pool_user_id(db)
         ).ingest(payload)
     except ZhichiIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
@@ -316,7 +317,7 @@ async def zammad_webhook(
     payload = await _read_object(request)
     try:
         result = ZammadIngester(
-            db, default_pool_user_id=get_settings().default_pool_user_id
+            db, default_pool_user_id=get_default_pool_user_id(db)
         ).ingest(payload)
     except ZammadIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e

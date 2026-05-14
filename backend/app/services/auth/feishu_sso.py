@@ -146,18 +146,22 @@ class FeishuSSOService:
 
         user = db.query(User).filter(User.feishu_uid == feishu_uid).one_or_none()
         if user is None:
+            # First real human to log in becomes admin; subsequent users are members.
+            # Exclude system/seed accounts (is_active=False) from the count.
+            has_existing = db.query(User).filter(User.is_active == True).first()  # noqa: E712
+            role = "member" if has_existing else "admin"
             user = User(
                 feishu_uid=feishu_uid,
                 name=profile.get("name") or profile.get("en_name") or feishu_uid,
                 email=profile.get("email"),
                 mobile=profile.get("mobile"),
                 employee_no=profile.get("employee_no"),
-                role="member",  # role assignment happens via /admin/users
+                role=role,
             )
             db.add(user)
             db.flush()
             logger.info(
-                "feishu_sso_user_created", feishu_uid=feishu_uid, user_id=user.id
+                "feishu_sso_user_created", feishu_uid=feishu_uid, user_id=user.id, role=role
             )
         else:
             # Reactivate soft-deleted users on re-login (per upgrade_plan §4.12)

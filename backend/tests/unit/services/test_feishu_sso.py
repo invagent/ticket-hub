@@ -73,13 +73,34 @@ def test_first_login_creates_user(db_session: Session) -> None:
     assert authed.feishu_uid == "ou_alice_001"
     assert authed.name == "alice"
     assert authed.email == "alice@kingdee.com"
-    assert authed.role == "member"
+    assert authed.role == "admin"  # first user gets admin
     assert authed.user_id > 0
 
     user = db_session.query(User).filter(User.feishu_uid == "ou_alice_001").one()
     assert user.name == "alice"
     assert user.employee_no == "K0001"
 
+
+
+@respx.mock
+def test_second_user_gets_member_role(db_session: Session) -> None:
+    # First login — becomes admin
+    _stub_happy_path(respx)
+    with _svc() as svc:
+        first = svc.login(db_session, code="abc")
+    db_session.commit()
+    assert first.role == "admin"
+
+    # Second login with a different feishu_uid — becomes member
+    respx.reset()
+    _stub_happy_path(
+        respx,
+        profile={"open_id": "ou_bob_002", "name": "bob", "email": "bob@kingdee.com"},
+    )
+    with _svc() as svc:
+        second = svc.login(db_session, code="def")
+    db_session.commit()
+    assert second.role == "member"
 
 @respx.mock
 def test_second_login_updates_profile(db_session: Session) -> None:
@@ -199,7 +220,7 @@ def test_callback_endpoint_e2e(app_client) -> None:  # type: ignore[no-untyped-d
     assert "#token=" in location
     assert "feishu_uid=ou_alice_001" in location
     assert "name=alice" in location
-    assert "role=member" in location
+    assert "role=admin" in location  # first user gets admin
     # Token sits AFTER the # — never goes server-side
     assert location.split("#", 1)[0].endswith("/")
 
