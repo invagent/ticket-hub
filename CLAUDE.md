@@ -231,7 +231,16 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 
 ## 阶段进度
 
-D0✅ D1✅ D2✅ D3🟡（A/B/C 完成，D/E 待开工）D4🟡（Linear adapter 已实现，hub_issue 自动创建待开工）D5~收尾⬜。当前分支：`panda_li`。
+D0✅ D1✅ D2✅ D3🟡（A/B/C/D 完成，E dedup 待开工）D4🟡（Linear adapter 已实现，hub_issue 自动创建待开工）D5~收尾⬜。当前分支：`main`。
+
+## D3-D conflict_detect Agent（2026-06-11）
+
+- `services/agents/conflict_detect.py`：判断 Raw 工单是否混合多个独立问题需要拆分
+- webhook ingest 后经 `run_post_ingest_agents`（webhooks.py）依次跑 classify + conflict_detect，单 BG task
+- **仅写 `agent_decisions` 审计行**（`decision_type='split_ticket'/'no_split'`，sub_issues 在 proposal 里），不改工单；split 执行器（split.py，无 LLM）待实现
+- 开关 `CONFLICT_DETECT_ENABLED`（默认 true）；prompt 版本 `CONFLICT_DETECT_PROMPT_VERSION`（默认 v1，`prompts/conflict_detect_v1.md`）
+- 判定原则：拿不准默认 no_split（误拆代价 > 漏拆）；split 时 sub_issues ≥2 否则解析报错
+- 单测注意：`tests/conftest.py` 显式清空 GLM/DASHSCOPE key，防止本地 `.env` 真实 key 让 BG task 发起真实 LLM 调用
 
 ## AI 分类结果展示（2026-05-13）
 

@@ -33,6 +33,7 @@ from app.core.logging import get_logger
 from app.core.trace import get_trace_id
 from app.db import get_session, make_session
 from app.services.agents.classify import classify_ticket
+from app.services.agents.conflict_detect import detect_ticket_conflict
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -45,6 +46,17 @@ from app.services.system_settings import get_default_pool_user_id
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def run_post_ingest_agents(ticket_id: int) -> None:
+    """All LLM agents that run after a fresh (non-dedup) ingest.
+
+    Single BackgroundTask entry so call sites stay one-liners. Each agent
+    swallows its own failures — one agent failing must not stop the next.
+    """
+    classify_ticket(ticket_id)
+    if get_settings().conflict_detect_enabled:
+        detect_ticket_conflict(ticket_id)
 
 
 class IngestResponse(BaseModel):
@@ -167,11 +179,11 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
     finally:
         db.close()
 
-    # D3-C: classify the freshly-ingested ticket. Skip on dedupe (already
-    # classified previously) and on ingest failure. Errors swallowed inside
-    # classify_ticket.
+    # D3-C/D: post-ingest agents (classify + conflict_detect). Skip on
+    # dedupe (already processed) and on ingest failure. Errors swallowed
+    # inside each agent.
     if ingested_ticket_id is not None:
-        classify_ticket(ingested_ticket_id)
+        run_post_ingest_agents(ingested_ticket_id)
 
 
 @router.post("/ksm", response_model=KSMAck)
@@ -253,9 +265,9 @@ async def ksm_webhook(
         deduped=result.deduped,
         trace_id=get_trace_id(),
     )
-    # D3-C: classify after sync ingest (skip dedup so we don't re-classify).
+    # D3-C/D: post-ingest agents after sync ingest (skip dedup).
     if not result.deduped:
-        background_tasks.add_task(classify_ticket, result.ticket_id)
+        background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
     return KSMAck(code=0)
 
 
@@ -284,9 +296,9 @@ async def zhichi_webhook(
         short_code=result.short_code,
         deduped=result.deduped,
     )
-    # D3-C: classify after ingest (skip dedup).
+    # D3-C/D: post-ingest agents after ingest (skip dedup).
     if not result.deduped:
-        background_tasks.add_task(classify_ticket, result.ticket_id)
+        background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,
@@ -322,9 +334,9 @@ async def zammad_webhook(
         short_code=result.short_code,
         deduped=result.deduped,
     )
-    # D3-C: classify after ingest (skip dedup).
+    # D3-C/D: post-ingest agents after ingest (skip dedup).
     if not result.deduped:
-        background_tasks.add_task(classify_ticket, result.ticket_id)
+        background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,

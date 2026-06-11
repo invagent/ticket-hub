@@ -36,6 +36,10 @@ def _isolate_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         "FEISHU_APP_ID": "test-app",
         "FEISHU_APP_SECRET": "test-secret",
         "WEBHOOK_ACCESS_TOKEN": "test-token",
+        # 本地 .env 可能配了真实 LLM key — 单测必须显式清空，
+        # 否则 webhook BG task 会发起真实 LLM 调用（慢 + 烧钱 + 不确定）。
+        "GLM_API_KEY": "",
+        "DASHSCOPE_API_KEY": "",
     }
     for k, v in overrides.items():
         monkeypatch.setenv(k, v)

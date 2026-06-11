@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     llm_provider_order: str = "dashscope,glm"
     # classify Agent 的 prompt 版本（prompts/classify_{version}.md），评测对比时可切回 v1
     classify_prompt_version: str = "v2"
+    # D3-D 拆单判定 Agent；仅写 agent_decisions 审计行，不改工单
+    conflict_detect_enabled: bool = True
+    conflict_detect_prompt_version: str = "v1"
 
     # ---- Linear (D4) ----
     linear_api_key: str = ""
