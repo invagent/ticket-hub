@@ -1,4 +1,25 @@
-# classify_v1 评测基线 — 2026-06-11
+# classify 评测基线 — 2026-06-11
+
+## ⭐ prompt v2 结果（同日调优后，生产现用配置）
+
+deepseek-v4-flash + classify_v2.md：**整体 90.0%（过 D3 门槛）/ 已确认标签 95.5%**。
+
+v1 → v2 三轮迭代（均为 deepseek-v4-flash，sample-001 修正后口径）：
+
+| 迭代 | 整体 | 已确认 | 变化 |
+|------|-----:|-------:|------|
+| v1 | 86.7% | 97.7% | 基线。Operation recall 仅 0.74 |
+| v2 初版 | 85.0% | 88.6% | 补「报错≠Bug_fix」规则**矫枉过正**，真故障被判 Operation |
+| v2 收紧 | 88.3% | 95.5% | 加「不确定默认 Bug_fix」「配置了但未生效→Bug_fix」 |
+| **v2 final** | **90.0%** | **95.5%** | 补 Internal_task few-shot（原 prompt 一个该类示例都没有） |
+
+剩余 6 个误判：4 条 `needs_review`（标签噪声候选）+ 2 条真歧义（ksm-049/050，
+均为「故障后询问操作」混合型）。prompt 版本经 `CLASSIFY_PROMPT_VERSION` 配置
+（默认 v2），`agent_decisions.proposal.prompt_version` 落审计。
+
+---
+
+# 以下为 v1 原始基线（三方模型对比）
 
 > 数据集：`backend/tests/eval/dataset_v1.jsonl` @ 60 条（50 真实 KSM 手标 + 10 合成；16 条 `needs_review`）
 > 跑分器：`scripts/eval/run_eval.py`（`--provider` 单 Provider 对比）

@@ -25,6 +25,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.db import make_session
@@ -35,12 +36,15 @@ logger = get_logger(__name__)
 
 _VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
 
-# Loaded once at import time; small file, hot path.
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "classify_v1.md"
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
+
+
+def _prompt_version() -> str:
+    return get_settings().classify_prompt_version
 
 
 def _load_system_prompt() -> str:
-    return _PROMPT_PATH.read_text(encoding="utf-8")
+    return (_PROMPTS_DIR / f"classify_{_prompt_version()}.md").read_text(encoding="utf-8")
 
 
 @dataclass(slots=True, frozen=True)
@@ -81,7 +85,7 @@ def classify_payload(
             LLMMessage(role="system", content=_load_system_prompt()),
             LLMMessage(role="user", content=user_prompt),
         ],
-        agent="classify_v1",
+        agent=f"classify_{_prompt_version()}",
         temperature=0.0,
         response_format={"type": "json_object"},
     )
@@ -171,6 +175,7 @@ def classify_ticket(ticket_id: int, db: Session | None = None) -> ClassifyResult
                     "reason": result.reason,
                     "model": result.model,
                     "cost_usd": result.cost_usd,
+                    "prompt_version": _prompt_version(),
                 },
             )
         )

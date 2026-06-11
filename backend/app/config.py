@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     dashscope_model: str = "deepseek-v4-flash"  # e.g. deepseek-v4-pro / deepseek-v3.2
     # 逗号分隔的 failover 顺序；2026-06-11 评测 deepseek-v4-flash 最优故默认在前
     llm_provider_order: str = "dashscope,glm"
+    # classify Agent 的 prompt 版本（prompts/classify_{version}.md），评测对比时可切回 v1
+    classify_prompt_version: str = "v2"
 
     # ---- Linear (D4) ----
     linear_api_key: str = ""
