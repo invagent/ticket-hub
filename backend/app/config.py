@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     anthropic_api_key: str = ""
     glm_api_key: str = ""
+    glm_model: str = "glm-4.5-flash"  # e.g. glm-4-flash / glm-4-air / glm-4-plus
 
     # ---- Linear (D4) ----
     linear_api_key: str = ""

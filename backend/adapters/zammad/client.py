@@ -83,9 +83,7 @@ class ZammadClient:
         if resp.status_code == 403:
             raise ZammadAuthError("forbidden")
         if not resp.is_success:
-            raise ZammadBusinessError(
-                f"Zammad API error {resp.status_code}: {resp.text[:200]}"
-            )
+            raise ZammadBusinessError(f"Zammad API error {resp.status_code}: {resp.text[:200]}")
 
         try:
             return resp.json()
@@ -102,9 +100,7 @@ class ZammadClient:
         if resp.status_code in (401, 403):
             raise ZammadAuthError(f"auth error: {resp.status_code}")
         if not resp.is_success:
-            raise ZammadBusinessError(
-                f"Zammad API error {resp.status_code}: {resp.text[:200]}"
-            )
+            raise ZammadBusinessError(f"Zammad API error {resp.status_code}: {resp.text[:200]}")
 
         try:
             return resp.json()

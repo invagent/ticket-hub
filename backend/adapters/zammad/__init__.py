@@ -5,13 +5,13 @@ from .exceptions import ZammadAuthError, ZammadBusinessError, ZammadError, Zamma
 from .types import ZammadArticle, ZammadConfig, ZammadCustomer, ZammadTicket
 
 __all__ = [
-    "ZammadClient",
-    "ZammadConfig",
-    "ZammadTicket",
-    "ZammadCustomer",
     "ZammadArticle",
-    "ZammadError",
     "ZammadAuthError",
     "ZammadBusinessError",
+    "ZammadClient",
+    "ZammadConfig",
+    "ZammadCustomer",
+    "ZammadError",
     "ZammadNetworkError",
+    "ZammadTicket",
 ]

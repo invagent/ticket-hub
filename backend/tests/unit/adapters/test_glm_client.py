@@ -33,6 +33,23 @@ def _req() -> ChatRequest:
     )
 
 
+def test_config_from_settings_reads_model() -> None:
+    class S:
+        glm_api_key = "sk-x"
+        glm_model = "glm-4-flash"
+
+    cfg = GLMConfig.from_settings(S())
+    assert cfg.default_model == "glm-4-flash"
+
+
+def test_config_from_settings_model_defaults_when_blank() -> None:
+    class S:
+        glm_api_key = "sk-x"
+        glm_model = ""  # .env 留空 → 回落默认
+
+    assert GLMConfig.from_settings(S()).default_model == "glm-4.5-flash"
+
+
 @respx.mock
 def test_chat_success() -> None:
     respx.post(f"{BASE}/chat/completions").mock(

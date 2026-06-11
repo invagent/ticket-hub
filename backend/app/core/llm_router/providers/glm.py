@@ -31,6 +31,7 @@ from .base import LLMProvider, ProviderError, ProviderRetryableError
 
 # (input USD/1k, output USD/1k)
 _PRICING: dict[str, tuple[float, float]] = {
+    "glm-4-flash": (0.0, 0.0),  # 智谱 2024-08 起免费档；换模型前 admin 自查现价
     "glm-4.5-flash": (0.0001, 0.0001),
     "glm-4-air": (0.0007, 0.0007),
     "glm-4-plus": (0.007, 0.007),

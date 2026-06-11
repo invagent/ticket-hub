@@ -20,7 +20,10 @@ class GLMConfig:
 
     @classmethod
     def from_settings(cls, settings: Any) -> GLMConfig:
-        return cls(api_key=getattr(settings, "glm_api_key", ""))
+        return cls(
+            api_key=getattr(settings, "glm_api_key", ""),
+            default_model=getattr(settings, "glm_model", "") or "glm-4.5-flash",
+        )
 
 
 @dataclass(slots=True)
@@ -35,7 +38,7 @@ class ChatMessage:
 @dataclass(slots=True)
 class ChatRequest:
     messages: list[ChatMessage]
-    model: str | None = None              # falls back to GLMConfig.default_model
+    model: str | None = None  # falls back to GLMConfig.default_model
     temperature: float | None = None
     top_p: float | None = None
     max_tokens: int | None = None

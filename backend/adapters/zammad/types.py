@@ -80,9 +80,9 @@ class ZammadTicket:
     id: int
     number: str
     title: str
-    state: str        # open / closed / pending reminder / etc.
-    priority: str     # "1 low" / "2 normal" / "3 high"
-    group: str        # Zammad Group name → maps to module
+    state: str  # open / closed / pending reminder / etc.
+    priority: str  # "1 low" / "2 normal" / "3 high"
+    group: str  # Zammad Group name → maps to module
     customer: ZammadCustomer
     tags: list[str]
     article: ZammadArticle

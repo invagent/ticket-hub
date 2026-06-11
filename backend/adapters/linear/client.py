@@ -21,7 +21,7 @@ import httpx
 from app.core.logging import get_logger
 
 from .exceptions import LinearAuthError, LinearBusinessError, LinearNetworkError
-from .types import CreateIssueRequest, CreatedIssue, LinearConfig
+from .types import CreatedIssue, CreateIssueRequest, LinearConfig
 
 logger = get_logger(__name__)
 
@@ -106,9 +106,7 @@ class LinearClient:
             raise LinearNetworkError(f"network error calling Linear: {e}") from e
 
         if resp.status_code in (401, 403):
-            raise LinearAuthError(
-                f"Linear auth failed ({resp.status_code}): {resp.text[:200]}"
-            )
+            raise LinearAuthError(f"Linear auth failed ({resp.status_code}): {resp.text[:200]}")
         if not resp.is_success:
             raise LinearBusinessError(
                 f"Linear HTTP {resp.status_code}: {resp.text[:200]}",
