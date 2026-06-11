@@ -45,6 +45,17 @@ integration:
 eval:
 	$(PY) ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl
 
+eval-routing:
+	$(PY) ../scripts/eval/d1_routing_replay.py tests/eval/routing_v1.jsonl --threshold 0.9
+
+seed-scopes:
+	@if [ -z "$(YAML)" ]; then echo "Usage: make seed-scopes YAML=config/seeds/assignment_scopes.example.yaml [DRY=1]"; exit 1; fi
+	$(PY) ../scripts/seed/seed_assignment_scopes.py $(YAML) $(if $(DRY),--dry-run,)
+
+seed-ksm-types:
+	@if [ -z "$(YAML)" ]; then echo "Usage: make seed-ksm-types YAML=config/mappings/ksm_issue_types.yaml [DRY=1] [PRUNE=1]"; exit 1; fi
+	$(PY) ../scripts/seed/seed_ksm_type_mappings.py $(YAML) $(if $(DRY),--dry-run,) $(if $(PRUNE),--prune,)
+
 e2e:
 	$(PYTEST) tests/e2e -v -m e2e
 
@@ -54,10 +65,16 @@ cov:
 	$(PYTEST) tests/unit --cov=app --cov-report=html
 	@echo "Open htmlcov/index.html"
 
-openapi-check:
-	$(PY) -c "from app.main import app; import json, sys; json.dump(app.openapi(), sys.stdout, indent=2)" > /tmp/openapi.json
-	@echo "Backend OpenAPI written to /tmp/openapi.json"
-	@echo "TODO: diff against frontend/src/api/types.ts (D1)"
+openapi-dump:
+	$(PY) ../scripts/openapi/dump_openapi.py ../frontend/src/api/openapi.json
+
+openapi-check: openapi-dump
+	@if ! git diff --quiet -- ../frontend/src/api/openapi.json; then \
+		echo "❌ openapi.json drift — run 'make gen-types' from repo root and commit"; \
+		git --no-pager diff --stat -- ../frontend/src/api/openapi.json; \
+		exit 1; \
+	fi
+	@echo "✅ openapi.json is up to date"
 
 clean:
 	rm -rf $(VENV) .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

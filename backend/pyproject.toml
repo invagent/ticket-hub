@@ -87,10 +87,13 @@ select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 ignore = [
     "E501",  # line length handled by formatter
     "B008",  # FastAPI Depends() in defaults is the canonical pattern
+    "RUF001",  # 中文标点在字符串字面量中是正确字符（要发给 KSM/飞书的中文文案）
+    "RUF002",  # 同上, 针对 docstring
+    "RUF003",  # 同上, 针对注释
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "N806"]  # SessionLocal naming; assert in tests
+"tests/**/*.py" = ["S101", "N802", "N806"]  # SessionLocal naming; assert in tests; camelCase identifiers from external APIs (billId, accountName)
 "migrations/**/*.py" = ["E501", "N999"]
 "app/api/**/*.py" = ["B008"]
 

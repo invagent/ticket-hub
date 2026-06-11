@@ -7,10 +7,10 @@
 
 ## 状态
 
-- **当前阶段**：D0 — 仓库初始化 + SSO POC + 工具链奠基
+- **当前阶段**：D3🟡（A/B/C 完成，D/E 待开工）
 - **起始日**：2026-05-04
 - **目标完工**：2027-03-19（10.5 个月，1 人 + Claude）
-- **方案文档**：`/Users/shaobin/.claude/plans/upgrade-plan-cheerful-kitten.md`
+- **进度详情**：`docs/progress/2026-05-11-status.md`
 
 ## 仓库结构
 
@@ -32,6 +32,60 @@ ticket-hub/
 ├── docker-compose.yml          PG16+pgvector / Redis7 / MinIO
 └── .github/workflows/ci.yml    lint + unit + pii-cov + integration
 ```
+
+## 飞书应用配置
+
+本项目依赖飞书开放平台应用，需在 [飞书开放平台](https://open.feishu.cn/) 创建自建应用并完成以下配置。
+
+### 必须开通的 API 权限
+
+| 权限标识 | 用途 |
+|---------|------|
+| `contact:contact.base:readonly` | 读取通讯录基本信息（用户列表、部门列表） |
+| `contact:user.base:readonly` | 读取用户基本信息（姓名、头像） |
+| `contact:user.employee_number:read` | 读取用户工号（同步 employee_no 字段必须） |
+| `contact:user.email:readonly` | 读取用户邮箱 |
+| `contact:user.phone:readonly` | 读取用户手机号 |
+| `contact:department.base:readonly` | 读取部门名称等基本字段 |
+| `contact:department.organize:readonly` | 读取部门人数（member_count） |
+
+> 以上权限在「权限管理 → API 权限」中搜索开通，开通后需**重新发布应用版本**才能生效。
+
+### 通讯录数据范围
+
+在「安全设置 → 通讯录权限范围」中，将可见范围设为**全部员工**（或指定需要同步的部门）。  
+未配置此项时，即使 API 权限已开通，调用通讯录接口也会返回 `40004 no dept authority`。
+
+### SSO 登录权限
+
+| 权限标识 | 用途 |
+|---------|------|
+| `authen:user_info:read` | 获取登录用户信息（SSO 回调） |
+
+### 回调地址配置
+
+在「安全设置 → 重定向 URL」中添加：
+
+```
+https://<your-domain>/ticket-hub-v2/api/auth/feishu/callback
+```
+
+### .env 配置项
+
+```bash
+FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
+FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### 首次登录注意
+
+第一个通过飞书 SSO 登录的用户默认 `role='member'`，无法访问管理后台。需手动提权：
+
+```sql
+UPDATE users SET role = 'admin' WHERE id = 1;
+```
+
+改完后重新登录（旧 JWT 里的 role 是快照，不会自动刷新）。
 
 ## 快速开始
 

@@ -101,6 +101,18 @@ def upgrade() -> None:
     op.create_index("ix_users_ksm_account", "users", ["ksm_account"])
     op.create_index("ix_users_zhichi_agent_id", "users", ["zhichi_agent_id"])
 
+    # Seed required sources — FK target for tickets and customer_identities.
+    # ON CONFLICT DO NOTHING makes this safe to re-run on existing databases.
+    op.execute(sa.text("""
+            INSERT INTO sources (code, name, is_active)
+            VALUES
+                ('ksm',     'KSM',    true),
+                ('zhichi',  '智齿',   true),
+                ('zammad',  'Zammad', true),
+                ('linear',  'Linear', true)
+            ON CONFLICT (code) DO NOTHING
+            """))
+
 
 def downgrade() -> None:
     op.drop_table("users")

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # ---- Auth ----
     jwt_secret: str = Field(default="change-me-in-prod-please-use-env")
     jwt_algorithm: str = "HS256"
-    jwt_ttl_seconds: int = 60 * 60 * 8
+    jwt_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
 
     # ---- Postgres ----
     pg_dsn: str = "postgresql+psycopg://hub:hub@localhost:5432/ticket_hub"
@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     feishu_sso_redirect_uri: str = "http://localhost:8080/api/auth/feishu/callback"
+    feishu_app_token: str = ""  # bitable app id (legacy table-as-storage; D6 退役)
+    feishu_table_id: str = ""  # ticket bitable table id (legacy)
+    feishu_duty_table_id: str = ""  # 值班表 table id（D1 用作 assignment seed）
 
     # ---- KSM ----
     ksm_base_url: str = "https://ierpuat.kingdee.com"
@@ -68,6 +71,9 @@ class Settings(BaseSettings):
 
     # ---- Webhook auth ----
     webhook_access_token: str = ""
+
+    # ---- Routing ----
+    default_pool_user_id: int | None = None
 
 
 @lru_cache

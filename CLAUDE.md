@@ -1,0 +1,241 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概述
+
+ticket-hub 是跨源工单枢纽，聚合 KSM / 智齿 / zammad / Linear 的工单，通过 Agent 自动分类、路由、去重，主管事后修正。当前处于 D3 阶段（Agent 全家桶），大幅领先计划进度。
+
+## 仓库结构
+
+Monorepo，三个独立子栈：
+
+- `backend/` — FastAPI + SQLAlchemy + Alembic + Celery（Python 3.11+）
+- `frontend/` — Vite + React 18 + TypeScript + Tailwind + TanStack Query
+- `cli/` — Typer CLI（OpenAPI-driven）
+- `scripts/` — 对账、评测、迁移、压测脚本（Python）
+- `docs/adr/` — 架构决策记录（已采纳：0001/0002/0005/0012）
+- `docs/spec/` — data_model / api / routing 三份规格草案
+
+## 常用命令
+
+### Backend（在 `backend/` 目录下）
+
+```bash
+make install          # 创建 .venv 并安装所有依赖（含 dev）
+make lint             # ruff check + ruff format --check + mypy
+make unit             # 单测，覆盖率门槛 ≥70%
+make pii-cov          # PII 模块单测，覆盖率门槛 ≥95%
+make integration      # 集成测试（需要 Docker）
+make eval-routing     # D1 路由回放评测（需要 routing_v1.jsonl）
+make cov              # 生成 HTML 覆盖率报告（htmlcov/index.html）
+make clean            # 删除 .venv、缓存、覆盖率文件
+
+# 运行单个测试文件
+.venv/bin/pytest tests/unit/core/pii/test_sanitizer.py -v
+
+# 启动开发服务器
+.venv/bin/uvicorn app.main:app --reload --port 8080
+```
+
+### Frontend（在 `frontend/` 目录下）
+
+```bash
+npm install
+npm run dev           # 开发服务器 http://localhost:5173
+npm run build         # tsc + vite build
+npm run type-check    # tsc --noEmit
+npm run test          # vitest run
+npm run test:watch    # vitest watch 模式
+npm run lint          # eslint
+npm run gen:api       # 从 openapi.json 生成 types.ts
+npm run gen:api:live  # 从运行中的后端（:8080）生成 types.ts
+```
+
+### 根目录（全栈）
+
+```bash
+make test             # backend lint+unit+pii-cov + frontend type-check+test
+make gen-types        # 重新生成 frontend/src/api/openapi.json + types.ts
+make check-types      # CI 门槛：检查 openapi.json 和 types.ts 是否与后端同步
+make eval-routing     # D1 路由回放
+```
+
+### 本地依赖
+
+```bash
+docker compose up -d pg redis minio   # PG16+pgvector / Redis7 / MinIO
+cd backend && .venv/bin/alembic upgrade head   # 应用数据库迁移
+```
+
+## 架构要点
+
+### 数据流
+
+```
+外部 webhook (KSM/智齿/zammad)
+  → POST /webhook/{source}
+  → Ingester（services/ingest/）解析 raw payload
+  → 写入 tickets 表（type='Raw'）
+  → BackgroundTask 触发 classify Agent
+  → GLM LLM 分类 → 写回 tickets.predicted_* + agent_decisions 表
+  → 路由 Router（services/routing/）→ 分配 assigned_user_id
+```
+
+### 核心模型关系
+
+- `tickets`（Raw/Parent/Child 三类型单表）→ 关联 `hub_issues`（4 出口类型：Operation/Bug_fix/Demand/Internal_task）
+- `customers` ← `customer_identities`（多源身份图谱，erp_uid/mobile/email 解析）
+- `assignment_scopes_module`（产品线+模块 → 用户）+ `assignment_scopes_feature`（跨产品线兜底）
+- `agent_decisions`（所有 Agent 决策审计表，supervisor 可 revert）
+- PK 全部用 INT autoincrement（非 UUID，见 ADR-0002）
+- JSON 字段用 `JSON` 类型（PG JSONB / SQLite 兼容）
+
+### Backend 分层
+
+```
+app/api/          路由层（FastAPI routers）
+app/services/     业务逻辑
+  agents/         LLM Agent（classify、后续 conflict_detect、dedup）
+  identity/       客户身份解析
+  ingest/         各源 webhook 解析器
+  routing/        工单路由
+  sla/            SLA 监控 + 升级链
+  supervisor/     主管修正
+  metrics/        仪表盘指标（Celery 物化）
+app/repositories/ 数据访问层
+app/core/
+  pii/            PII 脱敏/还原（strict mypy，≥95% 覆盖率硬门槛）
+  llm_router/     LLM Provider 抽象（当前仅 GLM，D3-B）
+  trace/          trace_id 中间件
+  logging/        structlog + trace_id
+app/models.py     所有 ORM 模型（单文件，按阶段分区注释）
+app/db.py         engine + session（StaticPool for SQLite in tests）
+```
+
+### Frontend 类型同步
+
+前端 API 类型从后端 OpenAPI schema 自动生成：`frontend/src/api/types.ts`。修改后端 API 后必须运行 `make gen-types` 并提交，否则 CI `make check-types` 会失败。
+
+### 测试分层
+
+- `tests/unit/` — 默认运行，SQLite in-memory（StaticPool），不需要 Docker
+- `tests/integration/` — 需要 Docker（testcontainers），标记 `@pytest.mark.integration`
+- `tests/e2e/` — 需要真实 UAT 凭证，标记 `@pytest.mark.e2e`
+- `tests/eval/` — 需要 LLM Provider key，标记 `@pytest.mark.eval`
+
+默认 `pytest` 只跑 unit（`pyproject.toml` 中 `-m "not integration and not e2e and not eval"`）。
+
+### LLM Router
+
+`app/core/llm_router/router.py` 抽象多 Provider，当前只实现 GLM（`providers/glm.py`）。新增 Provider 约 80 行，实现 `BaseLLMProvider` 接口。接入 OpenAI/Anthropic 等外部 LLM 前必须先补 PII 脱敏（`app/core/pii/` 的 AES-GCM encryptor 目前是 Protocol 占位）。
+
+## 前端 Auth Guard
+
+`frontend/src/main.tsx` 中 `RequireAuth` 组件保护所有非登录路由，未登录或 token 过期自动跳转 `/login`（解析 JWT `exp` 字段判断）。auth token 存储在 `localStorage.auth_token`，飞书 SSO 回调后由 `consumeSsoFragment()` 写入。
+
+`frontend/src/api/client.ts` 中所有 API 请求收到 401 响应时，自动清除 localStorage 并跳转 `/login`。
+
+JWT TTL 为 7 天（`backend/app/config.py` 中 `jwt_ttl_seconds = 60 * 60 * 24 * 7`）。
+
+## 服务器部署
+
+详见 `CLAUDE.local.md`（不提交 git）。生产服务器 `123.57.100.193`，nginx 配置在 `/etc/nginx/sites-enabled/reverse-proxy`。
+
+- shaobin 原版：端口 9093，路径 `/ticket-hub/`，DB `ticket_hub`
+- panda_li v2：端口 9094，路径 `/ticket-hub-v2/`，DB `ticket_hub_v2`，Python 3.12
+
+前端 build 需指定环境变量：
+```bash
+VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
+```
+
+## 当前技术债（D3-A 后）
+
+- `make lint` 当前红灯：约 20 个 ruff 错 + 17 个 mypy 错（主要在 `app/api/webhooks.py`）
+- `backend/tests/eval/dataset_v1.jsonl` 只有 4 条占位，classify 准确率未量化
+- `HANDOFF.md` 严重过时（D0 时期），以 `docs/progress/2026-05-11-status.md` 为准
+- PII encryptor 未实现（接外部 LLM 前必须补）
+
+## 飞书工号同步说明（2026-05-12）
+
+- 飞书 `/authen/v1/user_info`（SSO 登录接口）**不返回 `employee_no`**，这是飞书接口本身限制
+- 工号只能通过「从飞书同步」（`/contact/v3/users/find_by_department`）批量补全
+- 需要在飞书开放平台开通 `contact:user.employee_number:read` 权限
+- `feishu_sso.py` 的 `upsert_user` 更新分支已修复，统一同步 name/email/mobile/employee_no 四个字段
+
+## 用户角色说明（2026-05-12）
+
+系统有四个角色，前端统一显示中文名：
+
+| 英文值 | 中文名 | 职责 |
+|--------|--------|------|
+| `member` | 普通成员 | 可查看工单和仪表板，无管理权限 |
+| `assignee` | 处理人 | 可查看工单，被分配处理工单 |
+| `supervisor` | 主管 | 可使用主管工作台、修正 Agent 决策、重新关联工单 |
+| `admin` | 管理员 | 拥有全部权限，含用户管理、分工配置、目录管理 |
+
+权限校验在 `backend/app/api/deps/auth.py`：`require_admin()`、`require_supervisor()`、`require_user()`。
+
+## 飞书同步对话框（2026-05-12）
+
+- 对话框打开后自动分批并发（每批 5 个）预加载所有部门成员，左侧树顶部显示进度条
+- 树节点支持 checkbox 勾选，递归选中子部门所有可同步成员，支持三态（未选/半选/全选）
+- 未加载完的节点 checkbox 禁用，加载失败的节点持续禁用不阻塞其他节点
+
+## 工单入库自动 upsert 产品线/模块（2026-05-12）
+
+- 工单入库时，若 `product_line_code` 或 `module` 不在 `product_lines`/`modules` 表，自动创建（`catalog_upsert.py`）
+- 使用 `INSERT ... ON CONFLICT DO NOTHING`，并发安全，不需要手动维护种子数据
+- 新创建的产品线/模块无处理人，路由落 `default_pool`
+- 三个 Ingester（KSM/Zhichi/Zammad）均已接入，在 dedup 检查之后、Ticket 构造之前调用
+
+## 主管工作台配置警告（2026-05-12）
+
+- `GET /api/supervisor/config-warnings` 返回系统配置问题列表（require_supervisor）
+- 检查项1：有 module 但 `assignment_scopes_module` 无处理人 → 提示去「管理后台 → 分工配置」
+- 检查项2：未配置 `DEFAULT_POOL_USER_ID` → 提示联系运维设置 `.env`
+- 前端主管工作台顶部显示黄色警告 Banner（可折叠）
+
+## 重新触发分配（2026-05-13）
+
+- `POST /api/supervisor/reroute`（require_supervisor）：对 1-50 条工单重新执行路由
+- 复用现有 `Router` 逻辑，写 `status_history` 审计（changed_by="system:reroute"）
+- 路由仍无匹配时返回 `no_match` 提示，不报错
+- 前端工单列表页新增：「仅未分配」筛选、checkbox 多选（仅主管/管理员）、底部浮动操作栏、结果弹窗
+
+## `sources` 表种子数据（2026-05-13 已自动化）
+
+`sources` 种子数据已内置到 `0001_d0_initial` 迁移中（`ON CONFLICT DO NOTHING`），`alembic upgrade head` 后自动写入，无需手动操作。
+
+## 兜底处理人配置（2026-05-13）
+
+- 兜底处理人现在可在主管工作台直接配置，无需修改 `.env` 或重启服务
+- 配置存储在 `system_settings` 表（`key='default_pool_user_id'`），立即生效
+- 读取优先级：数据库 > `.env` `DEFAULT_POOL_USER_ID` > NULL
+- API：`GET/PUT /api/admin/settings/default-pool-user`（require_supervisor）
+- 主管工作台 `no_default_pool` 警告 Banner 内联用户下拉选择器，保存后 Banner 消失
+- 数据库迁移：`0002_system_settings.py` + `0008_merge_system_settings.py`（合并迁移）
+- `GET /api/admin/users` 权限为 `require_supervisor`（非 require_admin），主管可获取用户列表用于下拉选择
+- 前端 `SupervisorPage.tsx` 中用户列表解析直接用数组（`users.data as UserOut[]`），不是 `{ users: [] }` 对象
+
+## 用户管理状态筛选与启用（2026-05-13）
+
+- 用户列表页新增状态筛选下拉（在岗 / 已停用 / 全部状态），默认显示"在岗"
+- `GET /api/admin/users` 新增 `include_inactive: bool = False` 参数，切到"已停用"或"全部"时前端传 `include_inactive=true`
+- 已停用用户行显示绿色"启用"按钮，调用 `POST /api/admin/users/{user_id}/revive` 恢复
+- `UserRepository` 新增 `revive()` 方法（清除 `deleted_at`，设 `is_active=True`）
+- 注意：前端路径参数替换必须用 `postByPath`，不能用 `api.post`（后者不替换 `{user_id}`）
+
+## 阶段进度
+
+D0✅ D1✅ D2✅ D3🟡（A/B/C 完成，D/E 待开工）D4~收尾⬜。当前分支：`panda_li`。
+
+## AI 分类结果展示（2026-05-13）
+
+- `TicketSummary` 新增 `predicted_type`、`predicted_confidence`、`classified_at`、`assigned_user_name` 四个字段
+- `list_tickets` 接口批量查询 `assigned_user_name`（一次额外 IN 查询，不影响性能）
+- 工单列表页新增「AI 分类」列，显示彩色标签（Bug 修复=红、需求=蓝、运营=黄、内部任务=灰），未分类显示「未分类」
+- 工单列表页「分配」列改为显示用户名，找不到时降级显示 `#ID`
+- 工单详情页基本信息区新增「AI 分类」（标签+置信度百分比）和「分类时间」字段
+- `PredictedTypeBadge` 组件定义在 `TicketDetailPage.tsx`，列表页 import 复用

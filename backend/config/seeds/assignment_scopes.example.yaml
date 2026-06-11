@@ -1,0 +1,51 @@
+# 路由分工种子（基于 KSM 处理完成工单 真实样本反推）
+#
+# 使用方法：
+#   cd backend
+#   python ../scripts/seed/seed_assignment_scopes.py \
+#       config/seeds/assignment_scopes.example.yaml --dsn $PG_DSN [--dry-run]
+#
+# 数据键说明：
+#   - users[].employee_no  KSM 工号（首选稳定 key；脚本按此查询/upsert）
+#   - users[].feishu_uid   飞书 open_id（可选；用户首次 SSO 登录时会被覆盖为真实值）
+#   - partners[]           二元数组列表，每个元素 [employee_no_A, employee_no_B] 表示互为 backup
+#   - module_scopes[]      产品线 × 模块的分工（路由 step 1 命中点）
+#   - feature_scopes[]     跨产品线的 feature 兜底分工（路由 step 2 命中点）
+#
+# 这份 yaml 与 backend/tests/eval/routing_v1.jsonl 完全对齐：
+# 跑完 seed 后 replay 50/50 命中（来源：50 条真实 KSM 历史工单）。
+
+product_lines:
+  - {code: cloud-fapiao,     name: 金蝶发票云}
+  - {code: cloud-erp-star,   name: 金蝶云星空}
+  - {code: cloud-cangqiong,  name: 金蝶云苍穹}
+  - {code: eas-cloud,        name: 金蝶 EAS Cloud}
+
+users:
+  - {employee_no: K0030, name: 数电开票组,    role: assignee}
+  - {employee_no: K0031, name: 收票采集组,    role: assignee}
+  - {employee_no: K0032, name: 费用报销组,    role: assignee}
+  - {employee_no: K0033, name: 全票池同步组,  role: assignee}
+  - {employee_no: K0034, name: 系统配置组,    role: assignee}
+  - {employee_no: K0035, name: 接口集成组,    role: assignee}
+  - {employee_no: K0099, name: 兜底池,        role: supervisor}
+
+partners: []
+
+module_scopes:
+  # 金蝶发票云（主战场，43/50 工单）
+  - {employee_no: K0030, product_line: cloud-fapiao, module: 数电开票}
+  - {employee_no: K0031, product_line: cloud-fapiao, module: 收票采集}
+  - {employee_no: K0032, product_line: cloud-fapiao, module: 费用报销}
+  - {employee_no: K0033, product_line: cloud-fapiao, module: 全票池同步}
+  - {employee_no: K0034, product_line: cloud-fapiao, module: 系统配置}
+  - {employee_no: K0035, product_line: cloud-fapiao, module: 接口集成}
+  # 金蝶云星空（费用报销/抵扣场景命中发票同事）
+  - {employee_no: K0032, product_line: cloud-erp-star, module: 费用报销}
+  # 金蝶云苍穹（同步与接口场景命中发票同事）
+  - {employee_no: K0033, product_line: cloud-cangqiong, module: 全票池同步}
+  - {employee_no: K0035, product_line: cloud-cangqiong, module: 接口集成}
+  # 金蝶 EAS Cloud（影像/收票场景）
+  - {employee_no: K0031, product_line: eas-cloud, module: 收票采集}
+
+feature_scopes: []

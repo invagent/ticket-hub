@@ -4,9 +4,18 @@ import { api } from "@/api/client";
 export function LoginPage() {
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ssoError, setSsoError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<{ authorize_url: string }>("/api/auth/feishu/login")
+    // If main.tsx flagged an SSO failure (callback returned with sso_error),
+    // surface it here.
+    const stored = localStorage.getItem("auth_sso_error");
+    if (stored) {
+      setSsoError(stored);
+      localStorage.removeItem("auth_sso_error");
+    }
+    api
+      .get("/api/auth/feishu/login")
       .then((r) => setAuthorizeUrl(r.authorize_url))
       .catch((e) => setError(String(e)));
   }, []);
@@ -16,6 +25,11 @@ export function LoginPage() {
       <div className="max-w-sm w-full space-y-4 p-8 rounded-lg shadow bg-white dark:bg-gray-900">
         <h1 className="text-xl font-semibold">登录 ticket-hub</h1>
         <p className="text-sm text-gray-500">飞书扫码登录是唯一入口（决策 D19）。</p>
+        {ssoError && (
+          <p className="text-sm text-red-600">
+            上次扫码失败：{ssoError}
+          </p>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         {authorizeUrl ? (
           <a

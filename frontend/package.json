@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "gen:api": "openapi-typescript http://localhost:8080/openapi.json -o src/api/types.ts"
+    "gen:api": "npx --yes openapi-typescript@^7 src/api/openapi.json -o src/api/types.ts",
+    "gen:api:live": "npx --yes openapi-typescript@^7 http://localhost:8080/openapi.json -o src/api/types.ts",
+    "check:api": "npx --yes openapi-typescript@^7 src/api/openapi.json -o /tmp/_types_check.ts && diff -q src/api/types.ts /tmp/_types_check.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",

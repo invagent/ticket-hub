@@ -56,7 +56,6 @@ jobs:
           --health-retries 10
     env:
       PG_DSN: postgresql+psycopg://hub:hub@localhost:5432/ticket_hub
-      CI_NO_DOCKER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,8 +64,10 @@ jobs:
       - run: pip install -e ".[dev]"
       - name: Apply migrations
         run: alembic upgrade head
-      - name: Integration tests
-        run: pytest tests/integration -v -m integration || echo "no integration tests yet (D0)"
+      - name: D1 integration tests (real PG via testcontainers)
+        run: pytest tests/integration -v -m integration
+      - name: D1 routing replay verification
+        run: python ../scripts/eval/d1_routing_replay.py tests/eval/routing_v1.jsonl --threshold 0.9
 
   frontend:
     name: Frontend (typecheck + unit)
@@ -98,3 +99,23 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -e ".[dev]"
       - run: pytest tests -v
+
+  openapi-types-sync:
+    name: OpenAPI ↔ types.ts in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install backend
+        run: pip install -e ".[dev]"
+        working-directory: backend
+      - name: Install frontend openapi-typescript only
+        run: npm install --no-save openapi-typescript@^7
+        working-directory: frontend
+      - name: Verify openapi.json + types.ts match committed
+        run: make check-types
