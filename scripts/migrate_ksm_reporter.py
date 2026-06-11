@@ -13,7 +13,6 @@ import sys
 
 sys.path.insert(0, ".")
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.db import get_session, init_engine
 from app.models import Ticket
@@ -45,10 +44,7 @@ def main(dry_run: bool) -> None:
         updated = 0
         for ticket in tickets:
             reporter = ticket.reporter or {}
-            if (
-                reporter.get("feedback_user") is not None
-                or reporter.get("linkman") is not None
-            ):
+            if reporter.get("feedback_user") is not None or reporter.get("linkman") is not None:
                 continue
             payload = ticket.source_payload or {}
             extra = extract_reporter_fields(payload)
@@ -59,12 +55,7 @@ def main(dry_run: bool) -> None:
             fu = extra["feedback_user"]
             lm = extra["linkman"]
             print(
-                "  "
-                + ticket.short_code
-                + ": feedback_user="
-                + repr(fu)
-                + ", linkman="
-                + repr(lm)
+                "  " + ticket.short_code + ": feedback_user=" + repr(fu) + ", linkman=" + repr(lm)
             )
             if not dry_run:
                 ticket.reporter = new_reporter

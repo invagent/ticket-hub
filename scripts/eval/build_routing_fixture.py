@@ -42,56 +42,56 @@ PRODUCT_MAP = {
 # 索引对应 historical_tickets.json 中 records 的顺序（与 xlsx 行序一致）
 # decision='assigned' / 'default_pool'。default_pool 时 module=None, owner=99。
 LABELS: dict[int, tuple[str | None, int, str]] = {
-    1:  ("系统配置",   34, "assigned"),
-    2:  ("费用报销",   32, "assigned"),
-    3:  ("数电开票",   30, "assigned"),
-    4:  ("费用报销",   32, "assigned"),
-    5:  ("数电开票",   30, "assigned"),
-    6:  ("数电开票",   30, "assigned"),
-    7:  ("全票池同步", 33, "assigned"),
-    8:  ("接口集成",   35, "assigned"),
-    9:  ("数电开票",   30, "assigned"),
-    10: ("数电开票",   30, "assigned"),
+    1: ("系统配置", 34, "assigned"),
+    2: ("费用报销", 32, "assigned"),
+    3: ("数电开票", 30, "assigned"),
+    4: ("费用报销", 32, "assigned"),
+    5: ("数电开票", 30, "assigned"),
+    6: ("数电开票", 30, "assigned"),
+    7: ("全票池同步", 33, "assigned"),
+    8: ("接口集成", 35, "assigned"),
+    9: ("数电开票", 30, "assigned"),
+    10: ("数电开票", 30, "assigned"),
     11: ("全票池同步", 33, "assigned"),
-    12: ("费用报销",   32, "assigned"),
-    13: ("费用报销",   32, "assigned"),
-    14: ("收票采集",   31, "assigned"),
-    15: ("系统配置",   34, "assigned"),
-    16: ("系统配置",   34, "assigned"),
-    17: ("费用报销",   32, "assigned"),
-    18: ("系统配置",   34, "assigned"),
-    19: ("系统配置",   34, "assigned"),
-    20: ("收票采集",   31, "assigned"),
-    21: ("收票采集",   31, "assigned"),
-    22: ("接口集成",   35, "assigned"),
-    23: ("接口集成",   35, "assigned"),
-    24: ("数电开票",   30, "assigned"),
-    25: ("数电开票",   30, "assigned"),
-    26: ("费用报销",   32, "assigned"),
+    12: ("费用报销", 32, "assigned"),
+    13: ("费用报销", 32, "assigned"),
+    14: ("收票采集", 31, "assigned"),
+    15: ("系统配置", 34, "assigned"),
+    16: ("系统配置", 34, "assigned"),
+    17: ("费用报销", 32, "assigned"),
+    18: ("系统配置", 34, "assigned"),
+    19: ("系统配置", 34, "assigned"),
+    20: ("收票采集", 31, "assigned"),
+    21: ("收票采集", 31, "assigned"),
+    22: ("接口集成", 35, "assigned"),
+    23: ("接口集成", 35, "assigned"),
+    24: ("数电开票", 30, "assigned"),
+    25: ("数电开票", 30, "assigned"),
+    26: ("费用报销", 32, "assigned"),
     27: ("全票池同步", 33, "assigned"),
-    28: ("费用报销",   32, "assigned"),
+    28: ("费用报销", 32, "assigned"),
     29: ("全票池同步", 33, "assigned"),
-    30: ("系统配置",   34, "assigned"),
-    31: ("系统配置",   34, "assigned"),
-    32: ("收票采集",   31, "assigned"),
-    33: ("接口集成",   35, "assigned"),
-    34: ("接口集成",   35, "assigned"),
-    35: ("接口集成",   35, "assigned"),
-    36: (None,         99, "default_pool"),  # 标题过短无法分类
-    37: (None,         99, "default_pool"),  # 标题过短无法分类
-    38: ("系统配置",   34, "assigned"),
+    30: ("系统配置", 34, "assigned"),
+    31: ("系统配置", 34, "assigned"),
+    32: ("收票采集", 31, "assigned"),
+    33: ("接口集成", 35, "assigned"),
+    34: ("接口集成", 35, "assigned"),
+    35: ("接口集成", 35, "assigned"),
+    36: (None, 99, "default_pool"),  # 标题过短无法分类
+    37: (None, 99, "default_pool"),  # 标题过短无法分类
+    38: ("系统配置", 34, "assigned"),
     39: ("全票池同步", 33, "assigned"),
-    40: ("数电开票",   30, "assigned"),
+    40: ("数电开票", 30, "assigned"),
     41: ("全票池同步", 33, "assigned"),
-    42: ("数电开票",   30, "assigned"),
-    43: ("收票采集",   31, "assigned"),
-    44: ("数电开票",   30, "assigned"),
-    45: ("数电开票",   30, "assigned"),
-    46: ("收票采集",   31, "assigned"),
+    42: ("数电开票", 30, "assigned"),
+    43: ("收票采集", 31, "assigned"),
+    44: ("数电开票", 30, "assigned"),
+    45: ("数电开票", 30, "assigned"),
+    46: ("收票采集", 31, "assigned"),
     47: ("全票池同步", 33, "assigned"),
-    48: ("接口集成",   35, "assigned"),
-    49: ("数电开票",   30, "assigned"),
-    50: ("接口集成",   35, "assigned"),
+    48: ("接口集成", 35, "assigned"),
+    49: ("数电开票", 30, "assigned"),
+    50: ("接口集成", 35, "assigned"),
 }
 
 
@@ -103,7 +103,7 @@ def build() -> list[dict]:
     out: list[dict] = []
     for idx, rec in enumerate(records, start=1):
         module, owner_uid, decision = LABELS[idx]
-        product_code = PRODUCT_MAP.get(rec.get("product_name") or "", None)
+        product_code = PRODUCT_MAP.get(rec.get("product_name") or "")
         scope = "default_pool" if decision == "default_pool" else "module"
         out.append(
             {
@@ -129,6 +129,7 @@ def main() -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     # quick stats
     from collections import Counter
+
     by_mod = Counter(r["module"] or "default_pool" for r in fixture)
     by_pl = Counter(r["product_line_code"] or "null" for r in fixture)
     print(f"wrote {TARGET} ({len(fixture)} records)")

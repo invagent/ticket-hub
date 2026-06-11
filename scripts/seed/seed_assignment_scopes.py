@@ -119,9 +119,7 @@ def _seed_product_lines(db: Session, items: list[dict[str, Any]], rep: SeedRepor
     db.flush()
 
 
-def _seed_users(
-    db: Session, items: list[dict[str, Any]], rep: SeedReport
-) -> dict[str, User]:
+def _seed_users(db: Session, items: list[dict[str, Any]], rep: SeedReport) -> dict[str, User]:
     """Returns mapping employee_no → User for downstream use."""
     out: dict[str, User] = {}
     for item in items:
@@ -168,9 +166,7 @@ def _seed_partners(
         a_emp, b_emp = pair
         a, b = by_emp.get(a_emp), by_emp.get(b_emp)
         if a is None or b is None:
-            rep.warnings.append(
-                f"partner pair refers to unknown employee_no: {pair}"
-            )
+            rep.warnings.append(f"partner pair refers to unknown employee_no: {pair}")
             continue
         for x, y in ((a, b), (b, a)):
             existing = db.execute(
@@ -201,16 +197,13 @@ def _seed_module_scopes(
         if user is None:
             rep.warnings.append(f"module_scope: unknown employee_no={emp}")
             continue
-        existing = (
-            db.execute(
-                select(AssignmentScopeModule).where(
-                    AssignmentScopeModule.user_id == user.id,
-                    AssignmentScopeModule.product_line_code == item["product_line"],
-                    AssignmentScopeModule.module == item["module"],
-                )
+        existing = db.execute(
+            select(AssignmentScopeModule).where(
+                AssignmentScopeModule.user_id == user.id,
+                AssignmentScopeModule.product_line_code == item["product_line"],
+                AssignmentScopeModule.module == item["module"],
             )
-            .scalar_one_or_none()
-        )
+        ).scalar_one_or_none()
         if existing is not None:
             rep.module_scopes_skipped += 1
             continue
@@ -237,15 +230,12 @@ def _seed_feature_scopes(
         if user is None:
             rep.warnings.append(f"feature_scope: unknown employee_no={emp}")
             continue
-        existing = (
-            db.execute(
-                select(AssignmentScopeFeature).where(
-                    AssignmentScopeFeature.user_id == user.id,
-                    AssignmentScopeFeature.feature == item["feature"],
-                )
+        existing = db.execute(
+            select(AssignmentScopeFeature).where(
+                AssignmentScopeFeature.user_id == user.id,
+                AssignmentScopeFeature.feature == item["feature"],
             )
-            .scalar_one_or_none()
-        )
+        ).scalar_one_or_none()
         if existing is not None:
             rep.feature_scopes_skipped += 1
             continue
@@ -267,9 +257,7 @@ def seed_from_yaml(db: Session, spec: dict[str, Any]) -> SeedReport:
     by_emp = _seed_users(db, spec.get("users") or [], rep)
     _seed_partners(db, spec.get("partners") or [], by_emp, rep)
     _seed_module_scopes(db, spec.get("module_scopes") or [], by_emp, repo, system_user.id, rep)
-    _seed_feature_scopes(
-        db, spec.get("feature_scopes") or [], by_emp, repo, system_user.id, rep
-    )
+    _seed_feature_scopes(db, spec.get("feature_scopes") or [], by_emp, repo, system_user.id, rep)
     return rep
 
 
@@ -298,8 +286,8 @@ def main() -> int:
         dsn = get_settings().pg_dsn
 
     engine = create_engine(dsn, future=True)
-    SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
-    db = SessionLocal()
+    session_factory = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
+    db = session_factory()
     try:
         report = seed_from_yaml(db, spec)
         if args.dry_run:

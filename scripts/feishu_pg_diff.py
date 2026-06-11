@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def main() -> int:
@@ -24,11 +24,11 @@ def main() -> int:
     parser.add_argument("--out", default="/tmp/feishu_pg_diff.json")
     args = parser.parse_args()
 
-    since = datetime.now(timezone.utc) - timedelta(hours=args.hours)
+    since = datetime.now(UTC) - timedelta(hours=args.hours)
 
     # D1: replace stub with real comparison
     report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "since": since.isoformat(),
         "hours": args.hours,
         "threshold": args.threshold,

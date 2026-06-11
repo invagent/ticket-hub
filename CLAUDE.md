@@ -150,10 +150,10 @@ JWT TTL 为 7 天（`backend/app/config.py` 中 `jwt_ttl_seconds = 60 * 60 * 24 
 VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 ```
 
-## 当前技术债（D3-A 后）
+## 当前技术债（2026-06-11 更新）
 
-- `make lint` 当前红灯：约 20 个 ruff 错 + 17 个 mypy 错（主要在 `app/api/webhooks.py`）
-- `backend/tests/eval/dataset_v1.jsonl` 只有 4 条占位，classify 准确率未量化
+- ~~`make lint` 红灯~~ ✅ 已清（2026-06-11）：ruff + format + mypy 全绿
+- ~~dataset_v1.jsonl 只有 4 条占位~~ ✅ 已扩到 60 条（50 条真实 KSM 手标 + 10 条合成；16 条带 `needs_review` 待人工复核）。跑分：`cd backend && .venv/bin/python ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl`（需 GLM_API_KEY；`--validate` 可离线校验）。classify 准确率仍未量化 — 本地 `.env` 无 GLM key，待有 key 后真跑
 - `HANDOFF.md` 严重过时（D0 时期），以 `docs/progress/2026-05-11-status.md` 为准
 - PII encryptor 未实现（接外部 LLM 前必须补）
 

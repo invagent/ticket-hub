@@ -182,8 +182,8 @@ def replay(fixture_path: Path) -> Report:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
-    db = SessionLocal()
+    session_factory = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
+    db = session_factory()
     try:
         pool_user_id = _seed_world(db, records)
         router = Router(db, default_pool_user_id=pool_user_id)
@@ -202,9 +202,7 @@ def replay(fixture_path: Path) -> Report:
             expected_decision = rec["expected_decision"]
             expected_uids = sorted(rec.get("expected_user_ids", []))
             actual_uids = sorted(decision.assigned_user_ids)
-            ok = (
-                decision.decision == expected_decision and actual_uids == expected_uids
-            )
+            ok = decision.decision == expected_decision and actual_uids == expected_uids
             scope = _classify_actual(decision.decision, decision.matched_scope)
             mismatch = (
                 None
@@ -227,8 +225,10 @@ def replay(fixture_path: Path) -> Report:
 
 def render_report(report: Report, *, threshold: float) -> str:
     lines = []
-    lines.append(f"D1 routing replay — total={report.total} hits={report.hits} "
-                 f"hit_rate={report.hit_rate:.1%} threshold={threshold:.0%}")
+    lines.append(
+        f"D1 routing replay — total={report.total} hits={report.hits} "
+        f"hit_rate={report.hit_rate:.1%} threshold={threshold:.0%}"
+    )
     lines.append("By scope:")
     for scope, (h, n) in sorted(report.by_scope.items()):
         rate = h / n if n else 0.0
@@ -274,7 +274,9 @@ def main() -> int:
                     "total": report.total,
                     "hits": report.hits,
                     "hit_rate": report.hit_rate,
-                    "by_scope": {k: {"hits": v[0], "total": v[1]} for k, v in report.by_scope.items()},
+                    "by_scope": {
+                        k: {"hits": v[0], "total": v[1]} for k, v in report.by_scope.items()
+                    },
                     "mismatches": [
                         {
                             "fixture_id": m.fixture_id,

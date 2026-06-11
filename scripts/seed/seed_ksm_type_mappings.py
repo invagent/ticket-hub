@@ -67,9 +67,7 @@ class SeedReport:
         return "\n".join(lines)
 
 
-def seed_from_yaml(
-    db: Session, spec: dict[str, Any], *, prune: bool = False
-) -> SeedReport:
+def seed_from_yaml(db: Session, spec: dict[str, Any], *, prune: bool = False) -> SeedReport:
     """Apply a parsed yaml spec. Caller commits."""
     rep = SeedReport()
     items = spec.get("mappings") or []
@@ -199,8 +197,8 @@ def main() -> int:
         dsn = get_settings().pg_dsn
 
     engine = create_engine(dsn, future=True)
-    SessionLocal = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
-    db = SessionLocal()
+    session_factory = sessionmaker(engine, autoflush=False, autocommit=False, future=True)
+    db = session_factory()
     try:
         report = seed_from_yaml(db, spec, prune=args.prune)
         if args.dry_run:

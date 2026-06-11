@@ -32,7 +32,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    from app.main import app  # noqa: E402  (must be after sys.path.insert)
+    from app.main import app
 
     schema = app.openapi()
     args.out.parent.mkdir(parents=True, exist_ok=True)
