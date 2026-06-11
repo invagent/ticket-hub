@@ -143,12 +143,12 @@ def test_no_tags_no_feature(world: Session) -> None:
 def test_missing_ticket_id_raises(world: Session) -> None:
     p = _payload()
     p["ticket"]["id"] = 0
-    with pytest.raises(IngestError, match="ticket.id"):
+    with pytest.raises(IngestError, match=r"ticket\.id"):
         ZammadIngester(world).ingest(p)
 
 
 def test_missing_ticket_block_raises(world: Session) -> None:
-    with pytest.raises(IngestError, match="ticket.id"):
+    with pytest.raises(IngestError, match=r"ticket\.id"):
         ZammadIngester(world).ingest({"article": {"id": 1, "body": "no ticket block"}})
 
 

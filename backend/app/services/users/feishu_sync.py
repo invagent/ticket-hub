@@ -21,6 +21,7 @@ partial-failure batch still returns useful results to the admin UI.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -35,20 +36,15 @@ logger = get_logger(__name__)
 class SyncReport:
     new_count: int = 0
     updated_count: int = 0
-    revived_count: int = 0           # was soft-deleted, came back
-    skipped_inactive: int = 0        # Feishu says deactivated and we don't have a local row
-    errors: list[dict] = field(default_factory=list)
+    revived_count: int = 0  # was soft-deleted, came back
+    skipped_inactive: int = 0  # Feishu says deactivated and we don't have a local row
+    errors: list[dict[str, Any]] = field(default_factory=list)
     new_user_ids: list[int] = field(default_factory=list)
     touched_user_ids: list[int] = field(default_factory=list)
 
     @property
     def total_processed(self) -> int:
-        return (
-            self.new_count
-            + self.updated_count
-            + self.skipped_inactive
-            + len(self.errors)
-        )
+        return self.new_count + self.updated_count + self.skipped_inactive + len(self.errors)
 
 
 class FeishuUserSyncService:
@@ -78,7 +74,7 @@ class FeishuUserSyncService:
         for oid in open_ids:
             try:
                 user = self._client.get_user_by_open_id(oid)
-            except Exception as e:  # noqa: BLE001 — bubble up per-user
+            except Exception as e:
                 report.errors.append({"open_id": oid, "error": str(e)})
                 logger.warning("feishu_sync_user_fetch_failed", open_id=oid, error=str(e))
                 continue
@@ -120,7 +116,7 @@ class FeishuUserSyncService:
                 mobile=user.mobile or None,
                 employee_no=user.employee_no or None,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             report.errors.append({"open_id": user.open_id, "error": str(e)})
             logger.exception("feishu_sync_upsert_failed", open_id=user.open_id)
             return

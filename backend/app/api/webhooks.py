@@ -89,7 +89,7 @@ async def _read_object(request: Request) -> dict[str, Any]:
 _notice_store: NoticeStore | None = None
 
 
-def _get_notice_store() -> "NoticeStore | object":
+def _get_notice_store() -> NoticeStore | object:
     """Lazy singleton. Returns NoticeStore(redis_url=...) by default; tests
     override this via app.dependency_overrides — but since we use a module
     global rather than a dep, tests monkey-patch _notice_store directly.
@@ -130,9 +130,7 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
                 subscribe_num=notice.subscribe_num,
             )
         except KSMError as e:
-            logger.exception(
-                "ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e)
-            )
+            logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
             return
     finally:
         client.close()
@@ -146,14 +144,12 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
     ingested_ticket_id: int | None = None
     try:
         try:
-            result = KSMIngester(
-                db, default_pool_user_id=get_default_pool_user_id(db)
-            ).ingest(payload)
+            result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+                payload
+            )
         except KSMIngestError as e:
             db.rollback()
-            logger.warning(
-                "ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e)
-            )
+            logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
             return
         db.commit()
         ingested_ticket_id = result.ticket_id if not result.deduped else None
@@ -212,13 +208,15 @@ async def ksm_webhook(
     looks_like_lightweight = any(payload.get(k) for k in ("noticeNum", "subscribeNum"))
 
     if is_lightweight_ping:
+        # JSON values may arrive as numbers — normalize to str at the boundary.
+        bill_id_s, notice_s, subscribe_s = str(bill_id), str(notice_num), str(subscribe_num)
         # Store the LATEST pair (overwrite on every push) so concurrent
         # background fetches all converge on the freshest notice values.
         _get_notice_store().put(  # type: ignore[attr-defined]
-            bill_id,
-            NoticeInfo(notice_num=notice_num, subscribe_num=subscribe_num),
+            bill_id_s,
+            NoticeInfo(notice_num=notice_s, subscribe_num=subscribe_s),
         )
-        background_tasks.add_task(_ksm_async_fetch_and_ingest, bill_id)
+        background_tasks.add_task(_ksm_async_fetch_and_ingest, bill_id_s)
         logger.info(
             "ksm_webhook_lightweight_ping",
             bill_id=bill_id,
@@ -243,13 +241,9 @@ async def ksm_webhook(
         logger.warning("ksm_webhook_full_payload_missing_billid")
         return KSMAck(code=0)
     try:
-        result = KSMIngester(
-            db, default_pool_user_id=get_default_pool_user_id(db)
-        ).ingest(payload)
+        result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(payload)
     except KSMIngestError as e:
-        logger.warning(
-            "ksm_webhook_sync_validation_failed", bill_id=bill_id, error=str(e)
-        )
+        logger.warning("ksm_webhook_sync_validation_failed", bill_id=bill_id, error=str(e))
         return KSMAck(code=0)
     db.commit()
     logger.info(
@@ -278,9 +272,9 @@ async def zhichi_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZhichiIngester(
-            db, default_pool_user_id=get_default_pool_user_id(db)
-        ).ingest(payload)
+        result = ZhichiIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+            payload
+        )
     except ZhichiIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()
@@ -316,9 +310,9 @@ async def zammad_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZammadIngester(
-            db, default_pool_user_id=get_default_pool_user_id(db)
-        ).ingest(payload)
+        result = ZammadIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+            payload
+        )
     except ZammadIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()

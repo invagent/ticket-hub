@@ -63,7 +63,7 @@ class GLMLLMProvider(LLMProvider):
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        response_format: dict | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> LLMResponse:
         req = ChatRequest(
             messages=[ChatMessage(role=m.role, content=m.content) for m in messages],

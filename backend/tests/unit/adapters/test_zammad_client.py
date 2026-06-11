@@ -171,9 +171,7 @@ def test_list_tickets_success() -> None:
 
 @respx.mock
 def test_list_tickets_empty_on_non_list_response() -> None:
-    respx.get(f"{BASE}/api/v1/tickets").mock(
-        return_value=httpx.Response(200, json={"items": []})
-    )
+    respx.get(f"{BASE}/api/v1/tickets").mock(return_value=httpx.Response(200, json={"items": []}))
     with _client() as c:
         items = c.list_tickets()
     assert items == []

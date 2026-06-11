@@ -80,10 +80,7 @@ class KSMIngester:
             return IngestResult(
                 ticket_id=existing.id,
                 short_code=existing.short_code,
-                customer_id=(
-                    existing.customer_identity_id and self._customer_id_of(existing)
-                )
-                or 0,
+                customer_id=(existing.customer_identity_id and self._customer_id_of(existing)) or 0,
                 customer_identity_id=existing.customer_identity_id or 0,
                 routing_decision="dedup",
                 assigned_user_ids=(
@@ -99,8 +96,7 @@ class KSMIngester:
         # 3. Ensure product_line + module exist (auto-create if unknown)
         upsert_catalog(
             self._db,
-            product_line_code=payload.get("productLineCode")
-            or payload.get("product_line"),
+            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
             module=payload.get("moduleName") or payload.get("module"),
         )
 
@@ -114,8 +110,7 @@ class KSMIngester:
             status="received",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=payload.get("productLineCode")
-            or payload.get("product_line"),
+            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
             module=payload.get("moduleName") or payload.get("module"),
             feature=payload.get("featureName") or payload.get("feature"),
             title=payload.get("title"),

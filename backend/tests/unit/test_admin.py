@@ -52,6 +52,7 @@ def test_trace_id_round_trips(app_client) -> None:
 
 def _admin_bearer(uid: int = 1) -> dict[str, str]:
     from app.api.auth import issue_jwt
+
     token, _ = issue_jwt(sub=str(uid), name="admin", role="admin")
     return {"Authorization": f"Bearer {token}"}
 
@@ -115,6 +116,7 @@ def test_patch_product_line_requires_admin(app_client, db_session) -> None:
     db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
     db_session.commit()
     from app.api.auth import issue_jwt
+
     token, _ = issue_jwt(sub="2", name="m", role="member")
     r = app_client.patch(
         "/api/admin/product-lines/cloud-erp",
@@ -191,6 +193,7 @@ def test_post_product_line_requires_admin(app_client, db_session) -> None:
     db_session.add(User(id=2, feishu_uid="ou_member", name="m", role="member"))
     db_session.commit()
     from app.api.auth import issue_jwt
+
     token, _ = issue_jwt(sub="2", name="m", role="member")
     r = app_client.post(
         "/api/admin/product-lines",

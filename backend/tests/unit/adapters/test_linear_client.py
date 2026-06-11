@@ -163,9 +163,7 @@ def test_auth_error_403() -> None:
 
 @respx.mock
 def test_server_error_500() -> None:
-    respx.post(BASE).mock(
-        return_value=httpx.Response(500, text="Internal Server Error")
-    )
+    respx.post(BASE).mock(return_value=httpx.Response(500, text="Internal Server Error"))
     with _client() as c, pytest.raises(LinearBusinessError) as ei:
         c.create_issue(_create_req())
     assert ei.value.error_code == "500"

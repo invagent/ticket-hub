@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 import redis
 
@@ -55,14 +55,13 @@ class NoticeStore:
     def put(self, bill_id: str, notice: NoticeInfo) -> None:
         self._r.set(
             _KEY_PREFIX + bill_id,
-            json.dumps(
-                {"notice_num": notice.notice_num, "subscribe_num": notice.subscribe_num}
-            ),
+            json.dumps({"notice_num": notice.notice_num, "subscribe_num": notice.subscribe_num}),
             ex=_TTL_SECONDS,
         )
 
     def get(self, bill_id: str) -> NoticeInfo | None:
-        raw = self._r.get(_KEY_PREFIX + bill_id)
+        # sync client + decode_responses=True → str | None (redis-py types it as a sync/async union)
+        raw = cast("str | None", self._r.get(_KEY_PREFIX + bill_id))
         if not raw:
             return None
         d = json.loads(raw)

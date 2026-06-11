@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
-import pytest
 import respx
 from sqlalchemy.orm import Session
 
@@ -97,9 +96,7 @@ def test_sync_dept_creates_new_users(db_session: Session) -> None:
 
 @respx.mock
 def test_sync_dept_updates_existing_without_touching_role(db_session: Session) -> None:
-    db_session.add(
-        User(feishu_uid="ou_a", name="Old Name", role="admin", email="old@example.com")
-    )
+    db_session.add(User(feishu_uid="ou_a", name="Old Name", role="admin", email="old@example.com"))
     db_session.commit()
     _stub_token(respx)
     _stub_dept_users(
@@ -344,6 +341,4 @@ def test_browse_dept_users_marks_already_synced(app_client, db_session) -> None:
 
 def test_browse_endpoints_require_admin(app_client) -> None:
     assert app_client.get("/api/admin/users/feishu/departments").status_code == 401
-    assert (
-        app_client.get("/api/admin/users/feishu/departments/od_1/users").status_code == 401
-    )
+    assert app_client.get("/api/admin/users/feishu/departments/od_1/users").status_code == 401

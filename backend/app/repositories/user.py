@@ -67,9 +67,7 @@ class UserRepository:
             return None
         return u
 
-    def get_by_feishu_uid(
-        self, feishu_uid: str, *, include_deleted: bool = False
-    ) -> User | None:
+    def get_by_feishu_uid(self, feishu_uid: str, *, include_deleted: bool = False) -> User | None:
         stmt = select(User).where(User.feishu_uid == feishu_uid)
         if not include_deleted:
             stmt = stmt.where(User.deleted_at.is_(None))

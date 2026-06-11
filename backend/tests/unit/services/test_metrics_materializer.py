@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models import MaterializedMetrics, ProductLine, Source, Ticket, User
+from app.models import MaterializedMetrics, Source, User
 from app.services.metrics.dashboard import (
     compute_dashboard_metrics,
     get_dashboard_metrics,

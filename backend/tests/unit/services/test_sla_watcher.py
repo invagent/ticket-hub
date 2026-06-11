@@ -233,9 +233,7 @@ def test_per_line_override_makes_ticket_overdue_earlier(base_world: Session) -> 
     builtin default is 4h."""
     from app.models import ProductLine
 
-    base_world.add(
-        ProductLine(code="cloud-erp", name="Cloud ERP", sla_reply_hours=2)
-    )
+    base_world.add(ProductLine(code="cloud-erp", name="Cloud ERP", sla_reply_hours=2))
     base_world.commit()
 
     now = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
@@ -247,7 +245,8 @@ def test_per_line_override_makes_ticket_overdue_earlier(base_world: Session) -> 
             type="Raw",
             status="received",
             product_line_code="cloud-erp",
-            received_at=now - timedelta(hours=3),  # 3h, builtin 4h says NOT overdue, override 2h says overdue
+            received_at=now
+            - timedelta(hours=3),  # 3h, builtin 4h says NOT overdue, override 2h says overdue
             assigned_user_id=1,
         )
     )
@@ -267,9 +266,7 @@ def test_per_line_override_makes_ticket_NOT_overdue_longer_window(
     though builtin default is 4h."""
     from app.models import ProductLine
 
-    base_world.add(
-        ProductLine(code="cloud-erp", name="Cloud ERP", sla_reply_hours=8)
-    )
+    base_world.add(ProductLine(code="cloud-erp", name="Cloud ERP", sla_reply_hours=8))
     base_world.commit()
 
     now = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
@@ -294,9 +291,7 @@ def test_per_line_resolve_override_for_hub_issue(base_world: Session) -> None:
     """sla_resolve_hours overrides per-type defaults for that line."""
     from app.models import HubIssue, ProductLine
 
-    base_world.add(
-        ProductLine(code="cloud-erp", name="Cloud ERP", sla_resolve_hours=2)
-    )
+    base_world.add(ProductLine(code="cloud-erp", name="Cloud ERP", sla_resolve_hours=2))
     base_world.commit()
 
     now = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)

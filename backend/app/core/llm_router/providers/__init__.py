@@ -9,8 +9,8 @@ from .base import LLMProvider, ProviderError, ProviderRetryableError
 from .glm import GLMLLMProvider
 
 __all__ = [
+    "GLMLLMProvider",
     "LLMProvider",
     "ProviderError",
     "ProviderRetryableError",
-    "GLMLLMProvider",
 ]

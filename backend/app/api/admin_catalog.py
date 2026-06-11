@@ -114,8 +114,11 @@ def add_module(
         ) from e
     db.refresh(row)
     logger.info(
-        "admin_module_added", id=row.id, by=admin.user_id,
-        product_line_code=body.product_line_code, name=body.name,
+        "admin_module_added",
+        id=row.id,
+        by=admin.user_id,
+        product_line_code=body.product_line_code,
+        name=body.name,
     )
     return ModuleOut.model_validate(row)
 
@@ -163,9 +166,7 @@ def add_feature(
         db.commit()
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f"feature already exists: {body.name}"
-        ) from e
+        raise HTTPException(status_code=409, detail=f"feature already exists: {body.name}") from e
     db.refresh(row)
     logger.info("admin_feature_added", id=row.id, by=admin.user_id, name=body.name)
     return FeatureOut.model_validate(row)

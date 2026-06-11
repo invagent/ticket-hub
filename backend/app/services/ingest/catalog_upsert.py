@@ -11,6 +11,9 @@ is satisfied when the ticket row is inserted.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
+from sqlalchemy import CursorResult
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -40,7 +43,7 @@ def upsert_catalog(
         )
         .on_conflict_do_nothing(index_elements=["code"])
     )
-    result = db.execute(stmt_pl)
+    result = cast("CursorResult[Any]", db.execute(stmt_pl))
     if result.rowcount:
         logger.info("catalog_upsert_product_line_created", code=product_line_code)
 
@@ -53,7 +56,7 @@ def upsert_catalog(
         .values(product_line_code=product_line_code, name=module, is_active=True)
         .on_conflict_do_nothing(constraint="uq_modules_pl_name")
     )
-    result = db.execute(stmt_mod)
+    result = cast("CursorResult[Any]", db.execute(stmt_mod))
     if result.rowcount:
         logger.info(
             "catalog_upsert_module_created",

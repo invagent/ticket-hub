@@ -65,7 +65,7 @@ def upsert_metrics(db: Session, m: DashboardMetrics) -> MaterializedMetrics:
     return row
 
 
-@shared_task(name="app.services.metrics.materializer.refresh_dashboard_metrics")
+@shared_task(name="app.services.metrics.materializer.refresh_dashboard_metrics")  # type: ignore[untyped-decorator]  # celery decorator is untyped
 def refresh_dashboard_metrics() -> dict[str, Any]:
     """Celery task: compute + persist dashboard snapshot. Returns the
     serialized payload for observability (Celery result backend retains it

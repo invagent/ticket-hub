@@ -111,9 +111,7 @@ class TicketRepository:
             count_base = count_base.where(Ticket.assigned_user_id.is_(None))
         if customer_identity_id is not None:
             base = base.where(Ticket.customer_identity_id == customer_identity_id)
-            count_base = count_base.where(
-                Ticket.customer_identity_id == customer_identity_id
-            )
+            count_base = count_base.where(Ticket.customer_identity_id == customer_identity_id)
         if hub_issue_id is not None:
             base = base.where(Ticket.hub_issue_id == hub_issue_id)
             count_base = count_base.where(Ticket.hub_issue_id == hub_issue_id)
@@ -203,9 +201,7 @@ class HubIssueRepository:
         page_size = max(min(page_size, 200), 1)
 
         base = select(HubIssue).where(HubIssue.deleted_at.is_(None))
-        count_base = select(func.count(HubIssue.id)).where(
-            HubIssue.deleted_at.is_(None)
-        )
+        count_base = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None))
         if type_:
             base = base.where(HubIssue.type == type_)
             count_base = count_base.where(HubIssue.type == type_)
@@ -257,9 +253,7 @@ class HubIssueRepository:
         clauses = []
         for type_name, threshold in type_thresholds.items():
             cutoff = ts_now - threshold
-            clauses.append(
-                (HubIssue.type == type_name) & (HubIssue.first_seen_at < cutoff)
-            )
+            clauses.append((HubIssue.type == type_name) & (HubIssue.first_seen_at < cutoff))
         if not clauses:
             return []
         stmt = (

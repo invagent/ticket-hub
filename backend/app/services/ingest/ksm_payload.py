@@ -47,12 +47,8 @@ PRODUCT_NAME_TO_CODE: dict[str, str] = {
 
 
 def _resolve_product_line_code(data: dict[str, Any]) -> str | None:
-    version = (
-        (data.get("version") or {}) if isinstance(data.get("version"), dict) else {}
-    )
-    product = (
-        (data.get("product") or {}) if isinstance(data.get("product"), dict) else {}
-    )
+    version = (data.get("version") or {}) if isinstance(data.get("version"), dict) else {}
+    product = (data.get("product") or {}) if isinstance(data.get("product"), dict) else {}
     candidate = version.get("mainproductname") or product.get("name") or ""
     candidate = candidate.strip()
     if not candidate:
@@ -79,11 +75,7 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
     `_subscribe_callback` so the ticket's `source_payload` retains
     everything (handleSteps, attachments, etc.) for later replay or audit.
     """
-    customer = (
-        data.get("customerInfo") or {}
-        if isinstance(data.get("customerInfo"), dict)
-        else {}
-    )
+    customer = data.get("customerInfo") or {} if isinstance(data.get("customerInfo"), dict) else {}
     module = (data.get("module") or {}) if isinstance(data.get("module"), dict) else {}
 
     payload: dict[str, Any] = {

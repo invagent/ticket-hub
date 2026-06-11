@@ -146,9 +146,7 @@ def test_lightweight_ping_returns_code0_immediately(
 
 
 @respx.mock
-def test_lightweight_ping_id_field_fallback(
-    app_client, ingest_world: Session
-) -> None:
+def test_lightweight_ping_id_field_fallback(app_client, ingest_world: Session) -> None:
     """Per doc: KSM sometimes uses `id` instead of `billId`."""
     _stub_ksm_auth(respx)
     _stub_subscribe_callback(
@@ -167,9 +165,7 @@ def test_lightweight_ping_id_field_fallback(
     )
     assert resp.status_code == 200
     assert resp.json() == {"code": 0}
-    assert (
-        ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-FALLBACK").count() == 1
-    )
+    assert ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-FALLBACK").count() == 1
 
 
 @respx.mock
@@ -219,16 +215,12 @@ def test_lightweight_ping_overwrites_notice_store_on_re_push(
 
 
 @respx.mock
-def test_subscribe_callback_status_false_does_not_crash(
-    app_client, ingest_world: Session
-) -> None:
+def test_subscribe_callback_status_false_does_not_crash(app_client, ingest_world: Session) -> None:
     """KSM API success but business-failed (status=false) → BG task logs +
     swallows; webhook still returns code:0, no ticket created."""
     _stub_ksm_auth(respx)
     respx.post(f"{KSM_BASE}/ierp/kapi/app/open/subscribeCallback").mock(
-        return_value=httpx.Response(
-            200, json={"status": False, "message": "no such bill"}
-        )
+        return_value=httpx.Response(200, json={"status": False, "message": "no such bill"})
     )
     resp = app_client.post(
         "/webhook/ksm?access_token=test-token",
@@ -237,10 +229,7 @@ def test_subscribe_callback_status_false_does_not_crash(
     assert resp.status_code == 200
     assert resp.json() == {"code": 0}
     # No ticket created
-    assert (
-        ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-NOTFOUND").count()
-        == 0
-    )
+    assert ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-NOTFOUND").count() == 0
 
 
 @respx.mock

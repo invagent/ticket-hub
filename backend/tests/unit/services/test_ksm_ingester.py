@@ -257,6 +257,4 @@ def test_webhook_ksm_idempotent_replay(app_client, db_session: Session) -> None:
     assert r1.json() == {"code": 0}
     assert r2.json() == {"code": 0}
     # Only one ticket exists despite two webhooks
-    assert (
-        db_session.query(Ticket).filter_by(source_ticket_id="replay-001").count() == 1
-    )
+    assert db_session.query(Ticket).filter_by(source_ticket_id="replay-001").count() == 1

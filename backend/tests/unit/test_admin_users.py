@@ -219,9 +219,7 @@ def test_partner_add_creates_symmetric_pair(app_client, world) -> None:
 
 
 def test_partner_remove_clears_both_directions(app_client, world) -> None:
-    world.add_all(
-        [UserPartner(user_id=2, partner_id=4), UserPartner(user_id=4, partner_id=2)]
-    )
+    world.add_all([UserPartner(user_id=2, partner_id=4), UserPartner(user_id=4, partner_id=2)])
     world.commit()
     r = app_client.delete("/api/admin/users/2/partners/4", headers=_bearer(1))
     assert r.status_code == 204
@@ -245,9 +243,7 @@ def test_partner_add_self_rejected(app_client, world) -> None:
 def test_partner_add_duplicate_idempotent(app_client, world) -> None:
     """Re-adding the same partner pair returns 201 with the current list."""
     app_client.post("/api/admin/users/2/partners", headers=_bearer(1), json={"partner_id": 4})
-    r = app_client.post(
-        "/api/admin/users/2/partners", headers=_bearer(1), json={"partner_id": 4}
-    )
+    r = app_client.post("/api/admin/users/2/partners", headers=_bearer(1), json={"partner_id": 4})
     assert r.status_code == 201
     body = r.json()
     assert [p["id"] for p in body] == [4]

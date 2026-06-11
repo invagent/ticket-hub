@@ -24,6 +24,7 @@ Arrays / JSONB: stored as `JSON` (cross-compatible PG ↔ SQLite for tests).
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -51,9 +52,7 @@ class Source(Base):
     __tablename__ = "sources"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(
-        String(32), unique=True, nullable=False, index=True
-    )
+    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -71,9 +70,7 @@ class ProductLine(Base):
     __tablename__ = "product_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, index=True
-    )
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # D2-C: per-product-line SLA threshold overrides. NULL = use SLAWatcher
@@ -105,17 +102,11 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    ksm_account: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, index=True
-    )
-    zhichi_agent_id: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, index=True
-    )
+    ksm_account: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    zhichi_agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -434,7 +425,7 @@ class Ticket(Base):
     # D3-C: LLM classification (predicted hub_issue type + confidence)
     # CHECK constraint enforced at the DB level — see migration 0006.
     predicted_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    predicted_confidence: Mapped[Numeric | None] = mapped_column(Numeric(3, 2), nullable=True)
+    predicted_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Misc

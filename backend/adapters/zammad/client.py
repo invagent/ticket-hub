@@ -50,7 +50,8 @@ class ZammadClient:
 
     def get_ticket(self, ticket_id: int) -> dict[str, Any]:
         """Fetch a single ticket by id. Returns raw JSON dict."""
-        return self._get(f"/api/v1/tickets/{ticket_id}")
+        result = self._get(f"/api/v1/tickets/{ticket_id}")
+        return result if isinstance(result, dict) else {}
 
     def list_tickets(self, *, page: int = 1, per_page: int = 25) -> list[dict[str, Any]]:
         """List tickets (paginated). Returns list of raw JSON dicts."""

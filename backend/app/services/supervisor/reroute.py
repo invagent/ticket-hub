@@ -22,7 +22,7 @@ from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
-from app.services.routing.router import RouteRequest, Router
+from app.services.routing.router import Router, RouteRequest
 from app.services.system_settings import get_default_pool_user_id
 
 logger = get_logger(__name__)
@@ -56,9 +56,7 @@ class RerouteService:
         self._db = db
 
     def reroute(self, req: RerouteRequest) -> RerouteResult:
-        router = Router(
-            self._db, default_pool_user_id=get_default_pool_user_id(self._db)
-        )
+        router = Router(self._db, default_pool_user_id=get_default_pool_user_id(self._db))
         ticket_repo = TicketRepository(self._db)
         history_repo = StatusHistoryRepository(self._db)
 
@@ -93,13 +91,12 @@ class RerouteService:
             )
 
             new_assigned_id: int | None = None
-            result_decision = decision.decision
+            result_decision: str = decision.decision
             success = False
 
-            if decision.decision == "assigned" and decision.assigned_user_ids:
-                new_assigned_id = decision.assigned_user_ids[0]
-                success = True
-            elif decision.decision == "default_pool" and decision.assigned_user_ids:
+            if (decision.decision == "assigned" and decision.assigned_user_ids) or (
+                decision.decision == "default_pool" and decision.assigned_user_ids
+            ):
                 new_assigned_id = decision.assigned_user_ids[0]
                 success = True
             elif decision.decision == "default_pool" and not decision.assigned_user_ids:

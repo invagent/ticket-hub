@@ -71,6 +71,7 @@ def test_chat_uses_default_model_when_unset() -> None:
 
     def handler(req: httpx.Request) -> httpx.Response:
         import json
+
         captured.update(json.loads(req.content))
         return httpx.Response(
             200,
@@ -122,10 +123,11 @@ def test_chat_business_error_in_200_body() -> None:
 
 def test_network_error() -> None:
     # No respx mock → real network call → DNS or connection error
-    cfg = GLMConfig(api_key="x", base_url="http://localhost:1/no-server", default_model="glm-4.5-flash")
-    with GLMClient(cfg, http_client=httpx.Client(timeout=1.0)) as c:
-        with pytest.raises(GLMNetworkError):
-            c.chat(_req())
+    cfg = GLMConfig(
+        api_key="x", base_url="http://localhost:1/no-server", default_model="glm-4.5-flash"
+    )
+    with GLMClient(cfg, http_client=httpx.Client(timeout=1.0)) as c, pytest.raises(GLMNetworkError):
+        c.chat(_req())
 
 
 @respx.mock
@@ -134,6 +136,7 @@ def test_response_format_passed_through() -> None:
 
     def handler(req: httpx.Request) -> httpx.Response:
         import json
+
         captured.update(json.loads(req.content))
         return httpx.Response(
             200,

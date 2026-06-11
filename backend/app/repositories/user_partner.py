@@ -51,14 +51,18 @@ class UserPartnerRepository:
 
     def remove_pair(self, *, user_id: int, partner_id: int) -> bool:
         """Remove both directions. Returns True if any row was removed."""
-        rows = self._db.execute(
-            select(UserPartner).where(
-                or_(
-                    and_(UserPartner.user_id == user_id, UserPartner.partner_id == partner_id),
-                    and_(UserPartner.user_id == partner_id, UserPartner.partner_id == user_id),
+        rows = (
+            self._db.execute(
+                select(UserPartner).where(
+                    or_(
+                        and_(UserPartner.user_id == user_id, UserPartner.partner_id == partner_id),
+                        and_(UserPartner.user_id == partner_id, UserPartner.partner_id == user_id),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not rows:
             return False
         for r in rows:

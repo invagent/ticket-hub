@@ -143,9 +143,7 @@ class SLAWatcher:
         }
 
         # tickets: customer not yet replied past threshold
-        for t in self._ticket_repo.find_unreplied_overdue(
-            threshold=min_reply, now=ts_now
-        ):
+        for t in self._ticket_repo.find_unreplied_overdue(threshold=min_reply, now=ts_now):
             effective = self._ticket_threshold_for(t.product_line_code, reply_overrides)
             # Row may have been pulled because of a smaller min; verify against
             # this ticket's actual threshold.
@@ -183,9 +181,10 @@ class SLAWatcher:
         for h in self._hub_repo.find_overdue_by_type(
             type_thresholds=min_resolve_per_type, now=ts_now
         ):
-            effective = self._hub_threshold_for(h.type, h.product_line_code, resolve_overrides)
-            if effective is None:
+            effective_opt = self._hub_threshold_for(h.type, h.product_line_code, resolve_overrides)
+            if effective_opt is None:
                 continue
+            effective = effective_opt
             fs = h.first_seen_at
             if fs is None:
                 continue

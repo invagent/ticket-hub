@@ -1,8 +1,9 @@
 """ksm_payload mapper tests — D2-F.
 
-Covers product-line resolution (exact match → prefix → None), customerInfo
-extraction, and that source_payload preserves the raw subscribeCallback
-data for audit.
+Covers product-line resolution (exact match → prefix → None), customer
+field extraction (top-level feedback* fields + customerInfo.customerNumber,
+mapping fixed 2026-05-14), and that source_payload preserves the raw
+subscribeCallback data for audit.
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ from app.services.ingest.ksm_payload import (
     PRODUCT_NAME_TO_CODE,
     from_subscribe_callback,
 )
-
 
 # ---- product line resolution -----------------------------------------------
 
@@ -74,10 +74,7 @@ def test_unknown_product_returns_none() -> None:
 def test_empty_inputs() -> None:
     assert from_subscribe_callback({})["productLineCode"] is None
     assert from_subscribe_callback({"version": {}})["productLineCode"] is None
-    assert (
-        from_subscribe_callback({"version": {"mainproductname": ""}})["productLineCode"]
-        is None
-    )
+    assert from_subscribe_callback({"version": {"mainproductname": ""}})["productLineCode"] is None
 
 
 def test_falls_back_to_product_name_when_version_missing() -> None:
@@ -89,20 +86,22 @@ def test_falls_back_to_product_name_when_version_missing() -> None:
 
 
 def test_full_field_mapping_from_doc_example() -> None:
-    """Example payload from KSM doc § 三; verify all our extractions."""
+    """Real subscribeCallback shape: contact fields live at the TOP level
+    (feedbackUser/feedbackEmail/feedbackPhone/feedbackTel), only the
+    customer number comes from customerInfo (mapping fixed 2026-05-14)."""
     data = {
         "billId": "R20240101-0001",
         "title": "工单主题",
         "problem": "问题描述内容",
         "version": {"mainproductname": "金蝶云星空"},
         "module": {"name": "财务模块"},
+        "feedbackUser": "李四",
+        "feedbackEmail": "lisi@example.com",
+        "feedbackPhone": "13900139000",
+        "feedbackTel": "010-87654321",
         "customerInfo": {
             "customerName": "某某公司",
             "customerNumber": "C001",
-            "linkman": "李四",
-            "phone": "010-87654321",
-            "mobile": "13900139000",
-            "email": "lisi@example.com",
         },
     }
     out = from_subscribe_callback(data)
@@ -112,31 +111,40 @@ def test_full_field_mapping_from_doc_example() -> None:
     assert out["productLineCode"] == "cloud-erp-star"
     assert out["moduleName"] == "财务模块"
     assert out["account"] == "C001"
-    assert out["accountName"] == "某某公司"
+    assert out["accountName"] == "李四"
     assert out["email"] == "lisi@example.com"
     assert out["mobile"] == "13900139000"
+    assert out["tel"] == "010-87654321"
     assert out["erpUid"] == "C001"
     # source_payload preserved for audit
     assert out["_subscribe_callback"] is data
 
 
-def test_falls_back_to_linkman_when_customername_missing() -> None:
-    data = {
-        "customerInfo": {"linkman": "李四", "customerNumber": "C001", "email": "x@y.com"}
-    }
-    out = from_subscribe_callback(data)
-    assert out["accountName"] == "李四"
-
-
-def test_phone_used_when_mobile_missing() -> None:
+def test_customerinfo_contact_fields_ignored() -> None:
+    """customerInfo.linkman/mobile/email must NOT bleed into the contact
+    fields — those belong to the account, not the person who filed the
+    ticket (the 2026-05-14 mapping fix)."""
     data = {
         "customerInfo": {
-            "customerName": "co",
-            "customerNumber": "C",
-            "phone": "010-12345678",
+            "customerName": "某某公司",
+            "customerNumber": "C001",
+            "linkman": "李四",
+            "mobile": "13900139000",
+            "email": "lisi@example.com",
         }
     }
-    assert from_subscribe_callback(data)["mobile"] == "010-12345678"
+    out = from_subscribe_callback(data)
+    assert out["account"] == "C001"
+    assert out["accountName"] is None
+    assert out["email"] is None
+    assert out["mobile"] is None
+
+
+def test_feedback_tel_mapped_independently_of_phone() -> None:
+    data = {"feedbackTel": "010-12345678", "customerInfo": {"customerNumber": "C"}}
+    out = from_subscribe_callback(data)
+    assert out["tel"] == "010-12345678"
+    assert out["mobile"] is None
 
 
 def test_id_field_fallback_when_billid_missing() -> None:

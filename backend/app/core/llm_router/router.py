@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from typing import Any
 
 from app.config import get_settings
 from app.core.logging import get_logger
@@ -24,7 +25,7 @@ logger = get_logger(__name__)
 class LLMRouterError(Exception):
     """All providers failed (or the only provider failed non-retryably)."""
 
-    def __init__(self, message: str, *, attempts: list[dict]) -> None:
+    def __init__(self, message: str, *, attempts: list[dict[str, Any]]) -> None:
         super().__init__(message)
         self.attempts = attempts
 
@@ -49,9 +50,7 @@ class LLMRouter:
             providers.append(GLMLLMProvider.from_settings(settings))
         # TODO: deepseek / openai / anthropic providers join this list.
         if not providers:
-            raise RuntimeError(
-                "No LLM provider configured (set GLM_API_KEY or another *_API_KEY)"
-            )
+            raise RuntimeError("No LLM provider configured (set GLM_API_KEY or another *_API_KEY)")
         return cls(providers)
 
     # ------------------------------------------------------------------
@@ -64,10 +63,10 @@ class LLMRouter:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        response_format: dict | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Call providers in order. Returns first successful response."""
-        attempts: list[dict] = []
+        attempts: list[dict[str, Any]] = []
         last_exc: Exception | None = None
 
         for p in self._providers:

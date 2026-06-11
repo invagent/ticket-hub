@@ -10,18 +10,10 @@ import httpx
 import pytest
 import respx
 
-from adapters.glm import (
-    ChatMessage as GlmChatMessage,
-    ChatRequest as GlmChatRequest,
-    ChatResponse as GlmChatResponse,
-    Usage,
-    ChatChoice,
-)
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.llm_router.providers import (
     GLMLLMProvider,
     LLMProvider,
-    ProviderError,
     ProviderRetryableError,
 )
 from app.core.llm_router.providers.glm import _calc_cost
@@ -95,17 +87,13 @@ def test_router_falls_through_on_retryable_then_succeeds() -> None:
             json={
                 "id": "x",
                 "model": "glm-4.5-flash",
-                "choices": [
-                    {"index": 0, "message": {"role": "assistant", "content": "ok"}}
-                ],
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             },
         )
     )
     router = LLMRouter([FailingProvider(), _build_provider()])
-    r = router.complete(
-        [LLMMessage(role="user", content="x")], agent="t"
-    )
+    r = router.complete([LLMMessage(role="user", content="x")], agent="t")
     assert r.content == "ok"
     assert r.provider == "glm"
 
@@ -142,9 +130,7 @@ def test_router_requires_at_least_one_provider() -> None:
 @respx.mock
 def test_glm_5xx_is_retryable() -> None:
     """GLM 5xx → ProviderRetryableError → router moves on (or exhausts)."""
-    respx.post(f"{BASE}/chat/completions").mock(
-        return_value=httpx.Response(503, text="overloaded")
-    )
+    respx.post(f"{BASE}/chat/completions").mock(return_value=httpx.Response(503, text="overloaded"))
 
     class FallbackProvider(LLMProvider):
         name = "fallback"

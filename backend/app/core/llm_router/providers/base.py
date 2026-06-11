@@ -7,7 +7,7 @@ whether to fall over to the next provider.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from app.core.llm_router.types import LLMMessage, LLMResponse
 
@@ -33,5 +33,5 @@ class LLMProvider(Protocol):
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        response_format: dict | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> LLMResponse: ...

@@ -31,6 +31,7 @@ def init_engine(dsn: str | None = None) -> None:
     effective_dsn = dsn or settings.pg_dsn
     if effective_dsn.startswith("sqlite"):
         from sqlalchemy.pool import StaticPool
+
         _engine = create_engine(
             effective_dsn,
             connect_args={"check_same_thread": False},

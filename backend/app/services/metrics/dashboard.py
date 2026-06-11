@@ -15,6 +15,7 @@ Soft-deleted rows are excluded from all denominators / numerators.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -87,9 +88,9 @@ class WebhookIntakeBlock:
     """24h ingest volume by source (D2 monitoring) — surface webhook health."""
 
     window_hours: int
-    by_source: dict[str, int]   # {"ksm": 142, "zhichi": 38, "zammad": 7}
+    by_source: dict[str, int]  # {"ksm": 142, "zhichi": 38, "zammad": 7}
     total: int
-    deduped_total: int           # tickets received with `source` but already-existed (proxy)
+    deduped_total: int  # tickets received with `source` but already-existed (proxy)
 
 
 @dataclass(slots=True, frozen=True)
@@ -102,7 +103,7 @@ class DashboardMetrics:
     webhook_intake: WebhookIntakeBlock
 
 
-def _from_json(payload: dict) -> DashboardMetrics:
+def _from_json(payload: dict[str, Any]) -> DashboardMetrics:
     """Re-hydrate DashboardMetrics from materialized_metrics.metrics_json.
 
     Keep block constructors in sync with the asdict() in materializer.py;
@@ -128,9 +129,7 @@ def get_dashboard_metrics(db: Session) -> DashboardMetrics:
     from app.models import MaterializedMetrics  # avoid import cycle
 
     row = db.execute(
-        select(MaterializedMetrics)
-        .where(MaterializedMetrics.slot_key == "latest")
-        .limit(1)
+        select(MaterializedMetrics).where(MaterializedMetrics.slot_key == "latest").limit(1)
     ).scalar_one_or_none()
     if row is not None:
         try:
@@ -138,9 +137,8 @@ def get_dashboard_metrics(db: Session) -> DashboardMetrics:
         except (KeyError, TypeError) as e:
             # Schema drift between writer and reader — fall through to live compute
             from app.core.logging import get_logger
-            get_logger(__name__).warning(
-                "dashboard_materialized_payload_invalid", error=str(e)
-            )
+
+            get_logger(__name__).warning("dashboard_materialized_payload_invalid", error=str(e))
     return compute_dashboard_metrics(db)
 
 
@@ -297,6 +295,7 @@ def compute_dashboard_metrics(db: Session) -> DashboardMetrics:
 
     # ---- webhook intake (24h) ---------------------------------------
     from datetime import UTC, datetime, timedelta
+
     cutoff = datetime.now(UTC) - timedelta(hours=24)
     by_source_rows = db.execute(
         select(Ticket.source_code, func.count(Ticket.id))

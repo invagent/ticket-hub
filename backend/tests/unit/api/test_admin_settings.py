@@ -11,6 +11,7 @@ from app.models import SystemSetting, User
 
 def _auth_header(client: TestClient, role: str = "supervisor") -> dict[str, str]:
     from jose import jwt
+
     from app.config import get_settings
 
     token = jwt.encode(
@@ -23,9 +24,7 @@ def _auth_header(client: TestClient, role: str = "supervisor") -> dict[str, str]
 
 @pytest.fixture
 def world(db_session: Session) -> Session:
-    db_session.add(
-        User(id=1, feishu_uid="ou_super", name="supervisor", role="supervisor")
-    )
+    db_session.add(User(id=1, feishu_uid="ou_super", name="supervisor", role="supervisor"))
     db_session.add(User(id=2, feishu_uid="ou_pool", name="pool-user", role="assignee"))
     db_session.commit()
     return db_session

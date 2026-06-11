@@ -17,7 +17,6 @@ from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.logging import get_logger
 from app.db import get_session
 from app.models import SystemSetting, User
-from app.services.system_settings import get_default_pool_user_id
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -35,9 +34,7 @@ class DefaultPoolUserIn(BaseModel):
 
 
 def _build_out(db: Session) -> DefaultPoolUserOut:
-    row = db.execute(
-        select(SystemSetting).where(SystemSetting.key == _KEY)
-    ).scalar_one_or_none()
+    row = db.execute(select(SystemSetting).where(SystemSetting.key == _KEY)).scalar_one_or_none()
     if row is None or row.value is None:
         return DefaultPoolUserOut(user_id=None, user_name=None)
     try:
@@ -72,21 +69,15 @@ def put_default_pool_user(
         if user is None:
             raise HTTPException(status_code=422, detail="user not found or inactive")
 
-    row = db.execute(
-        select(SystemSetting).where(SystemSetting.key == _KEY)
-    ).scalar_one_or_none()
+    row = db.execute(select(SystemSetting).where(SystemSetting.key == _KEY)).scalar_one_or_none()
 
     new_value = str(body.user_id) if body.user_id is not None else None
     if row is None:
-        db.add(
-            SystemSetting(key=_KEY, value=new_value, updated_by=current_user.user_id)
-        )
+        db.add(SystemSetting(key=_KEY, value=new_value, updated_by=current_user.user_id))
     else:
         row.value = new_value
         row.updated_by = current_user.user_id
 
     db.commit()
-    logger.info(
-        "system_setting_updated", key=_KEY, value=new_value, by=current_user.user_id
-    )
+    logger.info("system_setting_updated", key=_KEY, value=new_value, by=current_user.user_id)
     return _build_out(db)

@@ -96,9 +96,7 @@ class UserDetailOut(BaseModel):
 
 
 class UserPatch(BaseModel):
-    role: str | None = Field(
-        default=None, pattern="^(member|assignee|supervisor|admin)$"
-    )
+    role: str | None = Field(default=None, pattern="^(member|assignee|supervisor|admin)$")
     is_active: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)
     email: str | None = Field(default=None, max_length=255)
@@ -132,7 +130,7 @@ class SyncReportOut(BaseModel):
     updated_count: int
     revived_count: int
     skipped_inactive: int
-    errors: list[dict]
+    errors: list[dict[str, Any]]
     new_user_ids: list[int]
     touched_user_ids: list[int]
     total_processed: int
@@ -369,8 +367,7 @@ def get_user_detail(
             for r in module_scopes
         ],
         feature_scopes=[
-            ScopeRowOut(id=r.id, user_id=r.user_id, feature=r.feature)
-            for r in feature_scopes
+            ScopeRowOut(id=r.id, user_id=r.user_id, feature=r.feature) for r in feature_scopes
         ],
         partners=[PartnerRowOut(id=p.id, name=p.name, role=p.role) for p in partners],
     )
@@ -456,13 +453,9 @@ def set_supervisor(
     if user_repo.get(user_id) is None:
         raise HTTPException(status_code=404, detail="user not found")
     if user_repo.get(body.supervisor_id) is None:
-        raise HTTPException(
-            status_code=400, detail="supervisor_id refers to unknown user"
-        )
+        raise HTTPException(status_code=400, detail="supervisor_id refers to unknown user")
     if body.deputy_supervisor_id and user_repo.get(body.deputy_supervisor_id) is None:
-        raise HTTPException(
-            status_code=400, detail="deputy_supervisor_id refers to unknown user"
-        )
+        raise HTTPException(status_code=400, detail="deputy_supervisor_id refers to unknown user")
     try:
         row = UserSupervisorRepository(db).upsert(
             user_id=user_id,
@@ -490,13 +483,9 @@ def clear_supervisor(
     db: Session = Depends(get_session),
 ) -> None:
     if not UserSupervisorRepository(db).clear(user_id):
-        raise HTTPException(
-            status_code=404, detail="no supervisor relationship to clear"
-        )
+        raise HTTPException(status_code=404, detail="no supervisor relationship to clear")
     db.commit()
-    logger.info(
-        "admin_user_supervisor_cleared", target_user_id=user_id, by=admin.user_id
-    )
+    logger.info("admin_user_supervisor_cleared", target_user_id=user_id, by=admin.user_id)
 
 
 # ---- partners --------------------------------------------------------
@@ -521,9 +510,7 @@ def add_partner(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail="partner pair already exists"
-        ) from e
+        raise HTTPException(status_code=409, detail="partner pair already exists") from e
     if not added:
         # Idempotent — return current list with 200 instead of 201
         # Actually keep 201 for consistency; the row exists so caller can ignore

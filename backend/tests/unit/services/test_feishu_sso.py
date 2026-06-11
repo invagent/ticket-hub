@@ -81,7 +81,6 @@ def test_first_login_creates_user(db_session: Session) -> None:
     assert user.employee_no == "K0001"
 
 
-
 @respx.mock
 def test_second_user_gets_member_role(db_session: Session) -> None:
     # First login — becomes admin
@@ -101,6 +100,7 @@ def test_second_user_gets_member_role(db_session: Session) -> None:
         second = svc.login(db_session, code="def")
     db_session.commit()
     assert second.role == "member"
+
 
 @respx.mock
 def test_second_login_updates_profile(db_session: Session) -> None:

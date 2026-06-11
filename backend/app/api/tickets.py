@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
@@ -23,8 +24,6 @@ from app.models import Customer, CustomerIdentity, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
-
-from sqlalchemy import select
 
 router = APIRouter()
 
@@ -144,15 +143,13 @@ def get_ticket(
             detail.customer_id = identity.customer_id
             customer = db.get(Customer, identity.customer_id)
             if customer is not None:
-                detail.customer_display_name = (
-                    customer.display_name or identity.raw_name
-                )
+                detail.customer_display_name = customer.display_name or identity.raw_name
             else:
                 detail.customer_display_name = identity.raw_name
     if ticket.reporter and isinstance(ticket.reporter, dict):
-        detail.reporter_name = ticket.reporter.get(
-            "feedback_user"
-        ) or ticket.reporter.get("linkman")
+        detail.reporter_name = ticket.reporter.get("feedback_user") or ticket.reporter.get(
+            "linkman"
+        )
     return detail
 
 

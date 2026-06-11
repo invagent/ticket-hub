@@ -9,9 +9,9 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.api import (
     admin,
-    admin_settings,
     admin_catalog,
     admin_scopes,
+    admin_settings,
     admin_users,
     auth,
     customers,
@@ -56,9 +56,7 @@ def create_app() -> FastAPI:
         return response
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(
-        _request: Request, exc: Exception
-    ) -> JSONResponse:
+    async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
         get_logger(__name__).exception("unhandled", error=str(exc))
         return JSONResponse(status_code=500, content={"detail": "internal error"})
 

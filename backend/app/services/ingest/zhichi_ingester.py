@@ -21,9 +21,9 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
-from app.services.ingest.catalog_upsert import upsert_catalog
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
+from app.services.ingest.catalog_upsert import upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -172,8 +172,7 @@ class ZhichiIngester:
     def _extract_identity(payload: dict[str, Any]) -> IdentityInput:
         return IdentityInput(
             source_code="zhichi",
-            source_user_id=payload.get("customerid")
-            or _customer_field(payload, "customerid"),
+            source_user_id=payload.get("customerid") or _customer_field(payload, "customerid"),
             erp_uid=payload.get("erp_uid") or _customer_field(payload, "erp_uid"),
             email=_customer_field(payload, "email"),
             mobile=_customer_field(payload, "mobile"),
