@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     glm_api_key: str = ""
 
+    # ---- Linear (D4) ----
+    linear_api_key: str = ""
+    linear_team_id: str = ""  # Linear team ID to create issues in
+
     # ---- PII ----
     pii_master_key: str = ""  # base64-encoded 32-byte AES key; required in prod
 

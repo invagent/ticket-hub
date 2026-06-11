@@ -9,9 +9,10 @@ Field mapping (KSM doc § 三)：
         OR product.name                              → productLineCode (after lookup)
     module.name                                      → moduleName
     customerInfo.customerNumber                      → account, erpUid
-    customerInfo.customerName | linkman              → accountName
-    customerInfo.email                               → email
-    customerInfo.mobile | phone                      → mobile
+    feedbackUser                                     → accountName
+    feedbackEmail                                    → email
+    feedbackPhone                                    → mobile
+    feedbackTel                                      → tel
 
 Mapping table for product lines (Chinese name in KSM → our seeded code):
     金蝶发票云*       → cloud-fapiao   (prefix match, handles "金蝶发票云（旗舰版）..."等变体)
@@ -41,13 +42,17 @@ PRODUCT_NAME_TO_CODE: dict[str, str] = {
     "金蝶云苍穹": "cloud-cangqiong",
     "金蝶EAS Cloud": "eas-cloud",
     "金蝶 EAS Cloud": "eas-cloud",  # tolerate the spaced variant
-    "金蝶EAS": "eas-cloud",         # bare prefix
+    "金蝶EAS": "eas-cloud",  # bare prefix
 }
 
 
 def _resolve_product_line_code(data: dict[str, Any]) -> str | None:
-    version = (data.get("version") or {}) if isinstance(data.get("version"), dict) else {}
-    product = (data.get("product") or {}) if isinstance(data.get("product"), dict) else {}
+    version = (
+        (data.get("version") or {}) if isinstance(data.get("version"), dict) else {}
+    )
+    product = (
+        (data.get("product") or {}) if isinstance(data.get("product"), dict) else {}
+    )
     candidate = version.get("mainproductname") or product.get("name") or ""
     candidate = candidate.strip()
     if not candidate:
@@ -91,9 +96,10 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         "moduleName": module.get("name") or None,
         # Customer identity (KSMIngester._extract_identity reads these)
         "account": customer.get("customerNumber"),
-        "accountName": customer.get("customerName") or customer.get("linkman"),
-        "email": customer.get("email"),
-        "mobile": customer.get("mobile") or customer.get("phone"),
+        "accountName": data.get("feedbackUser"),
+        "email": data.get("feedbackEmail"),
+        "mobile": data.get("feedbackPhone"),
+        "tel": data.get("feedbackTel"),
         "erpUid": customer.get("customerNumber"),
         # Pass through full original payload for source_payload audit trail.
         "_subscribe_callback": data,

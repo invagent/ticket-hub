@@ -99,7 +99,8 @@ class KSMIngester:
         # 3. Ensure product_line + module exist (auto-create if unknown)
         upsert_catalog(
             self._db,
-            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
+            product_line_code=payload.get("productLineCode")
+            or payload.get("product_line"),
             module=payload.get("moduleName") or payload.get("module"),
         )
 
@@ -121,12 +122,9 @@ class KSMIngester:
             body=payload.get("content") or payload.get("description"),
             reporter={
                 "name": payload.get("accountName"),
-                "feedback_user": payload.get("feedbackUser"),
-                "linkman": (payload.get("_subscribe_callback") or {})
-                .get("customerInfo", {})
-                .get("linkman"),
                 "email": payload.get("email"),
                 "mobile": payload.get("mobile"),
+                "tel": payload.get("tel"),
                 "source_user_id": payload.get("account"),
             },
         )
