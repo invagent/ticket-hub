@@ -34,6 +34,7 @@ from app.core.trace import get_trace_id
 from app.db import get_session, make_session
 from app.services.agents.classify import classify_ticket
 from app.services.agents.conflict_detect import detect_ticket_conflict
+from app.services.agents.split import execute_split_for_ticket
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -53,10 +54,26 @@ def run_post_ingest_agents(ticket_id: int) -> None:
 
     Single BackgroundTask entry so call sites stay one-liners. Each agent
     swallows its own failures — one agent failing must not stop the next.
+
+    Chain: classify → conflict_detect → (auto split when confidence clears
+    the bar) → classify each child. Children never re-run conflict_detect
+    (no recursive splitting).
     """
     classify_ticket(ticket_id)
-    if get_settings().conflict_detect_enabled:
-        detect_ticket_conflict(ticket_id)
+    settings = get_settings()
+    if not settings.conflict_detect_enabled:
+        return
+    res = detect_ticket_conflict(ticket_id)
+    if (
+        res is not None
+        and res.decision == "split"
+        and settings.split_auto_enabled
+        and res.confidence >= settings.split_auto_confidence
+    ):
+        split_res = execute_split_for_ticket(ticket_id, executed_by="agent:split_auto")
+        if split_res is not None:
+            for child_id in split_res.child_ticket_ids:
+                classify_ticket(child_id)
 
 
 class IngestResponse(BaseModel):

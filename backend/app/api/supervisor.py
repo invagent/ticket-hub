@@ -5,6 +5,8 @@
   POST /api/supervisor/relink                      — re-link ticket↔hub_issue
   GET  /api/supervisor/config-warnings             — system configuration gaps
   POST /api/supervisor/reroute                     — re-trigger routing for unassigned tickets
+  POST /api/supervisor/execute-split               — materialize a split_ticket proposal
+  POST /api/supervisor/revert-split                — undo a materialized split
 
 All endpoints require role IN ('supervisor', 'admin').
 """
@@ -14,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,8 @@ from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.logging import get_logger
 from app.db import get_session
 from app.repositories.notification_log import NotificationLogRepository
+from app.services.agents.classify import classify_ticket
+from app.services.agents.split import SplitError, execute_split, revert_split
 from app.services.supervisor.config_warnings import get_config_warnings
 from app.services.supervisor.relink import (
     HubIssueNotFoundError,
@@ -247,4 +251,91 @@ def reroute_tickets(
         ],
         assigned_count=result.assigned_count,
         no_match_count=result.no_match_count,
+    )
+
+
+# ---- split execute / revert (D3-D) -----------------------------------------
+
+
+class ExecuteSplitBody(BaseModel):
+    decision_id: int
+
+
+class ExecuteSplitResponse(BaseModel):
+    decision_id: int
+    parent_ticket_id: int
+    child_ticket_ids: list[int]
+
+
+class RevertSplitBody(BaseModel):
+    decision_id: int
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class RevertSplitResponse(BaseModel):
+    decision_id: int
+    parent_ticket_id: int
+    deleted_child_ids: list[int]
+
+
+@router.post("/execute-split", response_model=ExecuteSplitResponse)
+def execute_split_endpoint(
+    body: ExecuteSplitBody,
+    background_tasks: BackgroundTasks,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ExecuteSplitResponse:
+    """Materialize a pending split_ticket proposal into Child tickets.
+
+    Children are classified asynchronously after the response (LLM call —
+    must not block the supervisor's request).
+    """
+    try:
+        result = execute_split(body.decision_id, executed_by=f"user:{user.name}", db=db)
+    except SplitError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    for child_id in result.child_ticket_ids:
+        background_tasks.add_task(classify_ticket, child_id)
+    logger.info(
+        "supervisor_execute_split",
+        decision_id=body.decision_id,
+        parent_ticket_id=result.parent_ticket_id,
+        child_ticket_ids=result.child_ticket_ids,
+        operator_user_id=user.user_id,
+    )
+    return ExecuteSplitResponse(
+        decision_id=result.decision_id,
+        parent_ticket_id=result.parent_ticket_id,
+        child_ticket_ids=result.child_ticket_ids,
+    )
+
+
+@router.post("/revert-split", response_model=RevertSplitResponse)
+def revert_split_endpoint(
+    body: RevertSplitBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> RevertSplitResponse:
+    """Undo a materialized split: soft-delete children (refused if any child
+    is already in progress), restore the parent to Raw."""
+    try:
+        result = revert_split(
+            body.decision_id,
+            reverted_by=f"user:{user.name}",
+            reason=body.reason,
+            db=db,
+        )
+    except SplitError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "supervisor_revert_split",
+        decision_id=body.decision_id,
+        parent_ticket_id=result.parent_ticket_id,
+        deleted_child_ids=result.deleted_child_ids,
+        operator_user_id=user.user_id,
+    )
+    return RevertSplitResponse(
+        decision_id=result.decision_id,
+        parent_ticket_id=result.parent_ticket_id,
+        deleted_child_ids=result.deleted_child_ids,
     )

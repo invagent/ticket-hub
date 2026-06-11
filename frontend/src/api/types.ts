@@ -4,98 +4,71 @@
  */
 
 export interface paths {
-    "/health": {
+    "/api/admin/features": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Health */
-        get: operations["health_health_get"];
+        /** List Features */
+        get: operations["list_features_api_admin_features_get"];
         put?: never;
-        post?: never;
+        /** Add Feature */
+        post: operations["add_feature_api_admin_features_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/health/ready": {
+    "/api/admin/features/{feature_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Ready */
-        get: operations["ready_health_ready_get"];
+        get?: never;
         put?: never;
         post?: never;
+        /** Delete Feature */
+        delete: operations["delete_feature_api_admin_features__feature_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Modules */
+        get: operations["list_modules_api_admin_modules_get"];
+        put?: never;
+        /** Add Module */
+        post: operations["add_module_api_admin_modules_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/feishu/login": {
+    "/api/admin/modules/{module_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Feishu Login Url
-         * @description Return the Feishu OAuth2 authorize URL.
-         */
-        get: operations["feishu_login_url_api_auth_feishu_login_get"];
+        get?: never;
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/feishu/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Feishu Callback
-         * @description Exchange Feishu auth code for our JWT and redirect browser to frontend.
-         *
-         *     Browser arrives here as a GET (Feishu's standard OAuth2 redirect). We
-         *     exchange the code, sign a JWT, and 302 to the frontend SPA with token
-         *     in URL fragment (so the token never reaches our server logs).
-         *
-         *     Side effect: upserts users row (creates on first login).
-         */
-        get: operations["feishu_callback_api_auth_feishu_callback_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/sources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Sources */
-        get: operations["list_sources_api_admin_sources_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
+        /** Delete Module */
+        delete: operations["delete_module_api_admin_modules__module_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -151,229 +124,6 @@ export interface paths {
         patch: operations["patch_product_line_api_admin_product_lines__code__patch"];
         trace?: never;
     };
-    "/api/admin/users/feishu/departments/tree": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Feishu Departments Tree
-         * @description Return all departments under root as a flat list with parent_department_id.
-         *
-         *     Uses fetch_child=True so Feishu returns the full hierarchy in one call.
-         *     Frontend builds the tree from parent_department_id relationships.
-         */
-        get: operations["list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/feishu/departments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Feishu Departments
-         * @description List immediate child departments of `parent_id` (default: root='0').
-         */
-        get: operations["list_feishu_departments_api_admin_users_feishu_departments_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/feishu/departments/{department_id}/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Feishu Department Users
-         * @description List users directly under a Feishu department, annotated with sync status.
-         */
-        get: operations["list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/sync-from-feishu": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sync From Feishu
-         * @description Bulk-pull users from Feishu contact API and upsert into local users.
-         */
-        post: operations["sync_from_feishu_api_admin_users_sync_from_feishu_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Users */
-        get: operations["list_users_api_admin_users_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get User Detail */
-        get: operations["get_user_detail_api_admin_users__user_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete User */
-        delete: operations["delete_user_api_admin_users__user_id__delete"];
-        options?: never;
-        head?: never;
-        /** Patch User */
-        patch: operations["patch_user_api_admin_users__user_id__patch"];
-        trace?: never;
-    };
-    "/api/admin/users/{user_id}/revive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Revive User */
-        post: operations["revive_user_api_admin_users__user_id__revive_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{user_id}/supervisor": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Set Supervisor */
-        post: operations["set_supervisor_api_admin_users__user_id__supervisor_post"];
-        /** Clear Supervisor */
-        delete: operations["clear_supervisor_api_admin_users__user_id__supervisor_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{user_id}/partners": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add Partner */
-        post: operations["add_partner_api_admin_users__user_id__partners_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{user_id}/partners/{partner_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Remove Partner */
-        delete: operations["remove_partner_api_admin_users__user_id__partners__partner_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/scopes/modules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Modules */
-        get: operations["list_modules_api_admin_scopes_modules_get"];
-        put?: never;
-        /** Add Module */
-        post: operations["add_module_api_admin_scopes_modules_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/scopes/modules/{scope_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Module */
-        delete: operations["delete_module_api_admin_scopes_modules__scope_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/scopes/features": {
         parameters: {
             query?: never;
@@ -426,7 +176,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/modules": {
+    "/api/admin/scopes/modules": {
         parameters: {
             query?: never;
             header?: never;
@@ -434,17 +184,17 @@ export interface paths {
             cookie?: never;
         };
         /** List Modules */
-        get: operations["list_modules_api_admin_modules_get"];
+        get: operations["list_modules_api_admin_scopes_modules_get"];
         put?: never;
         /** Add Module */
-        post: operations["add_module_api_admin_modules_post"];
+        post: operations["add_module_api_admin_scopes_modules_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/modules/{module_id}": {
+    "/api/admin/scopes/modules/{scope_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -455,42 +205,7 @@ export interface paths {
         put?: never;
         post?: never;
         /** Delete Module */
-        delete: operations["delete_module_api_admin_modules__module_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/features": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Features */
-        get: operations["list_features_api_admin_features_get"];
-        put?: never;
-        /** Add Feature */
-        post: operations["add_feature_api_admin_features_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/features/{feature_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Feature */
-        delete: operations["delete_feature_api_admin_features__feature_id__delete"];
+        delete: operations["delete_module_api_admin_scopes_modules__scope_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -508,6 +223,382 @@ export interface paths {
         /** Put Default Pool User */
         put: operations["put_default_pool_user_api_admin_settings_default_pool_user_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_admin_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/feishu/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Departments
+         * @description List immediate child departments of `parent_id` (default: root='0').
+         */
+        get: operations["list_feishu_departments_api_admin_users_feishu_departments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/feishu/departments/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Departments Tree
+         * @description Return all departments under root as a flat list with parent_department_id.
+         *
+         *     Uses fetch_child=True so Feishu returns the full hierarchy in one call.
+         *     Frontend builds the tree from parent_department_id relationships.
+         */
+        get: operations["list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/feishu/departments/{department_id}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Feishu Department Users
+         * @description List users directly under a Feishu department, annotated with sync status.
+         */
+        get: operations["list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/sync-from-feishu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync From Feishu
+         * @description Bulk-pull users from Feishu contact API and upsert into local users.
+         */
+        post: operations["sync_from_feishu_api_admin_users_sync_from_feishu_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Detail */
+        get: operations["get_user_detail_api_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_api_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch User */
+        patch: operations["patch_user_api_admin_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/partners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Partner */
+        post: operations["add_partner_api_admin_users__user_id__partners_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/partners/{partner_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Partner */
+        delete: operations["remove_partner_api_admin_users__user_id__partners__partner_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/revive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revive User */
+        post: operations["revive_user_api_admin_users__user_id__revive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/supervisor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Supervisor */
+        post: operations["set_supervisor_api_admin_users__user_id__supervisor_post"];
+        /** Clear Supervisor */
+        delete: operations["clear_supervisor_api_admin_users__user_id__supervisor_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/feishu/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feishu Callback
+         * @description Exchange Feishu auth code for our JWT and redirect browser to frontend.
+         *
+         *     Browser arrives here as a GET (Feishu's standard OAuth2 redirect). We
+         *     exchange the code, sign a JWT, and 302 to the frontend SPA with token
+         *     in URL fragment (so the token never reaches our server logs).
+         *
+         *     Side effect: upserts users row (creates on first login).
+         */
+        get: operations["feishu_callback_api_auth_feishu_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/feishu/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feishu Login Url
+         * @description Return the Feishu OAuth2 authorize URL.
+         */
+        get: operations["feishu_login_url_api_auth_feishu_login_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/customers/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Customers */
+        get: operations["search_customers_api_customers_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/customers/{customer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Customer */
+        get: operations["get_customer_api_customers__customer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Hub Issues */
+        get: operations["list_hub_issues_api_hub_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues/{hub_issue_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hub Issue */
+        get: operations["get_hub_issue_api_hub_issues__hub_issue_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard Metrics */
+        get: operations["dashboard_metrics_api_metrics_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/config-warnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Config Warnings */
+        get: operations["list_config_warnings_api_supervisor_config_warnings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/execute-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute Split Endpoint
+         * @description Materialize a pending split_ticket proposal into Child tickets.
+         *
+         *     Children are classified asynchronously after the response (LLM call —
+         *     must not block the supervisor's request).
+         */
+        post: operations["execute_split_endpoint_api_supervisor_execute_split_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -565,23 +656,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/supervisor/config-warnings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Config Warnings */
-        get: operations["list_config_warnings_api_supervisor_config_warnings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/supervisor/reroute": {
         parameters: {
             query?: never;
@@ -593,6 +667,27 @@ export interface paths {
         put?: never;
         /** Reroute Tickets */
         post: operations["reroute_tickets_api_supervisor_reroute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/revert-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Split Endpoint
+         * @description Undo a materialized split: soft-delete children (refused if any child
+         *     is already in progress), restore the parent to Raw.
+         */
+        post: operations["revert_split_endpoint_api_supervisor_revert_split_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -650,15 +745,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/hub-issues": {
+    "/health": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Hub Issues */
-        get: operations["list_hub_issues_api_hub_issues_get"];
+        /** Health */
+        get: operations["health_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -667,66 +762,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/hub-issues/{hub_issue_id}": {
+    "/health/ready": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Hub Issue */
-        get: operations["get_hub_issue_api_hub_issues__hub_issue_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/customers/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Search Customers */
-        get: operations["search_customers_api_customers_search_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/customers/{customer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Customer */
-        get: operations["get_customer_api_customers__customer_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/metrics/dashboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Dashboard Metrics */
-        get: operations["dashboard_metrics_api_metrics_dashboard_get"];
+        /** Ready */
+        get: operations["ready_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -769,23 +813,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/zhichi": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Zhichi Webhook */
-        post: operations["zhichi_webhook_webhook_zhichi_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/webhook/zammad": {
         parameters: {
             query?: never;
@@ -803,30 +830,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhook/zhichi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Zhichi Webhook */
+        post: operations["zhichi_webhook_webhook_zhichi_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** AckResponse */
         AckResponse: {
-            /** Notification Id */
-            notification_id: number;
             /**
              * Acknowledged At
              * Format: date-time
              */
             acknowledged_at: string;
+            /** Notification Id */
+            notification_id: number;
         };
         /** CheckOut */
         CheckOut: {
+            /** Error */
+            error?: string | null;
+            /** Latency Ms */
+            latency_ms: number;
             /** Name */
             name: string;
             /** Ok */
             ok: boolean;
-            /** Latency Ms */
-            latency_ms: number;
-            /** Error */
-            error?: string | null;
             /** Required */
             required: boolean;
         };
@@ -834,12 +878,12 @@ export interface components {
         ConfigWarningItem: {
             /** Code */
             code: string;
-            /** Product Line Code */
-            product_line_code: string | null;
-            /** Module */
-            module: string | null;
             /** Detail */
             detail: string;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
         };
         /** ConfigWarningsResponse */
         ConfigWarningsResponse: {
@@ -848,25 +892,25 @@ export interface components {
         };
         /** CountsOut */
         CountsOut: {
-            /** Tickets Total */
-            tickets_total: number;
-            /** Tickets Active */
-            tickets_active: number;
-            /** Hub Issues Total */
-            hub_issues_total: number;
             /** Customers Total */
             customers_total: number;
-            /** Users Total */
-            users_total: number;
+            /** Hub Issues Total */
+            hub_issues_total: number;
             /** Notifications Pending */
             notifications_pending: number;
+            /** Tickets Active */
+            tickets_active: number;
+            /** Tickets Total */
+            tickets_total: number;
+            /** Users Total */
+            users_total: number;
         };
         /** CustomerDedupOut */
         CustomerDedupOut: {
-            /** Identities Total */
-            identities_total: number;
             /** Identities Matched */
             identities_matched: number;
+            /** Identities Total */
+            identities_total: number;
             /** Match Rate */
             match_rate: number;
             /** Target */
@@ -885,31 +929,31 @@ export interface components {
         };
         /** CustomerSummary */
         CustomerSummary: {
-            /** Id */
-            id: number;
-            /** Display Name */
-            display_name: string | null;
             /** Company */
             company: string | null;
-            /** Primary Contact */
-            primary_contact: {
-                [key: string]: unknown;
-            } | null;
-            /** Merged Into Customer Id */
-            merged_into_customer_id: number | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Display Name */
+            display_name: string | null;
+            /** Id */
+            id: number;
+            /** Merged Into Customer Id */
+            merged_into_customer_id: number | null;
+            /** Primary Contact */
+            primary_contact: {
+                [key: string]: unknown;
+            } | null;
         };
         /** DashboardOut */
         DashboardOut: {
             counts: components["schemas"]["CountsOut"];
-            routing: components["schemas"]["RoutingOut"];
-            supervisor: components["schemas"]["app__api__metrics__SupervisorOut"];
             customer_dedup: components["schemas"]["CustomerDedupOut"];
+            routing: components["schemas"]["RoutingOut"];
             sla: components["schemas"]["SLAOut"];
+            supervisor: components["schemas"]["app__api__metrics__SupervisorOut"];
             webhook_intake: components["schemas"]["WebhookIntakeOut"];
         };
         /** DefaultPoolUserIn */
@@ -924,6 +968,20 @@ export interface components {
             /** User Name */
             user_name: string | null;
         };
+        /** ExecuteSplitBody */
+        ExecuteSplitBody: {
+            /** Decision Id */
+            decision_id: number;
+        };
+        /** ExecuteSplitResponse */
+        ExecuteSplitResponse: {
+            /** Child Ticket Ids */
+            child_ticket_ids: number[];
+            /** Decision Id */
+            decision_id: number;
+            /** Parent Ticket Id */
+            parent_ticket_id: number;
+        };
         /** FeatureIn */
         FeatureIn: {
             /** Name */
@@ -931,38 +989,38 @@ export interface components {
         };
         /** FeatureOut */
         FeatureOut: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Is Active */
-            is_active: boolean;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
         };
         /** FeatureScopeIn */
         FeatureScopeIn: {
-            /** User Id */
-            user_id: number;
             /** Feature */
             feature: string;
+            /** User Id */
+            user_id: number;
         };
         /** FeatureScopeOut */
         FeatureScopeOut: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Feature */
-            feature: string;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Feature */
+            feature: string;
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
         };
         /**
          * FeishuContactUserOut
@@ -970,38 +1028,38 @@ export interface components {
          *     sync status so the UI can grey-out already-synced rows.
          */
         FeishuContactUserOut: {
-            /** Open Id */
-            open_id: string;
-            /** Name */
-            name: string;
-            /** Employee No */
-            employee_no: string;
-            /** Email */
-            email: string;
-            /** Mobile */
-            mobile: string;
-            /** Is Activated */
-            is_activated: boolean;
             /** Already Synced */
             already_synced: boolean;
+            /** Email */
+            email: string;
+            /** Employee No */
+            employee_no: string;
+            /** Is Activated */
+            is_activated: boolean;
             /** Local User Id */
             local_user_id: number | null;
+            /** Mobile */
+            mobile: string;
+            /** Name */
+            name: string;
+            /** Open Id */
+            open_id: string;
         };
         /**
          * FeishuDeptOut
          * @description One department node in the org-tree browser.
          */
         FeishuDeptOut: {
-            /** Open Department Id */
-            open_department_id: string;
             /** Department Id */
             department_id: string;
-            /** Name */
-            name: string;
-            /** Parent Department Id */
-            parent_department_id: string;
             /** Member Count */
             member_count: number;
+            /** Name */
+            name: string;
+            /** Open Department Id */
+            open_department_id: string;
+            /** Parent Department Id */
+            parent_department_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1021,251 +1079,251 @@ export interface components {
          *     frontend reverses for display.
          */
         HistoryEvent: {
+            /** Change Reason */
+            change_reason?: string | null;
+            /** Changed By */
+            changed_by?: string | null;
+            /** Effective To */
+            effective_to?: string | null;
+            /** From Status */
+            from_status?: string | null;
+            /** Hub Issue Id */
+            hub_issue_id?: number | null;
+            /** Human Confirmed */
+            human_confirmed?: boolean | null;
             /**
              * Kind
              * @enum {string}
              */
             kind: "status" | "hub_issue_link";
+            /** Metadata */
+            metadata_?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Occurred At
              * Format: date-time
              */
             occurred_at: string;
-            /** From Status */
-            from_status?: string | null;
-            /** To Status */
-            to_status?: string | null;
-            /** Changed By */
-            changed_by?: string | null;
             /** Reason */
             reason?: string | null;
-            /** Metadata */
-            metadata_?: {
-                [key: string]: unknown;
-            } | null;
-            /** Hub Issue Id */
-            hub_issue_id?: number | null;
-            /** Effective To */
-            effective_to?: string | null;
-            /** Change Reason */
-            change_reason?: string | null;
-            /** Human Confirmed */
-            human_confirmed?: boolean | null;
+            /** To Status */
+            to_status?: string | null;
         };
         /** HistoryOut */
         HistoryOut: {
-            /** Id */
-            id: number;
-            /** Scope Type */
-            scope_type: string;
-            /** User Id */
-            user_id: number;
             /** Action */
             action: string;
-            /** Payload */
-            payload: {
-                [key: string]: unknown;
-            };
-            /** Changed By */
-            changed_by: number;
             /**
              * Changed At
              * Format: date-time
              */
             changed_at: string;
+            /** Changed By */
+            changed_by: number;
+            /** Id */
+            id: number;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Scope Type */
+            scope_type: string;
+            /** User Id */
+            user_id: number;
         };
         /** HistoryResponse */
         HistoryResponse: {
-            /** Ticket Id */
-            ticket_id: number;
             /** Items */
             items: components["schemas"]["HistoryEvent"][];
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** HubIssueDetail */
         HubIssueDetail: {
-            /** Id */
-            id: number;
-            /** Short Code */
-            short_code: string;
-            /** Type */
-            type: string;
-            /** Status */
-            status: string;
-            /** Title */
-            title: string;
-            /** Priority */
-            priority: string | null;
-            /** Occurrence Count */
-            occurrence_count: number;
-            /** Product Line Code */
-            product_line_code: string | null;
-            /** Product */
-            product: string | null;
-            /** Module */
-            module: string | null;
-            /** Assigned User Id */
-            assigned_user_id: number | null;
-            /**
-             * First Seen At
-             * Format: date-time
-             */
-            first_seen_at: string;
-            /**
-             * Last Seen At
-             * Format: date-time
-             */
-            last_seen_at: string;
-            /** Expected Resolved At */
-            expected_resolved_at: string | null;
-            /** Actual Resolved At */
-            actual_resolved_at: string | null;
-            /** Closed At */
-            closed_at: string | null;
-            /** Canonical Body */
-            canonical_body: string | null;
-            /** Reply Content */
-            reply_content: string | null;
-            /** Reply Content Version */
-            reply_content_version: number;
-            /** Reply Authored By */
-            reply_authored_by: string | null;
-            /** Reply Updated At */
-            reply_updated_at: string | null;
-            /** Linear Uuid */
-            linear_uuid: string | null;
-            /** Linear Identifier */
-            linear_identifier: string | null;
-            /** Linear Status */
-            linear_status: string | null;
-            /** Scheduled Iteration */
-            scheduled_iteration: string | null;
-            /** Expected Released At */
-            expected_released_at: string | null;
             /** Actual Released At */
             actual_released_at: string | null;
+            /** Actual Resolved At */
+            actual_resolved_at: string | null;
+            /** Assigned User Id */
+            assigned_user_id: number | null;
+            /** Canonical Body */
+            canonical_body: string | null;
+            /** Closed At */
+            closed_at: string | null;
             /** Customer Verified At */
             customer_verified_at: string | null;
+            /** Expected Released At */
+            expected_released_at: string | null;
+            /** Expected Resolved At */
+            expected_resolved_at: string | null;
             /** Feishu Task Id */
             feishu_task_id: string | null;
             /** Feishu Task Status */
             feishu_task_status: string | null;
             /** Feishu Task Synced At */
             feishu_task_synced_at: string | null;
-            /** Superseded By Hub Issue Id */
-            superseded_by_hub_issue_id: number | null;
-            /** Supersede Reason */
-            supersede_reason: string | null;
-            /**
-             * Linked Tickets
-             * @default []
-             */
-            linked_tickets: components["schemas"]["LinkedTicket"][];
-        };
-        /** HubIssueListResponse */
-        HubIssueListResponse: {
-            /** Items */
-            items: components["schemas"]["HubIssueSummary"][];
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number;
-            /** Has More */
-            has_more: boolean;
-        };
-        /** HubIssueSummary */
-        HubIssueSummary: {
-            /** Id */
-            id: number;
-            /** Short Code */
-            short_code: string;
-            /** Type */
-            type: string;
-            /** Status */
-            status: string;
-            /** Title */
-            title: string;
-            /** Priority */
-            priority: string | null;
-            /** Occurrence Count */
-            occurrence_count: number;
-            /** Product Line Code */
-            product_line_code: string | null;
-            /** Product */
-            product: string | null;
-            /** Module */
-            module: string | null;
-            /** Assigned User Id */
-            assigned_user_id: number | null;
             /**
              * First Seen At
              * Format: date-time
              */
             first_seen_at: string;
+            /** Id */
+            id: number;
             /**
              * Last Seen At
              * Format: date-time
              */
             last_seen_at: string;
-            /** Expected Resolved At */
-            expected_resolved_at: string | null;
+            /** Linear Identifier */
+            linear_identifier: string | null;
+            /** Linear Status */
+            linear_status: string | null;
+            /** Linear Uuid */
+            linear_uuid: string | null;
+            /**
+             * Linked Tickets
+             * @default []
+             */
+            linked_tickets: components["schemas"]["LinkedTicket"][];
+            /** Module */
+            module: string | null;
+            /** Occurrence Count */
+            occurrence_count: number;
+            /** Priority */
+            priority: string | null;
+            /** Product */
+            product: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Reply Authored By */
+            reply_authored_by: string | null;
+            /** Reply Content */
+            reply_content: string | null;
+            /** Reply Content Version */
+            reply_content_version: number;
+            /** Reply Updated At */
+            reply_updated_at: string | null;
+            /** Scheduled Iteration */
+            scheduled_iteration: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Status */
+            status: string;
+            /** Supersede Reason */
+            supersede_reason: string | null;
+            /** Superseded By Hub Issue Id */
+            superseded_by_hub_issue_id: number | null;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
+        /** HubIssueListResponse */
+        HubIssueListResponse: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["HubIssueSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** HubIssueSummary */
+        HubIssueSummary: {
             /** Actual Resolved At */
             actual_resolved_at: string | null;
+            /** Assigned User Id */
+            assigned_user_id: number | null;
             /** Closed At */
             closed_at: string | null;
+            /** Expected Resolved At */
+            expected_resolved_at: string | null;
+            /**
+             * First Seen At
+             * Format: date-time
+             */
+            first_seen_at: string;
+            /** Id */
+            id: number;
+            /**
+             * Last Seen At
+             * Format: date-time
+             */
+            last_seen_at: string;
+            /** Module */
+            module: string | null;
+            /** Occurrence Count */
+            occurrence_count: number;
+            /** Priority */
+            priority: string | null;
+            /** Product */
+            product: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
         };
         /** IdentityOut */
         IdentityOut: {
-            /** Id */
-            id: number;
             /** Customer Id */
             customer_id: number;
-            /** Source Code */
-            source_code: string;
-            /** Source User Id */
-            source_user_id: string | null;
-            /** Source Custom Id */
-            source_custom_id: string | null;
-            /** Erp Uid */
-            erp_uid: string | null;
             /** Email */
             email: string | null;
+            /** Erp Uid */
+            erp_uid: string | null;
+            /**
+             * First Seen At
+             * Format: date-time
+             */
+            first_seen_at: string;
+            /** Human Confirmed */
+            human_confirmed: boolean;
+            /** Id */
+            id: number;
+            /**
+             * Last Seen At
+             * Format: date-time
+             */
+            last_seen_at: string;
             /** Mobile */
             mobile: string | null;
             /** Raw Name */
             raw_name: string | null;
             /** Resolved By Key */
             resolved_by_key: string;
-            /** Human Confirmed */
-            human_confirmed: boolean;
-            /**
-             * First Seen At
-             * Format: date-time
-             */
-            first_seen_at: string;
-            /**
-             * Last Seen At
-             * Format: date-time
-             */
-            last_seen_at: string;
+            /** Source Code */
+            source_code: string;
+            /** Source Custom Id */
+            source_custom_id: string | null;
+            /** Source User Id */
+            source_user_id: string | null;
         };
         /** InboxItem */
         InboxItem: {
+            /** Channel */
+            channel: string;
             /** Id */
             id: number;
             /** Notify Type */
             notify_type: string;
-            /** Channel */
-            channel: string;
-            /** Related Entity Type */
-            related_entity_type: string | null;
-            /** Related Entity Id */
-            related_entity_id: number | null;
             /** Payload */
             payload: {
                 [key: string]: unknown;
             };
+            /** Related Entity Id */
+            related_entity_id: number | null;
+            /** Related Entity Type */
+            related_entity_type: string | null;
             /**
              * Sent At
              * Format: date-time
@@ -1282,19 +1340,19 @@ export interface components {
          * @description Used by zhichi / zammad webhooks (synchronous response shape).
          */
         IngestResponse: {
-            /** Ticket Id */
-            ticket_id: number;
-            /** Short Code */
-            short_code: string;
-            /** Deduped */
-            deduped: boolean;
-            /** Routing Decision */
-            routing_decision: string;
             /**
              * Assigned User Ids
              * @default []
              */
             assigned_user_ids: number[];
+            /** Deduped */
+            deduped: boolean;
+            /** Routing Decision */
+            routing_decision: string;
+            /** Short Code */
+            short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
             /** Trace Id */
             trace_id?: string | null;
         };
@@ -1330,51 +1388,51 @@ export interface components {
         };
         /** ModuleIn */
         ModuleIn: {
-            /** Product Line Code */
-            product_line_code: string;
             /** Name */
             name: string;
+            /** Product Line Code */
+            product_line_code: string;
         };
         /** ModuleOut */
         ModuleOut: {
-            /** Id */
-            id: number;
-            /** Product Line Code */
-            product_line_code: string;
-            /** Name */
-            name: string;
-            /** Is Active */
-            is_active: boolean;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Product Line Code */
+            product_line_code: string;
         };
         /** ModuleScopeIn */
         ModuleScopeIn: {
-            /** User Id */
-            user_id: number;
-            /** Product Line Code */
-            product_line_code: string;
             /** Module */
             module: string;
+            /** Product Line Code */
+            product_line_code: string;
+            /** User Id */
+            user_id: number;
         };
         /** ModuleScopeOut */
         ModuleScopeOut: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Product Line Code */
-            product_line_code: string;
-            /** Module */
-            module: string;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Id */
+            id: number;
+            /** Module */
+            module: string;
+            /** Product Line Code */
+            product_line_code: string;
+            /** User Id */
+            user_id: number;
         };
         /** PartnerIn */
         PartnerIn: {
@@ -1406,14 +1464,14 @@ export interface components {
         };
         /** ProductLineOut */
         ProductLineOut: {
-            /** Id */
-            id: number;
             /** Code */
             code: string;
-            /** Name */
-            name: string;
+            /** Id */
+            id: number;
             /** Is Active */
             is_active: boolean;
+            /** Name */
+            name: string;
             /** Sla Reply Hours */
             sla_reply_hours?: number | null;
             /** Sla Resolve Hours */
@@ -1427,17 +1485,19 @@ export interface components {
          *     defaults). Pass `0` is rejected — use `null` to clear.
          */
         ProductLinePatch: {
+            /** Is Active */
+            is_active?: boolean | null;
             /** Name */
             name?: string | null;
             /** Sla Reply Hours */
             sla_reply_hours?: number | null;
             /** Sla Resolve Hours */
             sla_resolve_hours?: number | null;
-            /** Is Active */
-            is_active?: boolean | null;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
+            /** Checks */
+            checks: components["schemas"]["CheckOut"][];
             /**
              * Status
              * @enum {string}
@@ -1445,13 +1505,9 @@ export interface components {
             status: "ready" | "degraded" | "unhealthy";
             /** Version */
             version: string;
-            /** Checks */
-            checks: components["schemas"]["CheckOut"][];
         };
         /** RelinkBody */
         RelinkBody: {
-            /** Ticket Id */
-            ticket_id: number;
             /** New Hub Issue Id */
             new_hub_issue_id: number;
             /**
@@ -1459,21 +1515,23 @@ export interface components {
              * @default
              */
             reason: string;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** RelinkResponse */
         RelinkResponse: {
-            /** Ticket Id */
-            ticket_id: number;
-            /** Old Hub Issue Id */
-            old_hub_issue_id: number | null;
-            /** New Hub Issue Id */
-            new_hub_issue_id: number;
-            /** No Op */
-            no_op: boolean;
             /** Closed History Id */
             closed_history_id: number | null;
             /** New History Id */
             new_history_id: number;
+            /** New Hub Issue Id */
+            new_hub_issue_id: number;
+            /** No Op */
+            no_op: boolean;
+            /** Old Hub Issue Id */
+            old_hub_issue_id: number | null;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** RerouteBody */
         RerouteBody: {
@@ -1482,84 +1540,100 @@ export interface components {
         };
         /** RerouteItemOut */
         RerouteItemOut: {
-            /** Ticket Id */
-            ticket_id: number;
+            /** Assigned User Ids */
+            assigned_user_ids: number[];
+            /** Decision */
+            decision: string;
+            /** Message */
+            message: string;
             /** Short Code */
             short_code: string;
             /** Success */
             success: boolean;
-            /** Decision */
-            decision: string;
-            /** Assigned User Ids */
-            assigned_user_ids: number[];
-            /** Message */
-            message: string;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** RerouteResponse */
         RerouteResponse: {
-            /** Results */
-            results: components["schemas"]["RerouteItemOut"][];
             /** Assigned Count */
             assigned_count: number;
             /** No Match Count */
             no_match_count: number;
+            /** Results */
+            results: components["schemas"]["RerouteItemOut"][];
+        };
+        /** RevertSplitBody */
+        RevertSplitBody: {
+            /** Decision Id */
+            decision_id: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** RevertSplitResponse */
+        RevertSplitResponse: {
+            /** Decision Id */
+            decision_id: number;
+            /** Deleted Child Ids */
+            deleted_child_ids: number[];
+            /** Parent Ticket Id */
+            parent_ticket_id: number;
         };
         /** RoutingOut */
         RoutingOut: {
-            /** Tickets Total */
-            tickets_total: number;
             /** Auto Assigned */
             auto_assigned: number;
             /** Auto Hit Rate */
             auto_hit_rate: number;
             /** Target */
             target: string;
+            /** Tickets Total */
+            tickets_total: number;
         };
         /** SLAOut */
         SLAOut: {
+            /** Acknowledged */
+            acknowledged: number;
+            /** Acknowledgement Rate */
+            acknowledgement_rate: number;
+            /** Escalated */
+            escalated: number;
             /** Notifications Total */
             notifications_total: number;
             /** Pending */
             pending: number;
-            /** Acknowledged */
-            acknowledged: number;
-            /** Escalated */
-            escalated: number;
-            /** Acknowledgement Rate */
-            acknowledgement_rate: number;
             /** Target */
             target: string;
         };
         /** ScopeRowOut */
         ScopeRowOut: {
-            /** Id */
-            id: number;
-            /** User Id */
-            user_id: number;
-            /** Product Line Code */
-            product_line_code?: string | null;
-            /** Module */
-            module?: string | null;
             /** Feature */
             feature?: string | null;
+            /** Id */
+            id: number;
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** User Id */
+            user_id: number;
         };
         /** SourceOut */
         SourceOut: {
-            /** Id */
-            id: number;
             /** Code */
             code: string;
-            /** Name */
-            name: string;
+            /** Id */
+            id: number;
             /** Is Active */
             is_active: boolean;
+            /** Name */
+            name: string;
         };
         /** SupervisorIn */
         SupervisorIn: {
-            /** Supervisor Id */
-            supervisor_id: number;
             /** Deputy Supervisor Id */
             deputy_supervisor_id?: number | null;
+            /** Supervisor Id */
+            supervisor_id: number;
         };
         /**
          * SyncFromFeishuIn
@@ -1579,255 +1653,255 @@ export interface components {
         };
         /** SyncReportOut */
         SyncReportOut: {
-            /** New Count */
-            new_count: number;
-            /** Updated Count */
-            updated_count: number;
-            /** Revived Count */
-            revived_count: number;
-            /** Skipped Inactive */
-            skipped_inactive: number;
             /** Errors */
             errors: {
                 [key: string]: unknown;
             }[];
+            /** New Count */
+            new_count: number;
             /** New User Ids */
             new_user_ids: number[];
-            /** Touched User Ids */
-            touched_user_ids: number[];
+            /** Revived Count */
+            revived_count: number;
+            /** Skipped Inactive */
+            skipped_inactive: number;
             /** Total Processed */
             total_processed: number;
+            /** Touched User Ids */
+            touched_user_ids: number[];
+            /** Updated Count */
+            updated_count: number;
         };
         /** TicketDetail */
         TicketDetail: {
-            /** Id */
-            id: number;
-            /** Short Code */
-            short_code: string;
-            /** Source Code */
-            source_code: string | null;
-            /** Source Ticket Id */
-            source_ticket_id: string | null;
-            /** Type */
-            type: string;
-            /** Status */
-            status: string;
-            /** Title */
-            title: string | null;
-            /** Customer Identity Id */
-            customer_identity_id: number | null;
-            /** Product Line Code */
-            product_line_code: string | null;
-            /** Module */
-            module: string | null;
-            /** Feature */
-            feature: string | null;
+            /** Actual Replied At */
+            actual_replied_at: string | null;
+            /** Actual Resolved At */
+            actual_resolved_at: string | null;
             /** Assigned User Id */
             assigned_user_id: number | null;
             /** Assigned User Name */
             assigned_user_name?: string | null;
-            /** Predicted Type */
-            predicted_type?: string | null;
-            /** Hub Issue Id */
-            hub_issue_id: number | null;
-            /** Received At */
-            received_at: string | null;
-            /** Customer Replied At */
-            customer_replied_at: string | null;
+            /** Body */
+            body: string | null;
+            /** Body Html */
+            body_html: string | null;
+            /** Cached Reply Content */
+            cached_reply_content: string | null;
+            /** Cached Reply Version */
+            cached_reply_version: number | null;
+            /** Children Ticket Ids */
+            children_ticket_ids: number[] | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
-            /** Body */
-            body: string | null;
-            /** Body Html */
-            body_html: string | null;
+            /** Customer Display Name */
+            customer_display_name?: string | null;
+            /** Customer Id */
+            customer_id?: number | null;
+            /** Customer Identity Id */
+            customer_identity_id: number | null;
+            /** Customer Replied At */
+            customer_replied_at: string | null;
+            /** Expected Resolved At */
+            expected_resolved_at: string | null;
+            /** Feature */
+            feature: string | null;
+            /** Hub Issue Id */
+            hub_issue_id: number | null;
+            /** Id */
+            id: number;
+            /** Module */
+            module: string | null;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /** Predicted Type */
+            predicted_type?: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Received At */
+            received_at: string | null;
             /** Reporter */
             reporter: {
                 [key: string]: unknown;
             } | null;
+            /** Reporter Name */
+            reporter_name?: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Source Code */
+            source_code: string | null;
             /** Source Payload */
             source_payload: {
                 [key: string]: unknown;
             } | null;
             /** Source Status */
             source_status: string | null;
-            /** Parent Ticket Id */
-            parent_ticket_id: number | null;
-            /** Children Ticket Ids */
-            children_ticket_ids: number[] | null;
-            /** Expected Resolved At */
-            expected_resolved_at: string | null;
-            /** Actual Resolved At */
-            actual_resolved_at: string | null;
-            /** Actual Replied At */
-            actual_replied_at: string | null;
-            /** Cached Reply Content */
-            cached_reply_content: string | null;
-            /** Cached Reply Version */
-            cached_reply_version: number | null;
-            /** Customer Display Name */
-            customer_display_name?: string | null;
-            /** Customer Id */
-            customer_id?: number | null;
-            /** Reporter Name */
-            reporter_name?: string | null;
+            /** Source Ticket Id */
+            source_ticket_id: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
+            /** Type */
+            type: string;
         };
         /** TicketListResponse */
         TicketListResponse: {
+            /** Has More */
+            has_more: boolean;
             /** Items */
             items: components["schemas"]["TicketSummary"][];
-            /** Total */
-            total: number;
             /** Page */
             page: number;
             /** Page Size */
             page_size: number;
-            /** Has More */
-            has_more: boolean;
+            /** Total */
+            total: number;
         };
         /** TicketSummary */
         TicketSummary: {
+            /** Assigned User Id */
+            assigned_user_id: number | null;
+            /** Assigned User Name */
+            assigned_user_name?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Customer Identity Id */
+            customer_identity_id: number | null;
+            /** Customer Replied At */
+            customer_replied_at: string | null;
+            /** Feature */
+            feature: string | null;
+            /** Hub Issue Id */
+            hub_issue_id: number | null;
             /** Id */
             id: number;
+            /** Module */
+            module: string | null;
+            /** Predicted Type */
+            predicted_type?: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Received At */
+            received_at: string | null;
             /** Short Code */
             short_code: string;
             /** Source Code */
             source_code: string | null;
             /** Source Ticket Id */
             source_ticket_id: string | null;
-            /** Type */
-            type: string;
             /** Status */
             status: string;
             /** Title */
             title: string | null;
-            /** Customer Identity Id */
-            customer_identity_id: number | null;
-            /** Product Line Code */
-            product_line_code: string | null;
-            /** Module */
-            module: string | null;
-            /** Feature */
-            feature: string | null;
-            /** Assigned User Id */
-            assigned_user_id: number | null;
-            /** Assigned User Name */
-            assigned_user_name?: string | null;
-            /** Predicted Type */
-            predicted_type?: string | null;
-            /** Hub Issue Id */
-            hub_issue_id: number | null;
-            /** Received At */
-            received_at: string | null;
-            /** Customer Replied At */
-            customer_replied_at: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
+            /** Type */
+            type: string;
         };
         /**
          * UserDetailOut
          * @description Aggregated profile for /admin/users/:id frontend page.
          */
         UserDetailOut: {
-            user: components["schemas"]["UserOut"];
-            supervisor: components["schemas"]["app__api__admin_users__SupervisorOut"] | null;
-            /** Module Scopes */
-            module_scopes: components["schemas"]["ScopeRowOut"][];
             /** Feature Scopes */
             feature_scopes: components["schemas"]["ScopeRowOut"][];
+            /** Module Scopes */
+            module_scopes: components["schemas"]["ScopeRowOut"][];
             /** Partners */
             partners: components["schemas"]["PartnerRowOut"][];
+            supervisor: components["schemas"]["app__api__admin_users__SupervisorOut"] | null;
+            user: components["schemas"]["UserOut"];
         };
         /** UserOut */
         UserOut: {
-            /** Id */
-            id: number;
-            /** Feishu Uid */
-            feishu_uid: string;
-            /** Employee No */
-            employee_no: string | null;
-            /** Name */
-            name: string;
             /** Email */
             email: string | null;
-            /** Mobile */
-            mobile: string | null;
-            /** Ksm Account */
-            ksm_account: string | null;
-            /** Zhichi Agent Id */
-            zhichi_agent_id: string | null;
-            /** Linear User Id */
-            linear_user_id: string | null;
-            /** Role */
-            role: string;
+            /** Employee No */
+            employee_no: string | null;
+            /** Feishu Uid */
+            feishu_uid: string;
+            /** Id */
+            id: number;
             /** Is Active */
             is_active: boolean;
+            /** Ksm Account */
+            ksm_account: string | null;
+            /** Linear User Id */
+            linear_user_id: string | null;
+            /** Mobile */
+            mobile: string | null;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+            /** Zhichi Agent Id */
+            zhichi_agent_id: string | null;
         };
         /** UserPatch */
         UserPatch: {
-            /** Role */
-            role?: string | null;
-            /** Is Active */
-            is_active?: boolean | null;
-            /** Name */
-            name?: string | null;
             /** Email */
             email?: string | null;
-            /** Mobile */
-            mobile?: string | null;
             /** Employee No */
             employee_no?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
             /** Ksm Account */
             ksm_account?: string | null;
-            /** Zhichi Agent Id */
-            zhichi_agent_id?: string | null;
             /** Linear User Id */
             linear_user_id?: string | null;
+            /** Mobile */
+            mobile?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Role */
+            role?: string | null;
+            /** Zhichi Agent Id */
+            zhichi_agent_id?: string | null;
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** WebhookIntakeOut */
         WebhookIntakeOut: {
-            /** Window Hours */
-            window_hours: number;
             /** By Source */
             by_source: {
                 [key: string]: number;
             };
-            /** Total */
-            total: number;
             /** Deduped Total */
             deduped_total: number;
+            /** Total */
+            total: number;
+            /** Window Hours */
+            window_hours: number;
         };
         /** SupervisorOut */
         app__api__admin_users__SupervisorOut: {
-            /** User Id */
-            user_id: number;
-            /** Supervisor Id */
-            supervisor_id: number;
             /** Deputy Supervisor Id */
             deputy_supervisor_id: number | null;
+            /** Supervisor Id */
+            supervisor_id: number;
             /**
              * Updated At
              * Format: date-time
              */
             updated_at: string;
+            /** User Id */
+            user_id: number;
         };
         /** SupervisorOut */
         app__api__metrics__SupervisorOut: {
@@ -1849,72 +1923,10 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health_health_get: {
+    list_features_api_admin_features_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-        };
-    };
-    ready_health_ready_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReadinessResponse"];
-                };
-            };
-        };
-    };
-    feishu_login_url_api_auth_feishu_login_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginUrlResponse"];
-                };
-            };
-        };
-    };
-    feishu_callback_api_auth_feishu_callback_get: {
-        parameters: {
-            query: {
-                code: string;
+            query?: {
+                active_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -1928,7 +1940,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["FeatureOut"][];
                 };
             };
             /** @description Validation Error */
@@ -1942,9 +1954,74 @@ export interface operations {
             };
         };
     };
-    list_sources_api_admin_sources_get: {
+    add_feature_api_admin_features_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feature_api_admin_features__feature_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_modules_api_admin_modules_get: {
+        parameters: {
+            query?: {
+                product_line_code?: string | null;
+                active_only?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1957,7 +2034,78 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SourceOut"][];
+                    "application/json": components["schemas"]["ModuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_module_api_admin_modules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_module_api_admin_modules__module_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2067,502 +2215,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProductLineOut"];
                 };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeishuDeptOut"][];
-                };
-            };
-        };
-    };
-    list_feishu_departments_api_admin_users_feishu_departments_get: {
-        parameters: {
-            query?: {
-                parent_id?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeishuDeptOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                department_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeishuContactUserOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    sync_from_feishu_api_admin_users_sync_from_feishu_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SyncFromFeishuIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncReportOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_users_api_admin_users_get: {
-        parameters: {
-            query?: {
-                include_inactive?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_user_detail_api_admin_users__user_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserDetailOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_user_api_admin_users__user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_user_api_admin_users__user_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    revive_user_api_admin_users__user_id__revive_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_supervisor_api_admin_users__user_id__supervisor_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SupervisorIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["app__api__admin_users__SupervisorOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_supervisor_api_admin_users__user_id__supervisor_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_partner_api_admin_users__user_id__partners_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PartnerIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PartnerRowOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_partner_api_admin_users__user_id__partners__partner_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: number;
-                partner_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_modules_api_admin_scopes_modules_get: {
-        parameters: {
-            query?: {
-                user_id?: number | null;
-                product_line_code?: string | null;
-                module?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModuleScopeOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_module_api_admin_scopes_modules_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ModuleScopeIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModuleScopeOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_module_api_admin_scopes_modules__scope_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                scope_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2702,11 +2354,12 @@ export interface operations {
             };
         };
     };
-    list_modules_api_admin_modules_get: {
+    list_modules_api_admin_scopes_modules_get: {
         parameters: {
             query?: {
+                user_id?: number | null;
                 product_line_code?: string | null;
-                active_only?: boolean;
+                module?: string | null;
             };
             header?: never;
             path?: never;
@@ -2720,7 +2373,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModuleOut"][];
+                    "application/json": components["schemas"]["ModuleScopeOut"][];
                 };
             };
             /** @description Validation Error */
@@ -2734,7 +2387,7 @@ export interface operations {
             };
         };
     };
-    add_module_api_admin_modules_post: {
+    add_module_api_admin_scopes_modules_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2743,7 +2396,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ModuleIn"];
+                "application/json": components["schemas"]["ModuleScopeIn"];
             };
         };
         responses: {
@@ -2753,7 +2406,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModuleOut"];
+                    "application/json": components["schemas"]["ModuleScopeOut"];
                 };
             };
             /** @description Validation Error */
@@ -2767,105 +2420,12 @@ export interface operations {
             };
         };
     };
-    delete_module_api_admin_modules__module_id__delete: {
+    delete_module_api_admin_scopes_modules__scope_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                module_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_features_api_admin_features_get: {
-        parameters: {
-            query?: {
-                active_only?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeatureOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_feature_api_admin_features_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FeatureIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FeatureOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_feature_api_admin_features__feature_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                feature_id: number;
+                scope_id: number;
             };
             cookie?: never;
         };
@@ -2929,6 +2489,682 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultPoolUserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_admin_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceOut"][];
+                };
+            };
+        };
+    };
+    list_users_api_admin_users_get: {
+        parameters: {
+            query?: {
+                include_inactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feishu_departments_api_admin_users_feishu_departments_get: {
+        parameters: {
+            query?: {
+                parent_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuDeptOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feishu_departments_tree_api_admin_users_feishu_departments_tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuDeptOut"][];
+                };
+            };
+        };
+    };
+    list_feishu_department_users_api_admin_users_feishu_departments__department_id__users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeishuContactUserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_from_feishu_api_admin_users_sync_from_feishu_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncFromFeishuIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_detail_api_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_user_api_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_partner_api_admin_users__user_id__partners_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartnerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartnerRowOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_partner_api_admin_users__user_id__partners__partner_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                partner_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revive_user_api_admin_users__user_id__revive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_supervisor_api_admin_users__user_id__supervisor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupervisorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__api__admin_users__SupervisorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_supervisor_api_admin_users__user_id__supervisor_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feishu_callback_api_auth_feishu_callback_get: {
+        parameters: {
+            query: {
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feishu_login_url_api_auth_feishu_login_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginUrlResponse"];
+                };
+            };
+        };
+    };
+    search_customers_api_customers_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_customer_api_customers__customer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_hub_issues_api_hub_issues_get: {
+        parameters: {
+            query?: {
+                type?: string | null;
+                status?: string | null;
+                assigned_user_id?: number | null;
+                product?: string | null;
+                module?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubIssueListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hub_issue_api_hub_issues__hub_issue_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubIssueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_metrics_api_metrics_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+        };
+    };
+    list_config_warnings_api_supervisor_config_warnings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigWarningsResponse"];
+                };
+            };
+        };
+    };
+    execute_split_endpoint_api_supervisor_execute_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteSplitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecuteSplitResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3037,26 +3273,6 @@ export interface operations {
             };
         };
     };
-    list_config_warnings_api_supervisor_config_warnings_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigWarningsResponse"];
-                };
-            };
-        };
-    };
     reroute_tickets_api_supervisor_reroute_post: {
         parameters: {
             query?: never;
@@ -3077,6 +3293,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RerouteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_split_endpoint_api_supervisor_revert_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertSplitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevertSplitResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3190,138 +3439,7 @@ export interface operations {
             };
         };
     };
-    list_hub_issues_api_hub_issues_get: {
-        parameters: {
-            query?: {
-                type?: string | null;
-                status?: string | null;
-                assigned_user_id?: number | null;
-                product?: string | null;
-                module?: string | null;
-                page?: number;
-                page_size?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HubIssueListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_hub_issue_api_hub_issues__hub_issue_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                hub_issue_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HubIssueDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    search_customers_api_customers_search_get: {
-        parameters: {
-            query: {
-                q: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerSummary"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_customer_api_customers__customer_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                customer_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    dashboard_metrics_api_metrics_dashboard_get: {
+    health_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3336,7 +3454,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DashboardOut"];
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    ready_health_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };
@@ -3372,7 +3512,7 @@ export interface operations {
             };
         };
     };
-    zhichi_webhook_webhook_zhichi_post: {
+    zammad_webhook_webhook_zammad_post: {
         parameters: {
             query: {
                 access_token: string;
@@ -3403,7 +3543,7 @@ export interface operations {
             };
         };
     };
-    zammad_webhook_webhook_zammad_post: {
+    zhichi_webhook_webhook_zhichi_post: {
         parameters: {
             query: {
                 access_token: string;

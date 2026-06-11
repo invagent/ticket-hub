@@ -237,10 +237,21 @@ D0✅ D1✅ D2✅ D3🟡（A/B/C/D 完成，E dedup 待开工）D4🟡（Linear 
 
 - `services/agents/conflict_detect.py`：判断 Raw 工单是否混合多个独立问题需要拆分
 - webhook ingest 后经 `run_post_ingest_agents`（webhooks.py）依次跑 classify + conflict_detect，单 BG task
-- **仅写 `agent_decisions` 审计行**（`decision_type='split_ticket'/'no_split'`，sub_issues 在 proposal 里），不改工单；split 执行器（split.py，无 LLM）待实现
+- **仅写 `agent_decisions` 审计行**（`decision_type='split_ticket'/'no_split'`，sub_issues 在 proposal 里），不改工单
 - 开关 `CONFLICT_DETECT_ENABLED`（默认 true）；prompt 版本 `CONFLICT_DETECT_PROMPT_VERSION`（默认 v1，`prompts/conflict_detect_v1.md`）
 - 判定原则：拿不准默认 no_split（误拆代价 > 漏拆）；split 时 sub_issues ≥2 否则解析报错
 - 单测注意：`tests/conftest.py` 显式清空 GLM/DASHSCOPE key，防止本地 `.env` 真实 key 让 BG task 发起真实 LLM 调用
+
+## D3-D split 执行器（2026-06-11）
+
+- `services/agents/split.py`：把 `split_ticket` 提案物化为 Child 工单，**全程无 LLM**（语义拆分 LLM 在 conflict_detect 已完成，此处纯机械物化 + 规则重路由）
+- Child 契约（`ck_tickets_type_fields`）：`source_code/source_ticket_id=NULL`、`internal_split_id='{parent.short_code}-C{n}'`（确定性+unique）、`parent_ticket_id` 必填；title/body 来自 LLM 的 sub_issue（**不切原文**，原文留在 Parent）；customer/product_line/module/reporter 继承
+- Parent 翻转：type Raw→Parent、status→'split'、`children_ticket_ids` 落 JSON；幂等卫语句 `parent.type=='Raw'`
+- 每个 child 重新走 Router（纯规则）各自分配；之后重跑 classify，**绝不**再 conflict_detect（防递归拆分）
+- 触发：conf ≥ `SPLIT_AUTO_CONFIDENCE`(0.85) 且 `SPLIT_AUTO_ENABLED`（**默认 false，先灰度手动**）→ ingest 链自动；否则留给主管 `POST /api/supervisor/execute-split`
+- 回滚 `POST /api/supervisor/revert-split`：软删 children + Parent 还原 Raw + decision 翻 reverted；**任一 child status ≠ received 则拒绝**（有进展不可自动回滚）
+- 物化审计写回 `decision.proposal.materialized`（at/by/child_ids/parent_prev_status）
+- 注意：Router 的 `multi_match`（一个问题多团队认领）是归属歧义，**不是**拆分场景，split.py 只消费 `split_ticket`
 
 ## AI 分类结果展示（2026-05-13）
 

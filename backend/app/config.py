@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # D3-D 拆单判定 Agent；仅写 agent_decisions 审计行，不改工单
     conflict_detect_enabled: bool = True
     conflict_detect_prompt_version: str = "v1"
+    # D3-D split 执行器：conf ≥ 阈值自动物化 Child；低于阈值留给主管审批。
+    # 默认关闭自动 — 先灰度手动执行，稳定后再开
+    split_auto_enabled: bool = False
+    split_auto_confidence: float = 0.85
 
     # ---- Linear (D4) ----
     linear_api_key: str = ""
