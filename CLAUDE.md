@@ -153,7 +153,7 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 ## 当前技术债（2026-06-11 更新）
 
 - ~~`make lint` 红灯~~ ✅ 已清（2026-06-11）：ruff + format + mypy 全绿
-- ~~dataset_v1.jsonl 只有 4 条占位~~ ✅ 已扩到 60 条（50 条真实 KSM 手标 + 10 条合成；16 条带 `needs_review` 待人工复核）。跑分：`cd backend && .venv/bin/python ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl`（需 GLM_API_KEY；`--validate` 可离线校验）。classify 准确率仍未量化 — 本地 `.env` 无 GLM key，待有 key 后真跑
+- ~~dataset_v1.jsonl 只有 4 条占位~~ ✅ 已扩到 60 条并完成三方跑分（2026-06-11，详见 `docs/eval/2026-06-11-classify-v1-baseline.md`）：deepseek-v4-flash 85%（已确认标签 95.5%）> glm-4.5-flash 80% > glm-4-flash 73.3%。生产默认 `LLM_PROVIDER_ORDER=dashscope,glm`。整体口径未过 90% 门槛，主因是 16 条 `needs_review` 标签噪声 — 待人工复核 + prompt v2
 - `HANDOFF.md` 严重过时（D0 时期），以 `docs/progress/2026-05-11-status.md` 为准
 - PII encryptor 未实现（接外部 LLM 前必须补）
 

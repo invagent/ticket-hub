@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.core.logging import get_logger
 
 from .providers.base import LLMProvider, ProviderError, ProviderRetryableError
+from .providers.dashscope import DashScopeLLMProvider
 from .providers.glm import GLMLLMProvider
 from .types import LLMMessage, LLMResponse
 
@@ -37,18 +38,35 @@ class LLMRouter:
         self._providers = list(providers)
 
     @classmethod
-    def from_settings(cls) -> LLMRouter:
+    def from_settings(cls, *, only: str | None = None) -> LLMRouter:
         """Build the default router from environment settings.
 
-        Order: GLM → (future) DeepSeek → Claude → OpenAI. We only
-        instantiate providers whose API key is configured, so a
-        missing key won't crash startup.
+        Provider order comes from LLM_PROVIDER_ORDER (default
+        "dashscope,glm" — deepseek-v4-flash won the 2026-06-11 eval:
+        85% vs glm-4-flash 73.3% / glm-4.5-flash 80%). Only providers
+        whose API key is configured are instantiated, so a missing key
+        won't crash startup.
+
+        `only` restricts to a single provider by name ("glm"/"dashscope") —
+        used by eval scripts for provider A/B comparison.
         """
         settings = get_settings()
-        providers: list[LLMProvider] = []
+        available: dict[str, LLMProvider] = {}
         if settings.glm_api_key:
-            providers.append(GLMLLMProvider.from_settings(settings))
-        # TODO: deepseek / openai / anthropic providers join this list.
+            available["glm"] = GLMLLMProvider.from_settings(settings)
+        if settings.dashscope_api_key:
+            available["dashscope"] = DashScopeLLMProvider.from_settings(settings)
+        # TODO: openai / anthropic providers join this dict.
+
+        order = [name.strip() for name in settings.llm_provider_order.split(",") if name.strip()]
+        providers = [available[name] for name in order if name in available]
+        # Keys configured but missing from the order string still join (at the back).
+        providers += [p for name, p in available.items() if name not in order]
+
+        if only is not None:
+            providers = [p for p in providers if p.name == only]
+            if not providers:
+                raise RuntimeError(f"provider {only!r} not configured (missing API key?)")
         if not providers:
             raise RuntimeError("No LLM provider configured (set GLM_API_KEY or another *_API_KEY)")
         return cls(providers)

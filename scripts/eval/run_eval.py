@@ -77,7 +77,9 @@ def validate_dataset(records: list[dict]) -> list[str]:
     return problems
 
 
-def run_classify_eval(records: list[dict], *, limit: int | None = None) -> dict:
+def run_classify_eval(
+    records: list[dict], *, limit: int | None = None, provider: str | None = None
+) -> dict:
     """Run each record through classify_payload (real LLM). Returns report dict."""
     # Imported here so --validate works without app deps / API keys.
     from app.config import get_settings
@@ -85,13 +87,13 @@ def run_classify_eval(records: list[dict], *, limit: int | None = None) -> dict:
     from app.services.agents.classify import ClassifyError, classify_payload
 
     settings = get_settings()
-    if not settings.glm_api_key:
+    if not (settings.glm_api_key or settings.dashscope_api_key):
         raise SystemExit(
-            "GLM_API_KEY not configured — fill backend/.env first "
+            "no LLM provider key configured — fill backend/.env first "
             "(or run with --validate for an offline dataset check)."
         )
 
-    router = LLMRouter.from_settings()
+    router = LLMRouter.from_settings(only=provider)
     subset = records[:limit] if limit else records
 
     confusion: Counter[tuple[str, str]] = Counter()  # (expected, predicted)
@@ -182,6 +184,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--validate", action="store_true", help="offline dataset check only")
+    parser.add_argument(
+        "--provider", default=None, help="restrict to one provider: glm | dashscope"
+    )
     parser.add_argument("--limit", type=int, default=None, help="evaluate first N records only")
     parser.add_argument("--threshold", type=float, default=0.9, help="accuracy gate (default 0.9)")
     parser.add_argument("--out", default="/tmp/eval_report.json")
@@ -207,8 +212,9 @@ def main() -> int:
         print("validation OK (no LLM calls made)")
         return 0
 
-    report = run_classify_eval(records, limit=args.limit)
+    report = run_classify_eval(records, limit=args.limit, provider=args.provider)
     report["dataset"] = str(args.dataset)
+    report["provider"] = args.provider or "default-chain"
     report["threshold"] = args.threshold
 
     Path(args.out).write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

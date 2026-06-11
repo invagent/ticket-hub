@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     glm_api_key: str = ""
     glm_model: str = "glm-4.5-flash"  # e.g. glm-4-flash / glm-4-air / glm-4-plus
+    dashscope_api_key: str = ""  # 阿里云百炼，OpenAI 兼容模式
+    dashscope_model: str = "deepseek-v4-flash"  # e.g. deepseek-v4-pro / deepseek-v3.2
+    # 逗号分隔的 failover 顺序；2026-06-11 评测 deepseek-v4-flash 最优故默认在前
+    llm_provider_order: str = "dashscope,glm"
 
     # ---- Linear (D4) ----
     linear_api_key: str = ""

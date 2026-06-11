@@ -211,6 +211,9 @@ def test_classify_ticket_invalid_llm_output_silent(
 def test_classify_payload_via_real_router_shape(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """End-to-end including the full GLMProvider→GLMClient HTTP path."""
     monkeypatch.setenv("GLM_API_KEY", "sk-test")
+    # 隔离本地 .env：清掉其他 provider，避免路由顺序把请求带到未 mock 的端点
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "")
+    monkeypatch.setenv("LLM_PROVIDER_ORDER", "glm")
     from app.config import get_settings
 
     get_settings.cache_clear()
