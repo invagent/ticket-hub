@@ -1,13 +1,21 @@
 """Push a Bug_fix / Demand hub_issue to Linear (D4).
 
-BackgroundTask body — failures are logged and swallowed (the hub_issue
-stays linear_uuid=NULL and a later manual/cron retry can push again;
-push_hub_issue_to_linear is idempotent on linear_uuid).
+BackgroundTask body — never raises. The hub_issue stays linear_uuid=NULL on
+any non-success so a later retry can push again (idempotent on linear_uuid).
 
 Gates (all must hold, else skip with a log line):
     linear_push_enabled AND linear_api_key AND linear_team_id
     hub.type in (Bug_fix, Demand)        — ck_hub_issues_linear_fields
     hub.linear_uuid is NULL              — idempotency
+
+Pending (待人工处理) write-back — instead of silently degrading:
+    * assignee is an INDIVIDUAL (has email) but unknown to Linear
+      (linear_user_id NULL — e.g. not in the workspace yet) → no push,
+      hub.status='pending' + status_history with the reason
+    * Linear API rejects/errors → hub.status='pending' + the error
+    Group assignees (数电开票组 …, no email) keep the graceful fallback:
+    default team, no assignee — that degradation is configured intent.
+    A later successful push flips status back pending→created.
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import make_session
 from app.models import HubIssue, Ticket, User
+from app.repositories.status_history import StatusHistoryRepository
 
 logger = get_logger(__name__)
 
@@ -42,6 +51,25 @@ class LinearPushResult:
     linear_uuid: str
     linear_identifier: str
     linear_url: str
+
+
+def _mark_pending(db: Session, hub: HubIssue, *, reason: str) -> None:
+    """Flip the hub_issue to 'pending' (待人工处理) with an audit trail.
+    Commits — pending must survive even though the push itself failed."""
+    prev = hub.status
+    if prev == "pending":
+        return  # already pending; don't spam history on every retry
+    hub.status = "pending"
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=prev,
+        to_status="pending",
+        changed_by="agent:linear_push",
+        reason=reason,
+    )
+    db.commit()
+    logger.warning("linear_push_pending", hub_issue_id=hub.id, reason=reason)
 
 
 def _build_description(db: Session, hub: HubIssue) -> str:
@@ -93,13 +121,25 @@ def push_hub_issue_to_linear(
             return None
 
         # Per-assignee team routing: land the issue on the assignee's Linear
-        # team (and set them as assignee). Falls back to the default team when
-        # the assignee is a group / unmapped user. See user_sync.py.
+        # team (and set them as assignee). Group assignees (no email) fall
+        # back to the default team; INDIVIDUALS unknown to Linear stop here
+        # as 'pending' instead of silently losing their assignee.
         assignee_linear_id: str | None = None
         team_id = settings.linear_team_id
         if hub.assigned_user_id is not None:
             assignee = db.get(User, hub.assigned_user_id)
             if assignee is not None:
+                if assignee.email and not assignee.linear_user_id:
+                    _mark_pending(
+                        db,
+                        hub,
+                        reason=(
+                            f"处理人 {assignee.name}（{assignee.email}）在 Linear 工作区"
+                            "查无此人，推送暂停待人工处理（加入 Linear 后执行"
+                            " sync-from-linear 再重推）"
+                        ),
+                    )
+                    return None
                 assignee_linear_id = assignee.linear_user_id
                 if assignee.linear_team_id:
                     team_id = assignee.linear_team_id
@@ -119,6 +159,7 @@ def push_hub_issue_to_linear(
             created = client.create_issue(req)
         except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
             logger.warning("linear_push_failed", hub_issue_id=hub_issue_id, error=str(e))
+            _mark_pending(db, hub, reason=f"Linear 推送失败：{e}")
             return None
         finally:
             if owns_client:
@@ -127,6 +168,17 @@ def push_hub_issue_to_linear(
         hub.linear_uuid = created.id
         hub.linear_identifier = created.identifier
         hub.linear_status_synced_at = datetime.now(UTC)
+        if hub.status == "pending":
+            # A previously-stuck push now went through — back to normal flow.
+            hub.status = "created"
+            StatusHistoryRepository(db).record(
+                entity_type="hub_issue",
+                entity_id=hub.id,
+                from_status="pending",
+                to_status="created",
+                changed_by="agent:linear_push",
+                reason=f"Linear 重推成功（{created.identifier}），pending 解除",
+            )
         db.commit()
         logger.info(
             "linear_push_ok",

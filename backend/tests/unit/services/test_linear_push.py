@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from adapters.linear import CreatedIssue, LinearNetworkError
 from app.config import get_settings
-from app.models import HubIssue, Source, Ticket, User
+from app.models import HubIssue, Source, StatusHistory, Ticket, User
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 
 
@@ -162,12 +162,100 @@ def test_push_disabled_skips(world: Session, monkeypatch: pytest.MonkeyPatch) ->
     assert fake.requests == []
 
 
-def test_push_swallows_linear_errors(world: Session) -> None:
+def test_push_failure_marks_pending(world: Session) -> None:
     hub = _make_hub(world, 7)
     fake = _FakeLinearClient(raises=LinearNetworkError("timeout"))
     assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
     world.refresh(hub)
     assert hub.linear_uuid is None  # 可重试
+    assert hub.status == "pending"  # 待人工处理
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .one()
+    )
+    assert "Linear 推送失败" in (sh.reason or "")
+
+
+def test_unmatched_individual_assignee_marks_pending_without_push(world: Session) -> None:
+    """个人处理人（有邮箱）在 Linear 查无此人 → 不推送，置 pending 待人工。"""
+    world.add(
+        User(id=8, feishu_uid="ou_c", name="王五", email="wangwu@kingdee.com")
+    )  # 有邮箱、无 linear_user_id
+    world.commit()
+    hub = _make_hub(world, 11, assigned_user_id=8)
+    fake = _FakeLinearClient()
+    assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
+    assert fake.requests == []  # 根本没尝试推
+    world.refresh(hub)
+    assert hub.status == "pending"
+    assert hub.linear_uuid is None
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .one()
+    )
+    assert "查无此人" in (sh.reason or "")
+    assert "wangwu@kingdee.com" in (sh.reason or "")
+
+
+def test_pending_not_duplicated_on_retry(world: Session) -> None:
+    """重试仍失败时不重复写 pending history。"""
+    world.add(User(id=9, feishu_uid="ou_d", name="赵六", email="zhaoliu@kingdee.com"))
+    world.commit()
+    hub = _make_hub(world, 12, assigned_user_id=9)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    rows = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .all()
+    )
+    assert len(rows) == 1
+
+
+def test_repush_success_restores_pending_to_created(world: Session) -> None:
+    """pending 后修复（同步上了 Linear）→ 重推成功自动恢复 created。"""
+    world.add(User(id=10, feishu_uid="ou_e", name="孙七", email="sunqi@kingdee.com"))
+    world.commit()
+    hub = _make_hub(world, 13, assigned_user_id=10)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    world.refresh(hub)
+    assert hub.status == "pending"
+
+    # 人加入 Linear + sync 后映射补上
+    world.query(User).filter_by(id=10).update(
+        {"linear_user_id": "lin-u-10", "linear_team_id": "team-aralgo"}
+    )
+    world.commit()
+    res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is not None
+    world.refresh(hub)
+    assert hub.status == "created"  # pending 解除
+    assert hub.linear_identifier == "ENG-42"
+    assert fake.requests[-1].team_id == "team-aralgo"  # type: ignore[attr-defined]
+    recover = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="created")
+        .one()
+    )
+    assert "pending 解除" in (recover.reason or "")
+
+
+def test_group_assignee_still_degrades_not_pending(world: Session) -> None:
+    """组账号（无邮箱）仍走优雅降级：推默认 team 无 assignee，不置 pending。"""
+    world.add(User(id=11, feishu_uid="ou_grp2", name="费用报销组"))  # 无邮箱
+    world.commit()
+    hub = _make_hub(world, 14, assigned_user_id=11)
+    fake = _FakeLinearClient()
+    res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is not None
+    world.refresh(hub)
+    assert hub.status == "created"  # 不是 pending
+    assert fake.requests[0].team_id == "team-1"  # type: ignore[attr-defined]
+    assert fake.requests[0].assignee_id is None  # type: ignore[attr-defined]
 
 
 def test_push_priority_default_zero(world: Session) -> None:
