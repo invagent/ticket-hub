@@ -150,12 +150,19 @@ JWT TTL 为 7 天（`backend/app/config.py` 中 `jwt_ttl_seconds = 60 * 60 * 24 
 VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 ```
 
-## 当前技术债（2026-06-11 更新）
+## 当前技术债（2026-06-12 更新）
 
-- ~~`make lint` 红灯~~ ✅ 已清（2026-06-11）：ruff + format + mypy 全绿
-- ~~dataset_v1.jsonl 只有 4 条占位~~ ✅ 已扩到 60 条并完成三方跑分 + prompt v2 调优（2026-06-11，详见 `docs/eval/2026-06-11-classify-v1-baseline.md`）：deepseek-v4-flash + classify_v2 = **整体 90.0%（过 D3 门槛）/ 已确认标签 95.5%**。生产默认 `LLM_PROVIDER_ORDER=dashscope,glm` + `CLASSIFY_PROMPT_VERSION=v2`。16 条 `needs_review` 标签待人工复核
-- `HANDOFF.md` 严重过时（D0 时期），以 `docs/progress/2026-05-11-status.md` 为准
-- PII encryptor 未实现（接外部 LLM 前必须补）
+完整清单见 **`docs/progress/2026-06-12-plan.md` §四**（含冻结项说明）。要点：
+
+- PII encryptor 未实现（D4 第 3 段 Vision 接外部多模态 LLM 前必须补，硬门槛）
+- dedup 评测未跑（dataset_v1 已有 `expected_dedup` 标注，待补 eval）
+- ADR 0013(llm_router) / 0014(agent_decisions) / 0015(JSON 向量代替 pgvector) 待补记
+- 16 条 `needs_review` 评测标签：❄️ 冻结 — 分类边界规则将来走人工配置 skill，不再改标签
+- ~~`HANDOFF.md` 过时~~ ✅ 已重写为指针（2026-06-12）
+
+## 工作计划
+
+**以 `docs/progress/2026-06-12-plan.md` 为准**（2026-06-12 重排）。摘要：第 1 段 Linear 状态回同步 + 主管运营 UI（pending 队列/dedup 卡片/重推按钮）→ 第 2 段 cascade 双向同步（reply_sync + status_cascade + hub-issues 分视图）→ 第 3 段 How-To RAG + Vision 多模态（前置 PII encryptor）→ D5/D6 原内容时间前移。
 
 ## 飞书工号同步说明（2026-05-12）
 
