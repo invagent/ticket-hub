@@ -320,3 +320,11 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - **生产现状（2026-06-12 已配置部署）**：`LINEAR_PUSH_ENABLED=true`，默认 team=CNPRD（中国区产品部，id `8abb86a2…`）；首轮同步 21 个个人映射（INTPRD 9 / CNPRD 5 / ARALGO 5 / KNOPS 2），9 个组账号跳过；实测分配给覃强(ARALGO)的工单落到 ARALGO-36 ✅
 - API key：Linear 个人 key「ticket-hub push (shaobin prod)」，权限 Read + Create issues
 - 单测：`test_linear_client.py`(13) / `test_linear_user_sync.py`(8) / `test_linear_push.py` 路由用例 / `test_admin_users.py` sync 端点
+
+## Linear 推送 pending 待人工（2026-06-12）
+
+- **个人处理人（有邮箱）在 Linear 查无此人** → 不推送，hub_issue `status='pending'` + status_history 记原因（含邮箱）；**组账号（无邮箱）不受影响**，仍优雅降级推默认 team
+- **Linear API 推送失败**（网络/鉴权/业务错）→ 同样置 pending + 错误原文
+- 重试仍失败不重复写 history（pending 幂等）；`linear_uuid` 始终留 NULL 可重推
+- **修复路径**：人加入 Linear 工作区 → `POST /api/admin/users/sync-from-linear` 补映射 → 重推成功自动 `pending→created`（留审计「pending 解除」）
+- 生产实测：分配给 minjun_gong@kingdee.com（查无此人）→ 正确置 pending 不产生垃圾 issue ✅
