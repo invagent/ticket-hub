@@ -92,15 +92,21 @@ def push_hub_issue_to_linear(
             )
             return None
 
+        # Per-assignee team routing: land the issue on the assignee's Linear
+        # team (and set them as assignee). Falls back to the default team when
+        # the assignee is a group / unmapped user. See user_sync.py.
         assignee_linear_id: str | None = None
+        team_id = settings.linear_team_id
         if hub.assigned_user_id is not None:
             assignee = db.get(User, hub.assigned_user_id)
             if assignee is not None:
                 assignee_linear_id = assignee.linear_user_id
+                if assignee.linear_team_id:
+                    team_id = assignee.linear_team_id
 
         req = CreateIssueRequest(
             title=f"[{hub.short_code}] {hub.title}",
-            team_id=settings.linear_team_id,
+            team_id=team_id,
             description=_build_description(db, hub),
             assignee_id=assignee_linear_id,
             priority=_PRIORITY_MAP.get(hub.priority or "", 0),

@@ -44,3 +44,21 @@ class CreatedIssue:
     identifier: str  # e.g. "ENG-123"
     url: str
     title: str
+
+
+@dataclass(slots=True, frozen=True)
+class LinearTeam:
+    id: str  # Linear team UUID
+    key: str  # e.g. "CNPRD"
+    name: str
+
+
+@dataclass(slots=True, frozen=True)
+class LinearUser:
+    """Workspace member + their team memberships (for the user sync)."""
+
+    id: str  # Linear user UUID
+    name: str
+    email: str
+    active: bool
+    teams: list[LinearTeam] = field(default_factory=list)

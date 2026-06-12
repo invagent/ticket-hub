@@ -39,6 +39,59 @@ def world(db_session: Session) -> Session:
     return db_session
 
 
+# ---- sync-from-linear ------------------------------------------------------
+
+
+def test_sync_from_linear_requires_admin(app_client, world) -> None:
+    r = app_client.post("/api/admin/users/sync-from-linear", headers=_bearer(3, role="member"))
+    assert r.status_code == 403
+
+
+def test_sync_from_linear_503_without_key(app_client, world, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("LINEAR_API_KEY", "")
+    get_settings.cache_clear()
+    r = app_client.post("/api/admin/users/sync-from-linear", headers=_bearer(1))
+    assert r.status_code == 503
+    get_settings.cache_clear()
+
+
+def test_sync_from_linear_e2e(app_client, world, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("LINEAR_API_KEY", "lin_api_test")
+    monkeypatch.setenv("LINEAR_TEAM_ID", "team-cnprd")
+    get_settings.cache_clear()
+
+    world.query(User).filter_by(id=2).update({"email": "alice@kingdee.com"})
+    world.commit()
+
+    from adapters.linear import LinearTeam, LinearUser
+    from app.services.linear import user_sync
+
+    fake_users = [
+        LinearUser(
+            id="lin-alice",
+            name="alice",
+            email="alice@kingdee.com",
+            active=True,
+            teams=[LinearTeam(id="team-aralgo", key="ARALGO", name="架构")],
+        )
+    ]
+    monkeypatch.setattr(user_sync.LinearClient, "list_users", lambda self: fake_users)
+
+    r = app_client.post("/api/admin/users/sync-from-linear", headers=_bearer(1))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["matched_count"] == 1
+    alice = world.get(User, 2)
+    world.refresh(alice)
+    assert alice.linear_user_id == "lin-alice"
+    assert alice.linear_team_id == "team-aralgo"
+    get_settings.cache_clear()
+
+
 # ---- list -----------------------------------------------------------------
 
 

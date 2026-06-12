@@ -12,6 +12,7 @@ Endpoints (all require role='admin'):
   DELETE /api/admin/users/{id}/partners/{pid}   remove a partner
 
   POST   /api/admin/users/sync-from-feishu      bulk sync from Feishu contact API
+  POST   /api/admin/users/sync-from-linear      match users to Linear members by email
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from adapters.feishu import FeishuClient, FeishuConfig, FeishuError
+from adapters.linear import LinearError
 from app.api.deps.auth import AuthedUser, require_admin, require_supervisor
 from app.config import get_settings
 from app.core.logging import get_logger
@@ -33,6 +35,7 @@ from app.repositories.assignment_scope import AssignmentScopeAdminRepository
 from app.repositories.user import UserRepository
 from app.repositories.user_partner import UserPartnerRepository
 from app.repositories.user_supervisor import UserSupervisorRepository
+from app.services.linear.user_sync import sync_linear_users
 from app.services.users.feishu_sync import FeishuUserSyncService
 
 router = APIRouter()
@@ -52,6 +55,7 @@ class UserOut(BaseModel):
     ksm_account: str | None
     zhichi_agent_id: str | None
     linear_user_id: str | None
+    linear_team_id: str | None
     role: str
     is_active: bool
 
@@ -320,6 +324,50 @@ def sync_from_feishu(
         new_user_ids=report.new_user_ids,
         touched_user_ids=report.touched_user_ids,
         total_processed=report.total_processed,
+    )
+
+
+class LinearSyncReportOut(BaseModel):
+    matched_count: int
+    cleared_count: int
+    skipped_no_email: int
+    unmatched_local: int
+    unmatched_linear: list[str]
+    errors: list[dict[str, Any]]
+    touched_user_ids: list[int]
+
+
+@router.post("/sync-from-linear", response_model=LinearSyncReportOut)
+def sync_from_linear(
+    admin: AuthedUser = Depends(require_admin),
+    db: Session = Depends(get_session),
+) -> LinearSyncReportOut:
+    """Match local users to Linear members by @email and populate
+    linear_user_id / linear_team_id (for per-assignee Linear push routing)."""
+    settings = get_settings()
+    if not settings.linear_api_key:
+        raise HTTPException(status_code=503, detail="LINEAR_API_KEY not configured")
+    try:
+        report = sync_linear_users(db)
+    except LinearError as e:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"linear API error: {e}") from e
+    logger.info(
+        "admin_user_linear_sync_done",
+        by=admin.user_id,
+        matched=report.matched_count,
+        cleared=report.cleared_count,
+        unmatched_local=report.unmatched_local,
+        errors=len(report.errors),
+    )
+    return LinearSyncReportOut(
+        matched_count=report.matched_count,
+        cleared_count=report.cleared_count,
+        skipped_no_email=report.skipped_no_email,
+        unmatched_local=report.unmatched_local,
+        unmatched_linear=report.unmatched_linear,
+        errors=report.errors,
+        touched_user_ids=report.touched_user_ids,
     )
 
 

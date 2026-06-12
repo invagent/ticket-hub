@@ -21,7 +21,7 @@ import httpx
 from app.core.logging import get_logger
 
 from .exceptions import LinearAuthError, LinearBusinessError, LinearNetworkError
-from .types import CreatedIssue, CreateIssueRequest, LinearConfig
+from .types import CreatedIssue, CreateIssueRequest, LinearConfig, LinearTeam, LinearUser
 
 logger = get_logger(__name__)
 
@@ -35,6 +35,21 @@ mutation IssueCreate($input: IssueCreateInput!) {
       url
       title
     }
+  }
+}
+"""
+
+_LIST_USERS_QUERY = """
+query Users($after: String) {
+  users(first: 250, after: $after, includeDisabled: false) {
+    nodes {
+      id
+      name
+      email
+      active
+      teams { nodes { id key name } }
+    }
+    pageInfo { hasNextPage endCursor }
   }
 }
 """
@@ -90,6 +105,38 @@ class LinearClient:
             url=str(issue["url"]),
             title=str(issue["title"]),
         )
+
+    def list_users(self) -> list[LinearUser]:
+        """All active workspace members with their team memberships.
+
+        Pages through the GraphQL `users` connection (250/page). Used by the
+        email-matched user sync to populate users.linear_user_id /
+        linear_team_id.
+        """
+        out: list[LinearUser] = []
+        after: str | None = None
+        while True:
+            data = self._graphql(_LIST_USERS_QUERY, {"after": after})
+            conn = data.get("users") or {}
+            for n in conn.get("nodes") or []:
+                teams = [
+                    LinearTeam(id=str(t["id"]), key=str(t["key"]), name=str(t.get("name") or ""))
+                    for t in ((n.get("teams") or {}).get("nodes") or [])
+                ]
+                out.append(
+                    LinearUser(
+                        id=str(n["id"]),
+                        name=str(n.get("name") or ""),
+                        email=str(n.get("email") or ""),
+                        active=bool(n.get("active")),
+                        teams=teams,
+                    )
+                )
+            page = conn.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            after = page.get("endCursor")
+        return out
 
     # ------------------------------------------------------------------
 

@@ -109,6 +109,36 @@ def test_push_uses_assignee_linear_id(world: Session) -> None:
     assert fake.requests[0].assignee_id == "lin-u-5"  # type: ignore[attr-defined]
 
 
+def test_push_routes_to_assignee_team(world: Session) -> None:
+    """Assignee with a linear_team_id → issue lands on THAT team, not default."""
+    world.add(
+        User(
+            id=6,
+            feishu_uid="ou_b",
+            name="bob",
+            linear_user_id="lin-u-6",
+            linear_team_id="team-aralgo",
+        )
+    )
+    world.commit()
+    hub = _make_hub(world, 9, assigned_user_id=6)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert fake.requests[0].team_id == "team-aralgo"  # type: ignore[attr-defined]
+    assert fake.requests[0].assignee_id == "lin-u-6"  # type: ignore[attr-defined]
+
+
+def test_push_falls_back_to_default_team_for_group(world: Session) -> None:
+    """Group assignee (no linear_team_id) → default team."""
+    world.add(User(id=7, feishu_uid="ou_grp", name="数电开票组"))  # no linear mapping
+    world.commit()
+    hub = _make_hub(world, 10, assigned_user_id=7)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert fake.requests[0].team_id == "team-1"  # type: ignore[attr-defined]  # settings.linear_team_id
+    assert fake.requests[0].assignee_id is None  # type: ignore[attr-defined]
+
+
 def test_push_skips_operation_type(world: Session) -> None:
     hub = _make_hub(world, 4, type="Operation")
     fake = _FakeLinearClient()

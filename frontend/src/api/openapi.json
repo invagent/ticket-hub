@@ -1683,6 +1683,59 @@
         "title": "KSMAck",
         "type": "object"
       },
+      "LinearSyncReportOut": {
+        "properties": {
+          "cleared_count": {
+            "title": "Cleared Count",
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "matched_count": {
+            "title": "Matched Count",
+            "type": "integer"
+          },
+          "skipped_no_email": {
+            "title": "Skipped No Email",
+            "type": "integer"
+          },
+          "touched_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Touched User Ids",
+            "type": "array"
+          },
+          "unmatched_linear": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmatched Linear",
+            "type": "array"
+          },
+          "unmatched_local": {
+            "title": "Unmatched Local",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "matched_count",
+          "cleared_count",
+          "skipped_no_email",
+          "unmatched_local",
+          "unmatched_linear",
+          "errors",
+          "touched_user_ids"
+        ],
+        "title": "LinearSyncReportOut",
+        "type": "object"
+      },
       "LinkedTicket": {
         "properties": {
           "id": {
@@ -3348,6 +3401,17 @@
             ],
             "title": "Ksm Account"
           },
+          "linear_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Team Id"
+          },
           "linear_user_id": {
             "anyOf": [
               {
@@ -3400,6 +3464,7 @@
           "ksm_account",
           "zhichi_agent_id",
           "linear_user_id",
+          "linear_team_id",
           "role",
           "is_active"
         ],
@@ -4743,6 +4808,28 @@
           }
         },
         "summary": "Sync From Feishu",
+        "tags": [
+          "admin-users"
+        ]
+      }
+    },
+    "/api/admin/users/sync-from-linear": {
+      "post": {
+        "description": "Match local users to Linear members by @email and populate\nlinear_user_id / linear_team_id (for per-assignee Linear push routing).",
+        "operationId": "sync_from_linear_api_admin_users_sync_from_linear_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinearSyncReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sync From Linear",
         "tags": [
           "admin-users"
         ]

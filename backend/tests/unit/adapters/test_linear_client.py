@@ -206,3 +206,87 @@ def test_network_error() -> None:
     respx.post(BASE).mock(side_effect=httpx.ConnectError("connection refused"))
     with _client() as c, pytest.raises(LinearNetworkError):
         c.create_issue(_create_req())
+
+
+# ---- list_users -------------------------------------------------------------
+
+
+def _users_page(nodes: list, *, has_next: bool, cursor: str | None) -> dict:
+    return {
+        "data": {
+            "users": {
+                "nodes": nodes,
+                "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+            }
+        }
+    }
+
+
+@respx.mock
+def test_list_users_single_page() -> None:
+    nodes = [
+        {
+            "id": "u1",
+            "name": "陈少斌",
+            "email": "shaobin_chen@kingdee.com",
+            "active": True,
+            "teams": {"nodes": [{"id": "t-aralgo", "key": "ARALGO", "name": "架构与算法部"}]},
+        },
+        {
+            "id": "u2",
+            "name": "Agent",
+            "email": "bot@oauthapp.linear.app",
+            "active": True,
+            "teams": {"nodes": []},
+        },
+    ]
+    respx.post(BASE).mock(
+        return_value=httpx.Response(200, json=_users_page(nodes, has_next=False, cursor=None))
+    )
+    with _client() as c:
+        users = c.list_users()
+    assert len(users) == 2
+    assert users[0].email == "shaobin_chen@kingdee.com"
+    assert users[0].teams[0].key == "ARALGO"
+    assert users[1].teams == []
+
+
+@respx.mock
+def test_list_users_paginates() -> None:
+    page1 = _users_page(
+        [
+            {
+                "id": "u1",
+                "name": "A",
+                "email": "a@kingdee.com",
+                "active": True,
+                "teams": {"nodes": []},
+            }
+        ],
+        has_next=True,
+        cursor="CUR1",
+    )
+    page2 = _users_page(
+        [
+            {
+                "id": "u2",
+                "name": "B",
+                "email": "b@kingdee.com",
+                "active": True,
+                "teams": {"nodes": []},
+            }
+        ],
+        has_next=False,
+        cursor=None,
+    )
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json=page1 if calls["n"] == 1 else page2)
+
+    respx.post(BASE).mock(side_effect=handler)
+    with _client() as c:
+        users = c.list_users()
+    assert [u.id for u in users] == ["u1", "u2"]
+    assert calls["n"] == 2

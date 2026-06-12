@@ -7,7 +7,7 @@ from .exceptions import (
     LinearError,
     LinearNetworkError,
 )
-from .types import CreatedIssue, CreateIssueRequest, LinearConfig
+from .types import CreatedIssue, CreateIssueRequest, LinearConfig, LinearTeam, LinearUser
 
 __all__ = [
     "CreateIssueRequest",
@@ -18,4 +18,6 @@ __all__ = [
     "LinearConfig",
     "LinearError",
     "LinearNetworkError",
+    "LinearTeam",
+    "LinearUser",
 ]

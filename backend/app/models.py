@@ -99,6 +99,10 @@ class User(Base):
     feishu_uid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     employee_no: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     linear_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # D4: Linear team an issue lands in when this user is the hub_issue assignee
+    # (populated by the email-matched Linear user sync; NULL → push falls back
+    # to the default LINEAR_TEAM_ID). Group accounts stay NULL.
+    linear_team_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)

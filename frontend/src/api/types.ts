@@ -346,6 +346,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/sync-from-linear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync From Linear
+         * @description Match local users to Linear members by @email and populate
+         *     linear_user_id / linear_team_id (for per-assignee Linear push routing).
+         */
+        post: operations["sync_from_linear_api_admin_users_sync_from_linear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{user_id}": {
         parameters: {
             query?: never;
@@ -1464,6 +1485,25 @@ export interface components {
              */
             code: number;
         };
+        /** LinearSyncReportOut */
+        LinearSyncReportOut: {
+            /** Cleared Count */
+            cleared_count: number;
+            /** Errors */
+            errors: {
+                [key: string]: unknown;
+            }[];
+            /** Matched Count */
+            matched_count: number;
+            /** Skipped No Email */
+            skipped_no_email: number;
+            /** Touched User Ids */
+            touched_user_ids: number[];
+            /** Unmatched Linear */
+            unmatched_linear: string[];
+            /** Unmatched Local */
+            unmatched_local: number;
+        };
         /** LinkedTicket */
         LinkedTicket: {
             /** Id */
@@ -1961,6 +2001,8 @@ export interface components {
             is_active: boolean;
             /** Ksm Account */
             ksm_account: string | null;
+            /** Linear Team Id */
+            linear_team_id: string | null;
             /** Linear User Id */
             linear_user_id: string | null;
             /** Mobile */
@@ -2794,6 +2836,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_from_linear_api_admin_users_sync_from_linear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinearSyncReportOut"];
                 };
             };
         };
