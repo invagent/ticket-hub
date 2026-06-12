@@ -805,6 +805,54 @@ class Feature(Base):
     )
 
 
+# ---- D4: sync_outbox (cascade fan-out, ADR-0007) ---------------------------
+
+
+class SyncOutbox(Base):
+    """Outbound write queue: hub-side changes that must reach source systems.
+
+    Producers (D4): reply_sync (kind='reply') + status_cascade (kind='status')
+    enqueue one row per affected SOURCED ticket. Consumers (D5): per-source
+    senders (KSM 反向 / 智齿) drain status='pending' rows; until then rows
+    simply accumulate — that decoupling is the point of the outbox.
+
+    Rows are immutable payload snapshots; retries bump attempts and keep
+    last_error so the drain worker can back off / give up explicitly.
+    """
+
+    __tablename__ = "sync_outbox"
+    __table_args__ = (
+        CheckConstraint("kind IN ('reply','status')", name="ck_sync_outbox_kind"),
+        CheckConstraint(
+            "status IN ('pending','sent','failed','skipped')",
+            name="ck_sync_outbox_status",
+        ),
+        Index("ix_sync_outbox_drain", "status", "created_at"),
+        Index("ix_sync_outbox_ticket", "ticket_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_source_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("sources.code"), nullable=False
+    )
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), nullable=False)
+    # denormalized so the D5 sender never needs a join
+    source_ticket_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    hub_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("hub_issues.id"), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 # ---- D3-E: ticket embeddings (dedup recall) --------------------------------
 
 

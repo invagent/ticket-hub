@@ -151,6 +151,33 @@ def test_linear_error_sets_failed_not_raises(db_session: Session) -> None:
     assert rep.status_changed == 0
 
 
+def test_completed_cascades_to_linked_tickets(db_session: Session) -> None:
+    """决策 14 联动：Linear Done → hub released → 源工单 released + outbox。"""
+    from app.models import Source, SyncOutbox, Ticket
+
+    db_session.add(Source(code="ksm", name="KSM"))
+    db_session.commit()
+    hub = _hub(db_session, 11, status="in_progress")
+    t = Ticket(
+        short_code="TKT-LSS-11",
+        source_code="ksm",
+        source_ticket_id="lss-11",
+        type="Raw",
+        status="in_progress",
+        title="x",
+        hub_issue_id=hub.id,
+    )
+    db_session.add(t)
+    db_session.commit()
+
+    sync_linear_statuses(db_session, client=_FakeLinearClient([_state(11, "Done", "completed")]))  # type: ignore[arg-type]
+    db_session.refresh(t)
+    assert t.status == "released"
+    outbox = db_session.query(SyncOutbox).filter_by(kind="status", ticket_id=t.id).one()
+    assert outbox.payload["to_status"] == "released"
+    assert outbox.status == "pending"
+
+
 def test_no_key_skips(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LINEAR_API_KEY", "")
     get_settings.cache_clear()

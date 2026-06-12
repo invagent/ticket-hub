@@ -569,6 +569,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Author Reply Endpoint
+         * @description Author/replace the Operation reply. Cascades to linked tickets'
+         *     cached_reply and enqueues sync_outbox rows for source write-back.
+         */
+        post: operations["author_reply_endpoint_api_hub_issues__hub_issue_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/dashboard": {
         parameters: {
             query?: never;
@@ -1044,6 +1065,22 @@ export interface components {
             acknowledged_at: string;
             /** Notification Id */
             notification_id: number;
+        };
+        /** AuthorReplyBody */
+        AuthorReplyBody: {
+            /** Content */
+            content: string;
+        };
+        /** AuthorReplyResponse */
+        AuthorReplyResponse: {
+            /** Cascaded Ticket Count */
+            cascaded_ticket_count: number;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Outbox Count */
+            outbox_count: number;
+            /** Version */
+            version: number;
         };
         /** CheckOut */
         CheckOut: {
@@ -1527,6 +1564,8 @@ export interface components {
             closed_at: string | null;
             /** Expected Resolved At */
             expected_resolved_at: string | null;
+            /** Feishu Task Status */
+            feishu_task_status: string | null;
             /**
              * First Seen At
              * Format: date-time
@@ -1539,6 +1578,10 @@ export interface components {
              * Format: date-time
              */
             last_seen_at: string;
+            /** Linear Identifier */
+            linear_identifier: string | null;
+            /** Linear Status */
+            linear_status: string | null;
             /** Module */
             module: string | null;
             /** Occurrence Count */
@@ -1549,6 +1592,10 @@ export interface components {
             product: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /** Reply Content Version */
+            reply_content_version: number;
+            /** Reply Updated At */
+            reply_updated_at: string | null;
             /** Short Code */
             short_code: string;
             /** Status */
@@ -3490,6 +3537,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubIssueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    author_reply_endpoint_api_hub_issues__hub_issue_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorReplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorReplyResponse"];
                 };
             };
             /** @description Validation Error */

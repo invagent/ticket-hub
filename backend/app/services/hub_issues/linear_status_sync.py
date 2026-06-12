@@ -48,7 +48,7 @@ from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import make_session
 from app.models import HubIssue
-from app.repositories.status_history import StatusHistoryRepository
+from app.services.cascade.status_cascade import apply_hub_status
 
 logger = get_logger(__name__)
 
@@ -111,7 +111,6 @@ def sync_linear_statuses(
             client.close()
 
     by_uuid = {s.id: s for s in states}
-    history = StatusHistoryRepository(db)
     now = datetime.now(UTC)
 
     for hub in hubs:
@@ -128,19 +127,17 @@ def sync_linear_statuses(
         mapped = _CASCADE_MAP.get(state.state_type)
         if mapped is None or hub.status == mapped:
             continue
-        prev = hub.status
-        hub.status = mapped
-        if mapped == "released" and hub.actual_released_at is None:
-            hub.actual_released_at = now
-        history.record(
-            entity_type="hub_issue",
-            entity_id=hub.id,
-            from_status=prev,
+        # 决策 14: hub 状态变更统一走 status_cascade —— hub history +
+        # 级联源工单 + sync_outbox 入队，一处语义。
+        cascade = apply_hub_status(
+            db,
+            hub,
             to_status=mapped,
             changed_by="agent:linear_status_sync",
             reason=f"Linear {state.identifier} → {state.state_name} ({state.state_type})",
         )
-        report.status_changed += 1
+        if cascade.changed:
+            report.status_changed += 1
 
     db.commit()
     logger.info(

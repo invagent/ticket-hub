@@ -20,6 +20,49 @@
         "title": "AckResponse",
         "type": "object"
       },
+      "AuthorReplyBody": {
+        "properties": {
+          "content": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "AuthorReplyBody",
+        "type": "object"
+      },
+      "AuthorReplyResponse": {
+        "properties": {
+          "cascaded_ticket_count": {
+            "title": "Cascaded Ticket Count",
+            "type": "integer"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "outbox_count": {
+            "title": "Outbox Count",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "version",
+          "cascaded_ticket_count",
+          "outbox_count"
+        ],
+        "title": "AuthorReplyResponse",
+        "type": "object"
+      },
       "CheckOut": {
         "properties": {
           "error": {
@@ -1441,20 +1484,20 @@
           "expected_resolved_at",
           "actual_resolved_at",
           "closed_at",
-          "canonical_body",
-          "reply_content",
-          "reply_content_version",
-          "reply_authored_by",
-          "reply_updated_at",
-          "linear_uuid",
           "linear_identifier",
           "linear_status",
+          "reply_content_version",
+          "reply_updated_at",
+          "feishu_task_status",
+          "canonical_body",
+          "reply_content",
+          "reply_authored_by",
+          "linear_uuid",
           "scheduled_iteration",
           "expected_released_at",
           "actual_released_at",
           "customer_verified_at",
           "feishu_task_id",
-          "feishu_task_status",
           "feishu_task_synced_at",
           "superseded_by_hub_issue_id",
           "supersede_reason"
@@ -1547,6 +1590,17 @@
             ],
             "title": "Expected Resolved At"
           },
+          "feishu_task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feishu Task Status"
+          },
           "first_seen_at": {
             "format": "date-time",
             "title": "First Seen At",
@@ -1560,6 +1614,28 @@
             "format": "date-time",
             "title": "Last Seen At",
             "type": "string"
+          },
+          "linear_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Identifier"
+          },
+          "linear_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Status"
           },
           "module": {
             "anyOf": [
@@ -1609,6 +1685,22 @@
             ],
             "title": "Product Line Code"
           },
+          "reply_content_version": {
+            "title": "Reply Content Version",
+            "type": "integer"
+          },
+          "reply_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Updated At"
+          },
           "short_code": {
             "title": "Short Code",
             "type": "string"
@@ -1642,7 +1734,12 @@
           "last_seen_at",
           "expected_resolved_at",
           "actual_resolved_at",
-          "closed_at"
+          "closed_at",
+          "linear_identifier",
+          "linear_status",
+          "reply_content_version",
+          "reply_updated_at",
+          "feishu_task_status"
         ],
         "title": "HubIssueSummary",
         "type": "object"
@@ -5877,6 +5974,59 @@
           }
         },
         "summary": "Get Hub Issue",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/reply": {
+      "post": {
+        "description": "Author/replace the Operation reply. Cascades to linked tickets'\ncached_reply and enqueues sync_outbox rows for source write-back.",
+        "operationId": "author_reply_endpoint_api_hub_issues__hub_issue_id__reply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorReplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Author Reply Endpoint",
         "tags": [
           "hub-issues"
         ]

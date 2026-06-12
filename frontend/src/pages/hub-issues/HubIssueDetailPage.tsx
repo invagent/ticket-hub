@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { getByPath } from "@/api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError, getByPath, postByPath } from "@/api/client";
 import type { paths } from "@/api/types";
 
 type HubIssueDetail =
@@ -133,28 +134,7 @@ function CommonMeta({ data }: { data: HubIssueDetail }) {
 
 function TypeSpecificSection({ data }: { data: HubIssueDetail }) {
   if (data.type === "Operation") {
-    return (
-      <section className="space-y-1">
-        <h2 className="text-sm font-semibold text-gray-500">
-          回复 v{data.reply_content_version}
-        </h2>
-        {data.reply_content ? (
-          <>
-            <pre className="text-sm whitespace-pre-wrap p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-900">
-              {data.reply_content}
-            </pre>
-            <p className="text-xs text-gray-500">
-              by <code>{data.reply_authored_by ?? "—"}</code>
-              {data.reply_updated_at && (
-                <> · {new Date(data.reply_updated_at).toLocaleString()}</>
-              )}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-gray-400">尚无回复</p>
-        )}
-      </section>
-    );
+    return <OperationReplySection data={data} />;
   }
 
   if (data.type === "Bug_fix" || data.type === "Demand") {
@@ -212,6 +192,101 @@ function TypeSpecificSection({ data }: { data: HubIssueDetail }) {
             : "—"}
         </Field>
       </div>
+    </section>
+  );
+}
+
+function OperationReplySection({ data }: { data: HubIssueDetail }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/reply",
+        { hub_issue_id: data.id },
+        { content: draft },
+      ),
+    onSuccess: (r) => {
+      setError(null);
+      setEditing(false);
+      setNotice(
+        `已保存 v${r.version}，级联 ${r.cascaded_ticket_count} 条工单缓存` +
+          (r.outbox_count > 0 ? `，${r.outbox_count} 条待回写源系统` : ""),
+      );
+      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-3">
+        <h2 className="text-sm font-semibold text-gray-500">
+          回复 v{data.reply_content_version}
+        </h2>
+        {!editing && (
+          <button
+            onClick={() => {
+              setDraft(data.reply_content ?? "");
+              setNotice(null);
+              setEditing(true);
+            }}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            {data.reply_content ? "修改回复" : "撰写回复"}
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={5}
+            placeholder="输入面向客户的回复内容…"
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => save.mutate()}
+              disabled={save.isPending || !draft.trim()}
+              className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
+            >
+              {save.isPending ? "保存中…" : "保存并级联"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-700 rounded"
+            >
+              取消
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            保存后回复会版本化存档，并级联到全部关联工单的缓存；待 D5
+            接通后自动回写 KSM/智齿。
+          </p>
+        </div>
+      ) : data.reply_content ? (
+        <>
+          <pre className="text-sm whitespace-pre-wrap p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-900">
+            {data.reply_content}
+          </pre>
+          <p className="text-xs text-gray-500">
+            by <code>{data.reply_authored_by ?? "—"}</code>
+            {data.reply_updated_at && (
+              <> · {new Date(data.reply_updated_at).toLocaleString()}</>
+            )}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">尚无回复</p>
+      )}
+      {notice && <p className="text-xs text-green-600">{notice}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </section>
   );
 }

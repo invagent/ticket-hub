@@ -1,9 +1,10 @@
-"""GET /api/hub-issues — list / detail.
+"""GET /api/hub-issues — list / detail；POST reply（D4 第②段）.
 
-  GET /api/hub-issues?type=&status=&assigned_user_id=&product=&module=&page=&page_size=
-  GET /api/hub-issues/{hub_issue_id}             includes linked tickets (summary)
+  GET  /api/hub-issues?type=&status=&assigned_user_id=&product=&module=&page=&page_size=
+  GET  /api/hub-issues/{hub_issue_id}            includes linked tickets (summary)
+  POST /api/hub-issues/{hub_issue_id}/reply      author Operation reply (supervisor)
 
-All authenticated users can read.
+All authenticated users can read; replies require supervisor.
 """
 
 from __future__ import annotations
@@ -11,14 +12,17 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import AuthedUser, require_user
+from app.api.deps.auth import AuthedUser, require_supervisor, require_user
+from app.core.logging import get_logger
 from app.db import get_session
 from app.repositories.ticket import HubIssueRepository, TicketRepository
+from app.services.cascade.reply_sync import ReplySyncError, author_reply
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class HubIssueSummary(BaseModel):
@@ -38,6 +42,12 @@ class HubIssueSummary(BaseModel):
     expected_resolved_at: datetime | None
     actual_resolved_at: datetime | None
     closed_at: datetime | None
+    # 分视图的类型专属列（D4 第②段）
+    linear_identifier: str | None  # Bug_fix / Demand
+    linear_status: str | None
+    reply_content_version: int  # Operation: 0 = 未回复
+    reply_updated_at: datetime | None
+    feishu_task_status: str | None  # Internal_task
 
     model_config = {"from_attributes": True}
 
@@ -54,22 +64,17 @@ class LinkedTicket(BaseModel):
 
 class HubIssueDetail(HubIssueSummary):
     canonical_body: str | None
-    # Operation-only
+    # Operation-only（其余 Operation 字段已在 Summary）
     reply_content: str | None
-    reply_content_version: int
     reply_authored_by: str | None
-    reply_updated_at: datetime | None
-    # Bug_fix / Demand
+    # Bug_fix / Demand（identifier/status 已在 Summary）
     linear_uuid: str | None
-    linear_identifier: str | None
-    linear_status: str | None
     scheduled_iteration: str | None
     expected_released_at: datetime | None
     actual_released_at: datetime | None
     customer_verified_at: datetime | None
-    # Internal_task
+    # Internal_task（status 已在 Summary）
     feishu_task_id: str | None
-    feishu_task_status: str | None
     feishu_task_synced_at: datetime | None
     # Type-immutable supersede chain
     superseded_by_hub_issue_id: int | None
@@ -129,3 +134,46 @@ def get_hub_issue(
     detail = HubIssueDetail.model_validate(hub)
     detail.linked_tickets = [LinkedTicket.model_validate(t) for t in linked]
     return detail
+
+
+# ---- Operation reply (决策 15, D4 第②段) ------------------------------------
+
+
+class AuthorReplyBody(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10000)
+
+
+class AuthorReplyResponse(BaseModel):
+    hub_issue_id: int
+    version: int
+    cascaded_ticket_count: int
+    outbox_count: int  # 入队待回写源系统的条数（D5 sender 消费）
+
+
+@router.post("/{hub_issue_id}/reply", response_model=AuthorReplyResponse)
+def author_reply_endpoint(
+    hub_issue_id: int,
+    body: AuthorReplyBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> AuthorReplyResponse:
+    """Author/replace the Operation reply. Cascades to linked tickets'
+    cached_reply and enqueues sync_outbox rows for source write-back."""
+    try:
+        result = author_reply(
+            db, hub_issue_id, content=body.content, authored_by=f"user:{user.name}"
+        )
+    except ReplySyncError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "hub_issue_reply_authored",
+        hub_issue_id=hub_issue_id,
+        version=result.version,
+        operator_user_id=user.user_id,
+    )
+    return AuthorReplyResponse(
+        hub_issue_id=result.hub_issue_id,
+        version=result.version,
+        cascaded_ticket_count=len(result.cascaded_ticket_ids),
+        outbox_count=len(result.outbox_ids),
+    )
