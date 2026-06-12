@@ -231,7 +231,7 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 
 ## 阶段进度
 
-D0✅ D1✅ D2✅ D3🟡（A/B/C/D 完成，E dedup 待开工）D4🟡（Linear adapter 已实现，hub_issue 自动创建待开工）D5~收尾⬜。当前分支：`main`。
+D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_issue 创建 + Linear push 已实现；Linear 状态回同步待开工）D5~收尾⬜。当前分支：`main`。
 
 ## D3-D conflict_detect Agent（2026-06-11）
 
@@ -252,6 +252,29 @@ D0✅ D1✅ D2✅ D3🟡（A/B/C/D 完成，E dedup 待开工）D4🟡（Linear 
 - 回滚 `POST /api/supervisor/revert-split`：软删 children + Parent 还原 Raw + decision 翻 reverted；**任一 child status ≠ received 则拒绝**（有进展不可自动回滚）
 - 物化审计写回 `decision.proposal.materialized`（at/by/child_ids/parent_prev_status）
 - 注意：Router 的 `multi_match`（一个问题多团队认领）是归属歧义，**不是**拆分场景，split.py 只消费 `split_ticket`
+
+## 主管工作台拆单提案 UI（2026-06-12）
+
+- `GET /api/supervisor/split-proposals`：待处理提案队列（未物化、未 reverted、parent 仍 Raw；materialized 过滤在 Python 做，JSON 谓词不值得跨库写）
+- `POST /api/supervisor/dismiss-split`：主管忽略提案 → decision 翻 `reverted`（留审计）；已物化的拒绝（409，提示走 revert-split）
+- 前端 `SupervisorPage.tsx` 新增 `SplitProposalCard`：紫色卡片显示 short_code/置信度/理由/子单列表 + 「执行拆分」「忽略」按钮
+
+## D3-E dedup Agent（2026-06-12）
+
+- `services/agents/dedup.py`：跨源重复工单判定。链路：embedding 入库 → 余弦召回 → 候选≥阈值才送 LLM 判定 → 写 `agent_decisions`（`dedup_link`/`dedup_new`），**仅审计不动工单**（同 split 灰度剧本：先审计、再手动、后自动）
+- **刻意不用 pgvector**：向量存 `ticket_embeddings` JSON 列（迁移 0009），Python 余弦暴力扫最近 `DEDUP_CANDIDATE_POOL`(200) 条。当前量级（百级/天）足够；扫描进 profile 热点再迁 pgvector
+- embedding：`app/core/llm_router/embeddings.py`，DashScope `text-embedding-v4` / GLM `embedding-3`（同 OpenAI `/embeddings` 方言，一个 httpx 客户端 + failover，顺序同 `LLM_PROVIDER_ORDER`）
+- 召回参数：`DEDUP_RECALL_THRESHOLD`(0.80) / `DEDUP_RECALL_TOP_K`(5)；无候选 → 直接写 `dedup_new`（`method='recall_only'`，零 LLM 成本）
+- LLM 判定约束：`duplicate_of_ticket_id` 必须在候选集内，否则解析报错丢弃；拿不准判 new（误合并代价 > 漏判）；prompt `prompts/dedup_v1.md`
+- 只对 Raw 工单跑（Child 是拆分内部产物，不做 dedup 目标也不做 dedup 主体）
+- ingest 链顺序（webhooks.py `run_post_ingest_agents`）：classify → (auto hub_issue) → dedup → conflict_detect → (auto split → 每个 child 再 classify)
+
+## D4 hub_issue 创建 + Linear push（2026-06-12）
+
+- `services/hub_issues/creator.py`：`ensure_hub_issue_for_ticket` 把已分类工单「毕业」成 hub_issue（短码 `HUB-{n:06d}`，status='created'，继承 title/body/产品线/module/处理人），写 `ticket_hub_issue_history`（user: 前缀 → human_confirmed=true）+ status_history；幂等（已链接直接返回 created=false）；split Parent 拒绝（children 各自毕业）
+- 自动路径：classify conf ≥ `HUB_ISSUE_AUTO_CONFIDENCE`(0.80) 且 `HUB_ISSUE_AUTO_ENABLED`（**默认 false**）→ ingest 链自动建；手动 `POST /api/supervisor/create-hub-issue`（无置信门槛，可 `type` 覆盖 predicted_type）
+- `services/hub_issues/linear_push.py`：Bug_fix/Demand 推 Linear（`LINEAR_PUSH_ENABLED` 默认 false + key/team 三门槛），回写 `linear_uuid/linear_identifier/linear_status_synced_at`；幂等（linear_uuid 非空跳过）；失败吞错留 NULL 可重推；priority 映射 critical→1…lowest→4；description 附 source tickets 引用
+- 待开工：Linear 状态回同步（webhook /linear 或轮询）、Operation 回复流
 
 ## AI 分类结果展示（2026-05-13）
 

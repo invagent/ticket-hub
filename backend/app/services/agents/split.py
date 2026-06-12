@@ -72,6 +72,69 @@ class RevertSplitResult:
     deleted_child_ids: list[int]
 
 
+def list_pending_split_proposals(
+    db: Session, *, limit: int = 50
+) -> list[tuple[AgentDecision, Ticket]]:
+    """All non-reverted, not-yet-materialized split_ticket proposals whose
+    parent is still a live Raw ticket — the supervisor work-bench queue.
+
+    `materialized` lives inside the JSON proposal, so the final filter runs
+    in Python (cross-DB JSON predicates aren't worth it at this volume).
+    """
+    rows = (
+        db.query(AgentDecision, Ticket)
+        .join(Ticket, Ticket.id == AgentDecision.subject_id)
+        .filter(
+            AgentDecision.decision_type == "split_ticket",
+            AgentDecision.subject_type == "ticket",
+            AgentDecision.status == "executed",
+            Ticket.type == "Raw",
+            Ticket.deleted_at.is_(None),
+        )
+        .order_by(AgentDecision.id.desc())
+        .limit(limit * 2)  # headroom: some rows drop in the Python filter
+        .all()
+    )
+    pending = [(d, t) for d, t in rows if not isinstance(d.proposal.get("materialized"), dict)]
+    return pending[:limit]
+
+
+def dismiss_split_proposal(
+    decision_id: int,
+    *,
+    dismissed_by: str,
+    reason: str | None = None,
+    db: Session,
+) -> int:
+    """Supervisor declines an unmaterialized proposal: flip the decision to
+    'reverted' so it leaves the pending queue but stays auditable.
+
+    Materialized splits must go through revert_split (which restores tickets).
+    """
+    decision = db.get(AgentDecision, decision_id)
+    if decision is None:
+        raise SplitError(f"decision {decision_id} not found")
+    if decision.decision_type != "split_ticket":
+        raise SplitError(f"decision {decision_id} is {decision.decision_type!r}, not split_ticket")
+    if decision.status == "reverted":
+        raise SplitError(f"decision {decision_id} already reverted")
+    if isinstance(decision.proposal.get("materialized"), dict):
+        raise SplitError(f"decision {decision_id} already materialized — use revert-split instead")
+
+    decision.status = "reverted"
+    decision.reverted_at = datetime.now(UTC)
+    decision.reverted_by = dismissed_by
+    decision.revert_reason = reason or "dismissed by supervisor (proposal declined)"
+    db.commit()
+    logger.info(
+        "split_proposal_dismissed",
+        decision_id=decision.id,
+        ticket_id=decision.subject_id,
+        dismissed_by=dismissed_by,
+    )
+    return decision.id
+
+
 def find_pending_split_decision(db: Session, ticket_id: int) -> AgentDecision | None:
     """Latest non-reverted split_ticket proposal whose parent is still Raw
     (i.e. not yet materialized)."""

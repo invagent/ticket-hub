@@ -100,6 +100,100 @@ describe("SupervisorPage", () => {
     );
   });
 
+  it("renders split proposals and executes one", async () => {
+    let executeBody: unknown = null;
+
+    server.use(
+      http.get("*/api/supervisor/inbox", () => HttpResponse.json({ items: [] })),
+      http.get("*/api/supervisor/split-proposals", () =>
+        HttpResponse.json({
+          items: [
+            {
+              decision_id: 500,
+              ticket_id: 100,
+              ticket_short_code: "TKT-000100",
+              ticket_title: "1、步骤咨询 2、状态不同步",
+              confidence: 0.88,
+              reason: "两个独立问题",
+              sub_issues: [
+                { title: "步骤咨询", summary: "咨询正确流程" },
+                { title: "状态不同步", summary: "税局已开票但系统未同步" },
+              ],
+              created_at: "2026-06-11T10:00:00Z",
+            },
+          ],
+        }),
+      ),
+      http.post("*/api/supervisor/execute-split", async ({ request }) => {
+        executeBody = await request.json();
+        return HttpResponse.json({
+          decision_id: 500,
+          parent_ticket_id: 100,
+          child_ticket_ids: [101, 102],
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("建议拆成 2 条")).toBeInTheDocument();
+    expect(screen.getByText("TKT-000100")).toBeInTheDocument();
+    expect(screen.getByText("置信度 88%")).toBeInTheDocument();
+    expect(screen.getByText("步骤咨询")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "执行拆分" }));
+    await waitFor(() => expect(executeBody).toEqual({ decision_id: 500 }));
+    await waitFor(() =>
+      expect(screen.getByText("已拆分为 2 条子工单")).toBeInTheDocument(),
+    );
+  });
+
+  it("dismisses a split proposal", async () => {
+    let dismissBody: unknown = null;
+    let proposalsCallCount = 0;
+
+    server.use(
+      http.get("*/api/supervisor/inbox", () => HttpResponse.json({ items: [] })),
+      http.get("*/api/supervisor/split-proposals", () => {
+        proposalsCallCount += 1;
+        return HttpResponse.json({
+          items:
+            proposalsCallCount === 1
+              ? [
+                  {
+                    decision_id: 501,
+                    ticket_id: 200,
+                    ticket_short_code: "TKT-000200",
+                    ticket_title: "工单",
+                    confidence: 0.7,
+                    reason: "",
+                    sub_issues: [
+                      { title: "a", summary: "" },
+                      { title: "b", summary: "" },
+                    ],
+                    created_at: "2026-06-11T10:00:00Z",
+                  },
+                ]
+              : [],
+        });
+      }),
+      http.post("*/api/supervisor/dismiss-split", async ({ request }) => {
+        dismissBody = await request.json();
+        return HttpResponse.json({ decision_id: 501 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "忽略" }));
+    await waitFor(() => expect(dismissBody).toEqual({ decision_id: 501 }));
+    await waitFor(() =>
+      expect(screen.queryByText("建议拆成 2 条")).not.toBeInTheDocument(),
+    );
+  });
+
   it("relink form opens, validates, and posts to /relink", async () => {
     let relinkBody: unknown = null;
 

@@ -582,6 +582,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/create-hub-issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Hub Issue Endpoint
+         * @description Graduate a ticket to a hub_issue (manual path, no confidence gate).
+         *
+         *     Bug_fix/Demand issues are pushed to Linear asynchronously when
+         *     LINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).
+         */
+        post: operations["create_hub_issue_endpoint_api_supervisor_create_hub_issue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/dismiss-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Split Endpoint
+         * @description Decline an unmaterialized split proposal (audit-preserving).
+         */
+        post: operations["dismiss_split_endpoint_api_supervisor_dismiss_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/execute-split": {
         parameters: {
             query?: never;
@@ -688,6 +731,27 @@ export interface paths {
          *     is already in progress), restore the parent to Raw.
          */
         post: operations["revert_split_endpoint_api_supervisor_revert_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/split-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Split Proposals
+         * @description Pending split_ticket proposals awaiting supervisor action (execute or
+         *     dismiss). Materialized and reverted proposals are excluded.
+         */
+        get: operations["list_split_proposals_api_supervisor_split_proposals_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -905,6 +969,26 @@ export interface components {
             /** Users Total */
             users_total: number;
         };
+        /** CreateHubIssueBody */
+        CreateHubIssueBody: {
+            /** Ticket Id */
+            ticket_id: number;
+            /** Type */
+            type?: string | null;
+        };
+        /** CreateHubIssueResponse */
+        CreateHubIssueResponse: {
+            /** Created */
+            created: boolean;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Hub Issue Short Code */
+            hub_issue_short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Type */
+            type: string;
+        };
         /** CustomerDedupOut */
         CustomerDedupOut: {
             /** Identities Matched */
@@ -967,6 +1051,18 @@ export interface components {
             user_id: number | null;
             /** User Name */
             user_name: string | null;
+        };
+        /** DismissSplitBody */
+        DismissSplitBody: {
+            /** Decision Id */
+            decision_id: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DismissSplitResponse */
+        DismissSplitResponse: {
+            /** Decision Id */
+            decision_id: number;
         };
         /** ExecuteSplitBody */
         ExecuteSplitBody: {
@@ -1627,6 +1723,40 @@ export interface components {
             is_active: boolean;
             /** Name */
             name: string;
+        };
+        /** SplitProposalItem */
+        SplitProposalItem: {
+            /** Confidence */
+            confidence: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision Id */
+            decision_id: number;
+            /** Reason */
+            reason: string;
+            /** Sub Issues */
+            sub_issues: components["schemas"]["SplitSubIssueOut"][];
+            /** Ticket Id */
+            ticket_id: number;
+            /** Ticket Short Code */
+            ticket_short_code: string;
+            /** Ticket Title */
+            ticket_title: string | null;
+        };
+        /** SplitProposalsResponse */
+        SplitProposalsResponse: {
+            /** Items */
+            items: components["schemas"]["SplitProposalItem"][];
+        };
+        /** SplitSubIssueOut */
+        SplitSubIssueOut: {
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
         };
         /** SupervisorIn */
         SupervisorIn: {
@@ -3145,6 +3275,72 @@ export interface operations {
             };
         };
     };
+    create_hub_issue_endpoint_api_supervisor_create_hub_issue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateHubIssueBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateHubIssueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_split_endpoint_api_supervisor_dismiss_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissSplitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     execute_split_endpoint_api_supervisor_execute_split_post: {
         parameters: {
             query?: never;
@@ -3326,6 +3522,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevertSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_split_proposals_api_supervisor_split_proposals_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitProposalsResponse"];
                 };
             };
             /** @description Validation Error */

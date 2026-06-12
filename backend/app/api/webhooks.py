@@ -34,7 +34,9 @@ from app.core.trace import get_trace_id
 from app.db import get_session, make_session
 from app.services.agents.classify import classify_ticket
 from app.services.agents.conflict_detect import detect_ticket_conflict
+from app.services.agents.dedup import detect_ticket_duplicate
 from app.services.agents.split import execute_split_for_ticket
+from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -55,12 +57,26 @@ def run_post_ingest_agents(ticket_id: int) -> None:
     Single BackgroundTask entry so call sites stay one-liners. Each agent
     swallows its own failures — one agent failing must not stop the next.
 
-    Chain: classify → conflict_detect → (auto split when confidence clears
-    the bar) → classify each child. Children never re-run conflict_detect
-    (no recursive splitting).
+    Chain: classify → (auto hub_issue + Linear when confidence clears the
+    bar) → dedup (advisory audit) → conflict_detect → (auto split when
+    confidence clears the bar) → classify each child. Children never re-run
+    conflict_detect (no recursive splitting) nor dedup (internal artifacts,
+    not dedup targets).
     """
-    classify_ticket(ticket_id)
     settings = get_settings()
+
+    def _classify_and_maybe_graduate(tid: int) -> None:
+        cls = classify_ticket(tid)
+        if (
+            cls is not None
+            and settings.hub_issue_auto_enabled
+            and cls.confidence >= settings.hub_issue_auto_confidence
+        ):
+            create_hub_issue_for_ticket_auto(tid)
+
+    _classify_and_maybe_graduate(ticket_id)
+    if settings.dedup_enabled:
+        detect_ticket_duplicate(ticket_id)
     if not settings.conflict_detect_enabled:
         return
     res = detect_ticket_conflict(ticket_id)
@@ -73,7 +89,7 @@ def run_post_ingest_agents(ticket_id: int) -> None:
         split_res = execute_split_for_ticket(ticket_id, executed_by="agent:split_auto")
         if split_res is not None:
             for child_id in split_res.child_ticket_ids:
-                classify_ticket(child_id)
+                _classify_and_maybe_graduate(child_id)
 
 
 class IngestResponse(BaseModel):

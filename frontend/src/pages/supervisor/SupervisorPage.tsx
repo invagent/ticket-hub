@@ -4,12 +4,14 @@ import { api, postByPath, type InboxItem, ApiError } from "@/api/client";
 import type { components } from "@/api/types";
 
 type ConfigWarningItem = components["schemas"]["ConfigWarningItem"];
+type SplitProposalItem = components["schemas"]["SplitProposalItem"];
 
 /**
  * Supervisor work-bench: pending notifications + inline actions.
  *
- *   ack    — mark a notification as handled
- *   relink — re-link a ticket to a different hub_issue
+ *   ack      — mark a notification as handled
+ *   relink   — re-link a ticket to a different hub_issue
+ *   split    — execute / dismiss AI split proposals (D3-D)
  *
  * Calls /api/supervisor/inbox (GET), /api/supervisor/notifications/:id/ack (POST),
  * and /api/supervisor/relink (POST). Auth: requires JWT with role=supervisor|admin.
@@ -25,13 +27,20 @@ export function SupervisorPage() {
     queryFn: () => api.get("/api/supervisor/config-warnings"),
     staleTime: 60_000,
   });
+  const proposals = useQuery({
+    queryKey: ["supervisor", "split-proposals"],
+    queryFn: () => api.get("/api/supervisor/split-proposals"),
+  });
 
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">主管工作台</h1>
         <button
-          onClick={() => inbox.refetch()}
+          onClick={() => {
+            inbox.refetch();
+            proposals.refetch();
+          }}
           className="text-sm text-blue-600 hover:underline"
         >
           刷新
@@ -42,6 +51,24 @@ export function SupervisorPage() {
           warnings={warnings.data.warnings}
           onWarningsChange={() => warnings.refetch()}
         />
+      )}
+      {proposals.data && proposals.data.items.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-medium">
+            拆单提案（{proposals.data.items.length}）
+          </h2>
+          {proposals.data.items.map((p) => (
+            <SplitProposalCard
+              key={p.decision_id}
+              proposal={p}
+              onDone={() =>
+                qc.invalidateQueries({
+                  queryKey: ["supervisor", "split-proposals"],
+                })
+              }
+            />
+          ))}
+        </section>
       )}
       {inbox.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
       {inbox.error && (
@@ -61,6 +88,99 @@ export function SupervisorPage() {
           />
         ))}
       </ul>
+    </div>
+  );
+}
+
+function SplitProposalCard({
+  proposal,
+  onDone,
+}: {
+  proposal: SplitProposalItem;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const execute = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/execute-split", {
+        decision_id: proposal.decision_id,
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      setResult(`已拆分为 ${data.child_ticket_ids.length} 条子工单`);
+      onDone();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const dismiss = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/dismiss-split", {
+        decision_id: proposal.decision_id,
+      }),
+    onSuccess: () => {
+      setError(null);
+      onDone();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const busy = execute.isPending || dismiss.isPending;
+
+  return (
+    <div className="border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950 rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-block px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200">
+              建议拆成 {proposal.sub_issues.length} 条
+            </span>
+            <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+              {proposal.ticket_short_code}
+            </span>
+            <span className="text-xs text-gray-500">
+              置信度 {Math.round(proposal.confidence * 100)}%
+            </span>
+            <span className="text-xs text-gray-400">
+              {new Date(proposal.created_at).toLocaleString()}
+            </span>
+          </div>
+          <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
+            {proposal.ticket_title ?? "（无标题）"}
+          </p>
+          {proposal.reason && (
+            <p className="text-xs text-gray-500">{proposal.reason}</p>
+          )}
+          <ol className="text-xs text-gray-600 dark:text-gray-400 list-decimal list-inside space-y-0.5">
+            {proposal.sub_issues.map((s, i) => (
+              <li key={i}>
+                <span className="font-medium">{s.title}</span>
+                {s.summary && <span className="text-gray-400"> — {s.summary}</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="flex flex-col gap-2 shrink-0">
+          <button
+            onClick={() => execute.mutate()}
+            disabled={busy || result !== null}
+            className="px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded disabled:opacity-50"
+          >
+            {execute.isPending ? "拆分中…" : "执行拆分"}
+          </button>
+          <button
+            onClick={() => dismiss.mutate()}
+            disabled={busy || result !== null}
+            className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-900 disabled:opacity-50"
+          >
+            {dismiss.isPending ? "…" : "忽略"}
+          </button>
+        </div>
+      </div>
+      {result && <p className="text-xs text-green-600">{result}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }

@@ -119,3 +119,71 @@ def test_revert_unmaterialized_returns_409(app_client: TestClient, split_world: 
     )
     assert resp.status_code == 409
     assert "never materialized" in resp.json()["detail"]
+
+
+# ---- proposals list + dismiss (supervisor work-bench queue) -----------------
+
+
+def test_split_proposals_lists_pending(app_client: TestClient, split_world: Session) -> None:
+    resp = app_client.get("/api/supervisor/split-proposals", headers=_bearer(2))
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert len(items) == 1
+    p = items[0]
+    assert p["decision_id"] == 500
+    assert p["ticket_short_code"] == "TKT-000100"
+    assert p["confidence"] == 0.7
+    assert [s["title"] for s in p["sub_issues"]] == ["步骤咨询", "状态不同步"]
+
+
+def test_split_proposals_requires_supervisor(app_client: TestClient, split_world: Session) -> None:
+    resp = app_client.get(
+        "/api/supervisor/split-proposals", headers=_bearer(1, name="bob", role="assignee")
+    )
+    assert resp.status_code == 403
+
+
+def test_split_proposals_excludes_materialized(
+    app_client: TestClient, split_world: Session
+) -> None:
+    app_client.post("/api/supervisor/execute-split", json={"decision_id": 500}, headers=_bearer(2))
+    resp = app_client.get("/api/supervisor/split-proposals", headers=_bearer(2))
+    assert resp.json()["items"] == []
+
+
+def test_dismiss_split_removes_from_queue(app_client: TestClient, split_world: Session) -> None:
+    resp = app_client.post(
+        "/api/supervisor/dismiss-split",
+        json={"decision_id": 500, "reason": "其实是同一个问题"},
+        headers=_bearer(2),
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert (
+        app_client.get("/api/supervisor/split-proposals", headers=_bearer(2)).json()["items"] == []
+    )
+    d = split_world.get(AgentDecision, 500)
+    assert d is not None
+    split_world.refresh(d)
+    assert d.status == "reverted"
+    assert d.revert_reason == "其实是同一个问题"
+    # 工单本身未被改动
+    t = split_world.get(Ticket, 100)
+    assert t is not None and t.type == "Raw"
+
+
+def test_dismiss_materialized_returns_409(app_client: TestClient, split_world: Session) -> None:
+    app_client.post("/api/supervisor/execute-split", json={"decision_id": 500}, headers=_bearer(2))
+    resp = app_client.post(
+        "/api/supervisor/dismiss-split", json={"decision_id": 500}, headers=_bearer(2)
+    )
+    assert resp.status_code == 409
+    assert "use revert-split" in resp.json()["detail"]
+
+
+def test_dismiss_then_execute_returns_409(app_client: TestClient, split_world: Session) -> None:
+    app_client.post("/api/supervisor/dismiss-split", json={"decision_id": 500}, headers=_bearer(2))
+    resp = app_client.post(
+        "/api/supervisor/execute-split", json={"decision_id": 500}, headers=_bearer(2)
+    )
+    assert resp.status_code == 409

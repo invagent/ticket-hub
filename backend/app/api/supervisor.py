@@ -5,8 +5,11 @@
   POST /api/supervisor/relink                      — re-link ticket↔hub_issue
   GET  /api/supervisor/config-warnings             — system configuration gaps
   POST /api/supervisor/reroute                     — re-trigger routing for unassigned tickets
+  GET  /api/supervisor/split-proposals             — pending split_ticket proposals
   POST /api/supervisor/execute-split               — materialize a split_ticket proposal
+  POST /api/supervisor/dismiss-split               — decline an unmaterialized proposal
   POST /api/supervisor/revert-split                — undo a materialized split
+  POST /api/supervisor/create-hub-issue            — graduate a ticket to a hub_issue
 
 All endpoints require role IN ('supervisor', 'admin').
 """
@@ -25,7 +28,18 @@ from app.core.logging import get_logger
 from app.db import get_session
 from app.repositories.notification_log import NotificationLogRepository
 from app.services.agents.classify import classify_ticket
-from app.services.agents.split import SplitError, execute_split, revert_split
+from app.services.agents.split import (
+    SplitError,
+    dismiss_split_proposal,
+    execute_split,
+    list_pending_split_proposals,
+    revert_split,
+)
+from app.services.hub_issues.creator import (
+    HubIssueCreateError,
+    ensure_hub_issue_for_ticket,
+)
+from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 from app.services.supervisor.config_warnings import get_config_warnings
 from app.services.supervisor.relink import (
     HubIssueNotFoundError,
@@ -257,7 +271,36 @@ def reroute_tickets(
 # ---- split execute / revert (D3-D) -----------------------------------------
 
 
+class SplitSubIssueOut(BaseModel):
+    title: str
+    summary: str
+
+
+class SplitProposalItem(BaseModel):
+    decision_id: int
+    ticket_id: int
+    ticket_short_code: str
+    ticket_title: str | None
+    confidence: float
+    reason: str
+    sub_issues: list[SplitSubIssueOut]
+    created_at: datetime
+
+
+class SplitProposalsResponse(BaseModel):
+    items: list[SplitProposalItem]
+
+
 class ExecuteSplitBody(BaseModel):
+    decision_id: int
+
+
+class DismissSplitBody(BaseModel):
+    decision_id: int
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class DismissSplitResponse(BaseModel):
     decision_id: int
 
 
@@ -276,6 +319,62 @@ class RevertSplitResponse(BaseModel):
     decision_id: int
     parent_ticket_id: int
     deleted_child_ids: list[int]
+
+
+@router.get("/split-proposals", response_model=SplitProposalsResponse)
+def list_split_proposals(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> SplitProposalsResponse:
+    """Pending split_ticket proposals awaiting supervisor action (execute or
+    dismiss). Materialized and reverted proposals are excluded."""
+    rows = list_pending_split_proposals(db, limit=min(limit, 100))
+    return SplitProposalsResponse(
+        items=[
+            SplitProposalItem(
+                decision_id=d.id,
+                ticket_id=t.id,
+                ticket_short_code=t.short_code,
+                ticket_title=t.title,
+                confidence=float(d.proposal.get("confidence") or 0.0),
+                reason=str(d.proposal.get("reason") or ""),
+                sub_issues=[
+                    SplitSubIssueOut(
+                        title=str(s.get("title") or ""),
+                        summary=str(s.get("summary") or ""),
+                    )
+                    for s in (d.proposal.get("sub_issues") or [])
+                ],
+                created_at=d.created_at,
+            )
+            for d, t in rows
+        ]
+    )
+
+
+@router.post("/dismiss-split", response_model=DismissSplitResponse)
+def dismiss_split_endpoint(
+    body: DismissSplitBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DismissSplitResponse:
+    """Decline an unmaterialized split proposal (audit-preserving)."""
+    try:
+        decision_id = dismiss_split_proposal(
+            body.decision_id,
+            dismissed_by=f"user:{user.name}",
+            reason=body.reason,
+            db=db,
+        )
+    except SplitError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "supervisor_dismiss_split",
+        decision_id=decision_id,
+        operator_user_id=user.user_id,
+    )
+    return DismissSplitResponse(decision_id=decision_id)
 
 
 @router.post("/execute-split", response_model=ExecuteSplitResponse)
@@ -307,6 +406,60 @@ def execute_split_endpoint(
         decision_id=result.decision_id,
         parent_ticket_id=result.parent_ticket_id,
         child_ticket_ids=result.child_ticket_ids,
+    )
+
+
+class CreateHubIssueBody(BaseModel):
+    ticket_id: int
+    # Optional supervisor override; defaults to the ticket's predicted_type.
+    type: str | None = Field(default=None, pattern="^(Operation|Bug_fix|Demand|Internal_task)$")
+
+
+class CreateHubIssueResponse(BaseModel):
+    hub_issue_id: int
+    hub_issue_short_code: str
+    ticket_id: int
+    type: str
+    created: bool
+
+
+@router.post("/create-hub-issue", response_model=CreateHubIssueResponse)
+def create_hub_issue_endpoint(
+    body: CreateHubIssueBody,
+    background_tasks: BackgroundTasks,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> CreateHubIssueResponse:
+    """Graduate a ticket to a hub_issue (manual path, no confidence gate).
+
+    Bug_fix/Demand issues are pushed to Linear asynchronously when
+    LINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).
+    """
+    try:
+        result = ensure_hub_issue_for_ticket(
+            body.ticket_id,
+            created_by=f"user:{user.name}",
+            type_override=body.type,
+            db=db,
+        )
+    except HubIssueCreateError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    if result.created and result.type in ("Bug_fix", "Demand"):
+        background_tasks.add_task(push_hub_issue_to_linear, result.hub_issue_id)
+    logger.info(
+        "supervisor_create_hub_issue",
+        ticket_id=body.ticket_id,
+        hub_issue_id=result.hub_issue_id,
+        type=result.type,
+        created=result.created,
+        operator_user_id=user.user_id,
+    )
+    return CreateHubIssueResponse(
+        hub_issue_id=result.hub_issue_id,
+        hub_issue_short_code=result.hub_issue_short_code,
+        ticket_id=result.ticket_id,
+        type=result.type,
+        created=result.created,
     )
 
 

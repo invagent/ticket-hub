@@ -155,6 +155,64 @@
         "title": "CountsOut",
         "type": "object"
       },
+      "CreateHubIssueBody": {
+        "properties": {
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "pattern": "^(Operation|Bug_fix|Demand|Internal_task)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "ticket_id"
+        ],
+        "title": "CreateHubIssueBody",
+        "type": "object"
+      },
+      "CreateHubIssueResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "hub_issue_short_code": {
+            "title": "Hub Issue Short Code",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "hub_issue_short_code",
+          "ticket_id",
+          "type",
+          "created"
+        ],
+        "title": "CreateHubIssueResponse",
+        "type": "object"
+      },
       "CustomerDedupOut": {
         "properties": {
           "identities_matched": {
@@ -362,6 +420,44 @@
           "user_name"
         ],
         "title": "DefaultPoolUserOut",
+        "type": "object"
+      },
+      "DismissSplitBody": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "decision_id"
+        ],
+        "title": "DismissSplitBody",
+        "type": "object"
+      },
+      "DismissSplitResponse": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision_id"
+        ],
+        "title": "DismissSplitResponse",
         "type": "object"
       },
       "ExecuteSplitBody": {
@@ -2343,6 +2439,99 @@
           "is_active"
         ],
         "title": "SourceOut",
+        "type": "object"
+      },
+      "SplitProposalItem": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/SplitSubIssueOut"
+            },
+            "title": "Sub Issues",
+            "type": "array"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "ticket_short_code": {
+            "title": "Ticket Short Code",
+            "type": "string"
+          },
+          "ticket_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Title"
+          }
+        },
+        "required": [
+          "decision_id",
+          "ticket_id",
+          "ticket_short_code",
+          "ticket_title",
+          "confidence",
+          "reason",
+          "sub_issues",
+          "created_at"
+        ],
+        "title": "SplitProposalItem",
+        "type": "object"
+      },
+      "SplitProposalsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SplitProposalItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SplitProposalsResponse",
+        "type": "object"
+      },
+      "SplitSubIssueOut": {
+        "properties": {
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "summary"
+        ],
+        "title": "SplitSubIssueOut",
         "type": "object"
       },
       "SupervisorIn": {
@@ -5296,6 +5485,90 @@
         ]
       }
     },
+    "/api/supervisor/create-hub-issue": {
+      "post": {
+        "description": "Graduate a ticket to a hub_issue (manual path, no confidence gate).\n\nBug_fix/Demand issues are pushed to Linear asynchronously when\nLINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).",
+        "operationId": "create_hub_issue_endpoint_api_supervisor_create_hub_issue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHubIssueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateHubIssueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Hub Issue Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/dismiss-split": {
+      "post": {
+        "description": "Decline an unmaterialized split proposal (audit-preserving).",
+        "operationId": "dismiss_split_endpoint_api_supervisor_dismiss_split_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissSplitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissSplitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Split Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/execute-split": {
       "post": {
         "description": "Materialize a pending split_ticket proposal into Child tickets.\n\nChildren are classified asynchronously after the response (LLM call —\nmust not block the supervisor's request).",
@@ -5542,6 +5815,50 @@
           }
         },
         "summary": "Revert Split Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/split-proposals": {
+      "get": {
+        "description": "Pending split_ticket proposals awaiting supervisor action (execute or\ndismiss). Materialized and reverted proposals are excluded.",
+        "operationId": "list_split_proposals_api_supervisor_split_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitProposalsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Split Proposals",
         "tags": [
           "supervisor"
         ]
