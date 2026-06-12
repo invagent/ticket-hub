@@ -328,6 +328,15 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - API key：Linear 个人 key「ticket-hub push (shaobin prod)」，权限 Read + Create issues
 - 单测：`test_linear_client.py`(13) / `test_linear_user_sync.py`(8) / `test_linear_push.py` 路由用例 / `test_admin_users.py` sync 端点
 
+## Linear 状态回同步（2026-06-12，D4 第①段）
+
+- `services/hub_issues/linear_status_sync.py`：Celery beat 5min 轮询已推送 hub_issue（最近 200 条），`LinearClient.get_issue_states()` 批量查（**50/批**防复杂度超限）
+- 双层回写：`linear_status` 始终镜像 Linear 列名（展示层）；hub 状态只做**保守级联** `started→in_progress`、`completed→released`(+actual_released_at)
+- `canceled` 只镜像不动状态（研发取消需主管判断）；**reopen 跟随**（released→in_progress，Linear 是研发态源头）；Linear 侧删除的 issue 只计数不动数据
+- 状态变更写 status_history（`agent:linear_status_sync`）；无变化不写（幂等）
+- beat 任务 `poll_linear_statuses_every_5min`（key 未配自动跳过）；生产已部署，实测 CNPRD-809 Backlog 正确镜像 ✅
+- 升级路径：量大或要求实时再加 `/webhook/linear`，回写层不用改
+
 ## Linear 推送 pending 待人工（2026-06-12）
 
 - **个人处理人（有邮箱）在 Linear 查无此人** → 不推送，hub_issue `status='pending'` + status_history 记原因（含邮箱）；**组账号（无邮箱）不受影响**，仍优雅降级推默认 team
