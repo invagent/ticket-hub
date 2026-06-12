@@ -304,5 +304,19 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - `CreateIssueRequest`：title / team_id / description / label_ids / assignee_id / priority
 - `CreatedIssue`：id（UUID）/ identifier（如 ENG-42）/ url / title
 - 配置项：`LINEAR_API_KEY` + `LINEAR_TEAM_ID`（写入 `backend/.env`，**待 hub_issue 自动创建完成后再配置部署**）
-- 触发时机（待实现）：hub_issue 创建且 type ∈ Bug_fix / Demand 时，异步推送到 Linear，回写 `hub_issues.linear_uuid` / `linear_identifier`
-- 9 个单测全过：`tests/unit/adapters/test_linear_client.py`
+- 触发时机：hub_issue 创建且 type ∈ Bug_fix / Demand 时异步推 Linear，回写 `linear_uuid` / `linear_identifier`（见 D4 hub_issue 段）
+- **鉴权坑（2026-06-12 生产首推暴露）**：Linear 个人 API key（`lin_api_` 前缀）的 `Authorization` 头要放**原始 key，不能带 `Bearer` 前缀**（带了报 HTTP 400）；OAuth token 才用 Bearer。`_headers()` 按前缀判断
+
+## Linear 按处理人 team 路由 + 用户同步（2026-06-12）
+
+- **目标**：Bug_fix/Demand issue 落到「被分配处理人所属的 Linear team」，而非固定一个 team
+- `User.linear_team_id`（迁移 0010）：被分配时 issue 进哪个 team，由邮箱同步填充
+- `LinearClient.list_users()`：分页拉活跃成员 + team 归属（**页大小 50**，250 会触发 Linear「Query too complex」400）
+- `services/linear/user_sync.py` `sync_linear_users()`：按 `@email` 不区分大小写匹配 ticket-hub 用户 → 填 `linear_user_id` + `linear_team_id`
+  - team 取值：单 team 直接用；多 team 优先默认 `LINEAR_TEAM_ID`，否则留空（→ 推送回落默认）；成员离开 Linear 清陈旧映射
+  - **组账号**（数电开票组…）无邮箱 → 不匹配 → 两字段留空 → 推送回落默认 team 且无 assignee（刻意的优雅降级）
+- `POST /api/admin/users/sync-from-linear`（require_admin）：触发同步，返回匹配报告
+- `linear_push.py` 按 `assignee.linear_team_id` 路由，回落 `settings.linear_team_id`
+- **生产现状（2026-06-12 已配置部署）**：`LINEAR_PUSH_ENABLED=true`，默认 team=CNPRD（中国区产品部，id `8abb86a2…`）；首轮同步 21 个个人映射（INTPRD 9 / CNPRD 5 / ARALGO 5 / KNOPS 2），9 个组账号跳过；实测分配给覃强(ARALGO)的工单落到 ARALGO-36 ✅
+- API key：Linear 个人 key「ticket-hub push (shaobin prod)」，权限 Read + Create issues
+- 单测：`test_linear_client.py`(13) / `test_linear_user_sync.py`(8) / `test_linear_push.py` 路由用例 / `test_admin_users.py` sync 端点
