@@ -194,6 +194,135 @@ describe("SupervisorPage", () => {
     );
   });
 
+  it("renders dedup proposals and merges one", async () => {
+    let executeBody: unknown = null;
+
+    server.use(
+      http.get("*/api/supervisor/inbox", () => HttpResponse.json({ items: [] })),
+      http.get("*/api/supervisor/dedup-proposals", () =>
+        HttpResponse.json({
+          items: [
+            {
+              decision_id: 600,
+              ticket_id: 201,
+              ticket_short_code: "TKT-000201",
+              ticket_title: "进项发票没有同步进来",
+              duplicate_of: {
+                ticket_id: 200,
+                short_code: "TKT-000200",
+                title: "全票池没同步",
+                hub_issue_id: 70,
+              },
+              confidence: 0.9,
+              similarity: 0.93,
+              reason: "同一系统级故障",
+              created_at: "2026-06-12T10:00:00Z",
+            },
+          ],
+        }),
+      ),
+      http.post("*/api/supervisor/execute-dedup", async ({ request }) => {
+        executeBody = await request.json();
+        return HttpResponse.json({
+          decision_id: 600,
+          ticket_id: 201,
+          duplicate_of_ticket_id: 200,
+          hub_issue_id: 70,
+          hub_issue_short_code: "HUB-000070",
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("疑似重复")).toBeInTheDocument();
+    expect(screen.getByText(/TKT-000200/)).toBeInTheDocument();
+    expect(screen.getByText(/置信度 90%/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "采纳合并" }));
+    await waitFor(() => expect(executeBody).toEqual({ decision_id: 600 }));
+    await waitFor(() =>
+      expect(screen.getByText("已合并到 HUB-000070")).toBeInTheDocument(),
+    );
+  });
+
+  it("merge button disabled when target has no hub_issue", async () => {
+    server.use(
+      http.get("*/api/supervisor/inbox", () => HttpResponse.json({ items: [] })),
+      http.get("*/api/supervisor/dedup-proposals", () =>
+        HttpResponse.json({
+          items: [
+            {
+              decision_id: 601,
+              ticket_id: 202,
+              ticket_short_code: "TKT-000202",
+              ticket_title: "x",
+              duplicate_of: {
+                ticket_id: 203,
+                short_code: "TKT-000203",
+                title: "y",
+                hub_issue_id: null,
+              },
+              confidence: 0.85,
+              similarity: null,
+              reason: "",
+              created_at: "2026-06-12T10:00:00Z",
+            },
+          ],
+        }),
+      ),
+    );
+
+    renderPage();
+    const btn = await screen.findByRole("button", { name: "采纳合并" });
+    expect(btn).toBeDisabled();
+    expect(screen.getByText(/目标未关联 hub_issue/)).toBeInTheDocument();
+  });
+
+  it("pending hub issue repush shows identifier on success", async () => {
+    let repushBody: unknown = null;
+
+    server.use(
+      http.get("*/api/supervisor/inbox", () => HttpResponse.json({ items: [] })),
+      http.get("*/api/supervisor/pending-hub-issues", () =>
+        HttpResponse.json({
+          items: [
+            {
+              hub_issue_id: 80,
+              short_code: "HUB-000080",
+              type: "Bug_fix",
+              title: "卡住的推送",
+              assigned_user_id: 5,
+              pending_reason:
+                "处理人 王五（wangwu@kingdee.com）在 Linear 工作区查无此人",
+              pending_since: "2026-06-12T09:00:00Z",
+            },
+          ],
+        }),
+      ),
+      http.post("*/api/supervisor/repush-linear", async ({ request }) => {
+        repushBody = await request.json();
+        return HttpResponse.json({
+          hub_issue_id: 80,
+          pushed: true,
+          linear_identifier: "CNPRD-810",
+          pending_reason: null,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText(/查无此人/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重推 Linear" }));
+    await waitFor(() => expect(repushBody).toEqual({ hub_issue_id: 80 }));
+    await waitFor(() =>
+      expect(screen.getByText("已推送：CNPRD-810")).toBeInTheDocument(),
+    );
+  });
+
   it("relink form opens, validates, and posts to /relink", async () => {
     let relinkBody: unknown = null;
 

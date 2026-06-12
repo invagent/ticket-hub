@@ -62,6 +62,23 @@ export function UsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 
+  const [linearReport, setLinearReport] = useState<string | null>(null);
+  const linearSync = useMutation({
+    mutationFn: () => api.post("/api/admin/users/sync-from-linear"),
+    onSuccess: (r) => {
+      setLinearReport(
+        `匹配 ${r.matched_count} 人` +
+          (r.cleared_count ? `，清除陈旧映射 ${r.cleared_count}` : "") +
+          `，跳过无邮箱 ${r.skipped_no_email}，本地未匹配 ${r.unmatched_local}`,
+      );
+      qc.invalidateQueries({ queryKey: QK });
+    },
+    onError: (e) =>
+      setLinearReport(
+        `同步失败：${e instanceof ApiError ? e.message : String(e)}`,
+      ),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
@@ -72,13 +89,25 @@ export function UsersPage() {
             partner（D2-E）。
           </p>
         </div>
-        <button
-          onClick={() => setShowSync(true)}
-          className="px-3 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          从飞书同步
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => linearSync.mutate()}
+            disabled={linearSync.isPending}
+            className="px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900 disabled:opacity-50"
+          >
+            {linearSync.isPending ? "同步中…" : "从 Linear 同步"}
+          </button>
+          <button
+            onClick={() => setShowSync(true)}
+            className="px-3 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            从飞书同步
+          </button>
+        </div>
       </div>
+      {linearReport && (
+        <p className="text-xs text-gray-600 dark:text-gray-400">{linearReport}</p>
+      )}
 
       {/* filter bar */}
       <div className="flex gap-2 text-sm">

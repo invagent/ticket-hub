@@ -370,6 +370,138 @@
         "title": "DashboardOut",
         "type": "object"
       },
+      "DedupProposalItem": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          },
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DedupTargetOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "ticket_short_code": {
+            "title": "Ticket Short Code",
+            "type": "string"
+          },
+          "ticket_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Title"
+          }
+        },
+        "required": [
+          "decision_id",
+          "ticket_id",
+          "ticket_short_code",
+          "ticket_title",
+          "duplicate_of",
+          "confidence",
+          "similarity",
+          "reason",
+          "created_at"
+        ],
+        "title": "DedupProposalItem",
+        "type": "object"
+      },
+      "DedupProposalsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DedupProposalItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DedupProposalsResponse",
+        "type": "object"
+      },
+      "DedupTargetOut": {
+        "properties": {
+          "hub_issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Issue Id"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "short_code",
+          "title",
+          "hub_issue_id"
+        ],
+        "title": "DedupTargetOut",
+        "type": "object"
+      },
       "DefaultPoolUserIn": {
         "properties": {
           "user_id": {
@@ -422,6 +554,44 @@
         "title": "DefaultPoolUserOut",
         "type": "object"
       },
+      "DismissDedupBody": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "decision_id"
+        ],
+        "title": "DismissDedupBody",
+        "type": "object"
+      },
+      "DismissDedupResponse": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision_id"
+        ],
+        "title": "DismissDedupResponse",
+        "type": "object"
+      },
       "DismissSplitBody": {
         "properties": {
           "decision_id": {
@@ -458,6 +628,52 @@
           "decision_id"
         ],
         "title": "DismissSplitResponse",
+        "type": "object"
+      },
+      "ExecuteDedupBody": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision_id"
+        ],
+        "title": "ExecuteDedupBody",
+        "type": "object"
+      },
+      "ExecuteDedupResponse": {
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "integer"
+          },
+          "duplicate_of_ticket_id": {
+            "title": "Duplicate Of Ticket Id",
+            "type": "integer"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "hub_issue_short_code": {
+            "title": "Hub Issue Short Code",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision_id",
+          "ticket_id",
+          "duplicate_of_ticket_id",
+          "hub_issue_id",
+          "hub_issue_short_code"
+        ],
+        "title": "ExecuteDedupResponse",
         "type": "object"
       },
       "ExecuteSplitBody": {
@@ -1951,6 +2167,87 @@
         "title": "PartnerRowOut",
         "type": "object"
       },
+      "PendingHubIssueItem": {
+        "properties": {
+          "assigned_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Id"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "pending_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Reason"
+          },
+          "pending_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Since"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code",
+          "type",
+          "title",
+          "assigned_user_id",
+          "pending_reason",
+          "pending_since"
+        ],
+        "title": "PendingHubIssueItem",
+        "type": "object"
+      },
+      "PendingHubIssuesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingHubIssueItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingHubIssuesResponse",
+        "type": "object"
+      },
       "ProductLineIn": {
         "description": "POST body for /api/admin/product-lines.",
         "properties": {
@@ -2211,6 +2508,61 @@
           "new_history_id"
         ],
         "title": "RelinkResponse",
+        "type": "object"
+      },
+      "RepushLinearBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "RepushLinearBody",
+        "type": "object"
+      },
+      "RepushLinearResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "linear_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Identifier"
+          },
+          "pending_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Reason"
+          },
+          "pushed": {
+            "title": "Pushed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "pushed",
+          "linear_identifier",
+          "pending_reason"
+        ],
+        "title": "RepushLinearResponse",
         "type": "object"
       },
       "RerouteBody": {
@@ -5614,6 +5966,91 @@
         ]
       }
     },
+    "/api/supervisor/dedup-proposals": {
+      "get": {
+        "description": "Pending dedup_link proposals awaiting supervisor action.",
+        "operationId": "list_dedup_proposals_api_supervisor_dedup_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DedupProposalsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dedup Proposals",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/dismiss-dedup": {
+      "post": {
+        "operationId": "dismiss_dedup_endpoint_api_supervisor_dismiss_dedup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissDedupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissDedupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Dedup Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/dismiss-split": {
       "post": {
         "description": "Decline an unmaterialized split proposal (audit-preserving).",
@@ -5651,6 +6088,48 @@
           }
         },
         "summary": "Dismiss Split Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/execute-dedup": {
+      "post": {
+        "description": "Merge the duplicate ticket onto the original's hub_issue.",
+        "operationId": "execute_dedup_endpoint_api_supervisor_execute_dedup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteDedupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteDedupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Dedup Endpoint",
         "tags": [
           "supervisor"
         ]
@@ -5783,6 +6262,50 @@
         ]
       }
     },
+    "/api/supervisor/pending-hub-issues": {
+      "get": {
+        "description": "hub_issues whose Linear push is blocked (status='pending') + why.",
+        "operationId": "list_pending_hub_issues_api_supervisor_pending_hub_issues_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingHubIssuesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pending Hub Issues",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/relink": {
       "post": {
         "operationId": "relink_ticket_api_supervisor_relink_post",
@@ -5819,6 +6342,48 @@
           }
         },
         "summary": "Relink Ticket",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/repush-linear": {
+      "post": {
+        "description": "Retry a blocked Linear push (e.g. after the assignee joined Linear and\nsync-from-linear refreshed the mapping). Synchronous — the supervisor\nwants to see the outcome immediately.",
+        "operationId": "repush_linear_endpoint_api_supervisor_repush_linear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepushLinearBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepushLinearResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Repush Linear Endpoint",
         "tags": [
           "supervisor"
         ]

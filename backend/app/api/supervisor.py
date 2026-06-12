@@ -10,6 +10,11 @@
   POST /api/supervisor/dismiss-split               — decline an unmaterialized proposal
   POST /api/supervisor/revert-split                — undo a materialized split
   POST /api/supervisor/create-hub-issue            — graduate a ticket to a hub_issue
+  GET  /api/supervisor/dedup-proposals             — pending dedup_link proposals
+  POST /api/supervisor/execute-dedup               — merge duplicate onto original's hub_issue
+  POST /api/supervisor/dismiss-dedup               — decline a dedup proposal
+  GET  /api/supervisor/pending-hub-issues          — Linear push blocked, awaiting human
+  POST /api/supervisor/repush-linear               — retry a blocked Linear push
 
 All endpoints require role IN ('supervisor', 'admin').
 """
@@ -26,8 +31,15 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.logging import get_logger
 from app.db import get_session
+from app.models import HubIssue, StatusHistory
 from app.repositories.notification_log import NotificationLogRepository
 from app.services.agents.classify import classify_ticket
+from app.services.agents.dedup_execute import (
+    DedupExecuteError,
+    dismiss_dedup_proposal,
+    execute_dedup,
+    list_pending_dedup_proposals,
+)
 from app.services.agents.split import (
     SplitError,
     dismiss_split_proposal,
@@ -460,6 +472,241 @@ def create_hub_issue_endpoint(
         ticket_id=result.ticket_id,
         type=result.type,
         created=result.created,
+    )
+
+
+# ---- dedup proposals (D4 第①段) ---------------------------------------------
+
+
+class DedupTargetOut(BaseModel):
+    ticket_id: int
+    short_code: str
+    title: str | None
+    hub_issue_id: int | None  # None → 采纳前需先对目标 create-hub-issue
+
+
+class DedupProposalItem(BaseModel):
+    decision_id: int
+    ticket_id: int
+    ticket_short_code: str
+    ticket_title: str | None
+    duplicate_of: DedupTargetOut | None  # None → 目标已删除，只能忽略
+    confidence: float
+    similarity: float | None  # 召回相似度（top 候选）
+    reason: str
+    created_at: datetime
+
+
+class DedupProposalsResponse(BaseModel):
+    items: list[DedupProposalItem]
+
+
+class ExecuteDedupBody(BaseModel):
+    decision_id: int
+
+
+class ExecuteDedupResponse(BaseModel):
+    decision_id: int
+    ticket_id: int
+    duplicate_of_ticket_id: int
+    hub_issue_id: int
+    hub_issue_short_code: str
+
+
+class DismissDedupBody(BaseModel):
+    decision_id: int
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class DismissDedupResponse(BaseModel):
+    decision_id: int
+
+
+@router.get("/dedup-proposals", response_model=DedupProposalsResponse)
+def list_dedup_proposals(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> DedupProposalsResponse:
+    """Pending dedup_link proposals awaiting supervisor action."""
+    rows = list_pending_dedup_proposals(db, limit=min(limit, 100))
+    items = []
+    for d, t, target in rows:
+        candidates = d.proposal.get("candidates") or []
+        top_sim = None
+        target_id = d.proposal.get("duplicate_of_ticket_id")
+        for c in candidates:
+            if c.get("ticket_id") == target_id:
+                top_sim = c.get("similarity")
+                break
+        items.append(
+            DedupProposalItem(
+                decision_id=d.id,
+                ticket_id=t.id,
+                ticket_short_code=t.short_code,
+                ticket_title=t.title,
+                duplicate_of=(
+                    DedupTargetOut(
+                        ticket_id=target.id,
+                        short_code=target.short_code,
+                        title=target.title,
+                        hub_issue_id=target.hub_issue_id,
+                    )
+                    if target is not None
+                    else None
+                ),
+                confidence=float(d.proposal.get("confidence") or 0.0),
+                similarity=top_sim,
+                reason=str(d.proposal.get("reason") or ""),
+                created_at=d.created_at,
+            )
+        )
+    return DedupProposalsResponse(items=items)
+
+
+@router.post("/execute-dedup", response_model=ExecuteDedupResponse)
+def execute_dedup_endpoint(
+    body: ExecuteDedupBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ExecuteDedupResponse:
+    """Merge the duplicate ticket onto the original's hub_issue."""
+    try:
+        result = execute_dedup(body.decision_id, executed_by=f"user:{user.name}", db=db)
+    except DedupExecuteError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "supervisor_execute_dedup",
+        decision_id=body.decision_id,
+        ticket_id=result.ticket_id,
+        hub_issue_id=result.hub_issue_id,
+        operator_user_id=user.user_id,
+    )
+    return ExecuteDedupResponse(
+        decision_id=result.decision_id,
+        ticket_id=result.ticket_id,
+        duplicate_of_ticket_id=result.duplicate_of_ticket_id,
+        hub_issue_id=result.hub_issue_id,
+        hub_issue_short_code=result.hub_issue_short_code,
+    )
+
+
+@router.post("/dismiss-dedup", response_model=DismissDedupResponse)
+def dismiss_dedup_endpoint(
+    body: DismissDedupBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DismissDedupResponse:
+    try:
+        decision_id = dismiss_dedup_proposal(
+            body.decision_id, dismissed_by=f"user:{user.name}", reason=body.reason, db=db
+        )
+    except DedupExecuteError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return DismissDedupResponse(decision_id=decision_id)
+
+
+# ---- pending hub_issues / Linear repush (D4 第①段) ---------------------------
+
+
+class PendingHubIssueItem(BaseModel):
+    hub_issue_id: int
+    short_code: str
+    type: str
+    title: str
+    assigned_user_id: int | None
+    pending_reason: str | None  # latest status_history → pending
+    pending_since: datetime | None
+
+
+class PendingHubIssuesResponse(BaseModel):
+    items: list[PendingHubIssueItem]
+
+
+class RepushLinearBody(BaseModel):
+    hub_issue_id: int
+
+
+class RepushLinearResponse(BaseModel):
+    hub_issue_id: int
+    pushed: bool
+    linear_identifier: str | None
+    # 仍失败时：最新的 pending 原因（原因不变则为原原因）
+    pending_reason: str | None
+
+
+@router.get("/pending-hub-issues", response_model=PendingHubIssuesResponse)
+def list_pending_hub_issues(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> PendingHubIssuesResponse:
+    """hub_issues whose Linear push is blocked (status='pending') + why."""
+    hubs = (
+        db.query(HubIssue)
+        .filter(HubIssue.deleted_at.is_(None), HubIssue.status == "pending")
+        .order_by(HubIssue.updated_at.desc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    items = []
+    for h in hubs:
+        last_pending = (
+            db.query(StatusHistory)
+            .filter_by(entity_type="hub_issue", entity_id=h.id, to_status="pending")
+            .order_by(StatusHistory.id.desc())
+            .first()
+        )
+        items.append(
+            PendingHubIssueItem(
+                hub_issue_id=h.id,
+                short_code=h.short_code,
+                type=h.type,
+                title=h.title,
+                assigned_user_id=h.assigned_user_id,
+                pending_reason=last_pending.reason if last_pending else None,
+                pending_since=last_pending.changed_at if last_pending else None,
+            )
+        )
+    return PendingHubIssuesResponse(items=items)
+
+
+@router.post("/repush-linear", response_model=RepushLinearResponse)
+def repush_linear_endpoint(
+    body: RepushLinearBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> RepushLinearResponse:
+    """Retry a blocked Linear push (e.g. after the assignee joined Linear and
+    sync-from-linear refreshed the mapping). Synchronous — the supervisor
+    wants to see the outcome immediately."""
+    hub = db.get(HubIssue, body.hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+    if hub.linear_uuid is not None:
+        raise HTTPException(status_code=409, detail=f"already pushed as {hub.linear_identifier}")
+    result = push_hub_issue_to_linear(hub.id, db)
+    db.refresh(hub)
+    pending_reason: str | None = None
+    if result is None:
+        last_pending = (
+            db.query(StatusHistory)
+            .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+            .order_by(StatusHistory.id.desc())
+            .first()
+        )
+        pending_reason = last_pending.reason if last_pending else "推送未执行（检查开关/类型）"
+    logger.info(
+        "supervisor_repush_linear",
+        hub_issue_id=hub.id,
+        pushed=result is not None,
+        operator_user_id=user.user_id,
+    )
+    return RepushLinearResponse(
+        hub_issue_id=hub.id,
+        pushed=result is not None,
+        linear_identifier=result.linear_identifier if result else None,
+        pending_reason=pending_reason,
     )
 
 

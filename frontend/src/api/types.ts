@@ -626,6 +626,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/dedup-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Dedup Proposals
+         * @description Pending dedup_link proposals awaiting supervisor action.
+         */
+        get: operations["list_dedup_proposals_api_supervisor_dedup_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/dismiss-dedup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Dedup Endpoint */
+        post: operations["dismiss_dedup_endpoint_api_supervisor_dismiss_dedup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/dismiss-split": {
         parameters: {
             query?: never;
@@ -640,6 +677,26 @@ export interface paths {
          * @description Decline an unmaterialized split proposal (audit-preserving).
          */
         post: operations["dismiss_split_endpoint_api_supervisor_dismiss_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/execute-dedup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute Dedup Endpoint
+         * @description Merge the duplicate ticket onto the original's hub_issue.
+         */
+        post: operations["execute_dedup_endpoint_api_supervisor_execute_dedup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -703,6 +760,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/pending-hub-issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Hub Issues
+         * @description hub_issues whose Linear push is blocked (status='pending') + why.
+         */
+        get: operations["list_pending_hub_issues_api_supervisor_pending_hub_issues_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/relink": {
         parameters: {
             query?: never;
@@ -714,6 +791,28 @@ export interface paths {
         put?: never;
         /** Relink Ticket */
         post: operations["relink_ticket_api_supervisor_relink_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/repush-linear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Repush Linear Endpoint
+         * @description Retry a blocked Linear push (e.g. after the assignee joined Linear and
+         *     sync-from-linear refreshed the mapping). Synchronous — the supervisor
+         *     wants to see the outcome immediately.
+         */
+        post: operations["repush_linear_endpoint_api_supervisor_repush_linear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1061,6 +1160,45 @@ export interface components {
             supervisor: components["schemas"]["app__api__metrics__SupervisorOut"];
             webhook_intake: components["schemas"]["WebhookIntakeOut"];
         };
+        /** DedupProposalItem */
+        DedupProposalItem: {
+            /** Confidence */
+            confidence: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision Id */
+            decision_id: number;
+            duplicate_of: components["schemas"]["DedupTargetOut"] | null;
+            /** Reason */
+            reason: string;
+            /** Similarity */
+            similarity: number | null;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Ticket Short Code */
+            ticket_short_code: string;
+            /** Ticket Title */
+            ticket_title: string | null;
+        };
+        /** DedupProposalsResponse */
+        DedupProposalsResponse: {
+            /** Items */
+            items: components["schemas"]["DedupProposalItem"][];
+        };
+        /** DedupTargetOut */
+        DedupTargetOut: {
+            /** Hub Issue Id */
+            hub_issue_id: number | null;
+            /** Short Code */
+            short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Title */
+            title: string | null;
+        };
         /** DefaultPoolUserIn */
         DefaultPoolUserIn: {
             /** User Id */
@@ -1073,6 +1211,18 @@ export interface components {
             /** User Name */
             user_name: string | null;
         };
+        /** DismissDedupBody */
+        DismissDedupBody: {
+            /** Decision Id */
+            decision_id: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DismissDedupResponse */
+        DismissDedupResponse: {
+            /** Decision Id */
+            decision_id: number;
+        };
         /** DismissSplitBody */
         DismissSplitBody: {
             /** Decision Id */
@@ -1084,6 +1234,24 @@ export interface components {
         DismissSplitResponse: {
             /** Decision Id */
             decision_id: number;
+        };
+        /** ExecuteDedupBody */
+        ExecuteDedupBody: {
+            /** Decision Id */
+            decision_id: number;
+        };
+        /** ExecuteDedupResponse */
+        ExecuteDedupResponse: {
+            /** Decision Id */
+            decision_id: number;
+            /** Duplicate Of Ticket Id */
+            duplicate_of_ticket_id: number;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Hub Issue Short Code */
+            hub_issue_short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** ExecuteSplitBody */
         ExecuteSplitBody: {
@@ -1584,6 +1752,28 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** PendingHubIssueItem */
+        PendingHubIssueItem: {
+            /** Assigned User Id */
+            assigned_user_id: number | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Pending Reason */
+            pending_reason: string | null;
+            /** Pending Since */
+            pending_since: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
+        /** PendingHubIssuesResponse */
+        PendingHubIssuesResponse: {
+            /** Items */
+            items: components["schemas"]["PendingHubIssueItem"][];
+        };
         /**
          * ProductLineIn
          * @description POST body for /api/admin/product-lines.
@@ -1668,6 +1858,22 @@ export interface components {
             old_hub_issue_id: number | null;
             /** Ticket Id */
             ticket_id: number;
+        };
+        /** RepushLinearBody */
+        RepushLinearBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+        };
+        /** RepushLinearResponse */
+        RepushLinearResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Linear Identifier */
+            linear_identifier: string | null;
+            /** Pending Reason */
+            pending_reason: string | null;
+            /** Pushed */
+            pushed: boolean;
         };
         /** RerouteBody */
         RerouteBody: {
@@ -3370,6 +3576,70 @@ export interface operations {
             };
         };
     };
+    list_dedup_proposals_api_supervisor_dedup_proposals_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DedupProposalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_dedup_endpoint_api_supervisor_dismiss_dedup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissDedupBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissDedupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dismiss_split_endpoint_api_supervisor_dismiss_split_post: {
         parameters: {
             query?: never;
@@ -3390,6 +3660,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DismissSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_dedup_endpoint_api_supervisor_execute_dedup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteDedupBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecuteDedupResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3498,6 +3801,37 @@ export interface operations {
             };
         };
     };
+    list_pending_hub_issues_api_supervisor_pending_hub_issues_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingHubIssuesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     relink_ticket_api_supervisor_relink_post: {
         parameters: {
             query?: never;
@@ -3518,6 +3852,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RelinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repush_linear_endpoint_api_supervisor_repush_linear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RepushLinearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepushLinearResponse"];
                 };
             };
             /** @description Validation Error */

@@ -5,6 +5,8 @@ import type { components } from "@/api/types";
 
 type ConfigWarningItem = components["schemas"]["ConfigWarningItem"];
 type SplitProposalItem = components["schemas"]["SplitProposalItem"];
+type DedupProposalItem = components["schemas"]["DedupProposalItem"];
+type PendingHubIssueItem = components["schemas"]["PendingHubIssueItem"];
 
 /**
  * Supervisor work-bench: pending notifications + inline actions.
@@ -31,6 +33,14 @@ export function SupervisorPage() {
     queryKey: ["supervisor", "split-proposals"],
     queryFn: () => api.get("/api/supervisor/split-proposals"),
   });
+  const dedupProposals = useQuery({
+    queryKey: ["supervisor", "dedup-proposals"],
+    queryFn: () => api.get("/api/supervisor/dedup-proposals"),
+  });
+  const pendingHubs = useQuery({
+    queryKey: ["supervisor", "pending-hub-issues"],
+    queryFn: () => api.get("/api/supervisor/pending-hub-issues"),
+  });
 
   return (
     <div className="space-y-4">
@@ -40,6 +50,8 @@ export function SupervisorPage() {
           onClick={() => {
             inbox.refetch();
             proposals.refetch();
+            dedupProposals.refetch();
+            pendingHubs.refetch();
           }}
           className="text-sm text-blue-600 hover:underline"
         >
@@ -64,6 +76,42 @@ export function SupervisorPage() {
               onDone={() =>
                 qc.invalidateQueries({
                   queryKey: ["supervisor", "split-proposals"],
+                })
+              }
+            />
+          ))}
+        </section>
+      )}
+      {pendingHubs.data && pendingHubs.data.items.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-medium">
+            Linear 推送待人工（{pendingHubs.data.items.length}）
+          </h2>
+          {pendingHubs.data.items.map((p) => (
+            <PendingHubIssueCard
+              key={p.hub_issue_id}
+              item={p}
+              onDone={() =>
+                qc.invalidateQueries({
+                  queryKey: ["supervisor", "pending-hub-issues"],
+                })
+              }
+            />
+          ))}
+        </section>
+      )}
+      {dedupProposals.data && dedupProposals.data.items.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-medium">
+            重复工单提案（{dedupProposals.data.items.length}）
+          </h2>
+          {dedupProposals.data.items.map((p) => (
+            <DedupProposalCard
+              key={p.decision_id}
+              proposal={p}
+              onDone={() =>
+                qc.invalidateQueries({
+                  queryKey: ["supervisor", "dedup-proposals"],
                 })
               }
             />
@@ -169,6 +217,177 @@ function SplitProposalCard({
             className="px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded disabled:opacity-50"
           >
             {execute.isPending ? "拆分中…" : "执行拆分"}
+          </button>
+          <button
+            onClick={() => dismiss.mutate()}
+            disabled={busy || result !== null}
+            className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-900 disabled:opacity-50"
+          >
+            {dismiss.isPending ? "…" : "忽略"}
+          </button>
+        </div>
+      </div>
+      {result && <p className="text-xs text-green-600">{result}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function PendingHubIssueCard({
+  item,
+  onDone,
+}: {
+  item: PendingHubIssueItem;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const repush = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/repush-linear", {
+        hub_issue_id: item.hub_issue_id,
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      if (data.pushed) {
+        setResult(`已推送：${data.linear_identifier}`);
+        onDone();
+      } else {
+        setError(`仍无法推送：${data.pending_reason ?? "未知原因"}`);
+      }
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <div className="border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200">
+              pending
+            </span>
+            <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+              {item.short_code}
+            </span>
+            <span className="text-xs text-gray-500">{item.type}</span>
+            {item.pending_since && (
+              <span className="text-xs text-gray-400">
+                {new Date(item.pending_since).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
+            {item.title}
+          </p>
+          {item.pending_reason && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              {item.pending_reason}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => repush.mutate()}
+          disabled={repush.isPending || result !== null}
+          className="shrink-0 px-3 py-1 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded disabled:opacity-50"
+        >
+          {repush.isPending ? "推送中…" : "重推 Linear"}
+        </button>
+      </div>
+      {result && <p className="text-xs text-green-600">{result}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function DedupProposalCard({
+  proposal,
+  onDone,
+}: {
+  proposal: DedupProposalItem;
+  onDone: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const execute = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/execute-dedup", {
+        decision_id: proposal.decision_id,
+      }),
+    onSuccess: (data) => {
+      setError(null);
+      setResult(`已合并到 ${data.hub_issue_short_code}`);
+      onDone();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const dismiss = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/dismiss-dedup", {
+        decision_id: proposal.decision_id,
+      }),
+    onSuccess: () => {
+      setError(null);
+      onDone();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const busy = execute.isPending || dismiss.isPending;
+  const target = proposal.duplicate_of;
+
+  return (
+    <div className="border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950 rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-block px-2 py-0.5 rounded text-xs bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-200">
+              疑似重复
+            </span>
+            <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+              {proposal.ticket_short_code}
+            </span>
+            <span className="text-xs text-gray-500">
+              置信度 {Math.round(proposal.confidence * 100)}%
+              {proposal.similarity != null &&
+                ` · 相似度 ${Math.round(proposal.similarity * 100)}%`}
+            </span>
+          </div>
+          <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
+            {proposal.ticket_title ?? "（无标题）"}
+          </p>
+          {target ? (
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              重复于 <span className="font-mono">{target.short_code}</span>
+              {target.title && <span> — {target.title}</span>}
+              {target.hub_issue_id == null && (
+                <span className="text-amber-600">
+                  （目标未关联 hub_issue，需先对目标创建）
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-600">目标工单已删除，仅可忽略</p>
+          )}
+          {proposal.reason && (
+            <p className="text-xs text-gray-500">{proposal.reason}</p>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 shrink-0">
+          <button
+            onClick={() => execute.mutate()}
+            disabled={
+              busy ||
+              result !== null ||
+              !target ||
+              target.hub_issue_id == null
+            }
+            className="px-3 py-1 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded disabled:opacity-50"
+          >
+            {execute.isPending ? "合并中…" : "采纳合并"}
           </button>
           <button
             onClick={() => dismiss.mutate()}
