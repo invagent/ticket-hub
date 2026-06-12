@@ -40,6 +40,13 @@ def _isolate_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         # 否则 webhook BG task 会发起真实 LLM 调用（慢 + 烧钱 + 不确定）。
         "GLM_API_KEY": "",
         "DASHSCOPE_API_KEY": "",
+        # 同理：Linear push 是 ingest/supervisor 链路的 BG task，单测禁真推。
+        "LINEAR_PUSH_ENABLED": "false",
+        "LINEAR_API_KEY": "",
+        "LINEAR_TEAM_ID": "",
+        # 自动化开关一律回到默认（本地 .env 灰度开了也不影响单测断言）。
+        "HUB_ISSUE_AUTO_ENABLED": "false",
+        "SPLIT_AUTO_ENABLED": "false",
     }
     for k, v in overrides.items():
         monkeypatch.setenv(k, v)
