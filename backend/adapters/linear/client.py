@@ -41,7 +41,7 @@ mutation IssueCreate($input: IssueCreateInput!) {
 
 _LIST_USERS_QUERY = """
 query Users($after: String) {
-  users(first: 250, after: $after, includeDisabled: false) {
+  users(first: 50, after: $after, includeDisabled: false) {
     nodes {
       id
       name
