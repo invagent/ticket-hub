@@ -337,6 +337,14 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - beat 任务 `poll_linear_statuses_every_5min`（key 未配自动跳过）；生产已部署，实测 CNPRD-809 Backlog 正确镜像 ✅
 - 升级路径：量大或要求实时再加 `/webhook/linear`，回写层不用改
 
+## cascade 双向同步（2026-06-12，D4 第②段）
+
+- **reply_sync（决策 15）**：`POST /api/hub-issues/{id}/reply`（require_supervisor，Operation-only）→ 回复版本化（`hub_issue_reply_history`）→ 级联全部关联工单 `cached_reply_content/version` → `sync_outbox` 入队（每个**有源**工单一行；Child 只缓存不入队）
+- **status_cascade（决策 14）**：`services/cascade/status_cascade.py` `apply_hub_status` 是 hub 状态变更的**唯一入口**（linear_status_sync 已改走它）。保守级联：仅 `in_progress`/`released` 扇出到工单（双方同名状态）；终态工单（done/closed/rejected/superseded）不动；released 补 `actual_released_at`
+- **sync_outbox（ADR-0007，迁移 0011）**：出站写队列。D4 生产者入队（kind='reply'/'status'，status='pending'），**D5 sender（KSM 反向/智齿）消费**——先积累是刻意解耦
+- 前端：`/hub-issues` 4 出口类型分视图（tab + 类型专属列），详情页 Operation 回复编辑器（保存并级联）
+- 生产实测：回复 v1 → 工单缓存 v1 + outbox(reply, ksm, pending) ✅
+
 ## 主管运营 UI：dedup 提案 + pending 重推（2026-06-12，D4 第①段）
 
 - `services/agents/dedup_execute.py`：dedup_link 提案执行器（无 LLM，镜像 split 剧本）。**采纳 = 重复工单挂到原始工单的 hub_issue**（occurrence_count+1 / last_seen_at / ticket_hub_issue_history / decision.materialized）
