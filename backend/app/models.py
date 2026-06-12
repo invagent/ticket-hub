@@ -801,6 +801,34 @@ class Feature(Base):
     )
 
 
+# ---- D3-E: ticket embeddings (dedup recall) --------------------------------
+
+
+class TicketEmbedding(Base):
+    """One embedding vector per ticket, for dedup candidate recall.
+
+    Vector stored as JSON (PG JSONB / SQLite compatible) and compared with
+    Python cosine similarity over a bounded recent pool — deliberate choice
+    over pgvector at current volume (hundreds of tickets/day). Revisit when
+    the pool scan shows up in profiles.
+    """
+
+    __tablename__ = "ticket_embeddings"
+
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tickets.id"), primary_key=True, autoincrement=False
+    )
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    vector: Mapped[list[float]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 # ---- D3-A: agent decision audit -------------------------------------------
 
 

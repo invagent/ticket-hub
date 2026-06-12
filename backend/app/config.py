@@ -79,10 +79,25 @@ class Settings(BaseSettings):
     # 默认关闭自动 — 先灰度手动执行，稳定后再开
     split_auto_enabled: bool = False
     split_auto_confidence: float = 0.85
+    # D3-E dedup Agent：embedding 召回 + LLM 判定；仅写 agent_decisions 审计行。
+    # 向量存 ticket_embeddings JSON 列、Python 余弦召回（当前量级足够；
+    # 量大再迁 pgvector）。
+    dedup_enabled: bool = True
+    dedup_prompt_version: str = "v1"
+    dedup_recall_threshold: float = 0.80  # 余弦相似度下限，低于不送 LLM
+    dedup_recall_top_k: int = 5  # 送 LLM 判定的候选数上限
+    dedup_candidate_pool: int = 200  # 召回扫描的最近工单数
+    dashscope_embedding_model: str = "text-embedding-v4"
+    glm_embedding_model: str = "embedding-3"
 
-    # ---- Linear (D4) ----
+    # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in
+    # 工单分类后自动创建 hub_issue（conf ≥ 阈值才建）。默认关 — 先灰度主管手动
+    hub_issue_auto_enabled: bool = False
+    hub_issue_auto_confidence: float = 0.80
+    # hub_issue (Bug_fix/Demand) 创建后异步推 Linear。默认关，配好 key 后开
+    linear_push_enabled: bool = False
 
     # ---- PII ----
     pii_master_key: str = ""  # base64-encoded 32-byte AES key; required in prod
