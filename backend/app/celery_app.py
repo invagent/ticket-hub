@@ -27,7 +27,11 @@ celery_app = Celery(
     "ticket_hub",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.services.metrics.materializer"],  # eagerly import task modules
+    # eagerly import task modules
+    include=[
+        "app.services.metrics.materializer",
+        "app.services.hub_issues.linear_status_sync",
+    ],
 )
 
 # Conservative defaults — D6 will revisit (concurrency, retry, ack policies)
@@ -46,6 +50,11 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "refresh_dashboard_metrics_every_5min": {
         "task": "app.services.metrics.materializer.refresh_dashboard_metrics",
+        "schedule": crontab(minute="*/5"),
+    },
+    # D4 第①段: Linear 状态回同步（poll；linear_api_key 未配则任务内自动跳过）
+    "poll_linear_statuses_every_5min": {
+        "task": "app.services.hub_issues.linear_status_sync.poll_linear_statuses",
         "schedule": crontab(minute="*/5"),
     },
 }

@@ -47,6 +47,21 @@ class CreatedIssue:
 
 
 @dataclass(slots=True, frozen=True)
+class IssueState:
+    """Issue workflow state snapshot (status back-sync).
+
+    state_type is Linear's workflow category — one of: triage, backlog,
+    unstarted, started, completed, canceled. state_name is the display
+    name of the column (e.g. "In Progress", "Done").
+    """
+
+    id: str  # Linear issue UUID
+    identifier: str  # e.g. "CNPRD-809"
+    state_name: str
+    state_type: str
+
+
+@dataclass(slots=True, frozen=True)
 class LinearTeam:
     id: str  # Linear team UUID
     key: str  # e.g. "CNPRD"

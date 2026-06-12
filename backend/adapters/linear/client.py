@@ -21,7 +21,14 @@ import httpx
 from app.core.logging import get_logger
 
 from .exceptions import LinearAuthError, LinearBusinessError, LinearNetworkError
-from .types import CreatedIssue, CreateIssueRequest, LinearConfig, LinearTeam, LinearUser
+from .types import (
+    CreatedIssue,
+    CreateIssueRequest,
+    IssueState,
+    LinearConfig,
+    LinearTeam,
+    LinearUser,
+)
 
 logger = get_logger(__name__)
 
@@ -34,6 +41,18 @@ mutation IssueCreate($input: IssueCreateInput!) {
       identifier
       url
       title
+    }
+  }
+}
+"""
+
+_ISSUE_STATES_QUERY = """
+query IssueStates($ids: [ID!]!) {
+  issues(filter: { id: { in: $ids } }, first: 50) {
+    nodes {
+      id
+      identifier
+      state { name type }
     }
   }
 }
@@ -105,6 +124,29 @@ class LinearClient:
             url=str(issue["url"]),
             title=str(issue["title"]),
         )
+
+    def get_issue_states(self, issue_ids: list[str]) -> list[IssueState]:
+        """Current workflow state for a set of issues (status back-sync).
+
+        Queries in chunks of 50 (Linear complexity budget). Issues missing
+        from the response (deleted in Linear) are simply absent from the
+        result — caller decides how to treat them.
+        """
+        out: list[IssueState] = []
+        for i in range(0, len(issue_ids), 50):
+            chunk = issue_ids[i : i + 50]
+            data = self._graphql(_ISSUE_STATES_QUERY, {"ids": chunk})
+            for n in (data.get("issues") or {}).get("nodes") or []:
+                state = n.get("state") or {}
+                out.append(
+                    IssueState(
+                        id=str(n["id"]),
+                        identifier=str(n.get("identifier") or ""),
+                        state_name=str(state.get("name") or ""),
+                        state_type=str(state.get("type") or ""),
+                    )
+                )
+        return out
 
     def list_users(self) -> list[LinearUser]:
         """All active workspace members with their team memberships.

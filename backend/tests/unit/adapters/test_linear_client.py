@@ -208,6 +208,49 @@ def test_network_error() -> None:
         c.create_issue(_create_req())
 
 
+# ---- get_issue_states --------------------------------------------------------
+
+
+@respx.mock
+def test_get_issue_states_parses_nodes() -> None:
+    payload = {
+        "data": {
+            "issues": {
+                "nodes": [
+                    {
+                        "id": "uuid-1",
+                        "identifier": "CNPRD-809",
+                        "state": {"name": "In Progress", "type": "started"},
+                    }
+                ]
+            }
+        }
+    }
+    respx.post(BASE).mock(return_value=httpx.Response(200, json=payload))
+    with _client() as c:
+        states = c.get_issue_states(["uuid-1"])
+    assert len(states) == 1
+    assert states[0].identifier == "CNPRD-809"
+    assert states[0].state_type == "started"
+
+
+@respx.mock
+def test_get_issue_states_chunks_by_50() -> None:
+    import json
+
+    seen_chunks: list[int] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        ids = json.loads(req.content)["variables"]["ids"]
+        seen_chunks.append(len(ids))
+        return httpx.Response(200, json={"data": {"issues": {"nodes": []}}})
+
+    respx.post(BASE).mock(side_effect=handler)
+    with _client() as c:
+        c.get_issue_states([f"u{i}" for i in range(120)])
+    assert seen_chunks == [50, 50, 20]
+
+
 # ---- list_users -------------------------------------------------------------
 
 

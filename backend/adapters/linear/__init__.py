@@ -7,11 +7,19 @@ from .exceptions import (
     LinearError,
     LinearNetworkError,
 )
-from .types import CreatedIssue, CreateIssueRequest, LinearConfig, LinearTeam, LinearUser
+from .types import (
+    CreatedIssue,
+    CreateIssueRequest,
+    IssueState,
+    LinearConfig,
+    LinearTeam,
+    LinearUser,
+)
 
 __all__ = [
     "CreateIssueRequest",
     "CreatedIssue",
+    "IssueState",
     "LinearAuthError",
     "LinearBusinessError",
     "LinearClient",
