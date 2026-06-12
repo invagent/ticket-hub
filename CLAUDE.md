@@ -337,6 +337,14 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - beat 任务 `poll_linear_statuses_every_5min`（key 未配自动跳过）；生产已部署，实测 CNPRD-809 Backlog 正确镜像 ✅
 - 升级路径：量大或要求实时再加 `/webhook/linear`，回写层不用改
 
+## 主管运营 UI：dedup 提案 + pending 重推（2026-06-12，D4 第①段）
+
+- `services/agents/dedup_execute.py`：dedup_link 提案执行器（无 LLM，镜像 split 剧本）。**采纳 = 重复工单挂到原始工单的 hub_issue**（occurrence_count+1 / last_seen_at / ticket_hub_issue_history / decision.materialized）
+- 守卫：目标工单未毕业 hub_issue → 409 提示先 create-hub-issue（绝不自动毕业）；subject 已链接 → 409 提示走 relink
+- 端点（require_supervisor）：`GET /api/supervisor/dedup-proposals`、`POST execute-dedup`/`dismiss-dedup`、`GET pending-hub-issues`（带最新 pending 原因）、`POST repush-linear`（**同步执行**，主管要立即看到成败）
+- 前端 SupervisorPage：琥珀色「Linear 推送待人工」卡片（原因+重推）、青色「重复工单提案」卡片（采纳合并/忽略，目标未毕业禁用）；用户管理页「从 Linear 同步」按钮
+- 卡片色系约定：紫=拆单提案、青=重复提案、琥珀=pending 待人工、黄=配置警告
+
 ## Linear 推送 pending 待人工（2026-06-12）
 
 - **个人处理人（有邮箱）在 Linear 查无此人** → 不推送，hub_issue `status='pending'` + status_history 记原因（含邮箱）；**组账号（无邮箱）不受影响**，仍优雅降级推默认 team
