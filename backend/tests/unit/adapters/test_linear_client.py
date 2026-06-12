@@ -94,6 +94,38 @@ def test_create_issue_sends_correct_variables() -> None:
 
 
 @respx.mock
+def test_personal_api_key_sent_without_bearer_prefix() -> None:
+    """Linear rejects personal API keys carrying a 'Bearer ' prefix (HTTP 400).
+    The raw lin_api_ key must go in the Authorization header as-is."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["auth"] = req.headers.get("Authorization")
+        return httpx.Response(200, json=_success_response())
+
+    respx.post(BASE).mock(side_effect=handler)
+    with _client() as c:
+        c.create_issue(_create_req())
+    assert captured["auth"] == "lin_api_test"  # no "Bearer " prefix
+
+
+@respx.mock
+def test_oauth_token_keeps_bearer_prefix() -> None:
+    """Non-personal-key tokens (OAuth) still get the Bearer prefix."""
+    captured: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        captured["auth"] = req.headers.get("Authorization")
+        return httpx.Response(200, json=_success_response())
+
+    respx.post(BASE).mock(side_effect=handler)
+    cfg = LinearConfig(api_key="oauth_access_token_xyz", team_id="TEAM-UUID-123")
+    with LinearClient(cfg, http_client=httpx.Client(timeout=5.0)) as c:
+        c.create_issue(_create_req())
+    assert captured["auth"] == "Bearer oauth_access_token_xyz"
+
+
+@respx.mock
 def test_create_issue_no_optional_fields_omitted() -> None:
     """assigneeId and labelIds must not appear when not set."""
     import json

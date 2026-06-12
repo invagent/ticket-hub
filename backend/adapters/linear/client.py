@@ -129,7 +129,13 @@ class LinearClient:
         return body.get("data") or {}
 
     def _headers(self) -> dict[str, str]:
+        # Linear personal API keys (lin_api_…) go in the Authorization header
+        # RAW — no "Bearer " prefix (that's only for OAuth access tokens).
+        # Sending Bearer with a personal key gets HTTP 400 "Remove the Bearer
+        # prefix". OAuth tokens (should this adapter ever use them) do need it.
+        key = self._cfg.api_key
+        auth = key if key.startswith("lin_api_") else f"Bearer {key}"
         return {
-            "Authorization": f"Bearer {self._cfg.api_key}",
+            "Authorization": auth,
             "Content-Type": "application/json",
         }
