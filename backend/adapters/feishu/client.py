@@ -32,6 +32,7 @@ from .types import (
     Department,
     Employee,
     FeishuConfig,
+    WikiNode,
 )
 
 logger = get_logger(__name__)
@@ -425,6 +426,77 @@ class FeishuClient:
             if not page_token:
                 break
         return items
+
+    # ---- wiki / docx (D4 第③段 知识反哺地基；只读) --------------------
+
+    def _wiki_get(self, url: str, op: str, **kwargs: Any) -> dict[str, Any]:
+        """GET via _request, but convert a Feishu error body (incl. the
+        99991672 scope error which arrives as HTTP 400) into a clean
+        FeishuBusinessError instead of a bare HTTPStatusError."""
+        try:
+            body = self._request("GET", url, **kwargs)
+        except httpx.HTTPStatusError as e:
+            try:
+                eb = e.response.json()
+            except (ValueError, json.JSONDecodeError):
+                raise FeishuBusinessError(op=op, code=-1, message=e.response.text) from e
+            raise FeishuBusinessError(
+                op=op, code=int(eb.get("code", -1)), message=str(eb.get("msg") or "")
+            ) from e
+        if body.get("code") not in (0, None):
+            raise FeishuBusinessError(
+                op=op, code=int(body.get("code", -1)), message=str(body.get("msg") or "")
+            )
+        return body.get("data") or {}
+
+    def get_wiki_node(self, node_token: str) -> WikiNode:
+        """Resolve a wiki node (its obj_token is the underlying docx id)."""
+        url = f"{self._cfg.base_url}/open-apis/wiki/v2/spaces/get_node"
+        data = self._wiki_get(url, "get_wiki_node", params={"token": node_token})
+        return WikiNode.from_dict(data.get("node") or {})
+
+    def list_wiki_nodes(
+        self, space_id: str, *, parent_node_token: str | None = None
+    ) -> list[WikiNode]:
+        """Direct children of a space (or of a parent node). Paginated."""
+        url = f"{self._cfg.base_url}/open-apis/wiki/v2/spaces/{space_id}/nodes"
+        out: list[WikiNode] = []
+        page_token: str | None = None
+        while True:
+            params: dict[str, Any] = {"page_size": 50}
+            if parent_node_token:
+                params["parent_node_token"] = parent_node_token
+            if page_token:
+                params["page_token"] = page_token
+            data = self._wiki_get(url, "list_wiki_nodes", params=params)
+            out.extend(WikiNode.from_dict(it) for it in (data.get("items") or []))
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token")
+            if not page_token:
+                break
+        return out
+
+    def walk_wiki_tree(
+        self, space_id: str, *, root_node_token: str | None = None
+    ) -> list[WikiNode]:
+        """Depth-first walk of a space (or subtree). Returns nodes in tree order."""
+        out: list[WikiNode] = []
+
+        def _recurse(parent: str | None) -> None:
+            for node in self.list_wiki_nodes(space_id, parent_node_token=parent):
+                out.append(node)
+                if node.has_child:
+                    _recurse(node.node_token)
+
+        _recurse(root_node_token)
+        return out
+
+    def get_doc_raw_content(self, document_id: str) -> str:
+        """Plain-text content of a docx document (wiki node obj_token)."""
+        url = f"{self._cfg.base_url}/open-apis/docx/v1/documents/{document_id}/raw_content"
+        data = self._wiki_get(url, "get_doc_raw_content")
+        return str(data.get("content") or "")
 
 
 def _flatten_richtext(field: Any) -> str:

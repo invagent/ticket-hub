@@ -11,7 +11,14 @@ Subscopes:
 
 from .client import FeishuClient
 from .exceptions import FeishuAuthError, FeishuBusinessError, FeishuError
-from .types import BitableFilterCondition, ContactUser, Department, Employee, FeishuConfig
+from .types import (
+    BitableFilterCondition,
+    ContactUser,
+    Department,
+    Employee,
+    FeishuConfig,
+    WikiNode,
+)
 
 __all__ = [
     "BitableFilterCondition",
@@ -23,4 +30,5 @@ __all__ = [
     "FeishuClient",
     "FeishuConfig",
     "FeishuError",
+    "WikiNode",
 ]

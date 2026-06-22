@@ -254,3 +254,119 @@ def test_download_attachment_uses_extra_param() -> None:
     assert body == b"BINARY"
     extra = route.calls.last.request.url.params["extra"]
     assert "tbl_main" in extra
+
+
+# ---- wiki / docx (D4 第③段 只读地基) ---------------------------------------
+
+
+@respx.mock
+def test_get_wiki_node() -> None:
+    _stub_token(respx)
+    respx.get(f"{BASE}/open-apis/wiki/v2/spaces/get_node").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "node": {
+                        "node_token": "nd1",
+                        "obj_token": "doc1",
+                        "obj_type": "docx",
+                        "title": "产品手册",
+                        "space_id": "sp1",
+                        "has_child": True,
+                    }
+                },
+            },
+        )
+    )
+    with _client() as c:
+        node = c.get_wiki_node("nd1")
+    assert node.obj_token == "doc1"
+    assert node.obj_type == "docx"
+    assert node.title == "产品手册"
+    assert node.has_child is True
+
+
+@respx.mock
+def test_list_wiki_nodes_paginates() -> None:
+    _stub_token(respx)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "items": [{"node_token": "a", "title": "A", "obj_type": "docx"}],
+                        "has_more": True,
+                        "page_token": "P2",
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": [{"node_token": "b", "title": "B", "obj_type": "docx"}],
+                    "has_more": False,
+                },
+            },
+        )
+
+    respx.get(f"{BASE}/open-apis/wiki/v2/spaces/sp1/nodes").mock(side_effect=handler)
+    with _client() as c:
+        nodes = c.list_wiki_nodes("sp1")
+    assert [n.node_token for n in nodes] == ["a", "b"]
+    assert calls["n"] == 2
+
+
+@respx.mock
+def test_walk_wiki_tree_recurses_children() -> None:
+    _stub_token(respx)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        parent = request.url.params.get("parent_node_token")
+        if parent is None:
+            items = [
+                {"node_token": "root1", "title": "Root1", "obj_type": "docx", "has_child": True},
+                {"node_token": "root2", "title": "Root2", "obj_type": "docx", "has_child": False},
+            ]
+        elif parent == "root1":
+            items = [{"node_token": "child1", "title": "Child1", "obj_type": "docx"}]
+        else:
+            items = []
+        return httpx.Response(200, json={"code": 0, "data": {"items": items, "has_more": False}})
+
+    respx.get(f"{BASE}/open-apis/wiki/v2/spaces/sp1/nodes").mock(side_effect=handler)
+    with _client() as c:
+        nodes = c.walk_wiki_tree("sp1")
+    # depth-first: root1, child1, root2
+    assert [n.node_token for n in nodes] == ["root1", "child1", "root2"]
+
+
+@respx.mock
+def test_get_doc_raw_content() -> None:
+    _stub_token(respx)
+    respx.get(f"{BASE}/open-apis/docx/v1/documents/doc1/raw_content").mock(
+        return_value=httpx.Response(200, json={"code": 0, "data": {"content": "正文内容"}})
+    )
+    with _client() as c:
+        assert c.get_doc_raw_content("doc1") == "正文内容"
+
+
+@respx.mock
+def test_wiki_scope_error_raises() -> None:
+    _stub_token(respx)
+    respx.get(f"{BASE}/open-apis/wiki/v2/spaces/get_node").mock(
+        return_value=httpx.Response(
+            400, json={"code": 99991672, "msg": "Access denied. wiki:wiki required"}
+        )
+    )
+    with _client() as c, pytest.raises(FeishuBusinessError) as ei:
+        c.get_wiki_node("nd1")
+    assert ei.value.code == 99991672

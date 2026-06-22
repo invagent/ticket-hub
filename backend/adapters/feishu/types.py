@@ -110,3 +110,28 @@ class Department:
             parent_department_id=str(d.get("parent_department_id") or ""),
             member_count=int(d.get("member_count") or 0),
         )
+
+
+@dataclass(slots=True, frozen=True)
+class WikiNode:
+    """A node in a Feishu wiki space (/open-apis/wiki/v2)."""
+
+    node_token: str
+    obj_token: str  # underlying doc id (docx document_id when obj_type='docx')
+    obj_type: str  # docx / sheet / mindnote / ...
+    title: str
+    space_id: str = ""
+    parent_node_token: str = ""
+    has_child: bool = False
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> WikiNode:
+        return cls(
+            node_token=str(d.get("node_token") or ""),
+            obj_token=str(d.get("obj_token") or ""),
+            obj_type=str(d.get("obj_type") or ""),
+            title=str(d.get("title") or ""),
+            space_id=str(d.get("space_id") or ""),
+            parent_node_token=str(d.get("parent_node_token") or ""),
+            has_child=bool(d.get("has_child")),
+        )
