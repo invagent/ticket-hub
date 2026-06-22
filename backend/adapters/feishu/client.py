@@ -498,6 +498,42 @@ class FeishuClient:
         data = self._wiki_get(url, "get_doc_raw_content")
         return str(data.get("content") or "")
 
+    def create_wiki_node(
+        self,
+        space_id: str,
+        title: str,
+        *,
+        parent_node_token: str | None = None,
+        obj_type: str = "docx",
+    ) -> WikiNode:
+        """Create a wiki node (a docx-backed section/「目录」). Requires the
+        wiki:wiki write scope. parent_node_token=None → space root."""
+        url = f"{self._cfg.base_url}/open-apis/wiki/v2/spaces/{space_id}/nodes"
+        payload: dict[str, Any] = {"obj_type": obj_type, "node_type": "origin", "title": title}
+        if parent_node_token:
+            payload["parent_node_token"] = parent_node_token
+        try:
+            body = self._request("POST", url, json=payload)
+        except httpx.HTTPStatusError as e:
+            try:
+                eb = e.response.json()
+            except (ValueError, json.JSONDecodeError):
+                raise FeishuBusinessError(
+                    op="create_wiki_node", code=-1, message=e.response.text
+                ) from e
+            raise FeishuBusinessError(
+                op="create_wiki_node",
+                code=int(eb.get("code", -1)),
+                message=str(eb.get("msg") or ""),
+            ) from e
+        if body.get("code") not in (0, None):
+            raise FeishuBusinessError(
+                op="create_wiki_node",
+                code=int(body.get("code", -1)),
+                message=str(body.get("msg") or ""),
+            )
+        return WikiNode.from_dict((body.get("data") or {}).get("node") or {})
+
 
 def _flatten_richtext(field: Any) -> str:
     """Feishu rich-text formula field → plain string."""

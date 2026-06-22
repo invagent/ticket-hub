@@ -370,3 +370,48 @@ def test_wiki_scope_error_raises() -> None:
     with _client() as c, pytest.raises(FeishuBusinessError) as ei:
         c.get_wiki_node("nd1")
     assert ei.value.code == 99991672
+
+
+@respx.mock
+def test_create_wiki_node() -> None:
+    _stub_token(respx)
+    route = respx.post(f"{BASE}/open-apis/wiki/v2/spaces/sp1/nodes").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "node": {
+                        "node_token": "newnd",
+                        "obj_token": "newdoc",
+                        "obj_type": "docx",
+                        "title": "binge 的知识库",
+                        "space_id": "sp1",
+                    }
+                },
+            },
+        )
+    )
+    with _client() as c:
+        node = c.create_wiki_node("sp1", "binge 的知识库")
+    assert node.node_token == "newnd"
+    assert node.title == "binge 的知识库"
+    import json as _json
+
+    sent = _json.loads(route.calls.last.request.content)
+    assert sent["title"] == "binge 的知识库"
+    assert sent["obj_type"] == "docx"
+    assert sent["node_type"] == "origin"
+
+
+@respx.mock
+def test_create_wiki_node_scope_error_raises() -> None:
+    _stub_token(respx)
+    respx.post(f"{BASE}/open-apis/wiki/v2/spaces/sp1/nodes").mock(
+        return_value=httpx.Response(
+            403, json={"code": 99991672, "msg": "Access denied. wiki:wiki required"}
+        )
+    )
+    with _client() as c, pytest.raises(FeishuBusinessError) as ei:
+        c.create_wiki_node("sp1", "x")
+    assert ei.value.code == 99991672
