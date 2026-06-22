@@ -154,9 +154,9 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 
 完整清单见 **`docs/progress/2026-06-12-plan.md` §四**（含冻结项说明）。要点：
 
-- PII encryptor 未实现（D4 第 3 段 Vision 接外部多模态 LLM 前必须补，硬门槛）
-- dedup 评测未跑（dataset_v1 已有 `expected_dedup` 标注，待补 eval）
-- ADR 0013(llm_router) / 0014(agent_decisions) / 0015(JSON 向量代替 pgvector) 待补记
+- PII encryptor 未实现 —— **降级**：D4 第③段全走国内管理大模型同边界，仅接海外 LLM 才补（不再是第③段硬门槛）
+- dedup 评测 —— **改判**：`expected_dedup` 字段 60 条全 null（实际未标注），生产无真实重复对；待积累真实数据再建配对评测集，不编造
+- ~~ADR 0013/0014/0015 待补记~~ ✅ 已补（2026-06-12，见 `docs/adr/`）
 - 16 条 `needs_review` 评测标签：❄️ 冻结 — 分类边界规则将来走人工配置 skill，不再改标签
 - ~~`HANDOFF.md` 过时~~ ✅ 已重写为指针（2026-06-12）
 
