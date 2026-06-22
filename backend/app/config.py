@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     vision_prompt_version: str = "v1"
     vision_max_images_per_ticket: int = 5  # 单工单最多识别张数（防异常附件刷量）
 
+    # ---- D4 第③段 AI 客服 escalation ----
+    # 客户对 AI 客服回答不满意 → cs-escalation webhook → 二次分类（黄金三元组）
+    escalation_prompt_version: str = "v1"
+    # escalation 自动毕业 hub_issue 的置信门槛（比普通 0.80 高——这条链直接推 Linear）
+    escalation_auto_enabled: bool = False
+    escalation_auto_confidence: float = 0.85
+
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in

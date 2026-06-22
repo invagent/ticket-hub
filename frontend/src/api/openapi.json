@@ -6948,6 +6948,49 @@
         ]
       }
     },
+    "/webhook/cs-escalation": {
+      "post": {
+        "description": "AI 客服「会话失败/转人工」实时回调 → 建 ai_cs 工单 → escalation 链\n（vision → 黄金三元组二次分类 → dedup/conflict）。",
+        "operationId": "cs_escalation_webhook_webhook_cs_escalation_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "title": "Access Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cs Escalation Webhook",
+        "tags": [
+          "webhook"
+        ]
+      }
+    },
     "/webhook/ksm": {
       "post": {
         "description": "KSM webhook receiver.\n\nTwo payload modes (the endpoint accepts both, KSM only sends the first):\n\n1. **Lightweight ping** (production KSM contract per doc § 二):\n   `{billId|id, noticeNum, subscribeNum}` → store latest pair → schedule\n   BackgroundTask to call subscribeCallback and ingest → return\n   `{\"code\": 0}` immediately.\n\n2. **Full payload** (legacy / tests / xlsx replay):\n   caller already provides title/content/productLineCode/...; ingest\n   synchronously and still return `{\"code\": 0}` (KSM contract).\n\nPer doc: 校验三个字段均不为空，否则忽略（log warning + 200）—\nimportant so KSM doesn't retry malformed pushes.",

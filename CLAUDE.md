@@ -337,6 +337,16 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - beat 任务 `poll_linear_statuses_every_5min`（key 未配自动跳过）；生产已部署，实测 CNPRD-809 Backlog 正确镜像 ✅
 - 升级路径：量大或要求实时再加 `/webhook/linear`，回写层不用改
 
+## Vision 多模态（2026-06-12，D4 第③段 ③-1）
+
+- **架构前提**：已有飞书侧 AI 客服解答 Operation，取消自建 How-To RAG；hub 补「多模态 + 答不上之后的事」。详细设计 `docs/spec/d4-stage3-design.md`
+- `app/core/llm_router/vision.py` VisionClient：DashScope **qwen-vl-max**（截图 OCR 要准）多模态，`image_url` 直传（DashScope 自己抓图）或 base64；结构化输出 `{ocr_text, ui_context, summary}`，容忍 ```json 围栏
+- `services/agents/vision_extract.py`：ingest 链在 **classify 之前**对 image 附件 OCR → 拼进 `ticket.body`（`[附件识别]` 段）。下游 classify/dedup/escalation 全受益（dedup embedding 含报错原文，召回质量↑）
+- `attachments` 表（迁移 0012）+ sources 种子 `ai_cs`；非 image/超 `VISION_MAX_IMAGES_PER_TICKET`(5)/无 source_url 跳过；失败标 failed 不阻塞链
+- **PII**：qwen-vl 同 DashScope 边界，无新增暴露 → **PII encryptor 不再是第③段前置**（仅接海外 LLM 才补）
+- 开关 `VISION_ENABLED`（默认 false）；`VISION_API_KEY` 留空回落 `DASHSCOPE_API_KEY`；生产已配 qwen-vl-max 实测打通（成本 ~¥0.011/张）
+- 文本分类仍用 deepseek-v4-flash（评测最优，不动）；storage_key(MinIO) 下载路径待 KSM 附件接入
+
 ## cascade 双向同步（2026-06-12，D4 第②段）
 
 - **reply_sync（决策 15）**：`POST /api/hub-issues/{id}/reply`（require_supervisor，Operation-only）→ 回复版本化（`hub_issue_reply_history`）→ 级联全部关联工单 `cached_reply_content/version` → `sync_outbox` 入队（每个**有源**工单一行；Child 只缓存不入队）

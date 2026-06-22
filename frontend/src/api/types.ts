@@ -984,6 +984,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhook/cs-escalation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cs Escalation Webhook
+         * @description AI 客服「会话失败/转人工」实时回调 → 建 ai_cs 工单 → escalation 链
+         *     （vision → 黄金三元组二次分类 → dedup/conflict）。
+         */
+        post: operations["cs_escalation_webhook_webhook_cs_escalation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/ksm": {
         parameters: {
             query?: never;
@@ -4215,6 +4236,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    cs_escalation_webhook_webhook_cs_escalation_post: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

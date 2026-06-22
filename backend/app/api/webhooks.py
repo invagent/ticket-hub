@@ -35,9 +35,12 @@ from app.db import get_session, make_session
 from app.services.agents.classify import classify_ticket
 from app.services.agents.conflict_detect import detect_ticket_conflict
 from app.services.agents.dedup import detect_ticket_duplicate
+from app.services.agents.escalation_classify import classify_escalation_ticket
 from app.services.agents.split import execute_split_for_ticket
 from app.services.agents.vision_extract import extract_ticket_attachments
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
+from app.services.ingest.escalation_ingester import EscalationIngester
+from app.services.ingest.escalation_ingester import IngestError as EscalationIngestError
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -93,6 +96,30 @@ def run_post_ingest_agents(ticket_id: int) -> None:
         if split_res is not None:
             for child_id in split_res.child_ticket_ids:
                 _classify_and_maybe_graduate(child_id)
+
+
+def run_escalation_agents(ticket_id: int) -> None:
+    """Post-ingest chain for ai_cs escalation tickets (D4 第③段).
+
+    Same shape as run_post_ingest_agents but swaps classify →
+    escalation_classify (golden-triple二次分类) and uses the higher
+    ESCALATION_AUTO_CONFIDENCE bar for auto-graduation (this chain builds a
+    hub_issue and pushes Linear). dedup/conflict_detect run as usual.
+    """
+    settings = get_settings()
+    if settings.vision_enabled:
+        extract_ticket_attachments(ticket_id)
+    cls = classify_escalation_ticket(ticket_id)
+    if (
+        cls is not None
+        and settings.escalation_auto_enabled
+        and cls.confidence >= settings.escalation_auto_confidence
+    ):
+        create_hub_issue_for_ticket_auto(ticket_id)
+    if settings.dedup_enabled:
+        detect_ticket_duplicate(ticket_id)
+    if settings.conflict_detect_enabled:
+        detect_ticket_conflict(ticket_id)
 
 
 class IngestResponse(BaseModel):
@@ -335,6 +362,46 @@ async def zhichi_webhook(
     # D3-C/D: post-ingest agents after ingest (skip dedup).
     if not result.deduped:
         background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
+    return IngestResponse(
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+        routing_decision=result.routing_decision,
+        assigned_user_ids=result.assigned_user_ids,
+        trace_id=get_trace_id(),
+    )
+
+
+# ---- AI 客服 escalation (D4 第③段) ----------------------------------------
+
+
+@router.post("/cs-escalation", response_model=IngestResponse)
+async def cs_escalation_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    access_token: str = Query(...),
+    db: Session = Depends(get_session),
+) -> IngestResponse:
+    """AI 客服「会话失败/转人工」实时回调 → 建 ai_cs 工单 → escalation 链
+    （vision → 黄金三元组二次分类 → dedup/conflict）。"""
+    _verify_webhook_token(access_token)
+    payload = await _read_object(request)
+    try:
+        result = EscalationIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+            payload
+        )
+    except EscalationIngestError as e:
+        raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
+    db.commit()
+    logger.info(
+        "cs_escalation_webhook_committed",
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+        attachments=len(result.attachment_ids),
+    )
+    if not result.deduped:
+        background_tasks.add_task(run_escalation_agents, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,
