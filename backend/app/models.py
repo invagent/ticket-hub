@@ -805,6 +805,53 @@ class Feature(Base):
     )
 
 
+# ---- D4 第③段: attachments (Vision 多模态) ---------------------------------
+
+
+class Attachment(Base):
+    """Ticket attachment (截图为主) + Vision extraction result.
+
+    The vision_extract agent reads images, OCRs error text + describes the
+    UI context, and writes extracted_text back here (also appended to
+    ticket.body so downstream classify/dedup see it). Non-image kinds are
+    recorded but skipped by Vision for now.
+
+    source_url: original (KSM/cs-escalation) URL — passed straight to the
+    multimodal model when publicly fetchable. storage_key: MinIO object when
+    the source needs auth/presign (download path lands later).
+    """
+
+    __tablename__ = "attachments"
+    __table_args__ = (
+        CheckConstraint("kind IN ('image','pdf','video','other')", name="ck_attachments_kind"),
+        CheckConstraint(
+            "vision_status IN ('pending','extracted','skipped','failed')",
+            name="ck_attachments_vision_status",
+        ),
+        Index("ix_attachments_ticket", "ticket_id"),
+        Index("ix_attachments_vision_pending", "vision_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), default="image", nullable=False)
+    vision_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vision_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vision_cost_usd: Mapped[float | None] = mapped_column(Numeric(8, 6), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 # ---- D4: sync_outbox (cascade fan-out, ADR-0007) ---------------------------
 
 

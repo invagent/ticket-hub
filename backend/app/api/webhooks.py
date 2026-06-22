@@ -36,6 +36,7 @@ from app.services.agents.classify import classify_ticket
 from app.services.agents.conflict_detect import detect_ticket_conflict
 from app.services.agents.dedup import detect_ticket_duplicate
 from app.services.agents.split import execute_split_for_ticket
+from app.services.agents.vision_extract import extract_ticket_attachments
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
@@ -57,13 +58,15 @@ def run_post_ingest_agents(ticket_id: int) -> None:
     Single BackgroundTask entry so call sites stay one-liners. Each agent
     swallows its own failures — one agent failing must not stop the next.
 
-    Chain: classify → (auto hub_issue + Linear when confidence clears the
-    bar) → dedup (advisory audit) → conflict_detect → (auto split when
-    confidence clears the bar) → classify each child. Children never re-run
-    conflict_detect (no recursive splitting) nor dedup (internal artifacts,
-    not dedup targets).
+    Chain: vision_extract (截图 OCR 补进 body) → classify → (auto hub_issue +
+    Linear when confidence clears the bar) → dedup (advisory audit) →
+    conflict_detect → (auto split when confidence clears the bar) → classify
+    each child. Vision runs first so classify/dedup see the error text from
+    screenshots. Children never re-run conflict_detect / dedup / vision.
     """
     settings = get_settings()
+    if settings.vision_enabled:
+        extract_ticket_attachments(ticket_id)
 
     def _classify_and_maybe_graduate(tid: int) -> None:
         cls = classify_ticket(tid)

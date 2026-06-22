@@ -90,6 +90,15 @@ class Settings(BaseSettings):
     dashscope_embedding_model: str = "text-embedding-v4"
     glm_embedding_model: str = "embedding-3"
 
+    # ---- D4 第③段 Vision 多模态 ----
+    # 截图识别（报错图 → OCR 文本 + 界面描述），补进 ticket.body 供下游分类/去重。
+    # 默认关闭灰度；接的是国内管理大模型（qwen-vl，同 DashScope 边界，无 PII 新增暴露）。
+    vision_enabled: bool = False
+    vision_model: str = "qwen-vl-max"  # 报错截图要准确 OCR；可换 qwen-vl-plus 省成本
+    vision_api_key: str = ""  # 留空则回落 dashscope_api_key
+    vision_prompt_version: str = "v1"
+    vision_max_images_per_ticket: int = 5  # 单工单最多识别张数（防异常附件刷量）
+
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in

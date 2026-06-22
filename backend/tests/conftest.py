@@ -47,6 +47,9 @@ def _isolate_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         # 自动化开关一律回到默认（本地 .env 灰度开了也不影响单测断言）。
         "HUB_ISSUE_AUTO_ENABLED": "false",
         "SPLIT_AUTO_ENABLED": "false",
+        # Vision 同理：清 key + 关开关，防 ingest BG task 真调多模态。
+        "VISION_ENABLED": "false",
+        "VISION_API_KEY": "",
     }
     for k, v in overrides.items():
         monkeypatch.setenv(k, v)
