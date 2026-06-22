@@ -337,6 +337,16 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - beat 任务 `poll_linear_statuses_every_5min`（key 未配自动跳过）；生产已部署，实测 CNPRD-809 Backlog 正确镜像 ✅
 - 升级路径：量大或要求实时再加 `/webhook/linear`，回写层不用改
 
+## AI 客服 escalation 链（2026-06-12，D4 第③段 ③-2）
+
+- **核心交互**：客户对已有飞书 AI 客服的回答不满意 → AI 客服实时回调 `POST /webhook/cs-escalation` → 建 `ai_cs` 工单 + 截图 attachments → `run_escalation_agents` 链
+- `escalation_ingester.py`：`parse_escalation_payload` **隔离** AI 客服载荷格式（API 定稿后只改这一处，同 ksm_payload 套路）；黄金三元组（原问题/AI答复/不满反馈）存 `source_payload['ai_cs']`；幂等(session_id)
+- `escalation_classify.py` + `prompts/escalation_classify_v1.md`：**黄金三元组**二次分类。强信号——AI给步骤+「做了没用」→Bug_fix；AI「不支持」+「要支持」→Demand；AI答错+客户重述→Operation。**显著压低 Operation 概率**（AI 已操作解答失败过）
+- 链顺序：vision → escalation_classify → (auto hub_issue at `ESCALATION_AUTO_CONFIDENCE` 0.85，比普通 0.80 高，因直接推 Linear) → dedup → conflict_detect
+- 判回 Operation 走 hub 主管 reply_sync（复用第②段，零新代码）；agent_decisions 里 `agent='escalation_classify_v1'` / `source='ai_cs_escalation'` 与普通 classify 区分
+- 生产实测：「AI给认证步骤+客户说做了还是转圈超时」→ Bug_fix 0.94，理由精准 ✅
+- **待补**：AI 客服真实 API 路径（webhook 载荷确认 + adapters/ai_cs 反查/反哺，③-3）
+
 ## Vision 多模态（2026-06-12，D4 第③段 ③-1）
 
 - **架构前提**：已有飞书侧 AI 客服解答 Operation，取消自建 How-To RAG；hub 补「多模态 + 答不上之后的事」。详细设计 `docs/spec/d4-stage3-design.md`
