@@ -54,3 +54,4 @@ playwright/.cache/
 # Local private memory (personal notes, not for sharing)
 CLAUDE.local.md
 Codex.local.md
+sample/
