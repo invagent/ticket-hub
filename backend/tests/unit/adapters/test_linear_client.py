@@ -270,8 +270,8 @@ def test_list_users_single_page() -> None:
     nodes = [
         {
             "id": "u1",
-            "name": "陈少斌",
-            "email": "shaobin_chen@kingdee.com",
+            "name": "Alice",
+            "email": "alice@example.com",
             "active": True,
             "teams": {"nodes": [{"id": "t-aralgo", "key": "ARALGO", "name": "架构与算法部"}]},
         },
@@ -289,7 +289,7 @@ def test_list_users_single_page() -> None:
     with _client() as c:
         users = c.list_users()
     assert len(users) == 2
-    assert users[0].email == "shaobin_chen@kingdee.com"
+    assert users[0].email == "alice@example.com"
     assert users[0].teams[0].key == "ARALGO"
     assert users[1].teams == []
 

@@ -140,7 +140,7 @@ JWT TTL 为 7 天（`backend/app/config.py` 中 `jwt_ttl_seconds = 60 * 60 * 24 
 
 ## 服务器部署
 
-详见 `CLAUDE.local.md`（不提交 git）。生产服务器 `123.57.100.193`，nginx 配置在 `/etc/nginx/sites-enabled/reverse-proxy`。
+详见 `CLAUDE.local.md`（不提交 git）。生产服务器 IP、nginx 配置、SSH 等均见 `CLAUDE.local.md`。
 
 - shaobin 原版：端口 9093，路径 `/ticket-hub/`，DB `ticket_hub`
 - panda_li v2：端口 9094，路径 `/ticket-hub-v2/`，DB `ticket_hub_v2`，Python 3.12
@@ -324,7 +324,7 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
   - **组账号**（数电开票组…）无邮箱 → 不匹配 → 两字段留空 → 推送回落默认 team 且无 assignee（刻意的优雅降级）
 - `POST /api/admin/users/sync-from-linear`（require_admin）：触发同步，返回匹配报告
 - `linear_push.py` 按 `assignee.linear_team_id` 路由，回落 `settings.linear_team_id`
-- **生产现状（2026-06-12 已配置部署）**：`LINEAR_PUSH_ENABLED=true`，默认 team=CNPRD（中国区产品部，id `8abb86a2…`）；首轮同步 21 个个人映射（INTPRD 9 / CNPRD 5 / ARALGO 5 / KNOPS 2），9 个组账号跳过；实测分配给覃强(ARALGO)的工单落到 ARALGO-36 ✅
+- **生产现状（2026-06-12 已配置部署）**：`LINEAR_PUSH_ENABLED=true`，默认 team=CNPRD（中国区产品部，id 见 `CLAUDE.local.md`）；首轮同步 21 个个人映射（INTPRD 9 / CNPRD 5 / ARALGO 5 / KNOPS 2），9 个组账号跳过；实测分配给某 ARALGO 成员的工单落到对应 team ✅
 - API key：Linear 个人 key「ticket-hub push (shaobin prod)」，权限 Read + Create issues
 - 单测：`test_linear_client.py`(13) / `test_linear_user_sync.py`(8) / `test_linear_push.py` 路由用例 / `test_admin_users.py` sync 端点
 
@@ -379,4 +379,4 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - **Linear API 推送失败**（网络/鉴权/业务错）→ 同样置 pending + 错误原文
 - 重试仍失败不重复写 history（pending 幂等）；`linear_uuid` 始终留 NULL 可重推
 - **修复路径**：人加入 Linear 工作区 → `POST /api/admin/users/sync-from-linear` 补映射 → 重推成功自动 `pending→created`（留审计「pending 解除」）
-- 生产实测：分配给 minjun_gong@kingdee.com（查无此人）→ 正确置 pending 不产生垃圾 issue ✅
+- 生产实测：分配给某内部用户（Linear 查无此人）→ 正确置 pending 不产生垃圾 issue ✅
