@@ -66,6 +66,7 @@ import { UsersPage } from "./pages/admin/users/UsersPage";
 import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
+import { SkillsPage } from "./pages/admin/skills/SkillsPage";
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -123,6 +124,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/admin/users/:userId" element={<UserDetailPage />} />
             <Route path="/admin/scopes" element={<ScopesPage />} />
             <Route path="/admin/catalog" element={<CatalogPage />} />
+            <Route path="/admin/skills" element={<SkillsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

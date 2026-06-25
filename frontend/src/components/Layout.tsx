@@ -16,6 +16,7 @@ const navItems = [
   { to: "/admin/users", label: "用户管理" },
   { to: "/admin/scopes", label: "分工管理" },
   { to: "/admin/catalog", label: "目录管理" },
+  { to: "/admin/skills", label: "Skill 配置" },
 ];
 
 export function Layout() {

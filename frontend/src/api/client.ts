@@ -155,6 +155,22 @@ export async function postByPath<P extends keyof paths>(
   });
 }
 
+/** Typed PUT against a path-with-param endpoint (e.g. /api/admin/skills/{name}). */
+export async function putByPath<P extends keyof paths>(
+  templatePath: P,
+  params: Record<string, string | number>,
+  body?: unknown,
+): Promise<ResponseOf<paths[P], "put">> {
+  let actual = templatePath as string;
+  for (const [k, v] of Object.entries(params)) {
+    actual = actual.replaceAll(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  return request(actual, {
+    method: "PUT",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+
 /** Typed DELETE against a path-with-param endpoint. */
 export async function deleteByPath<P extends keyof paths>(
   templatePath: P,

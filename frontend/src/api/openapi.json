@@ -673,6 +673,43 @@
         "title": "DismissSplitResponse",
         "type": "object"
       },
+      "EditBody": {
+        "properties": {
+          "content_md": {
+            "minLength": 1,
+            "title": "Content Md",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_md"
+        ],
+        "title": "EditBody",
+        "type": "object"
+      },
+      "EditResponse": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "EditResponse",
+        "type": "object"
+      },
       "ExecuteDedupBody": {
         "properties": {
           "decision_id": {
@@ -1078,6 +1115,49 @@
           "occurred_at"
         ],
         "title": "HistoryEvent",
+        "type": "object"
+      },
+      "HistoryItem": {
+        "properties": {
+          "changed_at": {
+            "format": "date-time",
+            "title": "Changed At",
+            "type": "string"
+          },
+          "changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "changed_by",
+          "reason",
+          "changed_at"
+        ],
+        "title": "HistoryItem",
         "type": "object"
       },
       "HistoryOut": {
@@ -1859,6 +1939,19 @@
           "last_seen_at"
         ],
         "title": "IdentityOut",
+        "type": "object"
+      },
+      "ImportResponse": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added"
+        ],
+        "title": "ImportResponse",
         "type": "object"
       },
       "InboxItem": {
@@ -2798,6 +2891,19 @@
         "title": "RevertSplitResponse",
         "type": "object"
       },
+      "RollbackBody": {
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "RollbackBody",
+        "type": "object"
+      },
       "RoutingOut": {
         "properties": {
           "auto_assigned": {
@@ -2913,6 +3019,141 @@
           "user_id"
         ],
         "title": "ScopeRowOut",
+        "type": "object"
+      },
+      "SkillDetail": {
+        "properties": {
+          "content_md": {
+            "title": "Content Md",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "editable",
+          "version",
+          "description",
+          "updated_by",
+          "updated_at",
+          "content_md"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillSummary": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "editable",
+          "version",
+          "description",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "SkillSummary",
         "type": "object"
       },
       "SourceOut": {
@@ -5024,6 +5265,242 @@
         "summary": "Put Default Pool User",
         "tags": [
           "admin-settings"
+        ]
+      }
+    },
+    "/api/admin/skills": {
+      "get": {
+        "operationId": "list_skills_api_admin_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillSummary"
+                  },
+                  "title": "Response List Skills Api Admin Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Skills",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/import-from-files": {
+      "post": {
+        "operationId": "import_from_files_api_admin_skills_import_from_files_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Import From Files",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}": {
+      "get": {
+        "operationId": "get_skill_api_admin_skills__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill",
+        "tags": [
+          "admin-skills"
+        ]
+      },
+      "put": {
+        "operationId": "edit_skill_api_admin_skills__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Skill",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}/history": {
+      "get": {
+        "operationId": "get_history_api_admin_skills__name__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryItem"
+                  },
+                  "title": "Response Get History Api Admin Skills  Name  History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}/rollback": {
+      "post": {
+        "operationId": "rollback_skill_api_admin_skills__name__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Skill",
+        "tags": [
+          "admin-skills"
         ]
       }
     },

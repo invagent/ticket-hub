@@ -44,7 +44,9 @@ def _prompt_version() -> str:
 
 
 def _load_system_prompt() -> str:
-    return (_PROMPTS_DIR / f"dedup_{_prompt_version()}.md").read_text(encoding="utf-8")
+    from app.services.skills.prompt_store import load_prompt
+
+    return load_prompt(f"dedup_{_prompt_version()}")
 
 
 class DedupError(Exception):

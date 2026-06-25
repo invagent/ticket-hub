@@ -229,6 +229,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Skills */
+        get: operations["list_skills_api_admin_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/import-from-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import From Files */
+        post: operations["import_from_files_api_admin_skills_import_from_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill */
+        get: operations["get_skill_api_admin_skills__name__get"];
+        /** Edit Skill */
+        put: operations["edit_skill_api_admin_skills__name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{name}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_admin_skills__name__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{name}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback Skill */
+        post: operations["rollback_skill_api_admin_skills__name__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/sources": {
         parameters: {
             query?: never;
@@ -1293,6 +1379,23 @@ export interface components {
             /** Decision Id */
             decision_id: number;
         };
+        /** EditBody */
+        EditBody: {
+            /** Content Md */
+            content_md: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** EditResponse */
+        EditResponse: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+        };
         /** ExecuteDedupBody */
         ExecuteDedupBody: {
             /** Decision Id */
@@ -1452,6 +1555,20 @@ export interface components {
             reason?: string | null;
             /** To Status */
             to_status?: string | null;
+        };
+        /** HistoryItem */
+        HistoryItem: {
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Changed By */
+            changed_by: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Version */
+            version: number;
         };
         /** HistoryOut */
         HistoryOut: {
@@ -1660,6 +1777,11 @@ export interface components {
             source_custom_id: string | null;
             /** Source User Id */
             source_user_id: string | null;
+        };
+        /** ImportResponse */
+        ImportResponse: {
+            /** Added */
+            added: number;
         };
         /** InboxItem */
         InboxItem: {
@@ -1988,6 +2110,11 @@ export interface components {
             /** Parent Ticket Id */
             parent_ticket_id: number;
         };
+        /** RollbackBody */
+        RollbackBody: {
+            /** Version */
+            version: number;
+        };
         /** RoutingOut */
         RoutingOut: {
             /** Auto Assigned */
@@ -2026,6 +2153,42 @@ export interface components {
             product_line_code?: string | null;
             /** User Id */
             user_id: number;
+        };
+        /** SkillDetail */
+        SkillDetail: {
+            /** Content Md */
+            content_md: string;
+            /** Description */
+            description: string | null;
+            /** Editable */
+            editable: boolean;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
+        };
+        /** SkillSummary */
+        SkillSummary: {
+            /** Description */
+            description: string | null;
+            /** Editable */
+            editable: boolean;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Updated At */
+            updated_at: string | null;
+            /** Updated By */
+            updated_by: string | null;
+            /** Version */
+            version: number;
         };
         /** SourceOut */
         SourceOut: {
@@ -2935,6 +3098,178 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultPoolUserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_skills_api_admin_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummary"][];
+                };
+            };
+        };
+    };
+    import_from_files_api_admin_skills_import_from_files_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResponse"];
+                };
+            };
+        };
+    };
+    get_skill_api_admin_skills__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_skill_api_admin_skills__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_api_admin_skills__name__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_skill_api_admin_skills__name__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditResponse"];
                 };
             };
             /** @description Validation Error */

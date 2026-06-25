@@ -805,6 +805,62 @@ class Feature(Base):
     )
 
 
+# ---- D4 优化 v2: skill_prompts (DB 化版本提示词，热加载可编辑) --------------
+
+
+class SkillPrompt(Base):
+    """LLM agent 的提示词，DB 化 + 版本化 + 页面可编辑（对标 sample t_skill_md）。
+
+    name 是逻辑提示词 id（如 'classify_v2' / 'dedup_v1' / 'reply_reflection_v1'）。
+    version 是**内容修订计数**（每次 edit 自增，rollback 也自增到新版），与 name 里的
+    业务版本号正交。prompt_store 读表覆盖 prompts/*.md 文件；DB 无行则回落文件。
+    """
+
+    __tablename__ = "skill_prompts"
+    __table_args__ = (
+        CheckConstraint("type IN ('llm','code')", name="ck_skill_prompts_type"),
+        Index("ix_skill_prompts_name", "name", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    type: Mapped[str] = mapped_column(
+        String(8), default="llm", nullable=False
+    )  # llm 可编辑 / code 只读
+    editable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    frontmatter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    content_md: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SkillPromptHistory(Base):
+    """提示词每个历史版本快照，供回滚 + 审计。"""
+
+    __tablename__ = "skill_prompt_history"
+    __table_args__ = (
+        UniqueConstraint("name", "version", name="uq_skill_prompt_history_version"),
+        Index("ix_skill_prompt_history_name", "name", "version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_md: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 # ---- D4 第③段: attachments (Vision 多模态) ---------------------------------
 
 
