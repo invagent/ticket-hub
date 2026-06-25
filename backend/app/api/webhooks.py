@@ -35,6 +35,7 @@ from app.db import get_session, make_session
 from app.services.agents.classify import classify_ticket
 from app.services.agents.conflict_detect import detect_ticket_conflict
 from app.services.agents.dedup import detect_ticket_duplicate
+from app.services.agents.dedup_execute import auto_mount_recent_duplicate
 from app.services.agents.escalation_classify import classify_escalation_ticket
 from app.services.agents.split import execute_split_for_ticket
 from app.services.agents.vision_extract import extract_ticket_attachments
@@ -83,6 +84,7 @@ def run_post_ingest_agents(ticket_id: int) -> None:
     _classify_and_maybe_graduate(ticket_id)
     if settings.dedup_enabled:
         detect_ticket_duplicate(ticket_id)
+        auto_mount_recent_duplicate(ticket_id)  # 90 天内重复自动挂 hub（默认关）
     if not settings.conflict_detect_enabled:
         return
     res = detect_ticket_conflict(ticket_id)
@@ -118,6 +120,7 @@ def run_escalation_agents(ticket_id: int) -> None:
         create_hub_issue_for_ticket_auto(ticket_id)
     if settings.dedup_enabled:
         detect_ticket_duplicate(ticket_id)
+        auto_mount_recent_duplicate(ticket_id)
     if settings.conflict_detect_enabled:
         detect_ticket_conflict(ticket_id)
 

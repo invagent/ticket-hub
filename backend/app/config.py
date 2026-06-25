@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     dedup_recall_threshold: float = 0.80  # 余弦相似度下限，低于不送 LLM
     dedup_recall_top_k: int = 5  # 送 LLM 判定的候选数上限
     dedup_candidate_pool: int = 200  # 召回扫描的最近工单数
+    # D4 优化 v2: 90 天内语义重复自动挂载到目标 hub（AI 判定，主管可 relink 纠偏）。
+    # 默认关，先灰度审计；目标须已毕业 hub 且在窗口内才自动挂。
+    dedup_auto_mount_enabled: bool = False
+    dedup_mount_window_days: int = 90
     dashscope_embedding_model: str = "text-embedding-v4"
     glm_embedding_model: str = "embedding-3"
 
