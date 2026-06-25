@@ -263,3 +263,40 @@ def test_push_priority_default_zero(world: Session) -> None:
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].priority == 0  # type: ignore[attr-defined]
+
+
+def test_hub_dedup_supersede_skips_linear(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hub-dedup 命中 → 当前 hub supersede 到已有 hub，不调 Linear。"""
+    from app.services.hub_issues import linear_push as lp
+
+    existing = _make_hub(world, 90)
+    existing.linear_uuid = "u-existing"
+    existing.linear_identifier = "CNPRD-100"
+    world.commit()
+    new = _make_hub(world, 91)
+
+    # 直接桩掉 hub_dedup.find_duplicate_hub（其内部已另有单测）
+    from app.services.hub_issues import hub_dedup
+
+    monkeypatch.setattr(hub_dedup, "find_duplicate_hub", lambda db, hub, **kw: existing.id)
+
+    fake = _FakeLinearClient()
+    res = lp.push_hub_issue_to_linear(new.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is None
+    assert fake.requests == []  # 没建 Linear
+    world.refresh(new)
+    world.refresh(existing)
+    assert new.superseded_by_hub_issue_id == existing.id
+    assert new.linear_uuid is None
+    assert existing.occurrence_count == 2  # 已有 hub 次数 +1
+
+
+def test_hub_dedup_no_dup_pushes_normally(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.hub_issues import hub_dedup
+    from app.services.hub_issues import linear_push as lp
+
+    monkeypatch.setattr(hub_dedup, "find_duplicate_hub", lambda db, hub, **kw: None)
+    hub = _make_hub(world, 92)
+    fake = _FakeLinearClient()
+    res = lp.push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is not None and len(fake.requests) == 1

@@ -511,6 +511,8 @@ class HubIssue(Base):
     linear_status_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # D4 优化 v2: hub 语义去重向量（建 Linear 前比对同产品线已有 hub，避免重复 issue）
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
     scheduled_iteration: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expected_released_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

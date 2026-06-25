@@ -72,6 +72,35 @@ def _mark_pending(db: Session, hub: HubIssue, *, reason: str) -> None:
     logger.warning("linear_push_pending", hub_issue_id=hub.id, reason=reason)
 
 
+def _maybe_supersede_duplicate(db: Session, hub: HubIssue) -> int | None:
+    """与已推 Linear 的同产品线 hub 语义重复 → 当前 hub supersede 到它、不推 Linear。
+    返回命中的 hub_id，否则 None（含降级）。也顺带把 hub.embedding 存好供后续比对。"""
+    from app.services.hub_issues.hub_dedup import find_duplicate_hub
+
+    dup_id = find_duplicate_hub(db, hub)
+    if dup_id is None:
+        return None
+    dup = db.get(HubIssue, dup_id)
+    if dup is None or dup.deleted_at is not None:
+        return None
+    now = datetime.now(UTC)
+    hub.superseded_by_hub_issue_id = dup_id
+    hub.supersede_reason = f"hub-dedup: 与 {dup.short_code} 同一研发问题，合并不重复推 Linear"
+    dup.occurrence_count += 1
+    dup.last_seen_at = now
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=hub.status,
+        to_status=hub.status,
+        changed_by="agent:hub_dedup",
+        reason=hub.supersede_reason,
+    )
+    db.commit()
+    logger.info("hub_superseded_by_dedup", hub_issue_id=hub.id, dup_hub_id=dup_id)
+    return dup_id
+
+
 def _build_description(db: Session, hub: HubIssue) -> str:
     parts = [hub.canonical_body or ""]
     sources = (
@@ -119,6 +148,12 @@ def push_hub_issue_to_linear(
                 linear_identifier=hub.linear_identifier,
             )
             return None
+
+        # hub 级语义去重：与已推 Linear 的同产品线 hub 重复 → supersede，不重复建 issue
+        if settings.hub_dedup_enabled:
+            dup_id = _maybe_supersede_duplicate(db, hub)
+            if dup_id is not None:
+                return None
 
         # Per-assignee team routing: land the issue on the assignee's Linear
         # team (and set them as assignee). Group assignees (no email) fall

@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     hub_issue_auto_confidence: float = 0.80
     # hub_issue (Bug_fix/Demand) 创建后异步推 Linear。默认关，配好 key 后开
     linear_push_enabled: bool = False
+    # D4 优化 v2: 建 Linear 前 hub 级语义去重（命中则 supersede 到已有 hub，不重复推）
+    hub_dedup_enabled: bool = True
+    hub_dedup_threshold: float = 0.85  # 余弦下限
+    hub_dedup_top_k: int = 5
+    hub_dedup_prompt_version: str = "v1"
 
     # ---- PII ----
     pii_master_key: str = ""  # base64-encoded 32-byte AES key; required in prod
