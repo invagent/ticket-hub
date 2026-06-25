@@ -36,10 +36,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.logging import get_logger
 from app.models import ProductLine
 from app.repositories.notification_log import NotificationLogRepository
 from app.repositories.ticket import HubIssueRepository, TicketRepository
+from app.services.sla.workday import workday_hours_between
 
 logger = get_logger(__name__)
 
@@ -118,6 +120,17 @@ class SLAWatcher:
             return resolve_overrides[product_line_code]
         return self._hub_thresholds.get(type_)
 
+    def _is_overdue(self, start: datetime, now: datetime, threshold: timedelta) -> bool:
+        """墙钟 OR 工作日小时（SLA_WORKDAY_AWARE 开时）超过阈值。
+
+        墙钟超时是工作日超时的必要超集（工作日小时 ≤ 墙钟小时），所以 repo 的墙钟
+        预筛仍安全；这里在候选上做精筛。"""
+        start_aware = start if start.tzinfo else start.replace(tzinfo=UTC)
+        if not get_settings().sla_workday_aware:
+            return (now - start_aware) >= threshold
+        worked = workday_hours_between(self._db, start_aware, now)
+        return worked >= threshold.total_seconds() / 3600.0
+
     def scan(self, *, now: datetime | None = None) -> SLAScanResult:
         ts_now = now or datetime.now(UTC)
         written = 0
@@ -150,8 +163,7 @@ class SLAWatcher:
             ra = t.received_at
             if ra is None:
                 continue
-            ra_aware = ra if ra.tzinfo else ra.replace(tzinfo=UTC)
-            if (ts_now - ra_aware) < effective:
+            if not self._is_overdue(ra, ts_now, effective):
                 continue
             recipient = t.assigned_user_id or self._fallback_recipient_id
             if recipient is None:
@@ -188,8 +200,7 @@ class SLAWatcher:
             fs = h.first_seen_at
             if fs is None:
                 continue
-            fs_aware = fs if fs.tzinfo else fs.replace(tzinfo=UTC)
-            if (ts_now - fs_aware) < effective:
+            if not self._is_overdue(fs, ts_now, effective):
                 continue
             recipient = h.assigned_user_id or self._fallback_recipient_id
             if recipient is None:

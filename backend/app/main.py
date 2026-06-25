@@ -10,6 +10,7 @@ from app import __version__
 from app.api import (
     admin,
     admin_catalog,
+    admin_holidays,
     admin_scopes,
     admin_settings,
     admin_skills,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_catalog.router, prefix="/api/admin", tags=["admin-catalog"])
     app.include_router(admin_settings.router, prefix="/api/admin/settings", tags=["admin-settings"])
     app.include_router(admin_skills.router, prefix="/api/admin/skills", tags=["admin-skills"])
+    app.include_router(admin_holidays.router, prefix="/api/admin/holidays", tags=["admin-holidays"])
     app.include_router(supervisor.router, prefix="/api/supervisor", tags=["supervisor"])
     app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
     app.include_router(hub_issues.router, prefix="/api/hub-issues", tags=["hub-issues"])

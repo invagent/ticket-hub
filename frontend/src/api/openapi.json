@@ -1226,6 +1226,37 @@
         "title": "HistoryResponse",
         "type": "object"
       },
+      "HolidayItem": {
+        "properties": {
+          "day_type": {
+            "pattern": "^(holiday|workday)$",
+            "title": "Day Type",
+            "type": "string"
+          },
+          "holiday_date": {
+            "format": "date",
+            "title": "Holiday Date",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "holiday_date",
+          "day_type"
+        ],
+        "title": "HolidayItem",
+        "type": "object"
+      },
       "HubIssueDetail": {
         "properties": {
           "actual_released_at": {
@@ -3996,6 +4027,37 @@
         "title": "TicketSummary",
         "type": "object"
       },
+      "UpsertBody": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HolidayItem"
+            },
+            "maxItems": 400,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "UpsertBody",
+        "type": "object"
+      },
+      "UpsertResponse": {
+        "properties": {
+          "upserted": {
+            "title": "Upserted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "upserted"
+        ],
+        "title": "UpsertResponse",
+        "type": "object"
+      },
       "UserDetailOut": {
         "description": "Aggregated profile for /admin/users/:id frontend page.",
         "properties": {
@@ -4532,6 +4594,134 @@
         "summary": "Delete Feature",
         "tags": [
           "admin-catalog"
+        ]
+      }
+    },
+    "/api/admin/holidays": {
+      "get": {
+        "operationId": "list_holidays_api_admin_holidays_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HolidayItem"
+                  },
+                  "title": "Response List Holidays Api Admin Holidays Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Holidays",
+        "tags": [
+          "admin-holidays"
+        ]
+      },
+      "post": {
+        "operationId": "upsert_holidays_api_admin_holidays_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Holidays",
+        "tags": [
+          "admin-holidays"
+        ]
+      }
+    },
+    "/api/admin/holidays/{holiday_date}": {
+      "delete": {
+        "operationId": "delete_holiday_api_admin_holidays__holiday_date__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "holiday_date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Holiday Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Holiday",
+        "tags": [
+          "admin-holidays"
         ]
       }
     },

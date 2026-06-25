@@ -133,6 +133,11 @@ class Settings(BaseSettings):
     # ---- Routing ----
     default_pool_user_id: int | None = None
 
+    # ---- D4 优化 v2: SLA 工作日感知 ----
+    # 开后 SLAWatcher 超时判定改用「工作日小时」（扣除周末+holidays 节假日）。
+    # 默认关，保持墙钟行为不变；填好 holidays 日历后再开。
+    sla_workday_aware: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

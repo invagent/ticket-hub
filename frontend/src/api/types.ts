@@ -39,6 +39,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/holidays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Holidays */
+        get: operations["list_holidays_api_admin_holidays_get"];
+        put?: never;
+        /** Upsert Holidays */
+        post: operations["upsert_holidays_api_admin_holidays_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/holidays/{holiday_date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Holiday */
+        delete: operations["delete_holiday_api_admin_holidays__holiday_date__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/modules": {
         parameters: {
             query?: never;
@@ -1599,6 +1634,18 @@ export interface components {
             /** Ticket Id */
             ticket_id: number;
         };
+        /** HolidayItem */
+        HolidayItem: {
+            /** Day Type */
+            day_type: string;
+            /**
+             * Holiday Date
+             * Format: date
+             */
+            holiday_date: string;
+            /** Name */
+            name?: string | null;
+        };
         /** HubIssueDetail */
         HubIssueDetail: {
             /** Actual Released At */
@@ -2410,6 +2457,16 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** UpsertBody */
+        UpsertBody: {
+            /** Items */
+            items: components["schemas"]["HolidayItem"][];
+        };
+        /** UpsertResponse */
+        UpsertResponse: {
+            /** Upserted */
+            upserted: number;
+        };
         /**
          * UserDetailOut
          * @description Aggregated profile for /admin/users/:id frontend page.
@@ -2602,6 +2659,99 @@ export interface operations {
             header?: never;
             path: {
                 feature_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_holidays_api_admin_holidays_get: {
+        parameters: {
+            query?: {
+                year?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HolidayItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_holidays_api_admin_holidays_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpsertResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_holiday_api_admin_holidays__holiday_date__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                holiday_date: string;
             };
             cookie?: never;
         };

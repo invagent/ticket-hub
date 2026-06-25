@@ -23,7 +23,7 @@ Status / type CHECKs: enforced as CHECK constraints (parity with spec).
 Arrays / JSONB: stored as `JSON` (cross-compatible PG ↔ SQLite for tests).
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -31,6 +31,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -804,6 +805,30 @@ class Feature(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+# ---- D4 优化 v2: holidays (SLA 工作日/节假日感知) --------------------------
+
+
+class Holiday(Base):
+    """法定节假日 / 调休补班日历（对标 sample t_holiday）。
+
+    day_type='holiday' → 休（不计 SLA 工作时）；'workday' → 调休补班（虽周末也上班）。
+    表里没有的日期：按周末判断（周一~周五为工作日）。SLAWatcher 用它把超时判定
+    改成「工作日小时」，避免周末/长假误报超时。
+    """
+
+    __tablename__ = "holidays"
+    __table_args__ = (
+        CheckConstraint("day_type IN ('holiday','workday')", name="ck_holidays_day_type"),
+    )
+
+    holiday_date: Mapped[date] = mapped_column(Date, primary_key=True, autoincrement=False)
+    day_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
