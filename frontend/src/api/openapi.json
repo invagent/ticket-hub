@@ -2837,6 +2837,44 @@
         "title": "RepushLinearResponse",
         "type": "object"
       },
+      "RequestSupplyBody": {
+        "properties": {
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "RequestSupplyBody",
+        "type": "object"
+      },
+      "RequestSupplyResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "outbox_count": {
+            "title": "Outbox Count",
+            "type": "integer"
+          },
+          "ticket_count": {
+            "title": "Ticket Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "ticket_count",
+          "outbox_count"
+        ],
+        "title": "RequestSupplyResponse",
+        "type": "object"
+      },
       "RerouteBody": {
         "properties": {
           "ticket_ids": {
@@ -6745,6 +6783,59 @@
           }
         },
         "summary": "Author Reply Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/request-supply": {
+      "post": {
+        "description": "Ask the customer for more info (补料). Enqueues a supply sync_outbox row\nper linked sourced ticket; the KSM sender drains them into supplyKsmOrder.",
+        "operationId": "request_supply_endpoint_api_hub_issues__hub_issue_id__request_supply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSupplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Supply Endpoint",
         "tags": [
           "hub-issues"
         ]

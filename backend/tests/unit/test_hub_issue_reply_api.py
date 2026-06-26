@@ -93,3 +93,41 @@ def test_reply_missing_hub_409(app_client: TestClient, reply_world: Session) -> 
 def test_reply_empty_422(app_client: TestClient, reply_world: Session) -> None:
     r = app_client.post("/api/hub-issues/90/reply", json={"content": ""}, headers=_bearer(2))
     assert r.status_code == 422
+
+
+# ---- request-supply (补料) ---------------------------------------------------
+
+
+def test_request_supply_requires_supervisor(app_client: TestClient, reply_world: Session) -> None:
+    r = app_client.post(
+        "/api/hub-issues/90/request-supply",
+        json={"note": "请补充截图"},
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert r.status_code == 403
+
+
+def test_request_supply_e2e(app_client: TestClient, reply_world: Session) -> None:
+    r = app_client.post(
+        "/api/hub-issues/90/request-supply",
+        json={"note": "请提供完整报错截图与操作步骤"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ticket_count"] == 1 and body["outbox_count"] == 1
+    rows = reply_world.query(SyncOutbox).filter_by(kind="supply").all()
+    assert len(rows) == 1 and rows[0].target_source_code == "ksm"
+    assert rows[0].payload["supply_note"] == "请提供完整报错截图与操作步骤"
+
+
+def test_request_supply_missing_hub_409(app_client: TestClient, reply_world: Session) -> None:
+    r = app_client.post(
+        "/api/hub-issues/9999/request-supply", json={"note": "x"}, headers=_bearer(2)
+    )
+    assert r.status_code == 409
+
+
+def test_request_supply_empty_422(app_client: TestClient, reply_world: Session) -> None:
+    r = app_client.post("/api/hub-issues/90/request-supply", json={"note": ""}, headers=_bearer(2))
+    assert r.status_code == 422

@@ -212,6 +212,23 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
 # ---- status in_progress → lock only -----------------------------------------
 
 
+def test_supply_locks_then_supplies(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    assert len(client.locks) == 1 and len(client.supplies) == 1
+    assert client.supplies[0].deal_opinion == "请提供错误截图"
+    assert client.supplies[0].bill_id == "BILL-1" and client.supplies[0].node_id == "NODE-OLD"
+    world.refresh(row)
+    assert row.status == "sent"
+
+
+# ---- status in_progress → lock only -----------------------------------------
+
+
 def test_status_in_progress_locks_only(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)

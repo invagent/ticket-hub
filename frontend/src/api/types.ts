@@ -711,6 +711,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/request-supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Supply Endpoint
+         * @description Ask the customer for more info (补料). Enqueues a supply sync_outbox row
+         *     per linked sourced ticket; the KSM sender drains them into supplyKsmOrder.
+         */
+        post: operations["request_supply_endpoint_api_hub_issues__hub_issue_id__request_supply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/dashboard": {
         parameters: {
             query?: never;
@@ -2152,6 +2173,20 @@ export interface components {
             pending_reason: string | null;
             /** Pushed */
             pushed: boolean;
+        };
+        /** RequestSupplyBody */
+        RequestSupplyBody: {
+            /** Note */
+            note: string;
+        };
+        /** RequestSupplyResponse */
+        RequestSupplyResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Outbox Count */
+            outbox_count: number;
+            /** Ticket Count */
+            ticket_count: number;
         };
         /** RerouteBody */
         RerouteBody: {
@@ -4119,6 +4154,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthorReplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_supply_endpoint_api_hub_issues__hub_issue_id__request_supply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestSupplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestSupplyResponse"];
                 };
             };
             /** @description Validation Error */

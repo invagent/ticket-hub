@@ -20,6 +20,7 @@ from app.core.logging import get_logger
 from app.db import get_session
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
+from app.services.cascade.supply_sync import SupplySyncError, request_supply
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -175,5 +176,44 @@ def author_reply_endpoint(
         hub_issue_id=result.hub_issue_id,
         version=result.version,
         cascaded_ticket_count=len(result.cascaded_ticket_ids),
+        outbox_count=len(result.outbox_ids),
+    )
+
+
+# ---- Supply request (补料, D4 第②段) ----------------------------------------
+
+
+class RequestSupplyBody(BaseModel):
+    note: str = Field(..., min_length=1, max_length=4000)
+
+
+class RequestSupplyResponse(BaseModel):
+    hub_issue_id: int
+    ticket_count: int
+    outbox_count: int  # 入队待回写 KSM supplyKsmOrder 的条数
+
+
+@router.post("/{hub_issue_id}/request-supply", response_model=RequestSupplyResponse)
+def request_supply_endpoint(
+    hub_issue_id: int,
+    body: RequestSupplyBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> RequestSupplyResponse:
+    """Ask the customer for more info (补料). Enqueues a supply sync_outbox row
+    per linked sourced ticket; the KSM sender drains them into supplyKsmOrder."""
+    try:
+        result = request_supply(db, hub_issue_id, note=body.note, requested_by=f"user:{user.name}")
+    except SupplySyncError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "hub_issue_supply_requested",
+        hub_issue_id=hub_issue_id,
+        tickets=len(result.ticket_ids),
+        operator_user_id=user.user_id,
+    )
+    return RequestSupplyResponse(
+        hub_issue_id=result.hub_issue_id,
+        ticket_count=len(result.ticket_ids),
         outbox_count=len(result.outbox_ids),
     )
