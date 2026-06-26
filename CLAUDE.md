@@ -238,7 +238,9 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 
 ## 阶段进度
 
-D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_issue 创建 + Linear push 已实现；Linear 状态回同步待开工）D5~收尾⬜。当前分支：`main`。
+D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟢（第①段 Linear 状态回同步✅、第②段 cascade + KSM 出站回写 sender✅[代码完成未部署]、第③段 Vision/escalation✅；Phase 0 优化全家桶✅）D5~收尾⬜。当前分支：`main`。
+
+> **优化 v2 计划见 `docs/spec/d4-optimized-design-v2.md`**：Phase 0（PII 轻量/skill_prompts/hub-dedup/90天挂载/SLA工作日）全部完成部署；Phase 2（KSM 回写）代码完成待部署；**Phase 1（知识反哺闭环）阻塞于自研 AI 客服 replay+skills API**（方案 B，见 `ai-cs-api-contract.md`）。
 
 ## D3-D conflict_detect Agent（2026-06-11）
 
@@ -364,6 +366,22 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟡（hub_iss
 - **sync_outbox（ADR-0007，迁移 0011）**：出站写队列。D4 生产者入队（kind='reply'/'status'，status='pending'），**D5 sender（KSM 反向/智齿）消费**——先积累是刻意解耦
 - 前端：`/hub-issues` 4 出口类型分视图（tab + 类型专属列），详情页 Operation 回复编辑器（保存并级联）
 - 生产实测：回复 v1 → 工单缓存 v1 + outbox(reply, ksm, pending) ✅
+
+## KSM 出站回写 sender（2026-06-26，D4 第②段，Phase 2）
+
+- **缺口澄清**：`adapters/ksm/KSMClient` 早有全套写方法（lock/handle/supply/return/get_order_detail）；Phase 2 只补**消费 sync_outbox 的 sender**，非移植 client
+- `services/ksm/writeback.py` `drain_ksm_outbox`：drain `target_source_code='ksm' & status='pending'`，按 kind 映射 KSM 操作：
+  - `reply` → lock → 重拉 node → `handleKsmOrder(is_deal=True)`（答复关单）
+  - `status` `in_progress` → `lockKsmOrder`（接管受理）；`released` → lock→handle 关单（hub.reply_content 或默认话术）
+  - `supply` → lock → 重拉 → `supplyKsmOrder`（补料）
+- **时序**：KSM 要求先接管(lock)且 handle 的 `currentNodeID` 是接管后的新节点 → lock → 经 NoticeStore(Redis 24h) 重拉 subscribeCallback 刷新 node/product/version/module → handle/supply；notice 过期则回落入库节点，由 KSM 报错暴露（**绝不静默成功**）
+- **字段来源**：`ticket.source_payload['_subscribe_callback']`（入库时存的 KSM raw）；bill_id 回落 `source_ticket_id`
+- **灰度**：`ksm_writeback_enabled`(默认关) + `ksm_writeback_dry_run`(默认开，只组装标 skipped)；失败 attempts++/last_error，超 `ksm_writeback_max_attempts`(5) 标 failed 转人工；仅 pending 被 drain，成功翻 sent 幂等；已接管错误容错继续
+- **handler 身份**：`KSM_HANDLER_NAME`/`KSM_HANDLER_NUMBER`（account/accountName/accountNumber）；未配则整轮跳过
+- 触发：Celery beat `drain_ksm_writeback` 每 2min + 主管 `POST /api/supervisor/drain-ksm-writeback`（同步看成败）
+- **补料入口**：`POST /api/hub-issues/{id}/request-supply`（require_supervisor）→ `cascade/supply_sync.request_supply` 每有源工单入队 supply outbox（迁移 0016 扩 `ck_sync_outbox_kind` 加 'supply'）
+- **注意**：回复/补料文本是**对客出站**方向，**不过 pii_lite 遮罩**（遮罩只用于入库/喂模型方向，遮了会损坏答复）；智齿回写本期未做（outbox 留 zhichi 行未消费）
+- **上线**（用户执行）：`git pull` + `alembic upgrade head`(0016) + 重启 3 个 systemd → `.env` 配 handler 身份 + 生产 `KSM_BASE_URL=ierp.kingdee.com` → 先 enabled+dry_run 观察 → 再翻 dry_run=false 真打。**尚未部署生产**
 
 ## 主管运营 UI：dedup 提案 + pending 重推（2026-06-12，D4 第①段）
 
