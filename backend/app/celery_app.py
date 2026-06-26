@@ -31,6 +31,7 @@ celery_app = Celery(
     include=[
         "app.services.metrics.materializer",
         "app.services.hub_issues.linear_status_sync",
+        "app.services.ksm.writeback_task",
     ],
 )
 
@@ -56,5 +57,10 @@ celery_app.conf.beat_schedule = {
     "poll_linear_statuses_every_5min": {
         "task": "app.services.hub_issues.linear_status_sync.poll_linear_statuses",
         "schedule": crontab(minute="*/5"),
+    },
+    # D4 第②段: KSM 出站回写 drain（ksm_writeback_enabled 未开则任务内自动跳过）
+    "drain_ksm_writeback_every_2min": {
+        "task": "app.services.ksm.writeback_task.drain_ksm_writeback",
+        "schedule": crontab(minute="*/2"),
     },
 }

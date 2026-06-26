@@ -825,6 +825,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/drain-ksm-writeback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drain Ksm Writeback Endpoint
+         * @description Manually run one KSM outbox drain pass. Respects ksm_writeback_enabled /
+         *     _dry_run — a supervisor uses this to flush pending回写 on demand and see the
+         *     outcome, rather than waiting for the 2-min beat.
+         */
+        post: operations["drain_ksm_writeback_endpoint_api_supervisor_drain_ksm_writeback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/execute-dedup": {
         parameters: {
             query?: never;
@@ -1413,6 +1435,25 @@ export interface components {
         DismissSplitResponse: {
             /** Decision Id */
             decision_id: number;
+        };
+        /** DrainKsmWritebackResponse */
+        DrainKsmWritebackResponse: {
+            /** Deferred */
+            deferred: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Errors */
+            errors: string[];
+            /** Failed */
+            failed: number;
+            /** Scanned */
+            scanned: number;
+            /** Sent */
+            sent: number;
+            /** Skipped */
+            skipped: number;
         };
         /** EditBody */
         EditBody: {
@@ -4257,6 +4298,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drain_ksm_writeback_endpoint_api_supervisor_drain_ksm_writeback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainKsmWritebackResponse"];
                 };
             };
         };

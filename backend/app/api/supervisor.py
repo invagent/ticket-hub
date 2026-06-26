@@ -52,6 +52,8 @@ from app.services.hub_issues.creator import (
     ensure_hub_issue_for_ticket,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
+from app.services.ksm.notice_store import NoticeStore
+from app.services.ksm.writeback import drain_ksm_outbox
 from app.services.supervisor.config_warnings import get_config_warnings
 from app.services.supervisor.relink import (
     HubIssueNotFoundError,
@@ -738,4 +740,54 @@ def revert_split_endpoint(
         decision_id=result.decision_id,
         parent_ticket_id=result.parent_ticket_id,
         deleted_child_ids=result.deleted_child_ids,
+    )
+
+
+# ---- KSM 回写 drain (D4 第②段) ---------------------------------------------
+
+
+class DrainKsmWritebackResponse(BaseModel):
+    enabled: bool
+    dry_run: bool
+    scanned: int
+    sent: int
+    skipped: int
+    failed: int
+    deferred: int
+    errors: list[str]
+
+
+@router.post("/drain-ksm-writeback", response_model=DrainKsmWritebackResponse)
+def drain_ksm_writeback_endpoint(
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DrainKsmWritebackResponse:
+    """Manually run one KSM outbox drain pass. Respects ksm_writeback_enabled /
+    _dry_run — a supervisor uses this to flush pending回写 on demand and see the
+    outcome, rather than waiting for the 2-min beat."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    notice_store: NoticeStore | None = None
+    try:
+        notice_store = NoticeStore(redis_url=settings.redis_url)
+    except Exception:
+        logger.warning("ksm_writeback_manual_no_notice_store")
+    report = drain_ksm_outbox(db, notice_store=notice_store, settings=settings)
+    logger.info(
+        "supervisor_drain_ksm_writeback",
+        operator_user_id=user.user_id,
+        scanned=report.scanned,
+        sent=report.sent,
+        failed=report.failed,
+    )
+    return DrainKsmWritebackResponse(
+        enabled=settings.ksm_writeback_enabled,
+        dry_run=settings.ksm_writeback_dry_run,
+        scanned=report.scanned,
+        sent=report.sent,
+        skipped=report.skipped,
+        failed=report.failed,
+        deferred=report.deferred,
+        errors=report.errors[:20],
     )

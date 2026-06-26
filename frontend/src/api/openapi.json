@@ -673,6 +673,57 @@
         "title": "DismissSplitResponse",
         "type": "object"
       },
+      "DrainKsmWritebackResponse": {
+        "properties": {
+          "deferred": {
+            "title": "Deferred",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "dry_run",
+          "scanned",
+          "sent",
+          "skipped",
+          "failed",
+          "deferred",
+          "errors"
+        ],
+        "title": "DrainKsmWritebackResponse",
+        "type": "object"
+      },
       "EditBody": {
         "properties": {
           "content_md": {
@@ -6905,6 +6956,28 @@
           }
         },
         "summary": "Dismiss Split Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/drain-ksm-writeback": {
+      "post": {
+        "description": "Manually run one KSM outbox drain pass. Respects ksm_writeback_enabled /\n_dry_run — a supervisor uses this to flush pending回写 on demand and see the\noutcome, rather than waiting for the 2-min beat.",
+        "operationId": "drain_ksm_writeback_endpoint_api_supervisor_drain_ksm_writeback_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainKsmWritebackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Ksm Writeback Endpoint",
         "tags": [
           "supervisor"
         ]

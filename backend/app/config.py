@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     ksm_tenant_id: str = ""
     ksm_account_id: str = ""
     ksm_user: str = ""
+    # KSM 回写操作员身份（lock/handle/supply 都要带 account/accountName/accountNumber）
+    ksm_handler_name: str = ""  # 处理人姓名 → account + accountName
+    ksm_handler_number: str = ""  # 处理人工号 → accountNumber（飞书员工搜索接口获取）
+
+    # ---- D4 第②段: KSM 出站回写 sender（消费 sync_outbox） ----
+    # 默认全关 + dry_run：建好 + 部署后，先 dry_run 观察组装的 payload，
+    # 再翻 ksm_writeback_dry_run=false 真打 KSM。与 Phase 0 灰度同剧本。
+    ksm_writeback_enabled: bool = False  # 总开关：关时 drain 直接跳过
+    ksm_writeback_dry_run: bool = True  # 开 enabled 但 dry_run → 只组装+标 skipped，不真发
+    ksm_writeback_batch: int = 20  # 每轮 drain 处理的 pending 行数上限
+    ksm_writeback_max_attempts: int = 5  # 失败重试上限，超过标 failed 转人工
 
     # ---- Zhichi ----
     zhichi_appid: str = ""
