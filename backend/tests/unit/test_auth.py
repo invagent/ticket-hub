@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from jose import jwt
 
-from app.api.auth import issue_jwt
+from app.api.auth import _frontend_base_from_redirect, issue_jwt
 from app.config import get_settings
 
 
@@ -47,3 +47,10 @@ def test_callback_rejects_post(app_client) -> None:
     """Callback only accepts GET (browser redirect)."""
     resp = app_client.post("/api/auth/feishu/callback?code=anything")
     assert resp.status_code == 405
+
+
+def test_frontend_base_from_local_callback_uses_vite_origin() -> None:
+    assert (
+        _frontend_base_from_redirect("http://localhost:8080/api/auth/feishu/callback")
+        == "http://localhost:5173/"
+    )

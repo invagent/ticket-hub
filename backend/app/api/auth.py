@@ -44,6 +44,8 @@ def _frontend_base_from_redirect(redirect_uri: str) -> str:
     marker = "/api/auth/feishu/callback"
     if redirect_uri.endswith(marker):
         base = redirect_uri[: -len(marker)]
+        if base in {"http://localhost:8080", "http://127.0.0.1:8080"}:
+            return "http://localhost:5173/"
         return base + "/" if not base.endswith("/") else base
     # Fallback: same origin, root path
     return "/"
