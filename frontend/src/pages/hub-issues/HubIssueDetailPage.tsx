@@ -41,6 +41,7 @@ export function HubIssueDetailPage() {
           <Header data={detail.data} />
           <CommonMeta data={detail.data} />
           <TypeSpecificSection data={detail.data} />
+          <SupplyRequestSection data={detail.data} />
           <LinkedTickets tickets={detail.data.linked_tickets} />
           {detail.data.canonical_body && (
             <section className="space-y-1">
@@ -266,8 +267,8 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
             </button>
           </div>
           <p className="text-xs text-gray-500">
-            保存后回复会版本化存档，并级联到全部关联工单的缓存；待 D5
-            接通后自动回写 KSM/智齿。
+            保存后回复会版本化存档，并级联到全部关联工单的缓存 + 入队
+            sync_outbox；KSM 回写 sender 开关开启后自动回写（答复关单）。
           </p>
         </div>
       ) : data.reply_content ? (
@@ -284,6 +285,82 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
         </>
       ) : (
         <p className="text-sm text-gray-400">尚无回复</p>
+      )}
+      {notice && <p className="text-xs text-green-600">{notice}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </section>
+  );
+}
+
+function SupplyRequestSection({ data }: { data: HubIssueDetail }) {
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const request = useMutation({
+    mutationFn: () =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/request-supply",
+        { hub_issue_id: data.id },
+        { note },
+      ),
+    onSuccess: (r) => {
+      setError(null);
+      setEditing(false);
+      setNote("");
+      setNotice(
+        `已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`,
+      );
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-3">
+        <h2 className="text-sm font-semibold text-gray-500">请客户补料</h2>
+        {!editing && (
+          <button
+            onClick={() => {
+              setNotice(null);
+              setEditing(true);
+            }}
+            className="text-xs text-amber-600 hover:underline"
+          >
+            发起补料请求
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="space-y-2">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            placeholder="向客户说明需要补充的信息（如完整报错截图、操作步骤、单据编号…）"
+            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => request.mutate()}
+              disabled={request.isPending || !note.trim()}
+              className="px-3 py-1 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded disabled:opacity-50"
+            >
+              {request.isPending ? "提交中…" : "提交补料请求"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-700 rounded"
+            >
+              取消
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            为每个有源工单入队一行 supply 回写；KSM 回写 sender 开关开启后
+            自动调 supplyKsmOrder（补充资料）。
+          </p>
+        </div>
       )}
       {notice && <p className="text-xs text-green-600">{notice}</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
