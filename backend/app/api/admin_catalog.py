@@ -24,6 +24,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -128,13 +129,14 @@ def delete_module(
     module_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     row = db.get(Module, module_id)
     if row is None:
         raise HTTPException(status_code=404, detail="module not found")
     db.delete(row)
     db.commit()
     logger.info("admin_module_deleted", id=module_id, by=admin.user_id)
+    return Response(status_code=204)
 
 
 # ---- features -----------------------------------------------------------
@@ -177,10 +179,11 @@ def delete_feature(
     feature_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     row = db.get(Feature, feature_id)
     if row is None:
         raise HTTPException(status_code=404, detail="feature not found")
     db.delete(row)
     db.commit()
     logger.info("admin_feature_deleted", id=feature_id, by=admin.user_id)
+    return Response(status_code=204)

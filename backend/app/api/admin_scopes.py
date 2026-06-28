@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -131,13 +132,14 @@ def delete_module(
     scope_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     repo = AssignmentScopeAdminRepository(db)
     deleted = repo.delete_module(scope_id=scope_id, changed_by=admin.user_id)
     if deleted is None:
         raise HTTPException(status_code=404, detail="module scope not found")
     db.commit()
     logger.info("admin_scope_module_deleted", scope_id=scope_id, by=admin.user_id)
+    return Response(status_code=204)
 
 
 # ---- features ------------------------------------------------------------
@@ -180,13 +182,14 @@ def delete_feature(
     scope_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     repo = AssignmentScopeAdminRepository(db)
     deleted = repo.delete_feature(scope_id=scope_id, changed_by=admin.user_id)
     if deleted is None:
         raise HTTPException(status_code=404, detail="feature scope not found")
     db.commit()
     logger.info("admin_scope_feature_deleted", scope_id=scope_id, by=admin.user_id)
+    return Response(status_code=204)
 
 
 # ---- history audit -------------------------------------------------------

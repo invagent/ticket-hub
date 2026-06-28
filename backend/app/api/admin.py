@@ -9,6 +9,7 @@ D2-G2: product_lines POST + DELETE so admin can add/remove product_lines
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -115,7 +116,7 @@ def delete_product_line(
     code: str,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     """Hard delete. Refuses if the product_line still has modules registered
     (catalog FK) — admin must clean up first to prevent orphaned scopes /
     tickets pointing at a vanished product_line."""
@@ -143,6 +144,7 @@ def delete_product_line(
             ),
         ) from e
     logger.info("admin_product_line_deleted", code=code, by=admin.user_id)
+    return Response(status_code=204)
 
 
 @router.patch("/product-lines/{code}", response_model=ProductLineOut)

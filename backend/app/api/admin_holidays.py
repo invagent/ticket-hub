@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -80,9 +81,10 @@ def delete_holiday(
     holiday_date: date,
     _admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     row = db.get(Holiday, holiday_date)
     if row is None:
         raise HTTPException(status_code=404, detail="holiday not found")
     db.delete(row)
     db.commit()
+    return Response(status_code=204)

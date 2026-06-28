@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -460,7 +461,7 @@ def delete_user(
     user_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     if user_id == admin.user_id:
         raise HTTPException(status_code=400, detail="cannot soft-delete yourself")
     repo = UserRepository(db)
@@ -469,6 +470,7 @@ def delete_user(
         raise HTTPException(status_code=404, detail="user not found")
     db.commit()
     logger.info("admin_user_soft_deleted", target_user_id=user_id, by=admin.user_id)
+    return Response(status_code=204)
 
 
 @router.post("/{user_id}/revive", response_model=UserOut)
@@ -529,11 +531,12 @@ def clear_supervisor(
     user_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     if not UserSupervisorRepository(db).clear(user_id):
         raise HTTPException(status_code=404, detail="no supervisor relationship to clear")
     db.commit()
     logger.info("admin_user_supervisor_cleared", target_user_id=user_id, by=admin.user_id)
+    return Response(status_code=204)
 
 
 # ---- partners --------------------------------------------------------
@@ -581,7 +584,7 @@ def remove_partner(
     partner_id: int,
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
-) -> None:
+) -> Response:
     repo = UserPartnerRepository(db)
     if not repo.remove_pair(user_id=user_id, partner_id=partner_id):
         raise HTTPException(status_code=404, detail="partner pair not found")
@@ -592,3 +595,4 @@ def remove_partner(
         partner_id=partner_id,
         by=admin.user_id,
     )
+    return Response(status_code=204)
