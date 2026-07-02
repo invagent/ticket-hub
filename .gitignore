@@ -33,6 +33,7 @@ dist/
 # Local secrets (NEVER commit) — wildcard catches typos like ".env（"
 .env*
 !.env.example
+!deploy/.env.sit.example
 *.pem
 *.key
 

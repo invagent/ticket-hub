@@ -1,0 +1,39 @@
+# hub-issue SIT — git-driven docker deploy (ticket-hub backend stack).
+#
+# PG + Redis are REMOTE (see .env: PG_DSN / REDIS_URL). No local pg/redis here.
+# Code is baked into the image (no volume mount) — update flow:
+#     git pull && docker compose -f deploy/docker-compose.sit.yml up -d --build
+#
+# .env lives next to this file (deploy/.env on the server) — gitignored, holds
+# secrets + remote DB/Redis targets. Copy deploy/.env.sit.example to start.
+name: hub-issue-sit
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    image: hub-issue-sit-backend:latest
+    container_name: hub-issue-sit-backend
+    env_file: .env
+    ports:
+      - "9095:8080"
+    restart: unless-stopped
+
+  worker:
+    image: hub-issue-sit-backend:latest
+    container_name: hub-issue-sit-worker
+    command: celery -A app.celery_app worker -l info -Q celery
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  worker-beat:
+    image: hub-issue-sit-backend:latest
+    container_name: hub-issue-sit-worker-beat
+    command: celery -A app.celery_app beat -l info
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      - backend

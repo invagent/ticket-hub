@@ -1,0 +1,16 @@
+# Keep the docker build context lean. deploy/backend.Dockerfile only COPYs
+# backend/, so exclude everything heavy/irrelevant and backend's local caches.
+.git
+sample/
+docs/
+frontend/
+cli/
+scripts/
+**/.venv
+**/__pycache__
+**/*.pyc
+**/htmlcov
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+backend/.env
