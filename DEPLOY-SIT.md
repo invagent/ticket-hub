@@ -1,110 +1,78 @@
-# SIT 环境部署手册
+# SIT 环境部署手册（git 驱动 docker 部署）
+
+> 2026-07-03 起 SIT 改为**从 GitHub git 部署**：代码烘进镜像，`git pull && up --build`
+> 即更新。详细产物与回滚见 [`deploy/README.md`](deploy/README.md)。
 
 ## 环境信息
 
 | 项目 | 值 |
 |---|---|
-| 服务器 | `root@sit`（43.139.250.182，Ubuntu 22.04）|
+| 服务器 | `root@43.139.250.182`（Ubuntu 22.04）|
 | 访问地址 | http://43.139.250.182/hub-issue/ |
-| 后端端口 | 9095 |
-| 项目目录 | `/data/hub-issue/` |
-| 数据库 | `106.55.57.40:5432` / `ticket_hub_sit` / postgres:difyai123456 |
-| Redis | `106.55.57.40:6379/1` 密码 kingdee123 |
+| 后端端口 | 9095（nginx `/hub-issue/` 反代）|
+| git 部署根 | `/data/hub-issue/`（`invagent/ticket-hub` 的克隆）|
+| 配置 | `/data/hub-issue/deploy/.env`（**不提交 git**；含 PG/Redis 口令 + 各密钥）|
+| 数据库 | `106.55.57.40:5432 / ticket_hub_sit`（远程托管，口令见 `deploy/.env`）|
+| Redis | `106.55.57.40:6379/1`（远程；口令见 `deploy/.env`）|
+| GitHub 鉴权 | 服务器只读 deploy key（`~/.ssh/ticket-hub-deploy`，host 别名 `github-ticket-hub`）|
 
-## 常用部署命令
+## 容器（`deploy/docker-compose.sit.yml`）
 
-### 改代码后快速部署（不改依赖）
-
-```bash
-# 1. 同步 backend 代码
-rsync -av --delete backend/ root@sit:/data/hub-issue/backend/ \
-  --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
-  --exclude='.env' --exclude='htmlcov' --exclude='.pytest_cache'
-
-# 2. 重启服务
-ssh root@sit "cd /data/hub-issue && docker compose restart backend worker worker-beat"
-```
-
-### 改依赖后重建镜像
-
-```bash
-# 1. 同步代码（含 pyproject.toml）
-rsync -av --delete backend/ root@sit:/data/hub-issue/backend/ \
-  --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
-  --exclude='.env'
-
-# 2. 重建镜像并重启
-ssh root@sit "cd /data/hub-issue && docker compose build backend && docker compose up -d --force-recreate"
-```
-
-### 更新前端
-
-```bash
-# 1. 本地 build
-cd frontend && VITE_PUBLIC_BASE=/hub-issue/ VITE_API_BASE=/hub-issue npm run build
-
-# 2. 同步 dist
-rsync -av --delete frontend/dist/ root@sit:/data/hub-issue/frontend-dist/
-```
-
-### 执行数据库迁移
-
-```bash
-ssh root@sit "cd /data/hub-issue && docker compose run --rm backend alembic upgrade head"
-```
-
-### 查看日志
-
-```bash
-ssh root@sit "cd /data/hub-issue && docker compose logs backend --tail=50 -f"
-ssh root@sit "cd /data/hub-issue && docker compose logs worker --tail=50 -f"
-```
-
-### 查看容器状态
-
-```bash
-ssh root@sit "cd /data/hub-issue && docker compose ps"
-```
-
-## 服务器目录结构
-
-```
-/data/hub-issue/
-├── backend/          ← 后端代码（volume 挂载到容器 /app）
-├── frontend-dist/    ← 前端静态文件（nginx 直接服务）
-├── docker-compose.yml
-└── .env              ← 生产配置（不提交 git）
-```
-
-## Nginx 配置
-
-配置文件：`/usr/local/nginx/conf/conf.d/hub-issue.conf`
-
-```bash
-# 检查配置
-ssh root@sit "/usr/local/nginx/sbin/nginx -t"
-# 重载配置
-ssh root@sit "/usr/local/nginx/sbin/nginx -s reload"
-```
-
-## 容器列表
-
-| 容器名 | 说明 |
+| 容器 | 说明 |
 |---|---|
-| hub-issue-sit-backend | FastAPI 后端（:9095）|
+| hub-issue-sit-backend | FastAPI 后端（9095:8080）|
 | hub-issue-sit-worker | Celery worker |
 | hub-issue-sit-worker-beat | Celery beat 定时任务 |
-| hub-issue-sit-redis | Redis（内部使用）|
 
-## .env 关键配置
+> PG / Redis 是**远程托管**，不在 compose 内；本地无 pg/redis 容器。
 
-修改 .env 后需 `--force-recreate` 重建容器：
+## 日常更新
 
 ```bash
-ssh root@sit "cd /data/hub-issue && docker compose up -d --force-recreate"
+ssh root@43.139.250.182
+cd /data/hub-issue && git pull
+
+# 后端/worker/beat（改代码必须 --build，代码烘进镜像不再挂载）
+docker compose -f deploy/docker-compose.sit.yml up -d --build
+
+# 有新迁移时（作用于远程 ticket_hub_sit）
+docker compose -f deploy/docker-compose.sit.yml run --rm backend alembic upgrade head
+
+# 前端有改动时（docker 内 node 构建 → nginx 静态目录，宿主免装 node）
+deploy/build-frontend.sh /data/hub-issue/frontend-dist
 ```
 
-主要配置项位于 `/data/hub-issue/.env`，飞书回调地址：
+## 校验 / 日志 / 状态
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9095/health        # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1/hub-issue/health   # 200
+cd /data/hub-issue && docker compose -f deploy/docker-compose.sit.yml ps
+docker compose -f deploy/docker-compose.sit.yml logs backend --tail=50 -f
 ```
-FEISHU_SSO_REDIRECT_URI=http://43.139.250.182/hub-issue/api/auth/feishu/callback
+
+## Nginx
+
+配置 `/usr/local/nginx/conf/conf.d/hub-issue.conf`（仓库副本：`deploy/nginx/hub-issue.conf`）。
+前端静态 `alias /data/hub-issue/frontend-dist/`；构建时 `VITE_PUBLIC_BASE=/hub-issue/`。
+
+```bash
+/usr/local/nginx/sbin/nginx -t && /usr/local/nginx/sbin/nginx -s reload
 ```
+
+## .env
+
+改 `deploy/.env` 后重启即可生效：
+
+```bash
+cd /data/hub-issue && docker compose -f deploy/docker-compose.sit.yml up -d
+```
+
+- 口令/密钥一律放 `deploy/.env`（gitignored），**不要写进本文档**。
+- SIT 现状：`KSM_*` 三步鉴权 + `DASHSCOPE_API_KEY`/`GLM_API_KEY` 留空 → KSM 接入与 AI 分类暂不可用，补齐对应 key 即启用。
+- 飞书回调：`FEISHU_SSO_REDIRECT_URI=http://43.139.250.182/hub-issue/api/auth/feishu/callback`
+
+## 回滚
+
+数据在远程 PG，重建镜像不影响。需回退某次代码：`git -C /data/hub-issue checkout <sha>`
+后 `docker compose -f deploy/docker-compose.sit.yml up -d --build`。
