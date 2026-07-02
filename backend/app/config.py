@@ -121,6 +121,15 @@ class Settings(BaseSettings):
     escalation_auto_enabled: bool = False
     escalation_auto_confidence: float = 0.85
 
+    # ---- Phase 1 知识反哺闭环：AI 客服 open-api（skill-management.json）----
+    # 主管从 escalation 工单反思 → 改 AI 客服 skill draft → replay 试跑对比 → 发布。
+    # 默认关；配好 base_url + appid/app_key 后开。见 adapters/ai_cs/。
+    knowledge_feedback_enabled: bool = False
+    ai_cs_base_url: str = "http://localhost:9090"
+    ai_cs_app_id: str = ""  # AI 客服 open-api appid（沿用 sample AGENT_APPID 语义）
+    ai_cs_app_key: str = ""  # 签名密钥 app_key（MD5(appid+create_time+app_key)）
+    ai_cs_managed_skills: str = "customer-service,customer-service-feishu"
+
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in

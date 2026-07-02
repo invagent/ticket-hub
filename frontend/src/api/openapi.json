@@ -20,6 +20,32 @@
         "title": "AckResponse",
         "type": "object"
       },
+      "AiCsStatusResponse": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "managed_skills": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Managed Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "configured",
+          "managed_skills"
+        ],
+        "title": "AiCsStatusResponse",
+        "type": "object"
+      },
       "AuthorReplyBody": {
         "properties": {
           "content": {
@@ -196,6 +222,41 @@
           "notifications_pending"
         ],
         "title": "CountsOut",
+        "type": "object"
+      },
+      "CreateDraftBody": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileModel"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "CreateDraftBody",
+        "type": "object"
+      },
+      "CreateDraftResponse": {
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "CreateDraftResponse",
         "type": "object"
       },
       "CreateHubIssueBody": {
@@ -759,6 +820,50 @@
           "version"
         ],
         "title": "EditResponse",
+        "type": "object"
+      },
+      "EscalationContextResponse": {
+        "properties": {
+          "ai_answer": {
+            "default": "",
+            "title": "Ai Answer",
+            "type": "string"
+          },
+          "dissatisfaction": {
+            "default": "",
+            "title": "Dissatisfaction",
+            "type": "string"
+          },
+          "is_escalation": {
+            "title": "Is Escalation",
+            "type": "boolean"
+          },
+          "original_question": {
+            "default": "",
+            "title": "Original Question",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "is_escalation",
+          "ticket_id"
+        ],
+        "title": "EscalationContextResponse",
         "type": "object"
       },
       "ExecuteDedupBody": {
@@ -2676,6 +2781,60 @@
         "title": "ProductLinePatch",
         "type": "object"
       },
+      "PublishBody": {
+        "properties": {
+          "skill_name": {
+            "minLength": 1,
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "ticket_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Id"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "version"
+        ],
+        "title": "PublishBody",
+        "type": "object"
+      },
+      "PublishResponse": {
+        "properties": {
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "version",
+          "published"
+        ],
+        "title": "PublishResponse",
+        "type": "object"
+      },
       "ReadinessResponse": {
         "properties": {
           "checks": {
@@ -2780,6 +2939,96 @@
           "new_history_id"
         ],
         "title": "RelinkResponse",
+        "type": "object"
+      },
+      "ReplayBody": {
+        "properties": {
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill"
+          },
+          "skill_draft_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Draft Version"
+          },
+          "use_latest_knowledge": {
+            "default": true,
+            "title": "Use Latest Knowledge",
+            "type": "boolean"
+          }
+        },
+        "title": "ReplayBody",
+        "type": "object"
+      },
+      "ReplayResponse": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "cited_knowledge": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Cited Knowledge",
+            "type": "array"
+          },
+          "skills_used": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills Used",
+            "type": "array"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "cited_knowledge",
+          "skills_used",
+          "trace_id"
+        ],
+        "title": "ReplayResponse",
         "type": "object"
       },
       "RepushLinearBody": {
@@ -3211,6 +3460,79 @@
         "title": "SkillDetail",
         "type": "object"
       },
+      "SkillDetailModel": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/SkillVersionModel"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "published_files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileModel"
+            },
+            "title": "Published Files",
+            "type": "array"
+          },
+          "published_operator": {
+            "title": "Published Operator",
+            "type": "string"
+          },
+          "published_reason": {
+            "title": "Published Reason",
+            "type": "string"
+          },
+          "published_version": {
+            "title": "Published Version",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "published_version",
+          "published_operator",
+          "published_reason",
+          "published_files",
+          "history"
+        ],
+        "title": "SkillDetailModel",
+        "type": "object"
+      },
+      "SkillFileModel": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "filepath": {
+            "title": "Filepath",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "filepath"
+        ],
+        "title": "SkillFileModel",
+        "type": "object"
+      },
       "SkillSummary": {
         "properties": {
           "description": {
@@ -3274,6 +3596,75 @@
           "updated_at"
         ],
         "title": "SkillSummary",
+        "type": "object"
+      },
+      "SkillSummaryModel": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileModel"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "operator": {
+            "title": "Operator",
+            "type": "string"
+          },
+          "published_version": {
+            "title": "Published Version",
+            "type": "string"
+          },
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "published_version",
+          "operator",
+          "updated_at",
+          "files"
+        ],
+        "title": "SkillSummaryModel",
+        "type": "object"
+      },
+      "SkillVersionModel": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "operator": {
+            "title": "Operator",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "status",
+          "operator",
+          "reason",
+          "created_at"
+        ],
+        "title": "SkillVersionModel",
         "type": "object"
       },
       "SourceOut": {
@@ -6862,6 +7253,232 @@
         ]
       }
     },
+    "/api/supervisor/ai-cs/publish": {
+      "post": {
+        "description": "Publish a skill draft to production. If ticket_id is given, record a\nknowledge-revision audit row on that escalation ticket.",
+        "operationId": "ai_cs_publish_endpoint_api_supervisor_ai_cs_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Cs Publish Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/ai-cs/replay": {
+      "post": {
+        "description": "Re-answer a question with the current or a draft skill + latest\nknowledge — the reflect/test button. Pass skill_draft_version to test an\nunpublished draft without touching production.",
+        "operationId": "ai_cs_replay_endpoint_api_supervisor_ai_cs_replay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Cs Replay Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/ai-cs/skills": {
+      "get": {
+        "operationId": "ai_cs_list_skills_endpoint_api_supervisor_ai_cs_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillSummaryModel"
+                  },
+                  "title": "Response Ai Cs List Skills Endpoint Api Supervisor Ai Cs Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ai Cs List Skills Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/ai-cs/skills/{name}": {
+      "get": {
+        "operationId": "ai_cs_get_skill_endpoint_api_supervisor_ai_cs_skills__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Cs Get Skill Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/ai-cs/skills/{name}/drafts": {
+      "post": {
+        "description": "Create a skill draft off the current published version. Empty files\ninherits published; non-empty upserts. Draft is NOT live until published.",
+        "operationId": "ai_cs_create_draft_endpoint_api_supervisor_ai_cs_skills__name__drafts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDraftBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Cs Create Draft Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/ai-cs/status": {
+      "get": {
+        "description": "Whether the knowledge-feedback feature is on + configured — the UI hides\nthe reflect panel when off.",
+        "operationId": "ai_cs_status_endpoint_api_supervisor_ai_cs_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCsStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ai Cs Status Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/config-warnings": {
       "get": {
         "operationId": "list_config_warnings_api_supervisor_config_warnings_get",
@@ -7492,6 +8109,49 @@
           }
         },
         "summary": "List Split Proposals",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/tickets/{ticket_id}/escalation-context": {
+      "get": {
+        "description": "The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so\nthe reflect UI can seed the comparison. is_escalation=false for non-ai_cs\ntickets (UI hides the panel).",
+        "operationId": "ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscalationContextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Cs Escalation Context Endpoint",
         "tags": [
           "supervisor"
         ]

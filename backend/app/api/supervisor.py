@@ -15,6 +15,13 @@
   POST /api/supervisor/dismiss-dedup               — decline a dedup proposal
   GET  /api/supervisor/pending-hub-issues          — Linear push blocked, awaiting human
   POST /api/supervisor/repush-linear               — retry a blocked Linear push
+  GET  /api/supervisor/ai-cs/status                — knowledge-feedback feature on/configured
+  GET  /api/supervisor/ai-cs/skills                — list managed AI 客服 skills
+  GET  /api/supervisor/ai-cs/skills/{name}         — skill published files + history
+  POST /api/supervisor/ai-cs/skills/{name}/drafts  — create a skill revision draft
+  POST /api/supervisor/ai-cs/replay                — re-answer with current/draft skill (test)
+  POST /api/supervisor/ai-cs/publish               — publish a skill draft to production
+  GET  /api/supervisor/tickets/{id}/escalation-context — golden triple for reflect UI
 
 All endpoints require role IN ('supervisor', 'admin').
 """
@@ -28,11 +35,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from adapters.ai_cs import AiCsBusinessError, AiCsError
 from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.logging import get_logger
 from app.db import get_session
 from app.models import HubIssue, StatusHistory
 from app.repositories.notification_log import NotificationLogRepository
+from app.services import knowledge_feedback as kf
 from app.services.agents.classify import classify_ticket
 from app.services.agents.dedup_execute import (
     DedupExecuteError,
@@ -790,4 +799,321 @@ def drain_ksm_writeback_endpoint(
         failed=report.failed,
         deferred=report.deferred,
         errors=report.errors[:20],
+    )
+
+
+# ---- Phase 1 知识反哺闭环：AI 客服 skill 管理 + replay ----------------------
+#
+# 主管从 escalation 工单反思 → 改 AI 客服 skill draft → replay 试跑对比旧/新答复
+# → 满意则 publish。全部 require_supervisor，全部经 knowledge_feedback_enabled 门控。
+
+
+class AiCsStatusResponse(BaseModel):
+    enabled: bool
+    configured: bool  # appid/app_key 是否齐全
+    managed_skills: list[str]
+
+
+class SkillFileModel(BaseModel):
+    filename: str
+    filepath: str
+    content: str | None = None
+
+
+class SkillSummaryModel(BaseModel):
+    skill_name: str
+    published_version: str
+    operator: str
+    updated_at: str
+    files: list[SkillFileModel]
+
+
+class SkillVersionModel(BaseModel):
+    version: str
+    status: str
+    operator: str
+    reason: str
+    created_at: str
+
+
+class SkillDetailModel(BaseModel):
+    skill_name: str
+    published_version: str
+    published_operator: str
+    published_reason: str
+    published_files: list[SkillFileModel]
+    history: list[SkillVersionModel]
+
+
+class CreateDraftBody(BaseModel):
+    files: list[SkillFileModel] = Field(default_factory=list)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class CreateDraftResponse(BaseModel):
+    version: str
+
+
+class ReplayBody(BaseModel):
+    session_id: str | None = None
+    question: str | None = None
+    skill: str | None = None
+    skill_draft_version: str | None = None
+    use_latest_knowledge: bool = True
+
+
+class ReplayResponse(BaseModel):
+    answer: str
+    cited_knowledge: list[dict[str, Any]]
+    skills_used: list[str]
+    trace_id: str
+
+
+class PublishBody(BaseModel):
+    skill_name: str = Field(min_length=1)
+    version: str = Field(min_length=1)
+    # 若从某 escalation 工单发起，回填审计（工单 status_history 记录本次反哺发布）
+    ticket_id: int | None = None
+
+
+class PublishResponse(BaseModel):
+    skill_name: str
+    version: str
+    published: bool
+
+
+class EscalationContextResponse(BaseModel):
+    is_escalation: bool
+    ticket_id: int
+    session_id: str | None = None
+    original_question: str = ""
+    ai_answer: str = ""
+    dissatisfaction: str = ""
+
+
+def _ai_cs_http_error(e: AiCsError) -> HTTPException:
+    """Translate adapter exceptions to HTTP. Business (bad version / not
+    managed) → 400; network/auth/unavailable → 502."""
+    if isinstance(e, AiCsBusinessError):
+        return HTTPException(status_code=400, detail=str(e))
+    return HTTPException(status_code=502, detail=f"AI 客服 不可用：{e}")
+
+
+@router.get("/ai-cs/status", response_model=AiCsStatusResponse)
+def ai_cs_status_endpoint(
+    _user: AuthedUser = Depends(require_supervisor),
+) -> AiCsStatusResponse:
+    """Whether the knowledge-feedback feature is on + configured — the UI hides
+    the reflect panel when off."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    managed = [s.strip() for s in (settings.ai_cs_managed_skills or "").split(",") if s.strip()]
+    return AiCsStatusResponse(
+        enabled=bool(settings.knowledge_feedback_enabled),
+        configured=bool(settings.ai_cs_app_id and settings.ai_cs_app_key),
+        managed_skills=managed,
+    )
+
+
+@router.get("/ai-cs/skills", response_model=list[SkillSummaryModel])
+def ai_cs_list_skills_endpoint(
+    _user: AuthedUser = Depends(require_supervisor),
+) -> list[SkillSummaryModel]:
+    from app.config import get_settings
+
+    try:
+        client = kf.build_client(get_settings())
+    except kf.KnowledgeFeedbackDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
+        skills = client.list_skills()
+    except AiCsError as e:
+        raise _ai_cs_http_error(e) from e
+    finally:
+        client.close()
+    return [
+        SkillSummaryModel(
+            skill_name=s.skill_name,
+            published_version=s.published_version,
+            operator=s.operator,
+            updated_at=s.updated_at,
+            files=[SkillFileModel(filename=f.filename, filepath=f.filepath) for f in s.files],
+        )
+        for s in skills
+    ]
+
+
+@router.get("/ai-cs/skills/{name}", response_model=SkillDetailModel)
+def ai_cs_get_skill_endpoint(
+    name: str,
+    _user: AuthedUser = Depends(require_supervisor),
+) -> SkillDetailModel:
+    from app.config import get_settings
+
+    try:
+        client = kf.build_client(get_settings())
+    except kf.KnowledgeFeedbackDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
+        d = client.get_skill(name)
+    except AiCsError as e:
+        raise _ai_cs_http_error(e) from e
+    finally:
+        client.close()
+    return SkillDetailModel(
+        skill_name=d.skill_name,
+        published_version=d.published_version,
+        published_operator=d.published_operator,
+        published_reason=d.published_reason,
+        published_files=[
+            SkillFileModel(filename=f.filename, filepath=f.filepath, content=f.content)
+            for f in d.published_files
+        ],
+        history=[
+            SkillVersionModel(
+                version=v.version,
+                status=v.status,
+                operator=v.operator,
+                reason=v.reason,
+                created_at=v.created_at,
+            )
+            for v in d.history
+        ],
+    )
+
+
+@router.post("/ai-cs/skills/{name}/drafts", response_model=CreateDraftResponse)
+def ai_cs_create_draft_endpoint(
+    name: str,
+    body: CreateDraftBody,
+    user: AuthedUser = Depends(require_supervisor),
+) -> CreateDraftResponse:
+    """Create a skill draft off the current published version. Empty files
+    inherits published; non-empty upserts. Draft is NOT live until published."""
+    from app.config import get_settings
+
+    try:
+        client = kf.build_client(get_settings())
+    except kf.KnowledgeFeedbackDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    files = [f.model_dump(exclude_none=True) for f in body.files]
+    try:
+        version = client.create_draft(
+            name, files=files, operator=f"user:{user.name}", reason=body.reason
+        )
+    except AiCsError as e:
+        raise _ai_cs_http_error(e) from e
+    finally:
+        client.close()
+    logger.info(
+        "knowledge_feedback_create_draft",
+        skill=name,
+        version=version,
+        operator_user_id=user.user_id,
+    )
+    return CreateDraftResponse(version=version)
+
+
+@router.post("/ai-cs/replay", response_model=ReplayResponse)
+def ai_cs_replay_endpoint(
+    body: ReplayBody,
+    user: AuthedUser = Depends(require_supervisor),
+) -> ReplayResponse:
+    """Re-answer a question with the current or a draft skill + latest
+    knowledge — the reflect/test button. Pass skill_draft_version to test an
+    unpublished draft without touching production."""
+    if not body.session_id and not body.question:
+        raise HTTPException(status_code=422, detail="必须提供 session_id 或 question")
+    from app.config import get_settings
+
+    try:
+        client = kf.build_client(get_settings())
+    except kf.KnowledgeFeedbackDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
+        result = client.replay(
+            session_id=body.session_id,
+            question=body.question,
+            skill=body.skill,
+            use_latest_knowledge=body.use_latest_knowledge,
+            skill_draft_version=body.skill_draft_version,
+        )
+    except AiCsError as e:
+        raise _ai_cs_http_error(e) from e
+    finally:
+        client.close()
+    logger.info(
+        "knowledge_feedback_replay",
+        skill=body.skill,
+        draft=body.skill_draft_version,
+        trace_id=result.trace_id,
+        operator_user_id=user.user_id,
+    )
+    return ReplayResponse(
+        answer=result.answer,
+        cited_knowledge=result.cited_knowledge,
+        skills_used=result.skills_used,
+        trace_id=result.trace_id,
+    )
+
+
+@router.post("/ai-cs/publish", response_model=PublishResponse)
+def ai_cs_publish_endpoint(
+    body: PublishBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> PublishResponse:
+    """Publish a skill draft to production. If ticket_id is given, record a
+    knowledge-revision audit row on that escalation ticket."""
+    from app.config import get_settings
+
+    try:
+        client = kf.build_client(get_settings())
+    except kf.KnowledgeFeedbackDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
+        client.publish_draft(body.skill_name, body.version)
+    except AiCsError as e:
+        raise _ai_cs_http_error(e) from e
+    finally:
+        client.close()
+    if body.ticket_id is not None:
+        kf.record_publish_audit(
+            db,
+            ticket_id=body.ticket_id,
+            skill_name=body.skill_name,
+            version=body.version,
+            operator=f"user:{user.name}",
+        )
+        db.commit()
+    logger.info(
+        "knowledge_feedback_publish",
+        skill=body.skill_name,
+        version=body.version,
+        ticket_id=body.ticket_id,
+        operator_user_id=user.user_id,
+    )
+    return PublishResponse(skill_name=body.skill_name, version=body.version, published=True)
+
+
+@router.get("/tickets/{ticket_id}/escalation-context", response_model=EscalationContextResponse)
+def ai_cs_escalation_context_endpoint(
+    ticket_id: int,
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> EscalationContextResponse:
+    """The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so
+    the reflect UI can seed the comparison. is_escalation=false for non-ai_cs
+    tickets (UI hides the panel)."""
+    ctx = kf.load_escalation_context(db, ticket_id)
+    if ctx is None:
+        return EscalationContextResponse(is_escalation=False, ticket_id=ticket_id)
+    return EscalationContextResponse(
+        is_escalation=True,
+        ticket_id=ctx.ticket_id,
+        session_id=ctx.session_id,
+        original_question=ctx.original_question,
+        ai_answer=ctx.ai_answer,
+        dissatisfaction=ctx.dissatisfaction,
     )

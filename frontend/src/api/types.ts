@@ -749,6 +749,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/ai-cs/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Cs Publish Endpoint
+         * @description Publish a skill draft to production. If ticket_id is given, record a
+         *     knowledge-revision audit row on that escalation ticket.
+         */
+        post: operations["ai_cs_publish_endpoint_api_supervisor_ai_cs_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/ai-cs/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Cs Replay Endpoint
+         * @description Re-answer a question with the current or a draft skill + latest
+         *     knowledge — the reflect/test button. Pass skill_draft_version to test an
+         *     unpublished draft without touching production.
+         */
+        post: operations["ai_cs_replay_endpoint_api_supervisor_ai_cs_replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/ai-cs/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Cs List Skills Endpoint */
+        get: operations["ai_cs_list_skills_endpoint_api_supervisor_ai_cs_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/ai-cs/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Cs Get Skill Endpoint */
+        get: operations["ai_cs_get_skill_endpoint_api_supervisor_ai_cs_skills__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/ai-cs/skills/{name}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Cs Create Draft Endpoint
+         * @description Create a skill draft off the current published version. Empty files
+         *     inherits published; non-empty upserts. Draft is NOT live until published.
+         */
+        post: operations["ai_cs_create_draft_endpoint_api_supervisor_ai_cs_skills__name__drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/ai-cs/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Cs Status Endpoint
+         * @description Whether the knowledge-feedback feature is on + configured — the UI hides
+         *     the reflect panel when off.
+         */
+        get: operations["ai_cs_status_endpoint_api_supervisor_ai_cs_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/config-warnings": {
         parameters: {
             query?: never;
@@ -1063,6 +1182,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/tickets/{ticket_id}/escalation-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Cs Escalation Context Endpoint
+         * @description The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so
+         *     the reflect UI can seed the comparison. is_escalation=false for non-ai_cs
+         *     tickets (UI hides the panel).
+         */
+        get: operations["ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets": {
         parameters: {
             query?: never;
@@ -1251,6 +1392,15 @@ export interface components {
             /** Notification Id */
             notification_id: number;
         };
+        /** AiCsStatusResponse */
+        AiCsStatusResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Managed Skills */
+            managed_skills: string[];
+        };
         /** AuthorReplyBody */
         AuthorReplyBody: {
             /** Content */
@@ -1310,6 +1460,18 @@ export interface components {
             tickets_total: number;
             /** Users Total */
             users_total: number;
+        };
+        /** CreateDraftBody */
+        CreateDraftBody: {
+            /** Files */
+            files?: components["schemas"]["SkillFileModel"][];
+            /** Reason */
+            reason: string;
+        };
+        /** CreateDraftResponse */
+        CreateDraftResponse: {
+            /** Version */
+            version: string;
         };
         /** CreateHubIssueBody */
         CreateHubIssueBody: {
@@ -1492,6 +1654,30 @@ export interface components {
             name: string;
             /** Version */
             version: number;
+        };
+        /** EscalationContextResponse */
+        EscalationContextResponse: {
+            /**
+             * Ai Answer
+             * @default
+             */
+            ai_answer: string;
+            /**
+             * Dissatisfaction
+             * @default
+             */
+            dissatisfaction: string;
+            /** Is Escalation */
+            is_escalation: boolean;
+            /**
+             * Original Question
+             * @default
+             */
+            original_question: string;
+            /** Session Id */
+            session_id?: string | null;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** ExecuteDedupBody */
         ExecuteDedupBody: {
@@ -2119,6 +2305,24 @@ export interface components {
             /** Sla Resolve Hours */
             sla_resolve_hours?: number | null;
         };
+        /** PublishBody */
+        PublishBody: {
+            /** Skill Name */
+            skill_name: string;
+            /** Ticket Id */
+            ticket_id?: number | null;
+            /** Version */
+            version: string;
+        };
+        /** PublishResponse */
+        PublishResponse: {
+            /** Published */
+            published: boolean;
+            /** Skill Name */
+            skill_name: string;
+            /** Version */
+            version: string;
+        };
         /** ReadinessResponse */
         ReadinessResponse: {
             /** Checks */
@@ -2157,6 +2361,35 @@ export interface components {
             old_hub_issue_id: number | null;
             /** Ticket Id */
             ticket_id: number;
+        };
+        /** ReplayBody */
+        ReplayBody: {
+            /** Question */
+            question?: string | null;
+            /** Session Id */
+            session_id?: string | null;
+            /** Skill */
+            skill?: string | null;
+            /** Skill Draft Version */
+            skill_draft_version?: string | null;
+            /**
+             * Use Latest Knowledge
+             * @default true
+             */
+            use_latest_knowledge: boolean;
+        };
+        /** ReplayResponse */
+        ReplayResponse: {
+            /** Answer */
+            answer: string;
+            /** Cited Knowledge */
+            cited_knowledge: {
+                [key: string]: unknown;
+            }[];
+            /** Skills Used */
+            skills_used: string[];
+            /** Trace Id */
+            trace_id: string;
         };
         /** RepushLinearBody */
         RepushLinearBody: {
@@ -2296,6 +2529,30 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** SkillDetailModel */
+        SkillDetailModel: {
+            /** History */
+            history: components["schemas"]["SkillVersionModel"][];
+            /** Published Files */
+            published_files: components["schemas"]["SkillFileModel"][];
+            /** Published Operator */
+            published_operator: string;
+            /** Published Reason */
+            published_reason: string;
+            /** Published Version */
+            published_version: string;
+            /** Skill Name */
+            skill_name: string;
+        };
+        /** SkillFileModel */
+        SkillFileModel: {
+            /** Content */
+            content?: string | null;
+            /** Filename */
+            filename: string;
+            /** Filepath */
+            filepath: string;
+        };
         /** SkillSummary */
         SkillSummary: {
             /** Description */
@@ -2312,6 +2569,32 @@ export interface components {
             updated_by: string | null;
             /** Version */
             version: number;
+        };
+        /** SkillSummaryModel */
+        SkillSummaryModel: {
+            /** Files */
+            files: components["schemas"]["SkillFileModel"][];
+            /** Operator */
+            operator: string;
+            /** Published Version */
+            published_version: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** SkillVersionModel */
+        SkillVersionModel: {
+            /** Created At */
+            created_at: string;
+            /** Operator */
+            operator: string;
+            /** Reason */
+            reason: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: string;
         };
         /** SourceOut */
         SourceOut: {
@@ -4222,6 +4505,178 @@ export interface operations {
             };
         };
     };
+    ai_cs_publish_endpoint_api_supervisor_ai_cs_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_cs_replay_endpoint_api_supervisor_ai_cs_replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplayBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_cs_list_skills_endpoint_api_supervisor_ai_cs_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSummaryModel"][];
+                };
+            };
+        };
+    };
+    ai_cs_get_skill_endpoint_api_supervisor_ai_cs_skills__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_cs_create_draft_endpoint_api_supervisor_ai_cs_skills__name__drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDraftBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_cs_status_endpoint_api_supervisor_ai_cs_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCsStatusResponse"];
+                };
+            };
+        };
+    };
     list_config_warnings_api_supervisor_config_warnings_get: {
         parameters: {
             query?: never;
@@ -4701,6 +5156,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SplitProposalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationContextResponse"];
                 };
             };
             /** @description Validation Error */
