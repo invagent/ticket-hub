@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getByPath } from "@/api/client";
 import type { paths } from "@/api/types";
+import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -120,6 +121,9 @@ export function TicketDetailPage() {
               </pre>
             </section>
           )}
+
+          {/* Phase 1 知识反哺：仅 ai_cs escalation 工单 + 主管可见（组件内部自判） */}
+          <KnowledgeReflectPanel ticketId={id} />
 
           <section className="space-y-2">
             <h2 className="text-sm font-semibold text-gray-500">变更时间线</h2>
