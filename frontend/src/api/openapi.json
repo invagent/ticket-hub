@@ -829,6 +829,22 @@
             "title": "Ai Answer",
             "type": "string"
           },
+          "cited_knowledge": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Cited Knowledge",
+            "type": "array"
+          },
+          "conversation": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Conversation",
+            "type": "array"
+          },
           "dissatisfaction": {
             "default": "",
             "title": "Dissatisfaction",
@@ -853,6 +869,13 @@
               }
             ],
             "title": "Session Id"
+          },
+          "skills_used": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills Used",
+            "type": "array"
           },
           "ticket_id": {
             "title": "Ticket Id",

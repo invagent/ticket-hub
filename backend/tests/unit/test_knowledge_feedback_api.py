@@ -295,6 +295,9 @@ def test_escalation_context_for_ai_cs_ticket(app_client: TestClient, world: Sess
                     "original_question": "航空电子行程单支持吗",
                     "ai_answer": "不支持",
                     "dissatisfaction": "明明支持",
+                    "conversation": [{"role": "user", "text": "航空电子行程单支持吗"}],
+                    "cited_knowledge": [{"type": "wiki", "title": "行程单说明"}],
+                    "skills_used": ["customer-service"],
                 }
             },
         )
@@ -307,6 +310,34 @@ def test_escalation_context_for_ai_cs_ticket(app_client: TestClient, world: Sess
     assert body["session_id"] == "sess-9"
     assert body["ai_answer"] == "不支持"
     assert body["dissatisfaction"] == "明明支持"
+    assert body["conversation"] == [{"role": "user", "text": "航空电子行程单支持吗"}]
+    assert body["cited_knowledge"] == [{"type": "wiki", "title": "行程单说明"}]
+    assert body["skills_used"] == ["customer-service"]
+
+
+def test_escalation_context_legacy_payload_defaults_empty(
+    app_client: TestClient, world: Session
+) -> None:
+    world.add(Source(code="ai_cs", name="AI 客服"))
+    world.add(
+        Ticket(
+            id=602,
+            short_code="TKT-000602",
+            source_code="ai_cs",
+            source_ticket_id="sess-old",
+            type="Raw",
+            status="received",
+            title="旧载荷",
+            source_payload={"ai_cs": {"original_question": "q", "ai_answer": "a"}},
+        )
+    )
+    world.commit()
+    r = app_client.get("/api/supervisor/tickets/602/escalation-context", headers=_bearer(2))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["conversation"] == []
+    assert body["cited_knowledge"] == []
+    assert body["skills_used"] == []
 
 
 def test_escalation_context_non_ai_cs(app_client: TestClient, world: Session) -> None:

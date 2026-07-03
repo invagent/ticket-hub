@@ -16,7 +16,11 @@ AI 客服 API format is finalized; everything else stays put):
       "product_line_code":  "<可选>",
       "module":             "<可选>",
       "customer": {erp_uid?, mobile?, email?, name?, source_user_id?},
-      "attachments": [{"url": "...", "filename"?, "mime"?}]   # 截图为主
+      "attachments": [{"url": "...", "filename"?, "mime"?}],  # 截图为主
+      # ↓ 知识反哺闭环扩展（可选；缺省降级为仅黄金三元组）
+      "conversation": [{"role": "user"|"assistant", "text": "...", "ts"?}],
+      "cited_knowledge": [{"type"?, "id"?, "title"?, "snippet"?, "score"?, "url"?}],
+      "skills_used": ["customer-service", ...]
     }
 """
 
@@ -55,6 +59,9 @@ class EscalationParsed:
     module: str | None
     customer: dict[str, Any]
     attachments: list[dict[str, Any]]
+    conversation: list[dict[str, Any]]
+    cited_knowledge: list[dict[str, Any]]
+    skills_used: list[str]
 
 
 def parse_escalation_payload(payload: dict[str, Any]) -> EscalationParsed:
@@ -68,6 +75,11 @@ def parse_escalation_payload(payload: dict[str, Any]) -> EscalationParsed:
         raise IngestError("missing original_question")
     atts = payload.get("attachments")
     cust = payload.get("customer")
+
+    def _dict_list(value: Any) -> list[dict[str, Any]]:
+        return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+    skills = payload.get("skills_used")
     return EscalationParsed(
         session_id=session_id,
         original_question=question,
@@ -78,7 +90,12 @@ def parse_escalation_payload(payload: dict[str, Any]) -> EscalationParsed:
         product_line_code=payload.get("product_line_code") or payload.get("product"),
         module=payload.get("module"),
         customer=cust if isinstance(cust, dict) else {},
-        attachments=[a for a in atts if isinstance(a, dict)] if isinstance(atts, list) else [],
+        attachments=_dict_list(atts),
+        conversation=_dict_list(payload.get("conversation")),
+        cited_knowledge=_dict_list(payload.get("cited_knowledge")),
+        skills_used=[str(s) for s in skills if isinstance(s, str) and s]
+        if isinstance(skills, list)
+        else [],
     )
 
 
@@ -126,20 +143,29 @@ class EscalationIngester:
         )
         upsert_catalog(self._db, product_line_code=p.product_line_code, module=p.module)
 
+        # golden triple + 反哺扩展字段（conversation/cited_knowledge/skills_used
+        # 缺省时不写 key — 老载荷形状不变，下游用 .get() 降级）
+        ai_cs_ctx: dict[str, Any] = {
+            "original_question": p.original_question,
+            "ai_answer": p.ai_answer,
+            "dissatisfaction": p.dissatisfaction,
+        }
+        if p.conversation:
+            ai_cs_ctx["conversation"] = p.conversation
+        if p.cited_knowledge:
+            ai_cs_ctx["cited_knowledge"] = p.cited_knowledge
+        if p.skills_used:
+            ai_cs_ctx["skills_used"] = p.skills_used
+
         ticket = Ticket(
             short_code=self._tickets.next_short_code(),
             source_code=_SOURCE,
             source_ticket_id=p.session_id,
             type="Raw",
             status="received",
-            # golden triple lives under ['ai_cs'] for escalation_classify
-            source_payload={
-                "ai_cs": {
-                    "original_question": p.original_question,
-                    "ai_answer": p.ai_answer,
-                    "dissatisfaction": p.dissatisfaction,
-                }
-            },
+            # escalation context lives under ['ai_cs'] for escalation_classify
+            # + the knowledge-feedback reflect UI
+            source_payload={"ai_cs": ai_cs_ctx},
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=p.product_line_code,
             module=p.module,

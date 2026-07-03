@@ -94,3 +94,50 @@ def test_long_question_truncated_to_title(world: Session) -> None:
     assert t is not None
     assert len(t.title) <= 120
     assert len(t.body) == 200  # body 保留全文
+
+
+def test_parse_feedback_loop_fields_with_junk_filtered() -> None:
+    p = parse_escalation_payload(
+        _payload(
+            conversation=[
+                {"role": "user", "text": "q1"},
+                "junk",
+                {"role": "assistant", "text": "a1"},
+            ],
+            cited_knowledge=[{"type": "wiki", "title": "开票指引", "score": 0.91}, 42],
+            skills_used=["customer-service", "", 7, "customer-service-feishu"],
+        )
+    )
+    assert p.conversation == [{"role": "user", "text": "q1"}, {"role": "assistant", "text": "a1"}]
+    assert p.cited_knowledge == [{"type": "wiki", "title": "开票指引", "score": 0.91}]
+    assert p.skills_used == ["customer-service", "customer-service-feishu"]
+
+
+def test_parse_feedback_loop_fields_default_empty() -> None:
+    p = parse_escalation_payload({"session_id": "s1", "question": "q"})
+    assert p.conversation == [] and p.cited_knowledge == [] and p.skills_used == []
+
+
+def test_ingest_stores_feedback_loop_fields(world: Session) -> None:
+    res = EscalationIngester(world).ingest(
+        _payload(
+            conversation=[{"role": "user", "text": "开不了票"}],
+            cited_knowledge=[{"type": "faq", "id": "F1", "title": "认证步骤"}],
+            skills_used=["customer-service"],
+        )
+    )
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    ai = t.source_payload["ai_cs"]
+    assert ai["conversation"] == [{"role": "user", "text": "开不了票"}]
+    assert ai["cited_knowledge"] == [{"type": "faq", "id": "F1", "title": "认证步骤"}]
+    assert ai["skills_used"] == ["customer-service"]
+
+
+def test_ingest_legacy_payload_omits_feedback_keys(world: Session) -> None:
+    res = EscalationIngester(world).ingest(_payload())
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert set(t.source_payload["ai_cs"]) == {"original_question", "ai_answer", "dissatisfaction"}

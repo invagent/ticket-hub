@@ -40,13 +40,18 @@ def build_client(settings: Any) -> AiCsClient:
 
 @dataclass(slots=True, frozen=True)
 class EscalationContext:
-    """The golden triple carried by an ai_cs escalation ticket."""
+    """The golden triple + optional feedback-loop extras carried by an ai_cs
+    escalation ticket (conversation / cited_knowledge / skills_used are empty
+    when the AI 客服 sent the legacy minimal payload)."""
 
     ticket_id: int
     session_id: str | None  # ticket.source_ticket_id — replay can reuse this
     original_question: str
     ai_answer: str
     dissatisfaction: str
+    conversation: list[dict[str, Any]]
+    cited_knowledge: list[dict[str, Any]]
+    skills_used: list[str]
 
 
 def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | None:
@@ -58,12 +63,22 @@ def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | 
     if ticket.source_code != _AI_CS_SOURCE:
         return None
     ai = (ticket.source_payload or {}).get("ai_cs") or {}
+
+    def _dict_list(value: Any) -> list[dict[str, Any]]:
+        return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+    skills = ai.get("skills_used")
     return EscalationContext(
         ticket_id=ticket.id,
         session_id=ticket.source_ticket_id,
         original_question=str(ai.get("original_question") or ticket.body or ""),
         ai_answer=str(ai.get("ai_answer") or ""),
         dissatisfaction=str(ai.get("dissatisfaction") or ""),
+        conversation=_dict_list(ai.get("conversation")),
+        cited_knowledge=_dict_list(ai.get("cited_knowledge")),
+        skills_used=[str(s) for s in skills if isinstance(s, str)]
+        if isinstance(skills, list)
+        else [],
     )
 
 

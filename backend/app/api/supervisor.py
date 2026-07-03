@@ -889,6 +889,10 @@ class EscalationContextResponse(BaseModel):
     original_question: str = ""
     ai_answer: str = ""
     dissatisfaction: str = ""
+    # 反哺扩展（AI 客服接口1 扩展载荷；老工单为空列表）
+    conversation: list[dict[str, Any]] = Field(default_factory=list)
+    cited_knowledge: list[dict[str, Any]] = Field(default_factory=list)
+    skills_used: list[str] = Field(default_factory=list)
 
 
 def _ai_cs_http_error(e: AiCsError) -> HTTPException:
@@ -1116,4 +1120,7 @@ def ai_cs_escalation_context_endpoint(
         original_question=ctx.original_question,
         ai_answer=ctx.ai_answer,
         dissatisfaction=ctx.dissatisfaction,
+        conversation=ctx.conversation,
+        cited_knowledge=ctx.cited_knowledge,
+        skills_used=ctx.skills_used,
     )

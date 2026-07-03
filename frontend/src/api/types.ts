@@ -1662,6 +1662,14 @@ export interface components {
              * @default
              */
             ai_answer: string;
+            /** Cited Knowledge */
+            cited_knowledge?: {
+                [key: string]: unknown;
+            }[];
+            /** Conversation */
+            conversation?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Dissatisfaction
              * @default
@@ -1676,6 +1684,8 @@ export interface components {
             original_question: string;
             /** Session Id */
             session_id?: string | null;
+            /** Skills Used */
+            skills_used?: string[];
             /** Ticket Id */
             ticket_id: number;
         };

@@ -16,6 +16,17 @@ import type { paths } from "@/api/types";
 
 type FileEdit = { filename: string; filepath: string; content: string };
 
+type CitedKnowledge = {
+  type?: string;
+  id?: string;
+  title?: string;
+  snippet?: string;
+  score?: number;
+  url?: string;
+};
+
+type ConversationTurn = { role?: string; text?: string; ts?: string };
+
 type EscalationCtx =
   paths["/api/supervisor/tickets/{ticket_id}/escalation-context"]["get"]["responses"]["200"]["content"]["application/json"];
 
@@ -60,12 +71,15 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
     queryFn: () => api.get("/api/supervisor/ai-cs/skills"),
   });
 
+  // 优先预选本次答复实际用到的 skill（接口1 扩展载荷 skills_used），否则第一个
   const [skillName, setSkillName] = useState<string>("");
   useEffect(() => {
-    if (!skillName && skills.data && skills.data.length > 0) {
-      setSkillName(skills.data[0].skill_name);
-    }
-  }, [skills.data, skillName]);
+    if (skillName || !skills.data || skills.data.length === 0) return;
+    const used = (ctx.skills_used ?? []).find((s) =>
+      skills.data.some((k) => k.skill_name === s),
+    );
+    setSkillName(used ?? skills.data[0].skill_name);
+  }, [skills.data, skillName, ctx.skills_used]);
 
   const detail = useQuery({
     queryKey: ["ai-cs-skill", skillName],
@@ -79,7 +93,7 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
   const [draftVersion, setDraftVersion] = useState<string>("");
   const [question, setQuestion] = useState(ctx.original_question ?? "");
   const [replayAnswer, setReplayAnswer] = useState<string | null>(null);
-  const [replayCited, setReplayCited] = useState<{ url?: string }[]>([]);
+  const [replayCited, setReplayCited] = useState<CitedKnowledge[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [published, setPublished] = useState(false);
 
@@ -130,7 +144,7 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
       }),
     onSuccess: (r) => {
       setReplayAnswer(r.answer);
-      setReplayCited((r.cited_knowledge as { url?: string }[]) ?? []);
+      setReplayCited((r.cited_knowledge as CitedKnowledge[]) ?? []);
       setError(null);
     },
     onError: (e) => setError(errMsg(e)),
@@ -177,6 +191,41 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
         )}
       </div>
 
+      {/* 原答复引用的知识（去芜存真的关键信号） */}
+      {(ctx.cited_knowledge?.length ?? 0) > 0 && (
+        <CitedList
+          label="原答复引用知识"
+          items={ctx.cited_knowledge as CitedKnowledge[]}
+          tone="bad"
+        />
+      )}
+
+      {/* 完整多轮会话（默认折叠） */}
+      {(ctx.conversation?.length ?? 0) > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs text-gray-500 select-none">
+            完整会话（{ctx.conversation?.length ?? 0} 轮）
+          </summary>
+          <div className="mt-1 space-y-1 max-h-56 overflow-y-auto pr-1">
+            {(ctx.conversation as ConversationTurn[]).map((m, i) => (
+              <div
+                key={i}
+                className={`text-xs p-1.5 rounded border whitespace-pre-wrap ${
+                  m.role === "assistant"
+                    ? "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 ml-6"
+                    : "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900 mr-6"
+                }`}
+              >
+                <span className="font-semibold mr-1">
+                  {m.role === "assistant" ? "AI" : "客户"}
+                </span>
+                {m.text}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {/* skill 选择 */}
       <div className="flex items-center gap-2 text-sm">
         <label className="text-gray-600 dark:text-gray-400">修订 skill</label>
@@ -191,6 +240,11 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
             </option>
           ))}
         </select>
+        {(ctx.skills_used ?? []).includes(skillName) && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">
+            本次答复用到
+          </span>
+        )}
         {detail.isFetching && <span className="text-xs text-gray-400">加载 skill…</span>}
       </div>
 
@@ -267,6 +321,14 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
             <pre className="whitespace-pre-wrap p-2 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs">
               {ctx.ai_answer || "（无）"}
             </pre>
+            {(ctx.cited_knowledge?.length ?? 0) > 0 && (
+              <CitedList
+                label="原引用"
+                items={ctx.cited_knowledge as CitedKnowledge[]}
+                tone="bad"
+                compact
+              />
+            )}
           </div>
           <div className="space-y-1">
             <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
@@ -276,20 +338,7 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
               {replayAnswer}
             </pre>
             {replayCited.length > 0 && (
-              <div className="text-[11px] text-gray-500">
-                引用：
-                {replayCited.map((c, i) => (
-                  <a
-                    key={i}
-                    href={c.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline mr-2"
-                  >
-                    知识{i + 1}
-                  </a>
-                ))}
-              </div>
+              <CitedList label="新引用" items={replayCited} tone="good" compact />
             )}
           </div>
         </div>
@@ -318,6 +367,59 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
         <div className="text-sm text-red-600">AI 客服不可用：{errMsg(skills.error)}</div>
       )}
     </section>
+  );
+}
+
+function CitedList({
+  label,
+  items,
+  tone,
+  compact = false,
+}: {
+  label: string;
+  items: CitedKnowledge[];
+  tone: "bad" | "good";
+  compact?: boolean;
+}) {
+  const border =
+    tone === "bad"
+      ? "border-red-200 dark:border-red-900"
+      : "border-emerald-200 dark:border-emerald-900";
+  return (
+    <div className={compact ? "space-y-0.5" : "space-y-1"}>
+      <div className="text-xs text-gray-500">{label}</div>
+      {items.map((c, i) => {
+        const title = c.title || c.id || `知识${i + 1}`;
+        return (
+          <div
+            key={i}
+            className={`text-[11px] p-1.5 rounded border bg-white dark:bg-gray-900 ${border}`}
+          >
+            {c.type && (
+              <span className="font-mono text-gray-400 mr-1">[{c.type}]</span>
+            )}
+            {c.url ? (
+              <a
+                href={c.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                {title}
+              </a>
+            ) : (
+              <span className="font-medium">{title}</span>
+            )}
+            {typeof c.score === "number" && (
+              <span className="text-gray-400 ml-1">{(c.score * 100).toFixed(0)}%</span>
+            )}
+            {!compact && c.snippet && (
+              <div className="text-gray-500 mt-0.5 line-clamp-2">{c.snippet}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
