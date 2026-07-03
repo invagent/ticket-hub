@@ -86,8 +86,20 @@ def db_session(sqlite_engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def app_client(db_session) -> Iterator[TestClient]:
+def app_client(db_session, sqlite_engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    import app.db as app_db
     from app.main import create_app
+
+    # Point the module-global engine at the test engine too: endpoints/BG tasks
+    # that call make_session() directly (feishu callback, post-ingest agents)
+    # must hit the SAME in-memory DB as the dependency override below —
+    # otherwise they see an empty :memory: database ("no such table").
+    monkeypatch.setattr(app_db, "_engine", sqlite_engine)
+    monkeypatch.setattr(
+        app_db,
+        "_SessionLocal",
+        sessionmaker(sqlite_engine, autoflush=False, autocommit=False, future=True),
+    )
 
     app = create_app()
 
