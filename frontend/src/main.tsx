@@ -67,6 +67,7 @@ import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
 import { SkillsPage } from "./pages/admin/skills/SkillsPage";
+import { ReflectWorkbenchPage } from "./pages/reflect/ReflectWorkbenchPage";
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -108,6 +109,7 @@ createRoot(document.getElementById("root")!).render(
           >
             <Route path="/" element={<DashboardPage />} />
             <Route path="/supervisor" element={<SupervisorPage />} />
+            <Route path="/reflect" element={<ReflectWorkbenchPage />} />
             <Route path="/tickets" element={<TicketsListPage />} />
             <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
             <Route path="/hub-issues" element={<HubIssuesListPage />} />

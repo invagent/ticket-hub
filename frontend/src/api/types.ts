@@ -1182,6 +1182,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/tickets/{ticket_id}/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Diagnosis Endpoint
+         * @description Persist the supervisor's cause verdict (skill/knowledge/retrieval) and
+         *     the human-verified correct answer for an escalation ticket.
+         */
+        put: operations["save_diagnosis_endpoint_api_supervisor_tickets__ticket_id__diagnosis_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/tickets/{ticket_id}/escalation-context": {
         parameters: {
             query?: never;
@@ -1198,6 +1219,28 @@ export interface paths {
         get: operations["ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/tickets/{ticket_id}/reflect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Reflect Endpoint
+         * @description Run the LLM reflect agent (3-step audit → inferred cause) over the
+         *     escalation context. Synchronous — supervisor watches the result. The
+         *     result is cached on the ticket; rerunning overwrites.
+         */
+        post: operations["run_reflect_endpoint_api_supervisor_tickets__ticket_id__reflect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1595,6 +1638,22 @@ export interface components {
             /** User Name */
             user_name: string | null;
         };
+        /** DiagnosisBody */
+        DiagnosisBody: {
+            /** Cause */
+            cause?: string | null;
+            /** Correct Answer */
+            correct_answer?: string | null;
+        };
+        /** DiagnosisResponse */
+        DiagnosisResponse: {
+            /** Diagnosis */
+            diagnosis: {
+                [key: string]: unknown;
+            } | null;
+            /** Ticket Id */
+            ticket_id: number;
+        };
         /** DismissDedupBody */
         DismissDedupBody: {
             /** Decision Id */
@@ -1670,6 +1729,10 @@ export interface components {
             conversation?: {
                 [key: string]: unknown;
             }[];
+            /** Diagnosis */
+            diagnosis?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Dissatisfaction
              * @default
@@ -1682,6 +1745,10 @@ export interface components {
              * @default
              */
             original_question: string;
+            /** Reflection */
+            reflection?: {
+                [key: string]: unknown;
+            } | null;
             /** Session Id */
             session_id?: string | null;
             /** Skills Used */
@@ -2344,6 +2411,15 @@ export interface components {
             status: "ready" | "degraded" | "unhealthy";
             /** Version */
             version: string;
+        };
+        /** ReflectResponse */
+        ReflectResponse: {
+            /** Reflection */
+            reflection: {
+                [key: string]: unknown;
+            };
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** RelinkBody */
         RelinkBody: {
@@ -5179,6 +5255,41 @@ export interface operations {
             };
         };
     };
+    save_diagnosis_endpoint_api_supervisor_tickets__ticket_id__diagnosis_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnosisBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get: {
         parameters: {
             query?: never;
@@ -5197,6 +5308,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EscalationContextResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_reflect_endpoint_api_supervisor_tickets__ticket_id__reflect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReflectResponse"];
                 };
             };
             /** @description Validation Error */

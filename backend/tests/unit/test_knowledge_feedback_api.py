@@ -357,3 +357,158 @@ def test_escalation_context_non_ai_cs(app_client: TestClient, world: Session) ->
     r = app_client.get("/api/supervisor/tickets/601/escalation-context", headers=_bearer(2))
     assert r.status_code == 200
     assert r.json()["is_escalation"] is False
+
+
+# ---- 反思诊断工作台：diagnosis + reflect --------------------------------
+
+
+def _mk_escalation(world: Session, ticket_id: int = 700) -> None:
+    if not world.query(Source).filter_by(code="ai_cs").count():
+        world.add(Source(code="ai_cs", name="AI 客服"))
+    world.add(
+        Ticket(
+            id=ticket_id,
+            short_code=f"TKT-{ticket_id:06d}",
+            source_code="ai_cs",
+            source_ticket_id=f"sess-{ticket_id}",
+            type="Raw",
+            status="received",
+            title="开票超时",
+            source_payload={
+                "ai_cs": {
+                    "original_question": "开票超时",
+                    "ai_answer": "请实名认证",
+                    "dissatisfaction": "做了还是超时",
+                    "cited_knowledge": [{"type": "faq", "title": "超时排查", "score": 0.71}],
+                }
+            },
+        )
+    )
+    world.commit()
+
+
+def test_save_diagnosis_and_context_roundtrip(app_client: TestClient, world: Session) -> None:
+    _mk_escalation(world)
+    r = app_client.put(
+        "/api/supervisor/tickets/700/diagnosis",
+        headers=_bearer(2),
+        json={"cause": "skill", "correct_answer": "实为通道拥堵"},
+    )
+    assert r.status_code == 200
+    d = r.json()["diagnosis"]
+    assert d["cause"] == "skill" and d["correct_answer"] == "实为通道拥堵"
+    assert d["by"] == "user:2" and d["at"]
+
+    ctx = app_client.get("/api/supervisor/tickets/700/escalation-context", headers=_bearer(2)).json()
+    assert ctx["diagnosis"]["cause"] == "skill"
+
+    # 审计行落 status_history（状态不变）
+    rows = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="ticket", entity_id=700)
+        .all()
+    )
+    assert any((h.metadata_ or {}).get("kind") == "escalation_diagnosis" for h in rows)
+
+
+def test_clear_diagnosis(app_client: TestClient, world: Session) -> None:
+    _mk_escalation(world, 701)
+    app_client.put(
+        "/api/supervisor/tickets/701/diagnosis",
+        headers=_bearer(2),
+        json={"cause": "retrieval"},
+    )
+    r = app_client.put(
+        "/api/supervisor/tickets/701/diagnosis", headers=_bearer(2), json={"cause": None}
+    )
+    assert r.status_code == 200 and r.json()["diagnosis"] is None
+    ctx = app_client.get("/api/supervisor/tickets/701/escalation-context", headers=_bearer(2)).json()
+    assert ctx["diagnosis"] is None
+
+
+def test_diagnosis_invalid_cause_422(app_client: TestClient, world: Session) -> None:
+    _mk_escalation(world, 702)
+    r = app_client.put(
+        "/api/supervisor/tickets/702/diagnosis", headers=_bearer(2), json={"cause": "both"}
+    )
+    assert r.status_code == 422
+
+
+def test_diagnosis_non_escalation_404(app_client: TestClient, world: Session) -> None:
+    world.add(Source(code="ksm", name="KSM"))
+    world.add(
+        Ticket(
+            id=703,
+            short_code="TKT-000703",
+            source_code="ksm",
+            source_ticket_id="B-1",
+            type="Raw",
+            status="received",
+            title="非 escalation",
+        )
+    )
+    world.commit()
+    r = app_client.put(
+        "/api/supervisor/tickets/703/diagnosis", headers=_bearer(2), json={"cause": "skill"}
+    )
+    assert r.status_code == 404
+
+
+def test_reflect_runs_and_caches(
+    app_client: TestClient, world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mk_escalation(world, 704)
+    # 先存人工正解，端点应把它喂给 agent
+    app_client.put(
+        "/api/supervisor/tickets/704/diagnosis",
+        headers=_bearer(2),
+        json={"correct_answer": "实为通道拥堵"},
+    )
+
+    from app.services.knowledge_feedback import reflect as rf
+
+    seen: dict = {}
+
+    def fake_run_reflect(**kw):  # type: ignore[no-untyped-def]
+        seen.update(kw)
+        return rf.ReflectResult(
+            steps=[{"title": "t", "detail": "d", "verdict": None, "good": None}],
+            cause="skill",
+            confidence=0.9,
+            reason="r",
+            suggested_revision="改规则 2",
+            cost_usd=0.001,
+            model="glm-4-flash",
+        )
+
+    monkeypatch.setattr(rf, "run_reflect", fake_run_reflect)
+    r = app_client.post("/api/supervisor/tickets/704/reflect", headers=_bearer(2))
+    assert r.status_code == 200
+    refl = r.json()["reflection"]
+    assert refl["cause"] == "skill" and refl["suggested_revision"] == "改规则 2"
+    assert seen["correct_answer"] == "实为通道拥堵"
+    assert seen["cited_knowledge"][0]["title"] == "超时排查"
+
+    # 缓存进 escalation-context
+    ctx = app_client.get("/api/supervisor/tickets/704/escalation-context", headers=_bearer(2)).json()
+    assert ctx["reflection"]["cause"] == "skill"
+
+
+def test_reflect_llm_unavailable_503(
+    app_client: TestClient, world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mk_escalation(world, 705)
+    from app.core.llm_router import LLMRouterError
+    from app.services.knowledge_feedback import reflect as rf
+
+    def boom(**kw):  # type: ignore[no-untyped-def]
+        raise LLMRouterError("no providers configured", attempts=[])
+
+    monkeypatch.setattr(rf, "run_reflect", boom)
+    r = app_client.post("/api/supervisor/tickets/705/reflect", headers=_bearer(2))
+    assert r.status_code == 503
+
+
+def test_reflect_non_escalation_404(app_client: TestClient, world: Session) -> None:
+    r = app_client.post("/api/supervisor/tickets/99999/reflect", headers=_bearer(2))
+    assert r.status_code == 404

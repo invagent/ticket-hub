@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
 from app.api.deps.auth import AuthedUser, require_supervisor
+from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
 from app.db import get_session
 from app.models import HubIssue, StatusHistory
@@ -893,6 +894,24 @@ class EscalationContextResponse(BaseModel):
     conversation: list[dict[str, Any]] = Field(default_factory=list)
     cited_knowledge: list[dict[str, Any]] = Field(default_factory=list)
     skills_used: list[str] = Field(default_factory=list)
+    # 反思诊断工作台：主管病因判定 + LLM 反思推断缓存
+    diagnosis: dict[str, Any] | None = None
+    reflection: dict[str, Any] | None = None
+
+
+class DiagnosisBody(BaseModel):
+    cause: str | None = None  # skill | knowledge | retrieval | None（清除）
+    correct_answer: str | None = Field(default=None, max_length=4000)
+
+
+class DiagnosisResponse(BaseModel):
+    ticket_id: int
+    diagnosis: dict[str, Any] | None
+
+
+class ReflectResponse(BaseModel):
+    ticket_id: int
+    reflection: dict[str, Any]
 
 
 def _ai_cs_http_error(e: AiCsError) -> HTTPException:
@@ -1123,4 +1142,76 @@ def ai_cs_escalation_context_endpoint(
         conversation=ctx.conversation,
         cited_knowledge=ctx.cited_knowledge,
         skills_used=ctx.skills_used,
+        diagnosis=ctx.diagnosis,
+        reflection=ctx.reflection,
     )
+
+
+@router.put("/tickets/{ticket_id}/diagnosis", response_model=DiagnosisResponse)
+def save_diagnosis_endpoint(
+    ticket_id: int,
+    body: DiagnosisBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DiagnosisResponse:
+    """Persist the supervisor's cause verdict (skill/knowledge/retrieval) and
+    the human-verified correct answer for an escalation ticket."""
+    try:
+        diagnosis = kf.save_diagnosis(
+            db,
+            ticket_id,
+            cause=body.cause,
+            correct_answer=body.correct_answer,
+            operator=f"user:{user.user_id}",
+        )
+    except kf.NotEscalationError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    db.commit()
+    return DiagnosisResponse(ticket_id=ticket_id, diagnosis=diagnosis)
+
+
+@router.post("/tickets/{ticket_id}/reflect", response_model=ReflectResponse)
+def run_reflect_endpoint(
+    ticket_id: int,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ReflectResponse:
+    """Run the LLM reflect agent (3-step audit → inferred cause) over the
+    escalation context. Synchronous — supervisor watches the result. The
+    result is cached on the ticket; rerunning overwrites."""
+    from app.services.knowledge_feedback import reflect as rf
+
+    ctx = kf.load_escalation_context(db, ticket_id)
+    if ctx is None:
+        raise HTTPException(status_code=404, detail=f"ticket {ticket_id} 不是 AI 客服 escalation 工单")
+    correct_answer = None
+    if ctx.diagnosis and ctx.diagnosis.get("correct_answer"):
+        correct_answer = str(ctx.diagnosis["correct_answer"])
+    try:
+        result = rf.run_reflect(
+            question=ctx.original_question,
+            ai_answer=ctx.ai_answer,
+            dissatisfaction=ctx.dissatisfaction,
+            conversation=ctx.conversation,
+            cited_knowledge=ctx.cited_knowledge,
+            correct_answer=correct_answer,
+        )
+    except rf.ReflectError as e:
+        raise HTTPException(status_code=502, detail=f"反思推断解析失败：{e}") from e
+    except LLMRouterError as e:
+        raise HTTPException(status_code=503, detail=f"LLM 不可用：{e}") from e
+    reflection = result.as_payload()
+    kf.save_reflection(db, ticket_id, reflection)
+    db.commit()
+    logger.info(
+        "escalation_reflect_done",
+        ticket_id=ticket_id,
+        cause=result.cause,
+        confidence=result.confidence,
+        model=result.model,
+        cost_usd=result.cost_usd,
+        operator_user_id=user.user_id,
+    )
+    return ReflectResponse(ticket_id=ticket_id, reflection=reflection)

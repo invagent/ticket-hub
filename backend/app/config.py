@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     ai_cs_app_id: str = ""  # AI 客服 open-api appid（沿用 sample AGENT_APPID 语义）
     ai_cs_app_key: str = ""  # 签名密钥 app_key（MD5(appid+create_time+app_key)）
     ai_cs_managed_skills: str = "customer-service,customer-service-feishu"
+    # 反思诊断工作台：LLM 反思推断（三步排查 → 病因判定），主管手动触发
+    escalation_reflect_prompt_version: str = "v1"
 
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""

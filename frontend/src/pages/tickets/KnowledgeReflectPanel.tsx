@@ -10,6 +10,7 @@
  */
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, getByPath, postByPath, ApiError } from "@/api/client";
 import type { paths } from "@/api/types";
@@ -174,6 +175,12 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
         <span className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
           改 AI 客服 skill → 试跑对比 → 发布
         </span>
+        <Link
+          to={`/reflect?ticket=${ticketId}`}
+          className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+        >
+          打开反思诊断工作台 →
+        </Link>
       </div>
 
       {/* 黄金三元组 */}

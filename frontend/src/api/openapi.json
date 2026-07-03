@@ -658,6 +658,61 @@
         "title": "DefaultPoolUserOut",
         "type": "object"
       },
+      "DiagnosisBody": {
+        "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "correct_answer": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          }
+        },
+        "title": "DiagnosisBody",
+        "type": "object"
+      },
+      "DiagnosisResponse": {
+        "properties": {
+          "diagnosis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "diagnosis"
+        ],
+        "title": "DiagnosisResponse",
+        "type": "object"
+      },
       "DismissDedupBody": {
         "properties": {
           "decision_id": {
@@ -845,6 +900,18 @@
             "title": "Conversation",
             "type": "array"
           },
+          "diagnosis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosis"
+          },
           "dissatisfaction": {
             "default": "",
             "title": "Dissatisfaction",
@@ -858,6 +925,18 @@
             "default": "",
             "title": "Original Question",
             "type": "string"
+          },
+          "reflection": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reflection"
           },
           "session_id": {
             "anyOf": [
@@ -2887,6 +2966,25 @@
           "checks"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "ReflectResponse": {
+        "properties": {
+          "reflection": {
+            "additionalProperties": true,
+            "title": "Reflection",
+            "type": "object"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "reflection"
+        ],
+        "title": "ReflectResponse",
         "type": "object"
       },
       "RelinkBody": {
@@ -8137,6 +8235,59 @@
         ]
       }
     },
+    "/api/supervisor/tickets/{ticket_id}/diagnosis": {
+      "put": {
+        "description": "Persist the supervisor's cause verdict (skill/knowledge/retrieval) and\nthe human-verified correct answer for an escalation ticket.",
+        "operationId": "save_diagnosis_endpoint_api_supervisor_tickets__ticket_id__diagnosis_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosisBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Diagnosis Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/tickets/{ticket_id}/escalation-context": {
       "get": {
         "description": "The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so\nthe reflect UI can seed the comparison. is_escalation=false for non-ai_cs\ntickets (UI hides the panel).",
@@ -8175,6 +8326,49 @@
           }
         },
         "summary": "Ai Cs Escalation Context Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/tickets/{ticket_id}/reflect": {
+      "post": {
+        "description": "Run the LLM reflect agent (3-step audit → inferred cause) over the\nescalation context. Synchronous — supervisor watches the result. The\nresult is cached on the ticket; rerunning overwrites.",
+        "operationId": "run_reflect_endpoint_api_supervisor_tickets__ticket_id__reflect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReflectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Reflect Endpoint",
         "tags": [
           "supervisor"
         ]

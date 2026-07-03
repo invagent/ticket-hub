@@ -10,6 +10,7 @@ const ROLE_LABELS: Record<string, string> = {
 const navItems = [
   { to: "/", label: "Dashboard" },
   { to: "/supervisor", label: "主管工作台" },
+  { to: "/reflect", label: "反思诊断" },
   { to: "/tickets", label: "跨源工单" },
   { to: "/hub-issues", label: "Hub 工单" },
   { to: "/customers", label: "客户搜索" },
