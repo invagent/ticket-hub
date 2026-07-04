@@ -1,4 +1,10 @@
+import type { ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
+// Nav shell reskinned to the 2026-07 console redesign design system
+// (基准来源：反思诊断工作台；token 见 docs/design 或已上线的 /reflect 页面).
+// Content pages not yet migrated to the new palette keep rendering fine
+// inside <main> — only this shell + the migrated pages adopt `hub-*` tokens.
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
@@ -7,17 +13,66 @@ const ROLE_LABELS: Record<string, string> = {
   member: "普通成员",
 };
 
-const navItems = [
-  { to: "/", label: "Dashboard" },
-  { to: "/supervisor", label: "主管工作台" },
-  { to: "/reflect", label: "反思诊断" },
-  { to: "/tickets", label: "跨源工单" },
-  { to: "/hub-issues", label: "Hub 工单" },
-  { to: "/customers", label: "客户搜索" },
-  { to: "/admin/users", label: "用户管理" },
-  { to: "/admin/scopes", label: "分工管理" },
-  { to: "/admin/catalog", label: "目录管理" },
-  { to: "/admin/skills", label: "Skill 配置" },
+function GridIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <rect x="1" y="1" width="5.5" height="5.5" rx="1.5" fill={c} />
+      <rect x="8.5" y="1" width="5.5" height="5.5" rx="1.5" fill={c} opacity=".45" />
+      <rect x="1" y="8.5" width="5.5" height="5.5" rx="1.5" fill={c} opacity=".45" />
+      <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1.5" fill={c} />
+    </svg>
+  );
+}
+
+function TicketIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <rect x="1.5" y="2" width="12" height="11" rx="2" fill="none" stroke={c} strokeWidth="1.4" />
+      <line x1="4" y1="5.5" x2="11" y2="5.5" stroke={c} strokeWidth="1.4" />
+      <line x1="4" y1="8.5" x2="9" y2="8.5" stroke={c} strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function LinkIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <circle cx="4" cy="7.5" r="2.6" fill="none" stroke={c} strokeWidth="1.4" />
+      <circle cx="11" cy="7.5" r="2.6" fill="none" stroke={c} strokeWidth="1.4" />
+      <line x1="6.6" y1="7.5" x2="8.4" y2="7.5" stroke={c} strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function TargetIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <circle cx="7.5" cy="7.5" r="5.6" fill="none" stroke={c} strokeWidth="1.4" />
+      <circle cx="7.5" cy="7.5" r="1.6" fill={c} />
+    </svg>
+  );
+}
+
+function AdminIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <circle cx="7.5" cy="5" r="2.6" fill="none" stroke={c} strokeWidth="1.4" />
+      <rect x="2.5" y="9.5" width="10" height="4" rx="2" fill="none" stroke={c} strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+const navItems: { to: string; label: string; icon: (p: { active: boolean }) => ReactNode }[] = [
+  { to: "/", label: "工作台", icon: GridIcon },
+  { to: "/tickets", label: "工单", icon: TicketIcon },
+  { to: "/hub-issues", label: "研发协同", icon: LinkIcon },
+  { to: "/reflect", label: "反思诊断", icon: TargetIcon },
+  { to: "/admin/users", label: "管理", icon: AdminIcon },
 ];
 
 export function Layout() {
@@ -36,47 +91,62 @@ export function Layout() {
       return null;
     }
   })();
+  const initials = user?.name ? user.name.slice(-1) : "?";
 
   return (
     <div className="min-h-screen flex">
-      <aside className="w-56 border-r border-gray-200 dark:border-gray-800 p-4 flex flex-col">
-        <div className="font-semibold mb-4">ticket-hub</div>
-        <nav className="space-y-1 flex-1">
+      <nav className="w-[210px] flex-none bg-hub-panel border-r border-hub-border flex flex-col sticky top-0 h-screen box-border font-hub">
+        <div className="flex items-center gap-2 px-[18px] pt-[18px] pb-4">
+          <div className="w-5 h-5 rounded-md bg-hub-teal flex items-center justify-center text-white text-[11px] font-extrabold">
+            t
+          </div>
+          <div className="text-[14.5px] font-bold tracking-[.2px] text-hub-text">ticket-hub</div>
+        </div>
+        <div className="flex flex-col gap-0.5 px-2.5">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.to === "/"}
               className={({ isActive }) =>
-                `block px-3 py-2 rounded text-sm ${
+                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline ${
                   isActive
-                    ? "bg-blue-600 text-white"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-900"
+                    ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
+                    : "text-hub-textSecondary hover:bg-hub-neutral-light"
                 }`
               }
             >
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  <item.icon active={isActive} />
+                  {item.label}
+                </>
+              )}
             </NavLink>
           ))}
-        </nav>
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+        </div>
+        <div className="flex-1" />
+        <div className="border-t border-hub-borderLight px-3.5 py-3 flex items-center gap-2.5">
+          <div className="w-[26px] h-[26px] flex-none rounded-full bg-hub-teal text-white text-[11px] font-bold flex items-center justify-center">
+            {initials}
+          </div>
           {user && (
-            <div className="px-3 py-1 text-xs text-gray-500 dark:text-gray-400 truncate">
-              {user.name}
-              <span className="ml-1 text-gray-400">
-                ({ROLE_LABELS[user.role as string] ?? user.role})
-              </span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] font-semibold text-hub-text truncate">{user.name}</div>
+              <div className="text-[10.5px] text-hub-textFaint truncate">
+                {ROLE_LABELS[user.role as string] ?? user.role}
+              </div>
             </div>
           )}
           <button
             onClick={logout}
-            className="mt-1 w-full text-left px-3 py-2 rounded text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+            className="text-[11px] text-hub-textMuted hover:text-hub-rose flex-none"
           >
-            退出登录
+            退出
           </button>
         </div>
-      </aside>
-      <main className="flex-1 p-6">
+      </nav>
+      <main className="flex-1 min-w-0 p-6">
         <Outlet />
       </main>
     </div>

@@ -15,8 +15,9 @@ describe("Layout", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("ticket-hub")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("用户管理")).toBeInTheDocument();
-    expect(screen.getByText("分工管理")).toBeInTheDocument();
+    expect(screen.getByText("工作台")).toBeInTheDocument();
+    expect(screen.getByText("研发协同")).toBeInTheDocument();
+    expect(screen.getByText("反思诊断")).toBeInTheDocument();
+    expect(screen.getByText("管理")).toBeInTheDocument();
   });
 });

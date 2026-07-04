@@ -673,6 +673,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/self-bug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Self Bug Endpoint
+         * @description 登记自修复 bug：无客户来源的 standalone Bug_fix hub 工单（自查徽标）。
+         */
+        post: operations["self_bug_endpoint_api_hub_issues_self_bug_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/{hub_issue_id}": {
         parameters: {
             query?: never;
@@ -684,6 +704,46 @@ export interface paths {
         get: operations["get_hub_issue_api_hub_issues__hub_issue_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues/{hub_issue_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Feedback Endpoint
+         * @description 记录发版后客户回访结果（resolved 闭环 / stillbad 待升级）。
+         */
+        post: operations["feedback_endpoint_api_hub_issues__hub_issue_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues/{hub_issue_id}/notify-release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Notify Release Endpoint
+         * @description 发版通知：文案入 outbox（每个有源关联工单一行），回访状态置 pending。
+         */
+        post: operations["notify_release_endpoint_api_hub_issues__hub_issue_id__notify_release_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -732,6 +792,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/urge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Urge Endpoint
+         * @description 催办：向 Linear issue 发评论并计数（24h 频率限制）。
+         */
+        post: operations["urge_endpoint_api_hub_issues__hub_issue_id__urge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/dashboard": {
         parameters: {
             query?: never;
@@ -741,6 +821,23 @@ export interface paths {
         };
         /** Dashboard Metrics */
         get: operations["dashboard_metrics_api_metrics_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/metrics/workbench": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workbench Metrics */
+        get: operations["workbench_metrics_api_metrics_workbench_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -981,6 +1078,29 @@ export interface paths {
          *     outcome, rather than waiting for the 2-min beat.
          */
         post: operations["drain_ksm_writeback_endpoint_api_supervisor_drain_ksm_writeback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/escalation-pending-diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Escalation Pending Diagnosis
+         * @description AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
+         *
+         *     diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
+         *     —— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+         */
+        get: operations["list_escalation_pending_diagnosis_api_supervisor_escalation_pending_diagnosis_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1756,6 +1876,27 @@ export interface components {
             /** Ticket Id */
             ticket_id: number;
         };
+        /** EscalationPendingItem */
+        EscalationPendingItem: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dissatisfaction */
+            dissatisfaction: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Title */
+            title: string | null;
+        };
+        /** EscalationPendingResponse */
+        EscalationPendingResponse: {
+            /** Items */
+            items: components["schemas"]["EscalationPendingItem"][];
+        };
         /** ExecuteDedupBody */
         ExecuteDedupBody: {
             /** Decision Id */
@@ -1828,6 +1969,23 @@ export interface components {
             /** User Id */
             user_id: number;
         };
+        /** FeedbackBody */
+        FeedbackBody: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Status */
+            status: string;
+        };
+        /** FeedbackResponse */
+        FeedbackResponse: {
+            /** Feedback Status */
+            feedback_status: string;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+        };
         /**
          * FeishuContactUserOut
          * @description One user under a department in the org-tree browser, annotated with
@@ -1866,6 +2024,19 @@ export interface components {
             open_department_id: string;
             /** Parent Department Id */
             parent_department_id: string;
+        };
+        /** FunnelOut */
+        FunnelOut: {
+            /** Assigned */
+            assigned: number;
+            /** Classified */
+            classified: number;
+            /** In Progress */
+            in_progress: number;
+            /** Received */
+            received: number;
+            /** Resolved */
+            resolved: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1989,6 +2160,10 @@ export interface components {
             expected_released_at: string | null;
             /** Expected Resolved At */
             expected_resolved_at: string | null;
+            /** Feedback Note */
+            feedback_note?: string | null;
+            /** Feedback Status */
+            feedback_status?: string | null;
             /** Feishu Task Id */
             feishu_task_id: string | null;
             /** Feishu Task Status */
@@ -2000,6 +2175,8 @@ export interface components {
              * Format: date-time
              */
             first_seen_at: string;
+            /** Fix Version */
+            fix_version?: string | null;
             /** Id */
             id: number;
             /**
@@ -2007,6 +2184,8 @@ export interface components {
              * Format: date-time
              */
             last_seen_at: string;
+            /** Last Urged At */
+            last_urged_at?: string | null;
             /** Linear Identifier */
             linear_identifier: string | null;
             /** Linear Status */
@@ -2028,6 +2207,8 @@ export interface components {
             product: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /** Release Notified At */
+            release_notified_at?: string | null;
             /** Reply Authored By */
             reply_authored_by: string | null;
             /** Reply Content */
@@ -2038,10 +2219,17 @@ export interface components {
             reply_updated_at: string | null;
             /** Scheduled Iteration */
             scheduled_iteration: string | null;
+            /**
+             * Self Found
+             * @default false
+             */
+            self_found: boolean;
             /** Short Code */
             short_code: string;
             /** Status */
             status: string;
+            /** Status Changed At */
+            status_changed_at?: string | null;
             /** Supersede Reason */
             supersede_reason: string | null;
             /** Superseded By Hub Issue Id */
@@ -2050,6 +2238,11 @@ export interface components {
             title: string;
             /** Type */
             type: string;
+            /**
+             * Urge Count
+             * @default 0
+             */
+            urge_count: number;
         };
         /** HubIssueListResponse */
         HubIssueListResponse: {
@@ -2074,6 +2267,10 @@ export interface components {
             closed_at: string | null;
             /** Expected Resolved At */
             expected_resolved_at: string | null;
+            /** Feedback Note */
+            feedback_note?: string | null;
+            /** Feedback Status */
+            feedback_status?: string | null;
             /** Feishu Task Status */
             feishu_task_status: string | null;
             /**
@@ -2081,6 +2278,8 @@ export interface components {
              * Format: date-time
              */
             first_seen_at: string;
+            /** Fix Version */
+            fix_version?: string | null;
             /** Id */
             id: number;
             /**
@@ -2088,6 +2287,8 @@ export interface components {
              * Format: date-time
              */
             last_seen_at: string;
+            /** Last Urged At */
+            last_urged_at?: string | null;
             /** Linear Identifier */
             linear_identifier: string | null;
             /** Linear Status */
@@ -2102,18 +2303,32 @@ export interface components {
             product: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /** Release Notified At */
+            release_notified_at?: string | null;
             /** Reply Content Version */
             reply_content_version: number;
             /** Reply Updated At */
             reply_updated_at: string | null;
+            /**
+             * Self Found
+             * @default false
+             */
+            self_found: boolean;
             /** Short Code */
             short_code: string;
             /** Status */
             status: string;
+            /** Status Changed At */
+            status_changed_at?: string | null;
             /** Title */
             title: string;
             /** Type */
             type: string;
+            /**
+             * Urge Count
+             * @default 0
+             */
+            urge_count: number;
         };
         /** IdentityOut */
         IdentityOut: {
@@ -2299,6 +2514,20 @@ export interface components {
             product_line_code: string;
             /** User Id */
             user_id: number;
+        };
+        /** NotifyReleaseBody */
+        NotifyReleaseBody: {
+            /** Fix Version */
+            fix_version: string;
+            /** Note */
+            note: string;
+        };
+        /** NotifyReleaseResponse */
+        NotifyReleaseResponse: {
+            /** Channel Count */
+            channel_count: number;
+            /** Hub Issue Id */
+            hub_issue_id: number;
         };
         /** PartnerIn */
         PartnerIn: {
@@ -2596,6 +2825,31 @@ export interface components {
             /** User Id */
             user_id: number;
         };
+        /** SelfBugBody */
+        SelfBugBody: {
+            /** Fix Version */
+            fix_version?: string | null;
+            /** Impact Versions */
+            impact_versions?: string | null;
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /**
+             * Released
+             * @default true
+             */
+            released: boolean;
+            /** Title */
+            title: string;
+        };
+        /** SelfBugResponse */
+        SelfBugResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Short Code */
+            short_code: string;
+        };
         /** SkillDetail */
         SkillDetail: {
             /** Content Md */
@@ -2681,6 +2935,19 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /** SloItemOut */
+        SloItemOut: {
+            /** Delta Pt */
+            delta_pt: number | null;
+            /** Good */
+            good: boolean;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Value */
+            value: number;
         };
         /** SourceOut */
         SourceOut: {
@@ -2912,6 +3179,15 @@ export interface components {
             /** Upserted */
             upserted: number;
         };
+        /** UrgeResponse */
+        UrgeResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Linear Identifier */
+            linear_identifier: string;
+            /** Urge Count */
+            urge_count: number;
+        };
         /**
          * UserDetailOut
          * @description Aggregated profile for /admin/users/:id frontend page.
@@ -2999,6 +3275,28 @@ export interface components {
             total: number;
             /** Window Hours */
             window_hours: number;
+        };
+        /** WorkbenchOut */
+        WorkbenchOut: {
+            funnel: components["schemas"]["FunnelOut"];
+            /**
+             * Prev Start
+             * Format: date-time
+             */
+            prev_start: string;
+            /** Range */
+            range: string;
+            /**
+             * Range Start
+             * Format: date-time
+             */
+            range_start: string;
+            /** Slo */
+            slo: components["schemas"]["SloItemOut"][];
+            /** Sources */
+            sources: {
+                [key: string]: number;
+            };
         };
         /** SupervisorOut */
         app__api__admin_users__SupervisorOut: {
@@ -4470,6 +4768,39 @@ export interface operations {
             };
         };
     };
+    self_bug_endpoint_api_hub_issues_self_bug_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfBugBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfBugResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_hub_issue_api_hub_issues__hub_issue_id__get: {
         parameters: {
             query?: never;
@@ -4488,6 +4819,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubIssueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_endpoint_api_hub_issues__hub_issue_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notify_release_endpoint_api_hub_issues__hub_issue_id__notify_release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotifyReleaseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyReleaseResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4571,6 +4972,37 @@ export interface operations {
             };
         };
     };
+    urge_endpoint_api_hub_issues__hub_issue_id__urge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UrgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_metrics_api_metrics_dashboard_get: {
         parameters: {
             query?: never;
@@ -4587,6 +5019,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+        };
+    };
+    workbench_metrics_api_metrics_workbench_get: {
+        parameters: {
+            query?: {
+                range?: "today" | "week" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkbenchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4929,6 +5392,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DrainKsmWritebackResponse"];
+                };
+            };
+        };
+    };
+    list_escalation_pending_diagnosis_api_supervisor_escalation_pending_diagnosis_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EscalationPendingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5359,6 +5853,7 @@ export interface operations {
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
+                unassigned_only?: boolean;
                 customer_identity_id?: number | null;
                 hub_issue_id?: number | null;
                 page?: number;

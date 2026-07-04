@@ -54,15 +54,14 @@ consumeSsoFragment();
 
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/login/LoginPage";
-import { DashboardPage } from "./pages/dashboard/DashboardPage";
-import { SupervisorPage } from "./pages/supervisor/SupervisorPage";
+import { WorkbenchPage } from "./pages/workbench/WorkbenchPage";
 import { TicketsListPage } from "./pages/tickets/TicketsListPage";
 import { TicketDetailPage } from "./pages/tickets/TicketDetailPage";
 import { HubIssuesListPage } from "./pages/hub-issues/HubIssuesListPage";
 import { HubIssueDetailPage } from "./pages/hub-issues/HubIssueDetailPage";
 import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
-import { UsersPage } from "./pages/admin/users/UsersPage";
+import { PeopleScopesPage } from "./pages/admin/users/PeopleScopesPage";
 import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
 import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
@@ -107,8 +106,9 @@ createRoot(document.getElementById("root")!).render(
               </RequireAuth>
             }
           >
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/supervisor" element={<SupervisorPage />} />
+            <Route path="/" element={<WorkbenchPage />} />
+            {/* 旧主管工作台/Dashboard 已合并进工作台，老书签重定向 */}
+            <Route path="/supervisor" element={<Navigate to="/" replace />} />
             <Route path="/reflect" element={<ReflectWorkbenchPage />} />
             <Route path="/tickets" element={<TicketsListPage />} />
             <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
@@ -122,7 +122,7 @@ createRoot(document.getElementById("root")!).render(
               path="/customers/:customerId"
               element={<CustomerDetailPage />}
             />
-            <Route path="/admin/users" element={<UsersPage />} />
+            <Route path="/admin/users" element={<PeopleScopesPage />} />
             <Route path="/admin/users/:userId" element={<UserDetailPage />} />
             <Route path="/admin/scopes" element={<ScopesPage />} />
             <Route path="/admin/catalog" element={<CatalogPage />} />

@@ -968,6 +968,70 @@
         "title": "EscalationContextResponse",
         "type": "object"
       },
+      "EscalationPendingItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dissatisfaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dissatisfaction"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "short_code",
+          "title",
+          "dissatisfaction",
+          "created_at"
+        ],
+        "title": "EscalationPendingItem",
+        "type": "object"
+      },
+      "EscalationPendingResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EscalationPendingItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EscalationPendingResponse",
+        "type": "object"
+      },
       "ExecuteDedupBody": {
         "properties": {
           "decision_id": {
@@ -1147,6 +1211,44 @@
         "title": "FeatureScopeOut",
         "type": "object"
       },
+      "FeedbackBody": {
+        "properties": {
+          "note": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Note",
+            "type": "string"
+          },
+          "status": {
+            "pattern": "^(resolved|stillbad)$",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "FeedbackBody",
+        "type": "object"
+      },
+      "FeedbackResponse": {
+        "properties": {
+          "feedback_status": {
+            "title": "Feedback Status",
+            "type": "string"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "feedback_status"
+        ],
+        "title": "FeedbackResponse",
+        "type": "object"
+      },
       "FeishuContactUserOut": {
         "description": "One user under a department in the org-tree browser, annotated with\nsync status so the UI can grey-out already-synced rows.",
         "properties": {
@@ -1235,6 +1337,39 @@
           "member_count"
         ],
         "title": "FeishuDeptOut",
+        "type": "object"
+      },
+      "FunnelOut": {
+        "properties": {
+          "assigned": {
+            "title": "Assigned",
+            "type": "integer"
+          },
+          "classified": {
+            "title": "Classified",
+            "type": "integer"
+          },
+          "in_progress": {
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "received",
+          "classified",
+          "assigned",
+          "in_progress",
+          "resolved"
+        ],
+        "title": "FunnelOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1611,6 +1746,28 @@
             ],
             "title": "Expected Resolved At"
           },
+          "feedback_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Note"
+          },
+          "feedback_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Status"
+          },
           "feishu_task_id": {
             "anyOf": [
               {
@@ -1650,6 +1807,17 @@
             "title": "First Seen At",
             "type": "string"
           },
+          "fix_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -1658,6 +1826,18 @@
             "format": "date-time",
             "title": "Last Seen At",
             "type": "string"
+          },
+          "last_urged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Urged At"
           },
           "linear_identifier": {
             "anyOf": [
@@ -1748,6 +1928,18 @@
             ],
             "title": "Product Line Code"
           },
+          "release_notified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Notified At"
+          },
           "reply_authored_by": {
             "anyOf": [
               {
@@ -1797,6 +1989,11 @@
             ],
             "title": "Scheduled Iteration"
           },
+          "self_found": {
+            "default": false,
+            "title": "Self Found",
+            "type": "boolean"
+          },
           "short_code": {
             "title": "Short Code",
             "type": "string"
@@ -1804,6 +2001,18 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
           },
           "supersede_reason": {
             "anyOf": [
@@ -1834,6 +2043,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "urge_count": {
+            "default": 0,
+            "title": "Urge Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -1959,6 +2173,28 @@
             ],
             "title": "Expected Resolved At"
           },
+          "feedback_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Note"
+          },
+          "feedback_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Status"
+          },
           "feishu_task_status": {
             "anyOf": [
               {
@@ -1975,6 +2211,17 @@
             "title": "First Seen At",
             "type": "string"
           },
+          "fix_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -1983,6 +2230,18 @@
             "format": "date-time",
             "title": "Last Seen At",
             "type": "string"
+          },
+          "last_urged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Urged At"
           },
           "linear_identifier": {
             "anyOf": [
@@ -2054,6 +2313,18 @@
             ],
             "title": "Product Line Code"
           },
+          "release_notified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Notified At"
+          },
           "reply_content_version": {
             "title": "Reply Content Version",
             "type": "integer"
@@ -2070,6 +2341,11 @@
             ],
             "title": "Reply Updated At"
           },
+          "self_found": {
+            "default": false,
+            "title": "Self Found",
+            "type": "boolean"
+          },
           "short_code": {
             "title": "Short Code",
             "type": "string"
@@ -2078,6 +2354,18 @@
             "title": "Status",
             "type": "string"
           },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -2085,6 +2373,11 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "urge_count": {
+            "default": 0,
+            "title": "Urge Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -2607,6 +2900,46 @@
           "created_at"
         ],
         "title": "ModuleScopeOut",
+        "type": "object"
+      },
+      "NotifyReleaseBody": {
+        "properties": {
+          "fix_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Fix Version",
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fix_version",
+          "note"
+        ],
+        "title": "NotifyReleaseBody",
+        "type": "object"
+      },
+      "NotifyReleaseResponse": {
+        "properties": {
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "channel_count"
+        ],
+        "title": "NotifyReleaseResponse",
         "type": "object"
       },
       "PartnerIn": {
@@ -3511,6 +3844,90 @@
         "title": "ScopeRowOut",
         "type": "object"
       },
+      "SelfBugBody": {
+        "properties": {
+          "fix_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
+          "impact_versions": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact Versions"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "released": {
+            "default": true,
+            "title": "Released",
+            "type": "boolean"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "SelfBugBody",
+        "type": "object"
+      },
+      "SelfBugResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code"
+        ],
+        "title": "SelfBugResponse",
+        "type": "object"
+      },
       "SkillDetail": {
         "properties": {
           "content_md": {
@@ -3786,6 +4203,46 @@
           "created_at"
         ],
         "title": "SkillVersionModel",
+        "type": "object"
+      },
+      "SloItemOut": {
+        "properties": {
+          "delta_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Pt"
+          },
+          "good": {
+            "title": "Good",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "value",
+          "delta_pt",
+          "good"
+        ],
+        "title": "SloItemOut",
         "type": "object"
       },
       "SourceOut": {
@@ -4659,6 +5116,29 @@
         "title": "UpsertResponse",
         "type": "object"
       },
+      "UrgeResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "linear_identifier": {
+            "title": "Linear Identifier",
+            "type": "string"
+          },
+          "urge_count": {
+            "title": "Urge Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "urge_count",
+          "linear_identifier"
+        ],
+        "title": "UrgeResponse",
+        "type": "object"
+      },
       "UserDetailOut": {
         "description": "Aggregated profile for /admin/users/:id frontend page.",
         "properties": {
@@ -5003,6 +5483,51 @@
           "deduped_total"
         ],
         "title": "WebhookIntakeOut",
+        "type": "object"
+      },
+      "WorkbenchOut": {
+        "properties": {
+          "funnel": {
+            "$ref": "#/components/schemas/FunnelOut"
+          },
+          "prev_start": {
+            "format": "date-time",
+            "title": "Prev Start",
+            "type": "string"
+          },
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "range_start": {
+            "format": "date-time",
+            "title": "Range Start",
+            "type": "string"
+          },
+          "slo": {
+            "items": {
+              "$ref": "#/components/schemas/SloItemOut"
+            },
+            "title": "Slo",
+            "type": "array"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Sources",
+            "type": "object"
+          }
+        },
+        "required": [
+          "range",
+          "range_start",
+          "prev_start",
+          "funnel",
+          "slo",
+          "sources"
+        ],
+        "title": "WorkbenchOut",
         "type": "object"
       },
       "app__api__admin_users__SupervisorOut": {
@@ -7205,6 +7730,48 @@
         ]
       }
     },
+    "/api/hub-issues/self-bug": {
+      "post": {
+        "description": "登记自修复 bug：无客户来源的 standalone Bug_fix hub 工单（自查徽标）。",
+        "operationId": "self_bug_endpoint_api_hub_issues_self_bug_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfBugBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfBugResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Self Bug Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
     "/api/hub-issues/{hub_issue_id}": {
       "get": {
         "operationId": "get_hub_issue_api_hub_issues__hub_issue_id__get",
@@ -7242,6 +7809,112 @@
           }
         },
         "summary": "Get Hub Issue",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/feedback": {
+      "post": {
+        "description": "记录发版后客户回访结果（resolved 闭环 / stillbad 待升级）。",
+        "operationId": "feedback_endpoint_api_hub_issues__hub_issue_id__feedback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Feedback Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/notify-release": {
+      "post": {
+        "description": "发版通知：文案入 outbox（每个有源关联工单一行），回访状态置 pending。",
+        "operationId": "notify_release_endpoint_api_hub_issues__hub_issue_id__notify_release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyReleaseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notify Release Endpoint",
         "tags": [
           "hub-issues"
         ]
@@ -7353,6 +8026,49 @@
         ]
       }
     },
+    "/api/hub-issues/{hub_issue_id}/urge": {
+      "post": {
+        "description": "催办：向 Linear issue 发评论并计数（24h 频率限制）。",
+        "operationId": "urge_endpoint_api_hub_issues__hub_issue_id__urge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrgeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Urge Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
     "/api/metrics/dashboard": {
       "get": {
         "operationId": "dashboard_metrics_api_metrics_dashboard_get",
@@ -7369,6 +8085,54 @@
           }
         },
         "summary": "Dashboard Metrics",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/metrics/workbench": {
+      "get": {
+        "operationId": "workbench_metrics_api_metrics_workbench_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "today",
+              "enum": [
+                "today",
+                "week",
+                "month"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workbench Metrics",
         "tags": [
           "metrics"
         ]
@@ -7807,6 +8571,50 @@
           }
         },
         "summary": "Drain Ksm Writeback Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/escalation-pending-diagnosis": {
+      "get": {
+        "description": "AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。\n\ndiagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤\n—— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。",
+        "operationId": "list_escalation_pending_diagnosis_api_supervisor_escalation_pending_diagnosis_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscalationPendingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Escalation Pending Diagnosis",
         "tags": [
           "supervisor"
         ]
@@ -8440,6 +9248,16 @@
                 }
               ],
               "title": "Assigned User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned Only",
+              "type": "boolean"
             }
           },
           {

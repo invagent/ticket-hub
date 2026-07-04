@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, deleteByPath, rawRequest } from "@/api/client";
 import { ProductLineSelect } from "@/components/selectors";
+import { AdminTabs } from "../AdminTabs";
 
 type Tab = "product-line-modules" | "features";
 
@@ -19,7 +20,8 @@ export function CatalogPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">目录管理</h1>
+      <h1 className="m-0 text-[17px] font-bold font-hub">管理</h1>
+      <AdminTabs />
       <p className="text-sm text-gray-500">
         统一维护 产品线 / 模块 / Feature。其他页面从这里读下拉框选项。
       </p>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getByPath, postByPath, putByPath, ApiError } from "@/api/client";
+import { AdminTabs } from "../AdminTabs";
 
 /**
  * Skill 配置页（D4 优化 v2 §三需求2）：DB 化提示词的查看/编辑/版本/回滚。
@@ -22,11 +23,12 @@ export function SkillsPage() {
 
   return (
     <div className="space-y-4">
+      <h1 className="m-0 text-[17px] font-bold font-hub">管理</h1>
+      <AdminTabs />
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Skill 提示词配置</h1>
           <p className="text-sm text-gray-500">
-            DB 化版本提示词，热加载即生效；编辑留历史、可回滚。
+            DB 化版本提示词（内部分类/反思 agent 用），热加载即生效；编辑留历史、可回滚。
           </p>
         </div>
         <button
