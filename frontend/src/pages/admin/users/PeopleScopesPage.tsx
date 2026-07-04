@@ -57,6 +57,14 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
+function currentRole(): string {
+  try {
+    return JSON.parse(localStorage.getItem("auth_user") ?? "null")?.role ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export function PeopleScopesPage() {
   const qc = useQueryClient();
   const [selId, setSelId] = useState<number | null>(null);
@@ -525,7 +533,65 @@ function ProfilePanel({ userId }: { userId: number }) {
         </button>
       </div>
 
+      {currentRole() === "admin" && <ScopeAuditCard userId={userId} />}
+
       {error && <div className="text-xs text-hub-rose">{error}</div>}
+    </div>
+  );
+}
+
+/** 分工变更审计（原分工管理页 History tab；require_admin，仅管理员渲染）。 */
+function ScopeAuditCard({ userId }: { userId: number }) {
+  const [open, setOpen] = useState(false);
+  const history = useQuery({
+    queryKey: ["admin", "scopes-history", userId],
+    queryFn: () => api.get("/api/admin/scopes/history", { user_id: userId, limit: 50 }),
+    enabled: open,
+  });
+  return (
+    <div className="bg-white border border-hub-border rounded-[10px]" style={{ padding: "12px 18px" }}>
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full text-left">
+        <span className="text-[13px] font-bold">分工变更审计</span>
+        <span className="text-[11px] text-hub-textFaint">该成员的分工增删记录</span>
+        <span className="ml-auto text-[11px] text-hub-teal">{open ? "收起" : "展开"}</span>
+      </button>
+      {open && (
+        <div className="mt-2.5 flex flex-col gap-1 max-h-56 overflow-auto">
+          {history.isLoading && <div className="text-[11px] text-hub-textFaint">加载中…</div>}
+          {history.data?.length === 0 && (
+            <div className="text-[11px] text-hub-textFaint">暂无变更记录</div>
+          )}
+          {history.data?.map((h) => (
+            <div key={h.id} className="flex items-center gap-2 text-[11.5px] py-1 border-b border-hub-borderLight">
+              <span
+                className={`flex-none text-[9.5px] font-bold px-[7px] py-px rounded-full border ${
+                  h.action === "add"
+                    ? "bg-hub-green-light text-hub-green border-hub-green-border"
+                    : "bg-hub-rose-light text-hub-rose border-hub-rose-border"
+                }`}
+              >
+                {h.action === "add" ? "新增" : "移除"}
+              </span>
+              <span className="flex-none text-[9.5px] font-bold px-[7px] py-px rounded-full bg-hub-neutral-light text-hub-textMuted border border-hub-border">
+                {h.scope_type}
+              </span>
+              <span className="text-hub-textSecondary truncate">
+                {h.scope_type === "module"
+                  ? `${(h.payload as { product_line_code?: string }).product_line_code ?? ""} / ${(h.payload as { module?: string }).module ?? ""}`
+                  : String((h.payload as { feature?: string }).feature ?? "")}
+              </span>
+              <span className="ml-auto flex-none text-[10.5px] text-hub-textFaint font-mono">
+                {new Date(h.changed_at).toLocaleString("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -574,33 +640,46 @@ function ScopesCard({
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<"module" | "feature">("module");
   const [lineCode, setLineCode] = useState("");
   const [moduleName, setModuleName] = useState("");
+  const [featureName, setFeatureName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const lines = useQuery({
     queryKey: ["admin", "product-lines"],
     queryFn: () => api.get("/api/admin/product-lines"),
-    enabled: adding,
+    enabled: adding && mode === "module",
   });
   const modules = useQuery({
     queryKey: ["admin", "modules", lineCode],
     queryFn: () => api.get("/api/admin/modules", { product_line_code: lineCode }),
-    enabled: adding && !!lineCode,
+    enabled: adding && mode === "module" && !!lineCode,
+  });
+  const features = useQuery({
+    queryKey: ["admin", "catalog-features"],
+    queryFn: () => api.get("/api/admin/features"),
+    enabled: adding && mode === "feature",
   });
 
   const addScope = useMutation({
-    mutationFn: () =>
-      api.post("/api/admin/scopes/modules", {
-        user_id: userId,
-        product_line_code: lineCode,
-        module: moduleName,
-      }),
+    mutationFn: async (): Promise<unknown> =>
+      mode === "module"
+        ? api.post("/api/admin/scopes/modules", {
+            user_id: userId,
+            product_line_code: lineCode,
+            module: moduleName,
+          })
+        : api.post("/api/admin/scopes/features", {
+            user_id: userId,
+            feature: featureName,
+          }),
     onSuccess: () => {
       setError(null);
       setAdding(false);
       setLineCode("");
       setModuleName("");
+      setFeatureName("");
       onChanged();
     },
     onError: (e) => setError(errMsg(e)),
@@ -635,41 +714,83 @@ function ScopesCard({
 
       {adding && (
         <div className="flex items-center gap-2 mb-3 p-2.5 bg-hub-panel border border-hub-borderLight rounded-lg flex-wrap">
-          <select
-            value={lineCode}
-            onChange={(e) => {
-              setLineCode(e.target.value);
-              setModuleName("");
-            }}
-            className="text-xs px-2 py-1.5 border border-hub-border rounded-md bg-white outline-none"
-          >
-            <option value="">选择产品线…</option>
-            {lines.data?.map((l: { code: string; name?: string | null }) => (
-              <option key={l.code} value={l.code}>
-                {l.name || l.code}
-              </option>
+          <div className="inline-flex bg-hub-segment border border-hub-border rounded-lg p-0.5 gap-0.5">
+            {(
+              [
+                ["module", "Module 分工"],
+                ["feature", "Feature 兜底"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setMode(k)}
+                className={`px-3 py-[3.5px] rounded-md text-[11.5px] ${
+                  mode === k ? "bg-white text-hub-teal-deep font-bold" : "text-hub-textSecondary"
+                }`}
+              >
+                {label}
+              </button>
             ))}
-          </select>
-          <select
-            value={moduleName}
-            onChange={(e) => setModuleName(e.target.value)}
-            disabled={!lineCode}
-            className="text-xs px-2 py-1.5 border border-hub-border rounded-md bg-white outline-none disabled:opacity-50"
-          >
-            <option value="">选择模块…</option>
-            {modules.data?.map((m: { id: number; name: string }) => (
-              <option key={m.id} value={m.name}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          </div>
+          {mode === "module" ? (
+            <>
+              <select
+                value={lineCode}
+                onChange={(e) => {
+                  setLineCode(e.target.value);
+                  setModuleName("");
+                }}
+                className="text-xs px-2 py-1.5 border border-hub-border rounded-md bg-white outline-none"
+              >
+                <option value="">选择产品线…</option>
+                {lines.data?.map((l: { code: string; name?: string | null }) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name || l.code}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={moduleName}
+                onChange={(e) => setModuleName(e.target.value)}
+                disabled={!lineCode}
+                className="text-xs px-2 py-1.5 border border-hub-border rounded-md bg-white outline-none disabled:opacity-50"
+              >
+                <option value="">选择模块…</option>
+                {modules.data?.map((m: { id: number; name: string }) => (
+                  <option key={m.id} value={m.name}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <select
+              value={featureName}
+              onChange={(e) => setFeatureName(e.target.value)}
+              className="text-xs px-2 py-1.5 border border-hub-border rounded-md bg-white outline-none"
+            >
+              <option value="">选择 feature…</option>
+              {features.data?.map((f: { id: number; name: string }) => (
+                <option key={f.id} value={f.name}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => addScope.mutate()}
-            disabled={!lineCode || !moduleName || addScope.isPending}
+            disabled={
+              addScope.isPending || (mode === "module" ? !lineCode || !moduleName : !featureName)
+            }
             className="text-[11.5px] font-semibold px-3.5 py-1.5 rounded-md bg-hub-teal text-white disabled:opacity-40"
           >
             {addScope.isPending ? "添加中…" : "添加"}
           </button>
+          {mode === "feature" && (
+            <span className="text-[10.5px] text-hub-textFaint">
+              跨产品线兜底：module 未命中时按 feature 匹配
+            </span>
+          )}
         </div>
       )}
 

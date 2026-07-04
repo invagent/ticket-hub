@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -54,6 +54,8 @@ class SloItem:
     value: float  # 0.0–1.0（本期）
     delta_pt: float | None  # 与上一周期的差值（百分点）；上期无数据为 None
     good: bool  # delta 方向是否向好（调整率下降=好）
+    # 最近 7 天真实快照（materializer beat 每日 UPSERT 积累；不足 2 点前端不画线）
+    trend: list[dict[str, Any]] = field(default_factory=list)  # [{date, value}]
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,8 +72,6 @@ def range_window(range_key: str, *, now: datetime | None = None) -> tuple[dateti
     """[start, prev_start]：本期起点 + 上一同长周期起点（北京时区切界）。"""
     if range_key not in _RANGES:
         raise ValueError(f"invalid range {range_key!r}; must be one of {_RANGES}")
-    from datetime import UTC
-
     now = now or datetime.now(UTC)
     local = now.astimezone(BEIJING)
     midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -175,9 +175,11 @@ def compute_workbench_metrics(
         resolved=_count(Ticket.status.in_(_RESOLVED_STATUSES)),
     )
 
-    # ---- SLO 本期 vs 上期 ---------------------------------------------
+    # ---- SLO 本期 vs 上期 + 7 日趋势 -----------------------------------
     cur = _window_slo(db, start, None)
     prev = _window_slo(db, prev_start, start)
+    trends = load_slo_trend(db, now=now)
+    today_key = (now or datetime.now(UTC)).astimezone(BEIJING).date().isoformat()
     slo: list[SloItem] = []
     for key, name, higher_better in _SLO_DEFS:
         c_num, c_den = cur[key]
@@ -189,7 +191,10 @@ def compute_workbench_metrics(
         else:
             delta = round((value - _ratio(p_num, p_den)) * 100, 1)  # 百分点
             good = delta >= 0 if higher_better else delta <= 0
-        slo.append(SloItem(key=key, name=name, value=value, delta_pt=delta, good=good))
+        # 今天的点用实时值（快照最多滞后一个 beat 周期）
+        trend = [p for p in trends.get(key, []) if p["date"] != today_key]
+        trend.append({"date": today_key, "value": _ratio(*cur[key])})
+        slo.append(SloItem(key=key, name=name, value=value, delta_pt=delta, good=good, trend=trend))
 
     # ---- 来源分布 ------------------------------------------------------
     rows = db.execute(
@@ -207,3 +212,60 @@ def compute_workbench_metrics(
         slo=slo,
         sources=sources,
     )
+
+
+# ---- SLO 每日快照（真实趋势线的数据源） ------------------------------------
+#
+# materializer beat（5 分钟）顺带调 snapshot_today_slo：把「今日」四项 SLO
+# UPSERT 进 materialized_metrics(slot_key='slo:{北京日期}')——每天一行，当日
+# 内反复覆盖，跨天自然留痕。积累 ≥2 天后前端才画 sparkline，绝不编造历史。
+
+_SLO_SLOT_PREFIX = "slo:"
+_TREND_DAYS = 7
+
+
+def snapshot_today_slo(db: Session, *, now: datetime | None = None) -> str:
+    """UPSERT 今日 SLO 快照行，返回 slot_key。Caller commits。"""
+    from app.models import MaterializedMetrics
+
+    now = now or datetime.now(UTC)
+    day = now.astimezone(BEIJING).date().isoformat()
+    slot = f"{_SLO_SLOT_PREFIX}{day}"
+    # 窗口 [当日零点, now)：快照=「截至 now 的当日值」；封顶防止给历史日期
+    # 落快照时把之后的数据算进去（生产 now=当下，等价于不封顶）
+    cur = _window_slo(db, range_window("today", now=now)[0], now)
+    payload = {key: _ratio(*cur[key]) for key, _, _ in _SLO_DEFS}
+    row = db.execute(
+        select(MaterializedMetrics).where(MaterializedMetrics.slot_key == slot)
+    ).scalar_one_or_none()
+    if row is None:
+        db.add(MaterializedMetrics(slot_key=slot, metrics_json=payload))
+    else:
+        row.metrics_json = payload
+        row.refreshed_at = now
+    db.flush()
+    return slot
+
+
+def load_slo_trend(
+    db: Session, *, now: datetime | None = None, days: int = _TREND_DAYS
+) -> dict[str, list[dict[str, Any]]]:
+    """读最近 N 天快照 → {slo_key: [{date, value}...]}（按日期升序，缺天跳过）。"""
+    from app.models import MaterializedMetrics
+
+    now = now or datetime.now(UTC)
+    today = now.astimezone(BEIJING).date()
+    slots = [f"{_SLO_SLOT_PREFIX}{(today - timedelta(days=i)).isoformat()}" for i in range(days)]
+    rows = db.execute(
+        select(MaterializedMetrics).where(MaterializedMetrics.slot_key.in_(slots))
+    ).scalars()
+    by_date: dict[str, dict[str, Any]] = {
+        r.slot_key.removeprefix(_SLO_SLOT_PREFIX): r.metrics_json for r in rows
+    }
+    out: dict[str, list[dict[str, Any]]] = {key: [] for key, _, _ in _SLO_DEFS}
+    for date_key in sorted(by_date):
+        payload = by_date[date_key]
+        for key, _, _ in _SLO_DEFS:
+            if isinstance(payload, dict) and key in payload:
+                out[key].append({"date": date_key, "value": float(payload[key])})
+    return out

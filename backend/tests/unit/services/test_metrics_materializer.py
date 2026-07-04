@@ -167,5 +167,8 @@ def test_refresh_task_updates_row(db_session: Session, monkeypatch) -> None:  # 
 
     payload = refresh_dashboard_metrics()
     assert payload["counts"]["users_total"] == 1
+    # latest 缓存行 + 今日 SLO 快照行（工作台趋势线数据源）
     rows = db_session.query(MaterializedMetrics).all()
-    assert len(rows) == 1
+    slots = sorted(r.slot_key for r in rows)
+    assert len(rows) == 2
+    assert slots[0] == "latest" and slots[1].startswith("slo:")

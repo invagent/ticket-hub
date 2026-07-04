@@ -103,12 +103,19 @@ class FunnelOut(BaseModel):
     resolved: int
 
 
+class SloTrendPoint(BaseModel):
+    date: str  # 北京日期 YYYY-MM-DD
+    value: float  # 0.0–1.0
+
+
 class SloItemOut(BaseModel):
     key: str
     name: str
     value: float  # 0.0–1.0
     delta_pt: float | None  # 环比上一周期（百分点）；上期无数据为 null
     good: bool
+    # 最近 7 天真实快照（beat 每日积累；<2 点前端不画线）
+    trend: list[SloTrendPoint] = []
 
 
 class WorkbenchOut(BaseModel):

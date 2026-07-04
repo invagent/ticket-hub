@@ -186,7 +186,7 @@ export function WorkbenchPage() {
             </div>
           </div>
 
-          {/* SLO 指标卡（真实环比；无历史快照，不画趋势线） */}
+          {/* SLO 指标卡（真实环比 + 每日快照积累出的 7 日趋势线） */}
           <div className="grid grid-cols-4 gap-3">
             {metrics.data.slo.map((card) => (
               <div
@@ -194,8 +194,15 @@ export function WorkbenchPage() {
                 className="border border-hub-borderLight bg-hub-panel rounded-[9px] px-3.5 py-3"
               >
                 <div className="text-[11.5px] text-hub-textMuted">{card.name}</div>
-                <div className="text-[22px] font-bold leading-none font-mono mt-1.5">
-                  {(card.value * 100).toFixed(1)}%
+                <div className="flex items-end gap-2.5 mt-1.5">
+                  <div className="text-[22px] font-bold leading-none font-mono">
+                    {(card.value * 100).toFixed(1)}%
+                  </div>
+                  <div className="flex-1" />
+                  <Sparkline
+                    points={card.trend ?? []}
+                    color={card.good ? "#177e83" : "#c98a1e"}
+                  />
                 </div>
                 <div className="mt-[7px] text-[10.5px] text-hub-textFaint flex items-center gap-1">
                   {card.delta_pt === null || card.delta_pt === undefined ? (
@@ -230,6 +237,43 @@ export function WorkbenchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** 7 日趋势线（每日快照真实积累；<2 点不画，显示「趋势积累中」）。 */
+function Sparkline({
+  points,
+  color,
+}: {
+  points: { date: string; value: number }[];
+  color: string;
+}) {
+  if (points.length < 2) {
+    return <span className="text-[9.5px] text-hub-textFaint">趋势积累中</span>;
+  }
+  const vals = points.map((p) => p.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
+  const poly = points
+    .map(
+      (p, i) =>
+        `${(2 + (i * 60) / (points.length - 1)).toFixed(1)},${(18 - ((p.value - min) / span) * 16).toFixed(1)}`,
+    )
+    .join(" ");
+  const title = points.map((p) => `${p.date.slice(5)} ${(p.value * 100).toFixed(1)}%`).join("\n");
+  return (
+    <svg width="64" height="20" viewBox="0 0 64 20" className="block flex-none">
+      <title>{title}</title>
+      <polyline
+        points={poly}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -315,7 +359,7 @@ function ConfigWarningBar() {
       {open ? (
         <div className="text-[12.5px] text-hub-amber-deep flex-1 min-w-0 truncate">
           {items.map((w) => w.detail).join("；")}{" "}
-          <Link to="/admin/scopes" className="font-semibold underline-offset-2 hover:underline">
+          <Link to="/admin/users" className="font-semibold underline-offset-2 hover:underline">
             去设置 →
           </Link>
         </div>

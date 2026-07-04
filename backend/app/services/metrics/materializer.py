@@ -74,6 +74,10 @@ def refresh_dashboard_metrics() -> dict[str, Any]:
     try:
         metrics = compute_dashboard_metrics(db)
         upsert_metrics(db, metrics)
+        # 顺带落今日 SLO 快照（工作台趋势线数据源；每天一行，当日反复覆盖）
+        from app.services.metrics.workbench import snapshot_today_slo
+
+        snapshot_today_slo(db)
         db.commit()
     except Exception:
         db.rollback()

@@ -63,7 +63,6 @@ import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { PeopleScopesPage } from "./pages/admin/users/PeopleScopesPage";
 import { UserDetailPage } from "./pages/admin/users/UserDetailPage";
-import { ScopesPage } from "./pages/admin/scopes/ScopesPage";
 import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
 import { SkillsPage } from "./pages/admin/skills/SkillsPage";
 import { ReflectWorkbenchPage } from "./pages/reflect/ReflectWorkbenchPage";
@@ -124,7 +123,8 @@ createRoot(document.getElementById("root")!).render(
             />
             <Route path="/admin/users" element={<PeopleScopesPage />} />
             <Route path="/admin/users/:userId" element={<UserDetailPage />} />
-            <Route path="/admin/scopes" element={<ScopesPage />} />
+            {/* 旧分工管理已并入人员与分工，老书签重定向 */}
+            <Route path="/admin/scopes" element={<Navigate to="/admin/users" replace />} />
             <Route path="/admin/catalog" element={<CatalogPage />} />
             <Route path="/admin/skills" element={<SkillsPage />} />
           </Route>

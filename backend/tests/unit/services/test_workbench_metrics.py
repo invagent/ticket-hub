@@ -111,3 +111,41 @@ def test_slo_delta_none_when_prev_empty(world: Session) -> None:
 def test_sources_distribution(world: Session) -> None:
     m = compute_workbench_metrics(world, "today", now=NOW)
     assert m.sources == {"ksm": 2, "ai_cs": 1}
+
+
+def test_slo_snapshot_upsert_and_trend(world: Session) -> None:
+    from app.services.metrics.workbench import load_slo_trend, snapshot_today_slo
+
+    # 昨天 + 今天各落一次快照（快照时刻晚于当日数据创建时刻，模拟真实 beat）
+    yesterday = NOW - timedelta(days=1) + timedelta(hours=1)
+    slot_y = snapshot_today_slo(world, now=yesterday)
+    slot_t = snapshot_today_slo(world, now=NOW)
+    world.commit()
+    assert slot_y == "slo:2026-07-14" and slot_t == "slo:2026-07-15"
+
+    # 同日重复落 → UPSERT 不新增行
+    snapshot_today_slo(world, now=NOW)
+    world.commit()
+    from app.models import MaterializedMetrics
+
+    assert (
+        world.query(MaterializedMetrics).filter(MaterializedMetrics.slot_key.like("slo:%")).count()
+        == 2
+    )
+
+    trend = load_slo_trend(world, now=NOW)
+    assert [p["date"] for p in trend["auto_hit"]] == ["2026-07-14", "2026-07-15"]
+    # 昨天窗口（14 号）: 工单 4/5 属于 14 号且全分配 → auto_hit 1.0
+    assert trend["auto_hit"][0]["value"] == 1.0
+
+
+def test_compute_appends_realtime_today_point(world: Session) -> None:
+    from app.services.metrics.workbench import snapshot_today_slo
+
+    # 昨天有快照，今天没有 → trend 仍应含今天的实时点
+    snapshot_today_slo(world, now=NOW - timedelta(days=1))
+    world.commit()
+    m = compute_workbench_metrics(world, "today", now=NOW)
+    auto = next(s for s in m.slo if s.key == "auto_hit")
+    assert [p["date"] for p in auto.trend] == ["2026-07-14", "2026-07-15"]
+    assert auto.trend[-1]["value"] == pytest.approx(0.3333, abs=1e-3)  # 实时值 1/3

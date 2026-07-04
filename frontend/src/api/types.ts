@@ -2946,6 +2946,18 @@ export interface components {
             key: string;
             /** Name */
             name: string;
+            /**
+             * Trend
+             * @default []
+             */
+            trend: components["schemas"]["SloTrendPoint"][];
+            /** Value */
+            value: number;
+        };
+        /** SloTrendPoint */
+        SloTrendPoint: {
+            /** Date */
+            date: string;
             /** Value */
             value: number;
         };

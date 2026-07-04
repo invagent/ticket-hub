@@ -4230,6 +4230,14 @@
             "title": "Name",
             "type": "string"
           },
+          "trend": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SloTrendPoint"
+            },
+            "title": "Trend",
+            "type": "array"
+          },
           "value": {
             "title": "Value",
             "type": "number"
@@ -4243,6 +4251,24 @@
           "good"
         ],
         "title": "SloItemOut",
+        "type": "object"
+      },
+      "SloTrendPoint": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "value"
+        ],
+        "title": "SloTrendPoint",
         "type": "object"
       },
       "SourceOut": {
