@@ -65,7 +65,7 @@ export function UserSelect({
       disabled={disabled || q.isLoading}
       className={
         className ??
-        "px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm min-w-[12rem]"
+        "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] min-w-[12rem]"
       }
     >
       {!required && <option value="">{placeholder}</option>}
@@ -119,7 +119,7 @@ export function UserSelectFromList({
       }
       className={
         className ??
-        "px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm min-w-[12rem]"
+        "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] min-w-[12rem]"
       }
     >
       <option value="">{placeholder ?? "选择用户"}</option>
@@ -167,7 +167,7 @@ export function ProductLineSelect({
       disabled={q.isLoading}
       className={
         className ??
-        "px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm min-w-[12rem]"
+        "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] min-w-[12rem]"
       }
     >
       <option value="">{placeholder}</option>
@@ -223,7 +223,7 @@ export function ModuleSelect({
       title={!productLineCode ? "先选择产品线" : undefined}
       className={
         className ??
-        "px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm min-w-[12rem]"
+        "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] min-w-[12rem]"
       }
     >
       <option value="">
@@ -265,7 +265,7 @@ export function FeatureSelect({
       disabled={q.isLoading}
       className={
         className ??
-        "px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm min-w-[12rem]"
+        "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] min-w-[12rem]"
       }
     >
       <option value="">{placeholder}</option>

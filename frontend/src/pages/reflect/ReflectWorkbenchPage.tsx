@@ -84,7 +84,7 @@ export function ReflectWorkbenchPage() {
   }, [selectedId, tickets.data, setParams]);
 
   if (!isSupervisor) {
-    return <div className="p-6 text-sm text-gray-500">仅主管/管理员可访问反思诊断工作台。</div>;
+    return <div className="p-6 text-sm text-hub-textMuted font-hub">仅主管/管理员可访问反思诊断工作台。</div>;
   }
 
   return (

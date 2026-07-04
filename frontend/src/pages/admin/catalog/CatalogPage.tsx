@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, deleteByPath, rawRequest } from "@/api/client";
@@ -7,25 +8,23 @@ import { AdminTabs } from "../AdminTabs";
 type Tab = "product-line-modules" | "features";
 
 /**
- * /admin/catalog — 目录管理.
+ * /admin/catalog — 目录管理（2026-07 换肤 hub 设计系统）.
  *
  *   产品线 / 模块 (combined)：admin 在同一页面增删产品线和模块；模块依附
  *                              在产品线下，删除产品线前需先清空其模块.
  *   Feature              ：跨产品线兜底 feature 的增删（独立 tab）.
- *
- * 页面风格统一：上方 ➕ 添加表单 + 下方列表（每行 删除 按钮）.
  */
 export function CatalogPage() {
   const [tab, setTab] = useState<Tab>("product-line-modules");
 
   return (
-    <div className="space-y-4">
-      <h1 className="m-0 text-[17px] font-bold font-hub">管理</h1>
+    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
+      <h1 className="m-0 text-[17px] font-bold">管理</h1>
       <AdminTabs />
-      <p className="text-sm text-gray-500">
+      <p className="text-[11.5px] text-hub-textMuted mb-3">
         统一维护 产品线 / 模块 / Feature。其他页面从这里读下拉框选项。
       </p>
-      <div className="border-b border-gray-200 dark:border-gray-800">
+      <div className="border-b border-hub-border">
         <nav className="flex gap-1">
           <TabButton
             active={tab === "product-line-modules"}
@@ -33,10 +32,7 @@ export function CatalogPage() {
           >
             产品线 / 模块
           </TabButton>
-          <TabButton
-            active={tab === "features"}
-            onClick={() => setTab("features")}
-          >
+          <TabButton active={tab === "features"} onClick={() => setTab("features")}>
             Feature
           </TabButton>
         </nav>
@@ -47,6 +43,13 @@ export function CatalogPage() {
   );
 }
 
+const INPUT_CLS =
+  "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px]";
+const ADD_FORM_CLS =
+  "flex gap-2 items-start p-3 border border-dashed border-hub-teal-border bg-hub-teal-light/50 rounded-[10px] flex-wrap";
+const PRIMARY_BTN =
+  "px-3.5 py-1.5 text-[12.5px] font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95";
+
 function TabButton({
   active,
   onClick,
@@ -54,15 +57,15 @@ function TabButton({
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${
+      className={`px-3 py-1.5 text-[12.5px] border-b-2 -mb-px ${
         active
-          ? "border-blue-600 text-blue-600 font-medium"
-          : "border-transparent text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+          ? "border-hub-teal text-hub-teal-deep font-semibold"
+          : "border-transparent text-hub-textMuted hover:text-hub-textSecondary"
       }`}
     >
       {children}
@@ -108,15 +111,15 @@ function ProductLineModulesTab() {
   };
 
   return (
-    <div className="space-y-6 pt-4">
+    <div className="space-y-5 pt-4">
       <ProductLineAddForm onAdded={invalidate} />
       <ModuleAddForm productLines={lines.data ?? []} onAdded={invalidate} />
 
       {(lines.isLoading || modules.isLoading) && (
-        <p className="text-sm text-gray-500">加载中…</p>
+        <p className="text-xs text-hub-textFaint">加载中…</p>
       )}
       {lines.error && (
-        <p className="text-sm text-red-600">
+        <p className="text-xs text-hub-rose">
           {lines.error instanceof ApiError && lines.error.status === 403
             ? "需要 admin 角色"
             : `加载失败：${String(lines.error)}`}
@@ -124,17 +127,11 @@ function ProductLineModulesTab() {
       )}
 
       {lines.data && modules.data && (
-        <CatalogTable
-          productLines={lines.data}
-          modules={modules.data}
-          onChanged={invalidate}
-        />
+        <CatalogTable productLines={lines.data} modules={modules.data} onChanged={invalidate} />
       )}
     </div>
   );
 }
-
-// ---- 产品线 add form -------------------------------------------------------
 
 function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
   const [code, setCode] = useState("");
@@ -170,10 +167,8 @@ function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
   });
 
   return (
-    <section className="space-y-1">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
-        ➕ 新增产品线
-      </div>
+    <section className="space-y-1.5">
+      <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增产品线</div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -183,19 +178,19 @@ function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
           }
           add.mutate();
         }}
-        className="flex gap-2 text-sm items-start p-3 border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 rounded flex-wrap"
+        className={ADD_FORM_CLS}
       >
         <input
           placeholder="code (e.g. cloud-fapiao)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 w-44"
+          className={`${INPUT_CLS} w-44`}
         />
         <input
           placeholder="name (e.g. 金蝶发票云)"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 w-44"
+          className={`${INPUT_CLS} w-44`}
         />
         <input
           type="number"
@@ -204,7 +199,7 @@ function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
           placeholder="SLA reply (h)"
           value={reply}
           onChange={(e) => setReply(e.target.value)}
-          className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 w-32"
+          className={`${INPUT_CLS} w-32`}
         />
         <input
           type="number"
@@ -213,22 +208,16 @@ function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
           placeholder="SLA resolve (h)"
           value={resolve}
           onChange={(e) => setResolve(e.target.value)}
-          className="px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 w-32"
+          className={`${INPUT_CLS} w-32`}
         />
-        <button
-          type="submit"
-          disabled={add.isPending}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
-        >
+        <button type="submit" disabled={add.isPending} className={PRIMARY_BTN}>
           {add.isPending ? "提交中…" : "添加"}
         </button>
-        {error && <p className="text-xs text-red-600 self-center">{error}</p>}
+        {error && <p className="text-[11px] text-hub-rose self-center">{error}</p>}
       </form>
     </section>
   );
 }
-
-// ---- 模块 add form --------------------------------------------------------
 
 function ModuleAddForm({
   productLines,
@@ -263,12 +252,11 @@ function ModuleAddForm({
     },
   });
 
-  // Suppress unused warning (productLines prop kept for future autocomplete)
   void productLines;
 
   return (
-    <section className="space-y-1">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+    <section className="space-y-1.5">
+      <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">
         ➕ 新增模块（挂在已有产品线下）
       </div>
       <form
@@ -280,33 +268,23 @@ function ModuleAddForm({
           }
           add.mutate();
         }}
-        className="flex gap-2 text-sm items-start p-3 border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 rounded"
+        className={ADD_FORM_CLS}
       >
-        <ProductLineSelect
-          value={pl}
-          onChange={setPl}
-          placeholder="选择产品线"
-        />
+        <ProductLineSelect value={pl} onChange={setPl} placeholder="选择产品线" />
         <input
           placeholder="模块名 (e.g. 数电开票)"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+          className={`${INPUT_CLS} flex-1`}
         />
-        <button
-          type="submit"
-          disabled={add.isPending}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
-        >
+        <button type="submit" disabled={add.isPending} className={PRIMARY_BTN}>
           {add.isPending ? "提交中…" : "添加"}
         </button>
-        {error && <p className="text-xs text-red-600 self-center">{error}</p>}
+        {error && <p className="text-[11px] text-hub-rose self-center">{error}</p>}
       </form>
     </section>
   );
 }
-
-// ---- combined table -------------------------------------------------------
 
 function CatalogTable({
   productLines,
@@ -317,43 +295,44 @@ function CatalogTable({
   modules: Module[];
   onChanged: () => void;
 }) {
-  // Group modules by product_line_code for rendering
   const modulesByPl: Record<string, Module[]> = {};
   for (const m of modules) {
     (modulesByPl[m.product_line_code] ??= []).push(m);
   }
 
   return (
-    <table className="w-full text-sm border border-gray-200 dark:border-gray-800">
-      <thead className="bg-gray-100 dark:bg-gray-900">
-        <tr>
-          <th className="text-left p-2 w-44">产品线 code</th>
-          <th className="text-left p-2">产品线 name</th>
-          <th className="text-left p-2 w-28">SLA reply (h)</th>
-          <th className="text-left p-2 w-28">SLA resolve (h)</th>
-          <th className="text-left p-2">模块</th>
-          <th className="text-right p-2 w-32">操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {productLines.length === 0 ? (
-          <tr>
-            <td colSpan={6} className="p-4 text-center text-sm text-gray-400">
-              无产品线，请先用上方的"➕ 新增产品线"添加
-            </td>
+    <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
+      <table className="w-full text-[12.5px]">
+        <thead className="bg-hub-panel border-b border-hub-border">
+          <tr className="text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
+            <th className="text-left p-2.5 w-44">产品线 code</th>
+            <th className="text-left p-2.5">产品线 name</th>
+            <th className="text-left p-2.5 w-28">SLA reply (h)</th>
+            <th className="text-left p-2.5 w-28">SLA resolve (h)</th>
+            <th className="text-left p-2.5">模块</th>
+            <th className="text-right p-2.5 w-32">操作</th>
           </tr>
-        ) : (
-          productLines.map((pl) => (
-            <ProductLineGroup
-              key={pl.code}
-              pl={pl}
-              modules={modulesByPl[pl.code] ?? []}
-              onChanged={onChanged}
-            />
-          ))
-        )}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {productLines.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="p-4 text-center text-xs text-hub-textFaint">
+                无产品线，请先用上方的"➕ 新增产品线"添加
+              </td>
+            </tr>
+          ) : (
+            productLines.map((pl) => (
+              <ProductLineGroup
+                key={pl.code}
+                pl={pl}
+                modules={modulesByPl[pl.code] ?? []}
+                onChanged={onChanged}
+              />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -367,9 +346,7 @@ function ProductLineGroup({
   onChanged: () => void;
 }) {
   const [name, setName] = useState(pl.name);
-  const [reply, setReply] = useState(
-    pl.sla_reply_hours == null ? "" : String(pl.sla_reply_hours),
-  );
+  const [reply, setReply] = useState(pl.sla_reply_hours == null ? "" : String(pl.sla_reply_hours));
   const [resolve, setResolve] = useState(
     pl.sla_resolve_hours == null ? "" : String(pl.sla_resolve_hours),
   );
@@ -389,8 +366,7 @@ function ProductLineGroup({
       setError(null);
       onChanged();
     },
-    onError: (e) =>
-      setError(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)),
+    onError: (e) => setError(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)),
   });
 
   const delPl = useMutation({
@@ -401,46 +377,43 @@ function ProductLineGroup({
     onSuccess: onChanged,
     onError: (e) => {
       if (e instanceof ApiError) {
-        if (e.status === 409)
-          setError("该产品线还有模块，先删完模块再删产品线");
+        if (e.status === 409) setError("该产品线还有模块，先删完模块再删产品线");
         else setError(`${e.status} ${e.message}`);
       } else setError(String(e));
     },
   });
 
   const delMod = useMutation({
-    mutationFn: (id: number) =>
-      rawRequest(`/api/admin/modules/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => rawRequest(`/api/admin/modules/${id}`, { method: "DELETE" }),
     onSuccess: onChanged,
-    onError: (e) =>
-      setError(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)),
+    onError: (e) => setError(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)),
   });
 
-  // First row: PL header + first module (if any)
-  // Subsequent rows: only module column populated, PL columns empty (rowSpan)
   const rowSpan = Math.max(modules.length, 1);
+  const cellInput =
+    "px-2 py-1 border border-hub-border rounded-md bg-white outline-none focus:border-hub-teal text-[12.5px]";
 
   return (
     <>
       {(modules.length === 0 ? [null] : modules).map((m, i) => (
         <tr
           key={m?.id ?? `${pl.code}-empty`}
-          className="border-t border-gray-200 dark:border-gray-800 align-top"
+          className="border-t border-hub-borderLight align-top"
         >
           {i === 0 && (
             <>
-              <td className="p-2 font-mono text-xs align-top" rowSpan={rowSpan}>
+              <td className="p-2.5 font-mono text-[11px] align-top" rowSpan={rowSpan}>
                 {pl.code}
               </td>
-              <td className="p-2 align-top" rowSpan={rowSpan}>
+              <td className="p-2.5 align-top" rowSpan={rowSpan}>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="产品线名称"
-                  className="w-36 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
+                  className={`w-36 ${cellInput}`}
                 />
               </td>
-              <td className="p-2 align-top" rowSpan={rowSpan}>
+              <td className="p-2.5 align-top" rowSpan={rowSpan}>
                 <input
                   type="number"
                   min={1}
@@ -448,10 +421,10 @@ function ProductLineGroup({
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
                   placeholder="default"
-                  className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
+                  className={`w-20 ${cellInput}`}
                 />
               </td>
-              <td className="p-2 align-top" rowSpan={rowSpan}>
+              <td className="p-2.5 align-top" rowSpan={rowSpan}>
                 <input
                   type="number"
                   min={1}
@@ -459,39 +432,32 @@ function ProductLineGroup({
                   value={resolve}
                   onChange={(e) => setResolve(e.target.value)}
                   placeholder="default"
-                  className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900 text-sm"
+                  className={`w-20 ${cellInput}`}
                 />
               </td>
             </>
           )}
-          <td className="p-2">
-            {m ? (
-              <span>{m.name}</span>
-            ) : (
-              <span className="text-gray-400">（无模块）</span>
-            )}
+          <td className="p-2.5">
+            {m ? <span>{m.name}</span> : <span className="text-hub-textFaint">（无模块）</span>}
           </td>
-          <td className="p-2 text-right space-x-3">
-            {/* SLA save + 产品线删除 only on first row */}
+          <td className="p-2.5 text-right space-x-3">
             {i === 0 && (
               <>
                 <button
                   onClick={() => patch.mutate()}
                   disabled={patch.isPending}
-                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+                  className="text-[11px] text-hub-teal hover:underline disabled:opacity-50"
                 >
                   {patch.isPending ? "保存中…" : "保存"}
                 </button>
                 <button
                   onClick={() => {
-                    if (
-                      confirm(`删除产品线 ${pl.code}？该产品线下不能有模块`)
-                    ) {
+                    if (confirm(`删除产品线 ${pl.code}？该产品线下不能有模块`)) {
                       delPl.mutate();
                     }
                   }}
                   disabled={delPl.isPending}
-                  className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                  className="text-[11px] text-hub-rose hover:underline disabled:opacity-50"
                 >
                   删除产品线
                 </button>
@@ -505,14 +471,12 @@ function ProductLineGroup({
                   }
                 }}
                 disabled={delMod.isPending}
-                className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                className="text-[11px] text-hub-rose hover:underline disabled:opacity-50"
               >
                 删除模块
               </button>
             )}
-            {i === 0 && error && (
-              <p className="text-xs text-red-600 mt-1">{error}</p>
-            )}
+            {i === 0 && error && <p className="text-[11px] text-hub-rose mt-1">{error}</p>}
           </td>
         </tr>
       ))}
@@ -528,8 +492,7 @@ function FeaturesTab() {
     queryKey: ["admin", "features", "all"] as const,
     queryFn: () => api.get("/api/admin/features", { active_only: false }),
   });
-  const invalidate = () =>
-    qc.invalidateQueries({ queryKey: ["admin", "features"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "features"] });
 
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -552,15 +515,12 @@ function FeaturesTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <p className="text-xs text-gray-500">
-        Feature 是跨产品线的兜底分类（如「数据导入」「权限管理」），与
-        product_line 解耦。
+      <p className="text-[11px] text-hub-textMuted">
+        Feature 是跨产品线的兜底分类（如「数据导入」「权限管理」），与 product_line 解耦。
       </p>
 
-      <section className="space-y-1">
-        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
-          ➕ 新增 feature
-        </div>
+      <section className="space-y-1.5">
+        <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增 feature</div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -570,53 +530,46 @@ function FeaturesTab() {
             }
             add.mutate();
           }}
-          className="flex gap-2 text-sm items-start p-3 border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 rounded"
+          className={ADD_FORM_CLS}
         >
           <input
             placeholder="feature 名称 (e.g. 数据导入)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded bg-white dark:bg-gray-900"
+            className={`${INPUT_CLS} flex-1`}
           />
-          <button
-            type="submit"
-            disabled={add.isPending}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50"
-          >
+          <button type="submit" disabled={add.isPending} className={PRIMARY_BTN}>
             {add.isPending ? "提交中…" : "添加"}
           </button>
-          {error && <p className="text-xs text-red-600 self-center">{error}</p>}
+          {error && <p className="text-[11px] text-hub-rose self-center">{error}</p>}
         </form>
       </section>
 
-      {list.isLoading && <p className="text-sm text-gray-500">加载中…</p>}
+      {list.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
       {list.data && (
-        <table className="w-full text-sm border border-gray-200 dark:border-gray-800">
-          <thead className="bg-gray-100 dark:bg-gray-900">
-            <tr>
-              <th className="text-left p-2 w-16">id</th>
-              <th className="text-left p-2">feature</th>
-              <th className="text-left p-2">状态</th>
-              <th className="text-right p-2">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.data.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={4}
-                  className="p-3 text-center text-sm text-gray-400"
-                >
-                  无
-                </td>
+        <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
+          <table className="w-full text-[12.5px]">
+            <thead className="bg-hub-panel border-b border-hub-border">
+              <tr className="text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
+                <th className="text-left p-2.5 w-16">id</th>
+                <th className="text-left p-2.5">feature</th>
+                <th className="text-left p-2.5">状态</th>
+                <th className="text-right p-2.5">操作</th>
               </tr>
-            ) : (
-              list.data.map((f) => (
-                <FeatureRow key={f.id} f={f} onDeleted={invalidate} />
-              ))
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {list.data.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-3 text-center text-xs text-hub-textFaint">
+                    无
+                  </td>
+                </tr>
+              ) : (
+                list.data.map((f) => <FeatureRow key={f.id} f={f} onDeleted={invalidate} />)
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -630,22 +583,31 @@ function FeatureRow({
   onDeleted: () => void;
 }) {
   const del = useMutation({
-    mutationFn: () =>
-      deleteByPath("/api/admin/features/{feature_id}", { feature_id: f.id }),
+    mutationFn: () => deleteByPath("/api/admin/features/{feature_id}", { feature_id: f.id }),
     onSuccess: onDeleted,
   });
   return (
-    <tr className="border-t border-gray-200 dark:border-gray-800">
-      <td className="p-2 text-gray-500">{f.id}</td>
-      <td className="p-2">{f.name}</td>
-      <td className="p-2">{f.is_active ? "启用" : "停用"}</td>
-      <td className="p-2 text-right">
+    <tr className="border-t border-hub-borderLight">
+      <td className="p-2.5 text-hub-textMuted font-mono">{f.id}</td>
+      <td className="p-2.5">{f.name}</td>
+      <td className="p-2.5">
+        <span
+          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            f.is_active
+              ? "bg-hub-green-light text-hub-green border-hub-green-border"
+              : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
+          }`}
+        >
+          {f.is_active ? "启用" : "停用"}
+        </span>
+      </td>
+      <td className="p-2.5 text-right">
         <button
           onClick={() => {
             if (confirm(`删除 feature 「${f.name}」？`)) del.mutate();
           }}
           disabled={del.isPending}
-          className="text-xs text-red-600 hover:underline disabled:opacity-50"
+          className="text-[11px] text-hub-rose hover:underline disabled:opacity-50"
         >
           删除
         </button>

@@ -302,19 +302,16 @@ export function FeishuSyncDialog({
   const allDeptsLoaded = totalDepts > 0 && loadedDepts === totalDepts;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg w-full max-w-5xl h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-semibold">从飞书组织树同步用户</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2b2a26]/42 p-4 font-hub text-hub-text text-[13px]">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-hub-borderLight">
+          <h2 className="text-[15px] font-bold">从飞书组织树同步用户</h2>
+          <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text">
             ✕
           </button>
         </div>
         {allNamesEmpty && (
-          <div className="px-4 py-2 text-xs bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border-b border-amber-200 dark:border-amber-900">
+          <div className="px-4 py-2 text-[11px] bg-hub-amber-light text-hub-amber-deep border-b border-hub-amber-border">
             ⚠️
             飞书未返回姓名字段（已用工号/邮箱临时替代）。修复方式：到飞书开放平台
             → 你的应用 → 「数据权限管理 /
@@ -325,16 +322,16 @@ export function FeishuSyncDialog({
         {/* main area: left tree + right user list */}
         <div className="flex-1 flex min-h-0">
           {/* left: org tree */}
-          <aside className="w-72 border-r border-gray-200 dark:border-gray-800 overflow-y-auto p-2">
+          <aside className="w-72 border-r border-hub-borderLight overflow-y-auto p-2">
             {/* 加载进度条 */}
             {!allDeptsLoaded && totalDepts > 0 && (
               <div className="mb-2 px-1">
-                <div className="text-xs text-gray-500 mb-1">
+                <div className="text-[11px] text-hub-textMuted mb-1">
                   加载成员数据 {loadedDepts} / {totalDepts}
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                <div className="w-full bg-hub-borderLight rounded-full h-1">
                   <div
-                    className="bg-blue-500 h-1 rounded-full transition-all"
+                    className="bg-hub-teal h-1 rounded-full transition-all"
                     style={{
                       width: `${totalDepts > 0 ? (loadedDepts / totalDepts) * 100 : 0}%`,
                     }}
@@ -343,7 +340,7 @@ export function FeishuSyncDialog({
               </div>
             )}
             {treeLoading ? (
-              <p className="text-xs text-gray-400 p-2">加载部门树…</p>
+              <p className="text-[11px] text-hub-textFaint p-2">加载部门树…</p>
             ) : (
               <DeptNode
                 dept={null}
@@ -362,21 +359,21 @@ export function FeishuSyncDialog({
 
           {/* right: user table */}
           <main className="flex-1 flex flex-col min-w-0">
-            <div className="p-3 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2 text-sm">
-              <span className="font-medium truncate">{activeDeptName}</span>
-              <span className="text-xs text-gray-500">
+            <div className="p-3 border-b border-hub-borderLight flex items-center gap-2 text-[12.5px]">
+              <span className="font-semibold truncate">{activeDeptName}</span>
+              <span className="text-[11px] text-hub-textMuted">
                 ({deptUsers[activeDeptId]?.length ?? 0} 人)
               </span>
               <div className="ml-auto flex gap-2">
                 <button
                   onClick={selectAllInActiveDept}
-                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="text-[11px] px-2 py-1 rounded-md border border-hub-border hover:bg-hub-panel"
                 >
                   全选可同步
                 </button>
                 <button
                   onClick={clearAllInActiveDept}
-                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="text-[11px] px-2 py-1 rounded-md border border-hub-border hover:bg-hub-panel"
                 >
                   清除当前部门
                 </button>
@@ -385,16 +382,14 @@ export function FeishuSyncDialog({
 
             <div className="flex-1 overflow-y-auto">
               {loadingDept === activeDeptId && (
-                <p className="text-xs text-gray-400 p-3">加载中…</p>
+                <p className="text-[11px] text-hub-textFaint p-3">加载中…</p>
               )}
-              {browseError && (
-                <p className="text-xs text-red-600 p-3">{browseError}</p>
-              )}
+              {browseError && <p className="text-[11px] text-hub-rose p-3">{browseError}</p>}
               {!loadingDept && (deptUsers[activeDeptId]?.length ?? 0) === 0 && (
-                <p className="text-xs text-gray-400 p-3">该部门下无成员</p>
+                <p className="text-[11px] text-hub-textFaint p-3">该部门下无成员</p>
               )}
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-gray-900 text-xs sticky top-0">
+              <table className="w-full text-[12.5px]">
+                <thead className="bg-hub-panel text-[10.5px] font-bold text-hub-textMuted tracking-[.4px] sticky top-0">
                   <tr>
                     <th className="text-left p-2 w-10"></th>
                     <th className="text-left p-2">姓名</th>
@@ -419,16 +414,16 @@ export function FeishuSyncDialog({
         </div>
 
         {/* footer: selection summary + report */}
-        <div className="p-3 border-t border-gray-200 dark:border-gray-800 space-y-2">
+        <div className="p-3 border-t border-hub-borderLight space-y-2">
           {report ? (
             <SyncResultBanner report={report} />
           ) : (
             <div className="flex items-center gap-3">
-              <span className="text-sm">
+              <span className="text-[12.5px]">
                 已选 <span className="font-semibold">{selected.size}</span> 人
               </span>
               {sync.error && (
-                <span className="text-xs text-red-600">
+                <span className="text-[11px] text-hub-rose">
                   {sync.error instanceof ApiError
                     ? `${sync.error.status} ${JSON.stringify(sync.error.body)}`
                     : String(sync.error)}
@@ -437,14 +432,14 @@ export function FeishuSyncDialog({
               <div className="ml-auto flex gap-2">
                 <button
                   onClick={onClose}
-                  className="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="px-3 py-1.5 text-[12.5px] font-semibold rounded-md border border-hub-border text-hub-textSecondary hover:bg-hub-panel"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => sync.mutate()}
                   disabled={selected.size === 0 || sync.isPending}
-                  className="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+                  className="px-3 py-1.5 text-[12.5px] font-semibold rounded-md bg-hub-teal text-white disabled:opacity-50 hover:brightness-95"
                 >
                   {sync.isPending ? "同步中…" : `同步选中 (${selected.size})`}
                 </button>
@@ -527,17 +522,15 @@ function DeptNode({
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-1 py-1 rounded text-sm cursor-pointer ${
-          isActive
-            ? "bg-blue-100 dark:bg-blue-900"
-            : "hover:bg-gray-100 dark:hover:bg-gray-800"
+        className={`flex items-center gap-1 px-1 py-1 rounded-md text-[12.5px] cursor-pointer ${
+          isActive ? "bg-hub-teal-light text-hub-teal-deep" : "hover:bg-hub-panel"
         }`}
         onClick={() => {
           if (childList && childList.length > 0) onToggleExpand(id);
           onSelect(id, name);
         }}
       >
-        <span className="w-4 text-xs text-gray-400 flex-shrink-0">
+        <span className="w-4 text-[11px] text-hub-textFaint flex-shrink-0">
           {expanded ? "▾" : "▸"}
         </span>
         <input
@@ -559,17 +552,17 @@ function DeptNode({
         <span className="flex-1 truncate" title={name}>
           {name}
           {memberCount != null && (
-            <span className="text-xs text-gray-400 ml-1">({memberCount})</span>
+            <span className="text-[11px] text-hub-textFaint ml-1">({memberCount})</span>
           )}
           {!fullyLoaded && (
-            <span className="text-xs text-gray-400 ml-1 animate-pulse">…</span>
+            <span className="text-[11px] text-hub-textFaint ml-1 animate-pulse">…</span>
           )}
         </span>
       </div>
       {expanded && (
-        <div className="ml-4 border-l border-gray-200 dark:border-gray-800 pl-1">
+        <div className="ml-4 border-l border-hub-borderLight pl-1">
           {!childList || childList.length === 0 ? (
-            <p className="text-xs text-gray-400 px-1 py-0.5">无子部门</p>
+            <p className="text-[11px] text-hub-textFaint px-1 py-0.5">无子部门</p>
           ) : (
             childList.map((c) => (
               <DeptNode
@@ -615,11 +608,7 @@ function UserRow({
   const dim = user.already_synced || !user.is_activated;
   const { label, isFallback } = displayName(user);
   return (
-    <tr
-      className={`border-t border-gray-200 dark:border-gray-800 ${
-        dim ? "text-gray-400" : ""
-      }`}
-    >
+    <tr className={`border-t border-hub-borderLight ${dim ? "text-hub-textFaint" : ""}`}>
       <td className="p-2">
         <input
           type="checkbox"
@@ -628,32 +617,30 @@ function UserRow({
           disabled={!user.is_activated}
         />
       </td>
-      <td className="p-2 font-medium">
-        <span className={isFallback ? "italic text-gray-500" : ""}>
-          {label}
-        </span>
+      <td className="p-2 font-semibold">
+        <span className={isFallback ? "italic text-hub-textMuted" : ""}>{label}</span>
         {isFallback && (
           <span
             title="飞书未返回姓名（应用的通讯录数据范围可能未配置）。已用工号/邮箱替代。"
-            className="ml-1 text-[10px] text-gray-400"
+            className="ml-1 text-[10px] text-hub-textFaint"
           >
             ⓘ
           </span>
         )}
         {user.already_synced && (
-          <span className="ml-2 text-[10px] px-1 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+          <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-hub-green-light text-hub-green border border-hub-green-border">
             已同步 · id={user.local_user_id}
           </span>
         )}
         {!user.is_activated && (
-          <span className="ml-2 text-[10px] px-1 py-0.5 rounded bg-gray-200 text-gray-600 dark:bg-gray-800">
+          <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-hub-neutral-light text-hub-textMuted border border-hub-border">
             飞书已停用
           </span>
         )}
       </td>
       <td className="p-2">{user.employee_no || "—"}</td>
-      <td className="p-2 text-xs">{user.email || "—"}</td>
-      <td className="p-2 text-xs">{user.is_activated ? "活跃" : "停用"}</td>
+      <td className="p-2 text-[11px]">{user.email || "—"}</td>
+      <td className="p-2 text-[11px]">{user.is_activated ? "活跃" : "停用"}</td>
     </tr>
   );
 }
@@ -662,9 +649,9 @@ function UserRow({
 
 function SyncResultBanner({ report }: { report: SyncReport }) {
   return (
-    <div className="text-sm border border-gray-200 dark:border-gray-800 rounded p-2 space-y-1">
-      <div className="font-medium">同步结果</div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-x-3 gap-y-1 text-xs">
+    <div className="text-[12.5px] border border-hub-border rounded-[10px] p-2.5 space-y-1">
+      <div className="font-semibold">同步结果</div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-x-3 gap-y-1 text-[11px]">
         <span>
           新建：<b>{report.new_count}</b>
         </span>
@@ -677,14 +664,12 @@ function SyncResultBanner({ report }: { report: SyncReport }) {
         <span>
           跳过：<b>{report.skipped_inactive}</b>
         </span>
-        <span
-          className={report.errors.length ? "text-red-600 font-medium" : ""}
-        >
+        <span className={report.errors.length ? "text-hub-rose font-semibold" : ""}>
           错误：<b>{report.errors.length}</b>
         </span>
       </div>
       {report.errors.length > 0 && (
-        <ul className="text-xs text-red-600 mt-1 max-h-20 overflow-y-auto">
+        <ul className="text-[11px] text-hub-rose mt-1 max-h-20 overflow-y-auto">
           {report.errors.map((e, i) => (
             <li key={i}>
               [{e.open_id ?? "?"}] {e.error}
