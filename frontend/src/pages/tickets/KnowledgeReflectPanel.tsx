@@ -167,24 +167,20 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
   });
 
   return (
-    <section className="space-y-3 p-4 rounded border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30">
+    <section className="font-hub space-y-3 p-4 rounded-[10px] border border-hub-emerald-border bg-hub-emerald-light">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-          🧠 知识反哺
-        </span>
-        <span className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
-          改 AI 客服 skill → 试跑对比 → 发布
-        </span>
+        <span className="text-[13px] font-bold text-hub-emerald-deep">🧠 知识反哺</span>
+        <span className="text-[11px] text-hub-emerald">改 AI 客服 skill → 试跑对比 → 发布</span>
         <Link
           to={`/reflect?ticket=${ticketId}`}
-          className="ml-auto text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+          className="ml-auto text-[11px] font-semibold text-hub-emerald-deep hover:underline"
         >
           打开反思诊断工作台 →
         </Link>
       </div>
 
       {/* 黄金三元组 */}
-      <div className="grid gap-2 text-sm">
+      <div className="grid gap-2 text-[13px]">
         <GoldenRow label="客户原问题" tone="neutral">
           {ctx.original_question}
         </GoldenRow>
@@ -209,23 +205,21 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
 
       {/* 完整多轮会话（默认折叠） */}
       {(ctx.conversation?.length ?? 0) > 0 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-xs text-gray-500 select-none">
+        <details className="text-[13px]">
+          <summary className="cursor-pointer text-[11px] text-hub-textMuted select-none">
             完整会话（{ctx.conversation?.length ?? 0} 轮）
           </summary>
           <div className="mt-1 space-y-1 max-h-56 overflow-y-auto pr-1">
             {(ctx.conversation as ConversationTurn[]).map((m, i) => (
               <div
                 key={i}
-                className={`text-xs p-1.5 rounded border whitespace-pre-wrap ${
+                className={`text-[11px] p-1.5 rounded-md border whitespace-pre-wrap ${
                   m.role === "assistant"
-                    ? "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 ml-6"
-                    : "bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900 mr-6"
+                    ? "bg-hub-panel border-hub-border ml-6"
+                    : "bg-hub-cyan-light border-hub-cyan-border mr-6"
                 }`}
               >
-                <span className="font-semibold mr-1">
-                  {m.role === "assistant" ? "AI" : "客户"}
-                </span>
+                <span className="font-semibold mr-1">{m.role === "assistant" ? "AI" : "客户"}</span>
                 {m.text}
               </div>
             ))}
@@ -234,10 +228,10 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
       )}
 
       {/* skill 选择 */}
-      <div className="flex items-center gap-2 text-sm">
-        <label className="text-gray-600 dark:text-gray-400">修订 skill</label>
+      <div className="flex items-center gap-2 text-[13px]">
+        <label className="text-hub-textSecondary">修订 skill</label>
         <select
-          className="border rounded px-2 py-1 bg-white dark:bg-gray-900 dark:border-gray-700"
+          className="border border-hub-border rounded-md px-2 py-1 bg-white outline-none"
           value={skillName}
           onChange={(e) => setSkillName(e.target.value)}
         >
@@ -248,19 +242,19 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
           ))}
         </select>
         {(ctx.skills_used ?? []).includes(skillName) && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300">
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border">
             本次答复用到
           </span>
         )}
-        {detail.isFetching && <span className="text-xs text-gray-400">加载 skill…</span>}
+        {detail.isFetching && <span className="text-[11px] text-hub-textFaint">加载 skill…</span>}
       </div>
 
       {/* 文件编辑 */}
       {edits.map((f, i) => (
         <div key={f.filepath} className="space-y-1">
-          <div className="text-xs font-mono text-gray-500">{f.filepath}</div>
+          <div className="text-[11px] font-mono text-hub-textMuted">{f.filepath}</div>
           <textarea
-            className="w-full h-40 text-xs font-mono p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
+            className="w-full h-40 text-xs font-mono p-2 rounded-md border border-hub-border bg-white outline-none focus:border-hub-emerald"
             value={f.content}
             spellCheck={false}
             onChange={(e) =>
@@ -275,13 +269,13 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
       {/* 修订理由 + 建 draft */}
       <div className="flex items-center gap-2">
         <input
-          className="flex-1 border rounded px-2 py-1 text-sm bg-white dark:bg-gray-900 dark:border-gray-700"
+          className="flex-1 border border-hub-border rounded-md px-2 py-1 text-[13px] bg-white outline-none focus:border-hub-emerald"
           placeholder="修订理由（写入 skill 版本历史）"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
         <button
-          className="px-3 py-1 text-sm rounded bg-emerald-600 text-white disabled:opacity-40"
+          className="px-3 py-1 text-[13px] font-semibold rounded-md bg-hub-emerald text-white disabled:opacity-40"
           disabled={!dirty || createDraft.isPending}
           onClick={() => createDraft.mutate()}
         >
@@ -289,7 +283,7 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
         </button>
       </div>
       {draftVersion && (
-        <div className="text-xs text-emerald-700 dark:text-emerald-400">
+        <div className="text-[11px] text-hub-emerald-deep">
           draft 已创建：<span className="font-mono">{draftVersion}</span>（未发布，不影响生产）
         </div>
       )}
@@ -297,22 +291,20 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
       {/* replay 试跑 */}
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600 dark:text-gray-400">② 试跑问题</span>
+          <span className="text-[13px] text-hub-textSecondary">② 试跑问题</span>
           <button
-            className="px-3 py-1 text-sm rounded bg-indigo-600 text-white disabled:opacity-40"
+            className="px-3 py-1 text-[13px] font-semibold rounded-md bg-hub-teal text-white disabled:opacity-40"
             disabled={replay.isPending || (!draftVersion && !dirty)}
             onClick={() => replay.mutate()}
             title={
-              draftVersion
-                ? "用 draft 重答"
-                : "用当前发布版重答（先建 draft 才是测你的改动）"
+              draftVersion ? "用 draft 重答" : "用当前发布版重答（先建 draft 才是测你的改动）"
             }
           >
             {replay.isPending ? "重答中…" : draftVersion ? "用 draft 重答" : "用当前版重答"}
           </button>
         </div>
         <textarea
-          className="w-full h-16 text-sm p-2 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
+          className="w-full h-16 text-[13px] p-2 rounded-md border border-hub-border bg-white outline-none focus:border-hub-teal"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
@@ -320,12 +312,10 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
 
       {/* 对比：旧 vs 新 */}
       {replayAnswer !== null && (
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-2 gap-2 text-[13px]">
           <div className="space-y-1">
-            <div className="text-xs font-semibold text-red-700 dark:text-red-400">
-              AI 原答复
-            </div>
-            <pre className="whitespace-pre-wrap p-2 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs">
+            <div className="text-[11px] font-bold text-hub-rose">AI 原答复</div>
+            <pre className="whitespace-pre-wrap p-2 rounded-md bg-hub-rose-light border border-hub-rose-border text-[11px]">
               {ctx.ai_answer || "（无）"}
             </pre>
             {(ctx.cited_knowledge?.length ?? 0) > 0 && (
@@ -338,10 +328,10 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
             )}
           </div>
           <div className="space-y-1">
-            <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+            <div className="text-[11px] font-bold text-hub-emerald-deep">
               重答{draftVersion ? "（draft）" : ""}
             </div>
-            <pre className="whitespace-pre-wrap p-2 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-xs">
+            <pre className="whitespace-pre-wrap p-2 rounded-md bg-hub-emerald-light border border-hub-emerald-border text-[11px]">
               {replayAnswer}
             </pre>
             {replayCited.length > 0 && (
@@ -354,7 +344,7 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
       {/* 发布 */}
       <div className="flex items-center gap-2">
         <button
-          className="px-3 py-1 text-sm rounded bg-rose-600 text-white disabled:opacity-40"
+          className="px-3 py-1 text-[13px] font-semibold rounded-md bg-hub-rose text-white disabled:opacity-40"
           disabled={!draftVersion || publish.isPending || published}
           onClick={() => {
             if (confirm(`确认发布 ${draftVersion} 到生产？新会话立即生效。`)) publish.mutate();
@@ -363,15 +353,13 @@ function ReflectBody({ ticketId, ctx }: { ticketId: number; ctx: EscalationCtx }
           {publish.isPending ? "发布中…" : "③ 发布到生产"}
         </button>
         {published && (
-          <span className="text-sm text-emerald-700 dark:text-emerald-400">
-            ✅ 已发布，生产已生效
-          </span>
+          <span className="text-[13px] text-hub-emerald-deep">✅ 已发布，生产已生效</span>
         )}
       </div>
 
-      {error && <div className="text-sm text-red-600">{error}</div>}
+      {error && <div className="text-[13px] text-hub-rose">{error}</div>}
       {skills.error && (
-        <div className="text-sm text-red-600">AI 客服不可用：{errMsg(skills.error)}</div>
+        <div className="text-[13px] text-hub-rose">AI 客服不可用：{errMsg(skills.error)}</div>
       )}
     </section>
   );
@@ -388,40 +376,32 @@ function CitedList({
   tone: "bad" | "good";
   compact?: boolean;
 }) {
-  const border =
-    tone === "bad"
-      ? "border-red-200 dark:border-red-900"
-      : "border-emerald-200 dark:border-emerald-900";
+  const border = tone === "bad" ? "border-hub-rose-border" : "border-hub-emerald-border";
   return (
     <div className={compact ? "space-y-0.5" : "space-y-1"}>
-      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-[11px] text-hub-textMuted">{label}</div>
       {items.map((c, i) => {
         const title = c.title || c.id || `知识${i + 1}`;
         return (
-          <div
-            key={i}
-            className={`text-[11px] p-1.5 rounded border bg-white dark:bg-gray-900 ${border}`}
-          >
-            {c.type && (
-              <span className="font-mono text-gray-400 mr-1">[{c.type}]</span>
-            )}
+          <div key={i} className={`text-[11px] p-1.5 rounded-md border bg-white ${border}`}>
+            {c.type && <span className="font-mono text-hub-textFaint mr-1">[{c.type}]</span>}
             {c.url ? (
               <a
                 href={c.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-blue-600 hover:underline"
+                className="text-hub-teal hover:underline"
               >
                 {title}
               </a>
             ) : (
-              <span className="font-medium">{title}</span>
+              <span className="font-semibold">{title}</span>
             )}
             {typeof c.score === "number" && (
-              <span className="text-gray-400 ml-1">{(c.score * 100).toFixed(0)}%</span>
+              <span className="text-hub-textFaint ml-1">{(c.score * 100).toFixed(0)}%</span>
             )}
             {!compact && c.snippet && (
-              <div className="text-gray-500 mt-0.5 line-clamp-2">{c.snippet}</div>
+              <div className="text-hub-textMuted mt-0.5 line-clamp-2">{c.snippet}</div>
             )}
           </div>
         );
@@ -440,14 +420,16 @@ function GoldenRow({
   children: ReactNode;
 }) {
   const cls = {
-    neutral: "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800",
-    bad: "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900",
-    warn: "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900",
+    neutral: "bg-white border-hub-border",
+    bad: "bg-hub-rose-light border-hub-rose-border",
+    warn: "bg-hub-amber-light border-hub-amber-border",
   }[tone];
   return (
     <div>
-      <div className="text-xs text-gray-500 mb-0.5">{label}</div>
-      <div className={`text-sm whitespace-pre-wrap p-2 rounded border ${cls}`}>{children}</div>
+      <div className="text-[11px] text-hub-textMuted mb-0.5">{label}</div>
+      <div className={`text-[13px] whitespace-pre-wrap p-2 rounded-md border ${cls}`}>
+        {children}
+      </div>
     </div>
   );
 }
