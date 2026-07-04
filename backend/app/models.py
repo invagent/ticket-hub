@@ -478,6 +478,10 @@ class HubIssue(Base):
             "superseded_by_hub_issue_id IS NULL OR superseded_by_hub_issue_id <> id",
             name="ck_hub_issues_supersede_self",
         ),
+        CheckConstraint(
+            "feedback_status IS NULL OR feedback_status IN ('pending','resolved','stillbad')",
+            name="ck_hub_issues_feedback_status",
+        ),
         Index("ix_hub_issues_type_status", "type", "status"),
         Index("ix_hub_issues_product_module", "product", "module"),
         Index("ix_hub_issues_linear_uuid", "linear_uuid"),
@@ -529,6 +533,26 @@ class HubIssue(Base):
     feishu_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     feishu_task_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     feishu_task_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # 研发协同（2026-07 重构，迁移 0017）：催办 / 发版通知 / 客户反馈 / 自查登记
+    urge_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_urged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    release_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    release_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fix_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    impact_versions: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 发版通知后的客户回访状态（pending → resolved / stillbad）
+    feedback_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    feedback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 研发自查发现并修复（无客户来源），不触发客户通知
+    self_found: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 当前 status 的进入时间（停留时长展示；apply_hub_status 唯一入口维护）
+    status_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -952,7 +976,9 @@ class SyncOutbox(Base):
 
     __tablename__ = "sync_outbox"
     __table_args__ = (
-        CheckConstraint("kind IN ('reply','status','supply')", name="ck_sync_outbox_kind"),
+        CheckConstraint(
+            "kind IN ('reply','status','supply','release_note')", name="ck_sync_outbox_kind"
+        ),
         CheckConstraint(
             "status IN ('pending','sent','failed','skipped')",
             name="ck_sync_outbox_status",

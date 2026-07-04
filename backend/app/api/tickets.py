@@ -1,6 +1,6 @@
 """GET /api/tickets — list / detail / history.
 
-  GET /api/tickets?source_code=&type=&status=&assigned_user_id=&page=&page_size=
+  GET /api/tickets?source_code=&type=&status=&assigned_user_id=&unassigned_only=&page=&page_size=
   GET /api/tickets/{ticket_id}
   GET /api/tickets/{ticket_id}/history          status + relink merged timeline
 
@@ -87,6 +87,7 @@ def list_tickets(
     type: str | None = Query(None, alias="type"),
     status: str | None = Query(None),
     assigned_user_id: int | None = Query(None),
+    unassigned_only: bool = Query(False),
     customer_identity_id: int | None = Query(None),
     hub_issue_id: int | None = Query(None),
     page: int = Query(1, ge=1),
@@ -97,6 +98,7 @@ def list_tickets(
         type_=type,
         status=status,
         assigned_user_id=assigned_user_id,
+        unassigned_only=unassigned_only,
         customer_identity_id=customer_identity_id,
         hub_issue_id=hub_issue_id,
         page=page,

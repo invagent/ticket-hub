@@ -40,7 +40,7 @@ from app.api.deps.auth import AuthedUser, require_supervisor
 from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import HubIssue, StatusHistory
+from app.models import HubIssue, StatusHistory, Ticket
 from app.repositories.notification_log import NotificationLogRepository
 from app.services import knowledge_feedback as kf
 from app.services.agents.classify import classify_ticket
@@ -683,6 +683,59 @@ def list_pending_hub_issues(
     return PendingHubIssuesResponse(items=items)
 
 
+class EscalationPendingItem(BaseModel):
+    ticket_id: int
+    short_code: str
+    title: str | None
+    dissatisfaction: str | None
+    created_at: datetime
+
+
+class EscalationPendingResponse(BaseModel):
+    items: list[EscalationPendingItem]
+
+
+@router.get(
+    "/escalation-pending-diagnosis",
+    response_model=EscalationPendingResponse,
+)
+def list_escalation_pending_diagnosis(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> EscalationPendingResponse:
+    """AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
+
+    diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
+    —— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+    """
+    rows = (
+        db.query(Ticket)
+        .filter(Ticket.deleted_at.is_(None), Ticket.source_code == "ai_cs")
+        .order_by(Ticket.created_at.desc())
+        .limit(min(limit, 100) * 3)  # 过采样，Python 过滤后再截断
+        .all()
+    )
+    items = []
+    for t in rows:
+        ai = (t.source_payload or {}).get("ai_cs") or {}
+        diagnosis = ai.get("diagnosis")
+        if diagnosis and diagnosis.get("cause"):
+            continue
+        items.append(
+            EscalationPendingItem(
+                ticket_id=t.id,
+                short_code=t.short_code,
+                title=t.title,
+                dissatisfaction=ai.get("dissatisfaction"),
+                created_at=t.created_at,
+            )
+        )
+        if len(items) >= min(limit, 100):
+            break
+    return EscalationPendingResponse(items=items)
+
+
 @router.post("/repush-linear", response_model=RepushLinearResponse)
 def repush_linear_endpoint(
     body: RepushLinearBody,
@@ -1185,7 +1238,9 @@ def run_reflect_endpoint(
 
     ctx = kf.load_escalation_context(db, ticket_id)
     if ctx is None:
-        raise HTTPException(status_code=404, detail=f"ticket {ticket_id} 不是 AI 客服 escalation 工单")
+        raise HTTPException(
+            status_code=404, detail=f"ticket {ticket_id} 不是 AI 客服 escalation 工单"
+        )
     correct_answer = None
     if ctx.diagnosis and ctx.diagnosis.get("correct_answer"):
         correct_answer = str(ctx.diagnosis["correct_answer"])

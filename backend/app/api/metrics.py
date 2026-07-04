@@ -1,6 +1,7 @@
-"""GET /api/metrics/dashboard — D1 verification dashboard.
+"""GET /api/metrics/dashboard + /api/metrics/workbench.
 
-Returns volume counts + 4 quantitative SLO indicators per upgrade_plan §12.
+dashboard — D1 verification dashboard（全量累计，保留兼容）。
+workbench — 2026-07 后台重构工作台看板：按今日/本周/本月的漏斗 + SLO 环比 + 来源分布。
 
 Auth: any logged-in user (read-only system-wide aggregate; no PII).
 """
@@ -8,14 +9,17 @@ Auth: any logged-in user (read-only system-wide aggregate; no PII).
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
 from app.services.metrics.dashboard import get_dashboard_metrics
+from app.services.metrics.workbench import compute_workbench_metrics
 
 router = APIRouter()
 
@@ -88,4 +92,46 @@ def dashboard_metrics(
         customer_dedup=CustomerDedupOut(**asdict(m.customer_dedup)),
         sla=SLAOut(**asdict(m.sla)),
         webhook_intake=WebhookIntakeOut(**asdict(m.webhook_intake)),
+    )
+
+
+class FunnelOut(BaseModel):
+    received: int
+    classified: int
+    assigned: int
+    in_progress: int
+    resolved: int
+
+
+class SloItemOut(BaseModel):
+    key: str
+    name: str
+    value: float  # 0.0–1.0
+    delta_pt: float | None  # 环比上一周期（百分点）；上期无数据为 null
+    good: bool
+
+
+class WorkbenchOut(BaseModel):
+    range: str
+    range_start: datetime
+    prev_start: datetime
+    funnel: FunnelOut
+    slo: list[SloItemOut]
+    sources: dict[str, int]
+
+
+@router.get("/workbench", response_model=WorkbenchOut)
+def workbench_metrics(
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+    range: Literal["today", "week", "month"] = Query("today"),
+) -> WorkbenchOut:
+    m = compute_workbench_metrics(db, range)
+    return WorkbenchOut(
+        range=m.range,
+        range_start=m.range_start,
+        prev_start=m.prev_start,
+        funnel=FunnelOut(**asdict(m.funnel)),
+        slo=[SloItemOut(**asdict(s)) for s in m.slo],
+        sources=m.sources,
     )

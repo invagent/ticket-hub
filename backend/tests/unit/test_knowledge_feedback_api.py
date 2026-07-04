@@ -399,15 +399,13 @@ def test_save_diagnosis_and_context_roundtrip(app_client: TestClient, world: Ses
     assert d["cause"] == "skill" and d["correct_answer"] == "实为通道拥堵"
     assert d["by"] == "user:2" and d["at"]
 
-    ctx = app_client.get("/api/supervisor/tickets/700/escalation-context", headers=_bearer(2)).json()
+    ctx = app_client.get(
+        "/api/supervisor/tickets/700/escalation-context", headers=_bearer(2)
+    ).json()
     assert ctx["diagnosis"]["cause"] == "skill"
 
     # 审计行落 status_history（状态不变）
-    rows = (
-        world.query(StatusHistory)
-        .filter_by(entity_type="ticket", entity_id=700)
-        .all()
-    )
+    rows = world.query(StatusHistory).filter_by(entity_type="ticket", entity_id=700).all()
     assert any((h.metadata_ or {}).get("kind") == "escalation_diagnosis" for h in rows)
 
 
@@ -422,7 +420,9 @@ def test_clear_diagnosis(app_client: TestClient, world: Session) -> None:
         "/api/supervisor/tickets/701/diagnosis", headers=_bearer(2), json={"cause": None}
     )
     assert r.status_code == 200 and r.json()["diagnosis"] is None
-    ctx = app_client.get("/api/supervisor/tickets/701/escalation-context", headers=_bearer(2)).json()
+    ctx = app_client.get(
+        "/api/supervisor/tickets/701/escalation-context", headers=_bearer(2)
+    ).json()
     assert ctx["diagnosis"] is None
 
 
@@ -490,7 +490,9 @@ def test_reflect_runs_and_caches(
     assert seen["cited_knowledge"][0]["title"] == "超时排查"
 
     # 缓存进 escalation-context
-    ctx = app_client.get("/api/supervisor/tickets/704/escalation-context", headers=_bearer(2)).json()
+    ctx = app_client.get(
+        "/api/supervisor/tickets/704/escalation-context", headers=_bearer(2)
+    ).json()
     assert ctx["reflection"]["cause"] == "skill"
 
 
@@ -512,3 +514,26 @@ def test_reflect_llm_unavailable_503(
 def test_reflect_non_escalation_404(app_client: TestClient, world: Session) -> None:
     r = app_client.post("/api/supervisor/tickets/99999/reflect", headers=_bearer(2))
     assert r.status_code == 404
+
+
+def test_escalation_pending_diagnosis_queue(app_client: TestClient, world: Session) -> None:
+    _mk_escalation(world, 710)  # 未诊断 → 在队列
+    _mk_escalation(world, 711)
+    # 711 已判定病因 → 不在队列
+    app_client.put(
+        "/api/supervisor/tickets/711/diagnosis", headers=_bearer(2), json={"cause": "skill"}
+    )
+    # 只填了正解没定病因 → 仍在队列
+    _mk_escalation(world, 712)
+    app_client.put(
+        "/api/supervisor/tickets/712/diagnosis",
+        headers=_bearer(2),
+        json={"correct_answer": "正解"},
+    )
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    assert r.status_code == 200
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 710 in ids and 712 in ids
+    assert 711 not in ids
+    row = next(it for it in r.json()["items"] if it["ticket_id"] == 710)
+    assert row["dissatisfaction"] == "做了还是超时"

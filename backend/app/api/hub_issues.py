@@ -49,6 +49,15 @@ class HubIssueSummary(BaseModel):
     reply_content_version: int  # Operation: 0 = 未回复
     reply_updated_at: datetime | None
     feishu_task_status: str | None  # Internal_task
+    # 研发协同（2026-07 重构）：催办 / 发版通知 / 回访 / 自查 / 停留
+    urge_count: int = 0
+    last_urged_at: datetime | None = None
+    release_notified_at: datetime | None = None
+    fix_version: str | None = None
+    feedback_status: str | None = None
+    feedback_note: str | None = None
+    self_found: bool = False
+    status_changed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -217,3 +226,133 @@ def request_supply_endpoint(
         ticket_count=len(result.ticket_ids),
         outbox_count=len(result.outbox_ids),
     )
+
+
+# ---- 研发协同（2026-07 后台重构 批次5）--------------------------------------
+
+
+class UrgeResponse(BaseModel):
+    hub_issue_id: int
+    urge_count: int
+    linear_identifier: str
+
+
+@router.post("/{hub_issue_id}/urge", response_model=UrgeResponse)
+def urge_endpoint(
+    hub_issue_id: int,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> UrgeResponse:
+    """催办：向 Linear issue 发评论并计数（24h 频率限制）。"""
+    from app.services.hub_issues import devcollab as dc
+
+    try:
+        r = dc.urge_hub_issue(db, hub_issue_id, urged_by=f"user:{user.name}")
+    except dc.DevCollabError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return UrgeResponse(
+        hub_issue_id=r.hub_issue_id,
+        urge_count=r.urge_count,
+        linear_identifier=r.linear_identifier,
+    )
+
+
+class NotifyReleaseBody(BaseModel):
+    fix_version: str = Field(..., min_length=1, max_length=64)
+    note: str = Field(..., min_length=1, max_length=4000)
+
+
+class NotifyReleaseResponse(BaseModel):
+    hub_issue_id: int
+    channel_count: int  # 入队 outbox 的客户渠道数
+
+
+@router.post("/{hub_issue_id}/notify-release", response_model=NotifyReleaseResponse)
+def notify_release_endpoint(
+    hub_issue_id: int,
+    body: NotifyReleaseBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> NotifyReleaseResponse:
+    """发版通知：文案入 outbox（每个有源关联工单一行），回访状态置 pending。"""
+    from app.services.hub_issues import devcollab as dc
+
+    try:
+        r = dc.notify_release(
+            db,
+            hub_issue_id,
+            fix_version=body.fix_version,
+            note=body.note,
+            notified_by=f"user:{user.name}",
+        )
+    except dc.DevCollabError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return NotifyReleaseResponse(hub_issue_id=r.hub_issue_id, channel_count=len(r.outbox_ids))
+
+
+class SelfBugBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=512)
+    product_line_code: str | None = None
+    module: str | None = None
+    impact_versions: str | None = Field(default=None, max_length=128)
+    fix_version: str | None = Field(default=None, max_length=64)
+    released: bool = True
+
+
+class SelfBugResponse(BaseModel):
+    hub_issue_id: int
+    short_code: str
+
+
+@router.post("/self-bug", response_model=SelfBugResponse)
+def self_bug_endpoint(
+    body: SelfBugBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> SelfBugResponse:
+    """登记自修复 bug：无客户来源的 standalone Bug_fix hub 工单（自查徽标）。"""
+    from app.services.hub_issues import devcollab as dc
+
+    try:
+        r = dc.register_self_bug(
+            db,
+            title=body.title,
+            product_line_code=body.product_line_code,
+            module=body.module,
+            impact_versions=body.impact_versions,
+            fix_version=body.fix_version,
+            released=body.released,
+            registered_by=f"user:{user.name}",
+        )
+    except dc.DevCollabError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return SelfBugResponse(hub_issue_id=r.hub_issue_id, short_code=r.short_code)
+
+
+class FeedbackBody(BaseModel):
+    status: str = Field(..., pattern="^(resolved|stillbad)$")
+    note: str = Field(default="", max_length=2000)
+
+
+class FeedbackResponse(BaseModel):
+    hub_issue_id: int
+    feedback_status: str
+
+
+@router.post("/{hub_issue_id}/feedback", response_model=FeedbackResponse)
+def feedback_endpoint(
+    hub_issue_id: int,
+    body: FeedbackBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> FeedbackResponse:
+    """记录发版后客户回访结果（resolved 闭环 / stillbad 待升级）。"""
+    from app.services.hub_issues import devcollab as dc
+
+    try:
+        r = dc.record_feedback(
+            db, hub_issue_id, status=body.status, note=body.note, recorded_by=f"user:{user.name}"
+        )
+    except dc.DevCollabError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return FeedbackResponse(hub_issue_id=r.hub_issue_id, feedback_status=r.feedback_status)

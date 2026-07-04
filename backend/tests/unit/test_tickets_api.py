@@ -173,6 +173,12 @@ def test_list_tickets_filter_assigned_user(app_client: TestClient, world: Sessio
     assert all(it["assigned_user_id"] == 1 for it in r.json()["items"])
 
 
+def test_list_tickets_filter_unassigned_only(app_client: TestClient, world: Session) -> None:
+    r = app_client.get("/api/tickets?unassigned_only=true", headers=_bearer())
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["short_code"] == "TKT-4"
+
+
 def test_list_tickets_filter_hub_issue(app_client: TestClient, world: Session) -> None:
     r = app_client.get("/api/tickets?hub_issue_id=10", headers=_bearer())
     assert r.json()["total"] == 1

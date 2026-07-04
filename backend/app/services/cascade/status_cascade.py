@@ -66,6 +66,7 @@ def apply_hub_status(
 
     prev = hub.status
     hub.status = to_status
+    hub.status_changed_at = now  # 停留时长展示（研发协同列表）
     if to_status == "released" and hub.actual_released_at is None:
         hub.actual_released_at = now
     history.record(

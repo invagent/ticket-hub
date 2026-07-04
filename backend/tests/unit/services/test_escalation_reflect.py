@@ -10,9 +10,19 @@ from app.services.knowledge_feedback.reflect import ReflectError, _build_user_pr
 def _good_output(**ov) -> dict:  # type: ignore[type-arg, no-untyped-def]
     base = {
         "steps": [
-            {"title": "客户真正的卡点是什么", "detail": "实名已完成仍超时", "verdict": None, "good": None},
+            {
+                "title": "客户真正的卡点是什么",
+                "detail": "实名已完成仍超时",
+                "verdict": None,
+                "good": None,
+            },
             {"title": "知识库是否覆盖正解", "detail": "F201 命中", "verdict": "命中", "good": True},
-            {"title": "AI 是否用好了命中的知识", "detail": "未采用 F201", "verdict": "未采用", "good": False},
+            {
+                "title": "AI 是否用好了命中的知识",
+                "detail": "未采用 F201",
+                "verdict": "未采用",
+                "good": False,
+            },
         ],
         "cause": "skill",
         "confidence": 0.86,
@@ -73,8 +83,13 @@ def test_user_prompt_includes_all_sections() -> None:
         question="开票超时",
         ai_answer="请实名认证",
         dissatisfaction="做了还是超时",
-        conversation=[{"role": "user", "text": "开不了票"}, {"role": "assistant", "text": "请认证"}],
-        cited_knowledge=[{"type": "faq", "title": "超时排查", "score": 0.71, "snippet": "通道拥堵"}],
+        conversation=[
+            {"role": "user", "text": "开不了票"},
+            {"role": "assistant", "text": "请认证"},
+        ],
+        cited_knowledge=[
+            {"type": "faq", "title": "超时排查", "score": 0.71, "snippet": "通道拥堵"}
+        ],
         correct_answer="实为通道拥堵",
     )
     assert "客户原始问题：开票超时" in p

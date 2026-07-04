@@ -129,7 +129,9 @@ def save_diagnosis(
     escalation ticket (cause=None clears the diagnosis). Audit via
     status_history; status itself never changes."""
     if cause is not None and cause not in _VALID_DIAGNOSIS_CAUSES:
-        raise ValueError(f"invalid cause {cause!r}; must be one of {sorted(_VALID_DIAGNOSIS_CAUSES)}")
+        raise ValueError(
+            f"invalid cause {cause!r}; must be one of {sorted(_VALID_DIAGNOSIS_CAUSES)}"
+        )
     ticket = _escalation_ticket(db, ticket_id)
     diagnosis: dict[str, Any] | None = None
     if cause is not None or correct_answer:

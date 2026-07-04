@@ -46,6 +46,15 @@ mutation IssueCreate($input: IssueCreateInput!) {
 }
 """
 
+_CREATE_COMMENT_MUTATION = """
+mutation CommentCreate($input: CommentCreateInput!) {
+  commentCreate(input: $input) {
+    success
+    comment { id }
+  }
+}
+"""
+
 _ISSUE_STATES_QUERY = """
 query IssueStates($ids: [ID!]!) {
   issues(filter: { id: { in: $ids } }, first: 50) {
@@ -124,6 +133,17 @@ class LinearClient:
             url=str(issue["url"]),
             title=str(issue["title"]),
         )
+
+    def create_comment(self, issue_id: str, body: str) -> str:
+        """Post a comment on an issue (催办). Returns comment id."""
+        result = self._graphql(
+            _CREATE_COMMENT_MUTATION,
+            {"input": {"issueId": issue_id, "body": body}},
+        )
+        comment_create = result.get("commentCreate") or {}
+        if not comment_create.get("success"):
+            raise LinearBusinessError("commentCreate returned success=false")
+        return str((comment_create.get("comment") or {}).get("id", ""))
 
     def get_issue_states(self, issue_ids: list[str]) -> list[IssueState]:
         """Current workflow state for a set of issues (status back-sync).

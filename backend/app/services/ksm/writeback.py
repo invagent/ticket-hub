@@ -238,6 +238,8 @@ class KSMWritebackSender:
         """Map an outbox row to one of: 'reply' | 'lock' | 'close' | 'supply'."""
         if row.kind == "reply":
             return "reply"
+        if row.kind == "release_note":
+            return "release_note"
         if row.kind == "supply":
             return "supply"
         if row.kind == "status":
@@ -257,6 +259,9 @@ class KSMWritebackSender:
         fresh = self._refresh(fields)
         if action == "reply":
             self._handle_close(fresh, self._reply_text(row))
+        elif action == "release_note":
+            # 发版通知（研发协同）：文案在 payload.note，同 reply 走答复关单
+            self._handle_close(fresh, _s((row.payload or {}).get("note")).strip())
         elif action == "close":
             self._handle_close(fresh, self._released_text(row))
         elif action == "supply":
