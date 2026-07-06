@@ -18,10 +18,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
-from app.core.llm_router.embeddings import EmbeddingClient, EmbeddingError
+from app.core.llm_router.embeddings import EmbeddingClient, EmbeddingError, cosine_similarity
 from app.core.logging import get_logger
 from app.models import HubIssue
-from app.services.agents.dedup import cosine_similarity
 from app.services.skills.prompt_store import load_prompt
 
 logger = get_logger(__name__)

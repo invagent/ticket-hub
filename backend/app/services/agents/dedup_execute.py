@@ -1,5 +1,9 @@
 """Dedup proposal executor (D4 第①段) — act on `dedup_link` audit rows.
 
+ADR-0016 P2e：ticket 级 dedup agent 已退役（hub_dedup 是唯一主查重），本模块
+保留用于消化历史 dedup_link 提案（主管队列的采纳/忽略仍走这里，无 LLM）。
+存量提案清零后可整体删除（连同 supervisor dedup-proposals 三端点）。
+
 Mirrors split.py's playbook (audit row → supervisor queue → execute/dismiss):
 
     execute  — link the duplicate ticket onto the ORIGINAL's hub_issue:
@@ -193,75 +197,3 @@ def execute_dedup(
         hub_issue_id=hub.id,
         hub_issue_short_code=hub.short_code,
     )
-
-
-def auto_mount_recent_duplicate(ticket_id: int, db: Session | None = None) -> int | None:
-    """90 天内语义重复自动挂载（D4 优化 v2 §三需求5）。
-
-    在 dedup 写完 dedup_link 审计后调用：找该工单最新未物化的 dedup_link 提案，
-    若目标工单已毕业 hub 且**在 90 天窗口内**且开关开 → 自动 execute_dedup
-    （executed_by='agent:dedup_auto'，主管可 relink 纠偏）。返回挂载到的 hub_id 或 None。
-
-    超窗口/目标未毕业/开关关 → 留作主管手动提案（不自动），返回 None。永不抛。
-    """
-    from datetime import timedelta
-
-    from app.config import get_settings
-    from app.db import make_session
-
-    settings = get_settings()
-    if not settings.dedup_auto_mount_enabled:
-        return None
-    own_session = db is None
-    if own_session:
-        db = make_session()
-    assert db is not None
-    try:
-        decision = (
-            db.query(AgentDecision)
-            .filter_by(
-                decision_type="dedup_link",
-                subject_type="ticket",
-                subject_id=ticket_id,
-                status="executed",
-            )
-            .order_by(AgentDecision.id.desc())
-            .first()
-        )
-        if decision is None or isinstance(decision.proposal.get("materialized"), dict):
-            return None
-        target_id = decision.proposal.get("duplicate_of_ticket_id")
-        if not target_id:
-            return None
-        target = db.get(Ticket, int(target_id))
-        if target is None or target.deleted_at is not None or target.hub_issue_id is None:
-            return None
-        # 90 天窗口：目标工单太老则不自动挂（陈年单不复活），留主管判断
-        cutoff = datetime.now(UTC) - timedelta(days=settings.dedup_mount_window_days)
-        ref = target.received_at or target.created_at
-        if ref is not None and ref.tzinfo is None:
-            ref = ref.replace(tzinfo=UTC)  # SQLite 取回是 naive，PG 是 aware
-        if ref is not None and ref < cutoff:
-            logger.info(
-                "dedup_auto_mount_skip_out_of_window", ticket_id=ticket_id, target_id=target.id
-            )
-            return None
-        result = execute_dedup(decision.id, executed_by="agent:dedup_auto", db=db)
-        logger.info(
-            "dedup_auto_mounted",
-            ticket_id=ticket_id,
-            hub_issue_id=result.hub_issue_id,
-            target_id=target.id,
-        )
-        return result.hub_issue_id
-    except DedupExecuteError as e:
-        db.rollback()
-        logger.warning("dedup_auto_mount_failed", ticket_id=ticket_id, error=str(e))
-        return None
-    except Exception:
-        db.rollback()
-        logger.exception("dedup_auto_mount_unexpected_failure", ticket_id=ticket_id)
-        return None
-    finally:
-        if own_session:
-            db.close()

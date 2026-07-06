@@ -58,20 +58,22 @@ def test_import_from_files_idempotent(db_session: Session) -> None:
 
 def test_edit_bumps_version_and_history(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    v = ps.edit_prompt(db_session, "dedup", "新去重提示词", operator="user:boss", reason="调阈值")
+    v = ps.edit_prompt(
+        db_session, "hub_dedup", "新去重提示词", operator="user:boss", reason="调阈值"
+    )
     assert v == 2
-    row = ps.get_prompt_row(db_session, "dedup")
+    row = ps.get_prompt_row(db_session, "hub_dedup")
     assert row is not None and row.content_md == "新去重提示词" and row.version == 2
-    hist = ps.list_history(db_session, "dedup")
+    hist = ps.list_history(db_session, "hub_dedup")
     assert [h.version for h in hist] == [2, 1]  # 倒序
 
 
 def test_edit_no_change_keeps_version(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    row = ps.get_prompt_row(db_session, "dedup")
+    row = ps.get_prompt_row(db_session, "hub_dedup")
     assert row is not None
     same = row.content_md
-    v = ps.edit_prompt(db_session, "dedup", same, operator="user:boss")
+    v = ps.edit_prompt(db_session, "hub_dedup", same, operator="user:boss")
     assert v == 1  # 无变化不升版
 
 
@@ -121,9 +123,9 @@ def test_draft_save_promote_previous_roundtrip(db_session: Session) -> None:
 
 def test_discard_draft(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    ps.save_draft(db_session, "dedup", "草稿", operator="user:boss")
-    ps.discard_draft(db_session, "dedup", operator="user:boss")
-    row = ps.get_prompt_row(db_session, "dedup")
+    ps.save_draft(db_session, "hub_dedup", "草稿", operator="user:boss")
+    ps.discard_draft(db_session, "hub_dedup", operator="user:boss")
+    row = ps.get_prompt_row(db_session, "hub_dedup")
     assert row is not None and row.draft_md is None
 
 

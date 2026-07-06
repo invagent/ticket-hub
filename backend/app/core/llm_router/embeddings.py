@@ -1,4 +1,4 @@
-"""Embedding client — D3-E dedup recall.
+"""Embedding client — hub 级语义去重召回（原 D3-E ticket dedup，ADR-0016 已退役）.
 
 Both configured LLM vendors expose OpenAI-dialect /embeddings endpoints
 (POST {base}/embeddings → {"data": [{"embedding": [...]}, ...], "usage": ...}),
@@ -6,12 +6,13 @@ so one small httpx client serves DashScope (text-embedding-v4) and GLM
 (embedding-3). Failover order follows LLM_PROVIDER_ORDER, same as chat.
 
 Deliberately NOT part of the LLMProvider protocol: embeddings have a
-different request/response shape and only one consumer (dedup recall).
+different request/response shape and only one consumer (hub_dedup recall).
 If a third consumer appears, promote to providers/.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import httpx
@@ -33,6 +34,20 @@ _PRICING: dict[str, float] = {
 
 class EmbeddingError(Exception):
     """All embedding providers failed."""
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Plain cosine; returns 0.0 on dim mismatch or zero vector (treat as
+    no-signal rather than erroring — mismatches happen when the embedding
+    model changes between deployments)."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
 
 
 @dataclass(slots=True)

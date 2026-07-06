@@ -35,27 +35,27 @@ def test_import_then_list_get_edit_history_rollback(app_client: TestClient, worl
     # list
     lst = app_client.get("/api/admin/skills", headers=_bearer(1)).json()
     names = {s["name"] for s in lst}
-    assert "classify" in names and "dedup" in names
+    assert "classify" in names and "hub_dedup" in names
 
     # get
-    detail = app_client.get("/api/admin/skills/dedup", headers=_bearer(1)).json()
+    detail = app_client.get("/api/admin/skills/hub_dedup", headers=_bearer(1)).json()
     assert detail["version"] == 1 and detail["content_md"]
 
     # edit → v2
     e = app_client.put(
-        "/api/admin/skills/dedup",
+        "/api/admin/skills/hub_dedup",
         json={"content_md": "新版去重提示词", "reason": "调优"},
         headers=_bearer(1),
     )
     assert e.status_code == 200 and e.json()["version"] == 2
 
     # history has v2, v1
-    hist = app_client.get("/api/admin/skills/dedup/history", headers=_bearer(1)).json()
+    hist = app_client.get("/api/admin/skills/hub_dedup/history", headers=_bearer(1)).json()
     assert [h["version"] for h in hist] == [2, 1]
 
     # rollback to v1 → v3
     rb = app_client.post(
-        "/api/admin/skills/dedup/rollback", json={"version": 1}, headers=_bearer(1)
+        "/api/admin/skills/hub_dedup/rollback", json={"version": 1}, headers=_bearer(1)
     )
     assert rb.status_code == 200 and rb.json()["version"] == 3
 
@@ -73,7 +73,7 @@ def test_edit_missing_409(app_client: TestClient, world: Session) -> None:
 
 def test_edit_empty_422(app_client: TestClient, world: Session) -> None:
     app_client.post("/api/admin/skills/import-from-files", headers=_bearer(1))
-    r = app_client.put("/api/admin/skills/dedup", json={"content_md": ""}, headers=_bearer(1))
+    r = app_client.put("/api/admin/skills/hub_dedup", json={"content_md": ""}, headers=_bearer(1))
     assert r.status_code == 422
 
 
@@ -119,7 +119,7 @@ def test_promote_no_draft_409(app_client: TestClient, world: Session) -> None:
 
 def test_validate_unsupported_skill(app_client: TestClient, world: Session) -> None:
     app_client.post("/api/admin/skills/import-from-files", headers=_bearer(1))
-    r = app_client.post("/api/admin/skills/dedup/draft/validate", json={}, headers=_bearer(1))
+    r = app_client.post("/api/admin/skills/hub_dedup/draft/validate", json={}, headers=_bearer(1))
     assert r.status_code == 200
     assert r.json()["supported"] is False
 
