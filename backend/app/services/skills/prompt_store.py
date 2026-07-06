@@ -142,6 +142,75 @@ def edit_prompt(db: Session, name: str, content_md: str, *, operator: str, reaso
     return new_version
 
 
+# ---- 三槽（ADR-0016 P1）：draft 保存/丢弃/提升 + previous 读取 ----------------
+
+
+def save_draft(db: Session, name: str, content_md: str, *, operator: str) -> None:
+    """写 draft 槽（覆盖旧 draft）。不影响 current/load_prompt。Commits。"""
+    content_md = content_md.strip()
+    if not content_md:
+        raise PromptEditError("draft content is empty")
+    row = get_prompt_row(db, name)
+    if row is None:
+        raise PromptEditError(f"prompt {name!r} not found (先 import-from-files)")
+    if not row.editable or row.type != "llm":
+        raise PromptEditError(f"prompt {name!r} is not editable")
+    row.draft_md = content_md
+    row.draft_updated_by = operator
+    row.draft_updated_at = datetime.now(UTC)
+    db.commit()
+    logger.info("prompt_draft_saved", name=name, operator=operator)
+
+
+def discard_draft(db: Session, name: str, *, operator: str) -> None:
+    """清空 draft 槽。Commits。"""
+    row = get_prompt_row(db, name)
+    if row is None:
+        raise PromptEditError(f"prompt {name!r} not found")
+    row.draft_md = None
+    row.draft_updated_by = operator
+    row.draft_updated_at = datetime.now(UTC)
+    db.commit()
+    logger.info("prompt_draft_discarded", name=name, operator=operator)
+
+
+def promote_draft(db: Session, name: str, *, operator: str, reason: str = "") -> int:
+    """draft → current（version+1，旧 current 进 history 成为 previous），
+    并清空 draft 槽。返回新 version。Commits。"""
+    row = get_prompt_row(db, name)
+    if row is None:
+        raise PromptEditError(f"prompt {name!r} not found")
+    if not row.draft_md:
+        raise PromptEditError(f"prompt {name!r} has no draft to promote")
+    draft = row.draft_md
+    new_version = edit_prompt(db, name, draft, operator=operator, reason=reason or "promote draft")
+    # edit_prompt 已 commit；再清 draft 槽
+    row = get_prompt_row(db, name)
+    assert row is not None
+    row.draft_md = None
+    row.draft_updated_by = operator
+    row.draft_updated_at = datetime.now(UTC)
+    db.commit()
+    logger.info("prompt_draft_promoted", name=name, version=new_version, operator=operator)
+    return new_version
+
+
+def get_previous_content(db: Session, name: str) -> tuple[int, str] | None:
+    """previous 槽 = history 里 current 之前的最近一版。无则 None。"""
+    row = get_prompt_row(db, name)
+    if row is None:
+        return None
+    hist = db.execute(
+        select(SkillPromptHistory)
+        .where(SkillPromptHistory.name == name, SkillPromptHistory.version < row.version)
+        .order_by(SkillPromptHistory.version.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if hist is None:
+        return None
+    return hist.version, hist.content_md
+
+
 def rollback_prompt(db: Session, name: str, target_version: int, *, operator: str) -> int:
     """回滚到某历史 version 的内容（作为新版本写入，不丢历史）。返回新 version。"""
     row = get_prompt_row(db, name)

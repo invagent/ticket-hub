@@ -316,6 +316,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/skills/{name}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Draft Endpoint
+         * @description 保存 draft 槽（不生效、不影响 load_prompt）。
+         */
+        put: operations["save_draft_endpoint_api_admin_skills__name__draft_put"];
+        post?: never;
+        /** Discard Draft Endpoint */
+        delete: operations["discard_draft_endpoint_api_admin_skills__name__draft_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{name}/draft/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Draft Endpoint
+         * @description draft → current（升版留历史，旧 current 成为 previous），清空 draft。
+         */
+        post: operations["promote_draft_endpoint_api_admin_skills__name__draft_promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/skills/{name}/draft/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Draft Endpoint
+         * @description draft 差异回放：current vs draft 各跑最近 N 条真实工单，报差异。
+         *     同步 LLM 调用 2×N 次——主管等结果，sample 上限 20。
+         */
+        post: operations["validate_draft_endpoint_api_admin_skills__name__draft_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/skills/{name}/history": {
         parameters: {
             query?: never;
@@ -1096,7 +1158,11 @@ export interface paths {
          * @description AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
          *
          *     diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
-         *     —— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+         *     —— 与召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+         *
+         *     ADR-0016：反思只对 Operation 有意义（Bug/Demand 走 Linear，投诉走人工）——
+         *     predicted_type 过滤 Operation；NULL（分类失败/未跑）也保留进队列，
+         *     避免 LLM 挂掉时新失败悄悄漏出人工视野。
          */
         get: operations["list_escalation_pending_diagnosis_api_supervisor_escalation_pending_diagnosis_get"];
         put?: never;
@@ -1797,6 +1863,18 @@ export interface components {
         DismissSplitResponse: {
             /** Decision Id */
             decision_id: number;
+        };
+        /** DraftBody */
+        DraftBody: {
+            /** Content Md */
+            content_md: string;
+        };
+        /** DraftResponse */
+        DraftResponse: {
+            /** Has Draft */
+            has_draft: boolean;
+            /** Name */
+            name: string;
         };
         /** DrainKsmWritebackResponse */
         DrainKsmWritebackResponse: {
@@ -2611,6 +2689,14 @@ export interface components {
             /** Sla Resolve Hours */
             sla_resolve_hours?: number | null;
         };
+        /** PromoteBody */
+        PromoteBody: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
         /** PublishBody */
         PublishBody: {
             /** Skill Name */
@@ -2856,10 +2942,20 @@ export interface components {
             content_md: string;
             /** Description */
             description: string | null;
+            /** Draft Md */
+            draft_md?: string | null;
+            /** Draft Updated At */
+            draft_updated_at?: string | null;
+            /** Draft Updated By */
+            draft_updated_by?: string | null;
             /** Editable */
             editable: boolean;
             /** Name */
             name: string;
+            /** Previous Md */
+            previous_md?: string | null;
+            /** Previous Version */
+            previous_version?: number | null;
             /** Type */
             type: string;
             /** Updated At */
@@ -3262,6 +3358,14 @@ export interface components {
             /** Zhichi Agent Id */
             zhichi_agent_id?: string | null;
         };
+        /** ValidateBody */
+        ValidateBody: {
+            /**
+             * Sample
+             * @default 8
+             */
+            sample: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -3274,6 +3378,42 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValidationReportOut */
+        ValidationReportOut: {
+            /** Changed Count */
+            changed_count: number;
+            /** Error Count */
+            error_count: number;
+            /** Message */
+            message: string;
+            /** Rows */
+            rows: components["schemas"]["ValidationRowOut"][];
+            /** Sample Size */
+            sample_size: number;
+            /** Supported */
+            supported: boolean;
+        };
+        /** ValidationRowOut */
+        ValidationRowOut: {
+            /** Changed */
+            changed: boolean;
+            /** Current Confidence */
+            current_confidence: number | null;
+            /** Current Type */
+            current_type: string | null;
+            /** Draft Confidence */
+            draft_confidence: number | null;
+            /** Draft Type */
+            draft_type: string | null;
+            /** Error */
+            error: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Title */
+            title: string | null;
         };
         /** WebhookIntakeOut */
         WebhookIntakeOut: {
@@ -4109,6 +4249,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EditResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_draft_endpoint_api_admin_skills__name__draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_draft_endpoint_api_admin_skills__name__draft_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_draft_endpoint_api_admin_skills__name__draft_promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_draft_endpoint_api_admin_skills__name__draft_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationReportOut"];
                 };
             };
             /** @description Validation Error */

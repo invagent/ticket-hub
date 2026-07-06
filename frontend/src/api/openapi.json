@@ -789,6 +789,38 @@
         "title": "DismissSplitResponse",
         "type": "object"
       },
+      "DraftBody": {
+        "properties": {
+          "content_md": {
+            "minLength": 1,
+            "title": "Content Md",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_md"
+        ],
+        "title": "DraftBody",
+        "type": "object"
+      },
+      "DraftResponse": {
+        "properties": {
+          "has_draft": {
+            "title": "Has Draft",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "has_draft"
+        ],
+        "title": "DraftResponse",
+        "type": "object"
+      },
       "DrainKsmWritebackResponse": {
         "properties": {
           "deferred": {
@@ -3216,6 +3248,17 @@
         "title": "ProductLinePatch",
         "type": "object"
       },
+      "PromoteBody": {
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "PromoteBody",
+        "type": "object"
+      },
       "PublishBody": {
         "properties": {
           "skill_name": {
@@ -3945,6 +3988,40 @@
             ],
             "title": "Description"
           },
+          "draft_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Md"
+          },
+          "draft_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Updated At"
+          },
+          "draft_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Updated By"
+          },
           "editable": {
             "title": "Editable",
             "type": "boolean"
@@ -3952,6 +4029,28 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "previous_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Md"
+          },
+          "previous_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Version"
           },
           "type": {
             "title": "Type",
@@ -5440,6 +5539,19 @@
         "title": "UserPatch",
         "type": "object"
       },
+      "ValidateBody": {
+        "properties": {
+          "sample": {
+            "default": 8,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Sample",
+            "type": "integer"
+          }
+        },
+        "title": "ValidateBody",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -5478,6 +5590,142 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationReportOut": {
+        "properties": {
+          "changed_count": {
+            "title": "Changed Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "message",
+          "sample_size",
+          "changed_count",
+          "error_count",
+          "rows"
+        ],
+        "title": "ValidationReportOut",
+        "type": "object"
+      },
+      "ValidationRowOut": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "current_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Confidence"
+          },
+          "current_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Type"
+          },
+          "draft_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Confidence"
+          },
+          "draft_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Type"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "short_code",
+          "title",
+          "current_type",
+          "current_confidence",
+          "draft_type",
+          "draft_confidence",
+          "changed",
+          "error"
+        ],
+        "title": "ValidationRowOut",
         "type": "object"
       },
       "WebhookIntakeOut": {
@@ -6743,6 +6991,205 @@
           }
         },
         "summary": "Edit Skill",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}/draft": {
+      "delete": {
+        "operationId": "discard_draft_endpoint_api_admin_skills__name__draft_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Draft Endpoint",
+        "tags": [
+          "admin-skills"
+        ]
+      },
+      "put": {
+        "description": "保存 draft 槽（不生效、不影响 load_prompt）。",
+        "operationId": "save_draft_endpoint_api_admin_skills__name__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Draft Endpoint",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}/draft/promote": {
+      "post": {
+        "description": "draft → current（升版留历史，旧 current 成为 previous），清空 draft。",
+        "operationId": "promote_draft_endpoint_api_admin_skills__name__draft_promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote Draft Endpoint",
+        "tags": [
+          "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/skills/{name}/draft/validate": {
+      "post": {
+        "description": "draft 差异回放：current vs draft 各跑最近 N 条真实工单，报差异。\n同步 LLM 调用 2×N 次——主管等结果，sample 上限 20。",
+        "operationId": "validate_draft_endpoint_api_admin_skills__name__draft_validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Draft Endpoint",
         "tags": [
           "admin-skills"
         ]
@@ -8604,7 +9051,7 @@
     },
     "/api/supervisor/escalation-pending-diagnosis": {
       "get": {
-        "description": "AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。\n\ndiagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤\n—— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。",
+        "description": "AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。\n\ndiagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤\n—— 与召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。\n\nADR-0016：反思只对 Operation 有意义（Bug/Demand 走 Linear，投诉走人工）——\npredicted_type 过滤 Operation；NULL（分类失败/未跑）也保留进队列，\n避免 LLM 挂掉时新失败悄悄漏出人工视野。",
         "operationId": "list_escalation_pending_diagnosis_api_supervisor_escalation_pending_diagnosis_get",
         "parameters": [
           {

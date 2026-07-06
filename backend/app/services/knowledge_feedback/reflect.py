@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from app.config import get_settings
 from app.core.llm_router import LLMMessage, LLMRouter
 from app.core.logging import get_logger
 
@@ -60,8 +59,7 @@ class ReflectResult:
 def _load_system_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    version = get_settings().escalation_reflect_prompt_version
-    return load_prompt(f"escalation_reflect_{version}")
+    return load_prompt("escalation_reflect")
 
 
 def _build_user_prompt(
@@ -111,7 +109,6 @@ def run_reflect(
     router: LLMRouter | None = None,
 ) -> ReflectResult:
     router = router or LLMRouter.from_settings()
-    version = get_settings().escalation_reflect_prompt_version
     resp = router.complete(
         [
             LLMMessage(role="system", content=_load_system_prompt()),
@@ -127,7 +124,7 @@ def run_reflect(
                 ),
             ),
         ],
-        agent=f"escalation_reflect_{version}",
+        agent="escalation_reflect",
         temperature=0.0,
         response_format={"type": "json_object"},
     )

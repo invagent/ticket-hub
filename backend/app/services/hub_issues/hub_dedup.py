@@ -97,8 +97,7 @@ def find_duplicate_hub(
         for s, r in top
     ]
     try:
-        version = settings.hub_dedup_prompt_version
-        prompt = load_prompt(f"hub_dedup_{version}")
+        prompt = load_prompt("hub_dedup")
         router = router or LLMRouter.from_settings()
         resp = router.complete(
             [
@@ -112,7 +111,7 @@ def find_duplicate_hub(
                 ),
                 LLMMessage(role="user", content="只输出 JSON。"),
             ],
-            agent=f"hub_dedup_{version}",
+            agent="hub_dedup",
             temperature=0.0,
             response_format={"type": "json_object"},
         )

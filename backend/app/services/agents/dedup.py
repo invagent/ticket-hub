@@ -39,14 +39,10 @@ _VALID_DECISIONS = frozenset({"duplicate", "new"})
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 
 
-def _prompt_version() -> str:
-    return get_settings().dedup_prompt_version
-
-
 def _load_system_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    return load_prompt(f"dedup_{_prompt_version()}")
+    return load_prompt("dedup")
 
 
 class DedupError(Exception):
@@ -183,7 +179,7 @@ def judge_duplicate_payload(
             LLMMessage(role="system", content=_load_system_prompt()),
             LLMMessage(role="user", content="\n".join(lines)),
         ],
-        agent=f"dedup_{_prompt_version()}",
+        agent="dedup",
         temperature=0.0,
         response_format={"type": "json_object"},
     )
@@ -321,7 +317,7 @@ def detect_ticket_duplicate(ticket_id: int, db: Session | None = None) -> DedupR
                     "embedding_model": emb_row.model,
                     "model": result.model,
                     "cost_usd": result.cost_usd,
-                    "prompt_version": _prompt_version(),
+                    "skill": "dedup",
                 },
             )
         )

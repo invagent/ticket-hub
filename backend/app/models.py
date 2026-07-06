@@ -860,11 +860,15 @@ class Holiday(Base):
 
 
 class SkillPrompt(Base):
-    """LLM agent 的提示词，DB 化 + 版本化 + 页面可编辑（对标 sample t_skill_md）。
+    """LLM agent 的提示词，DB 化 + 三槽版本 + 页面可编辑（ADR-0016 P1）。
 
-    name 是逻辑提示词 id（如 'classify_v2' / 'dedup_v1' / 'reply_reflection_v1'）。
-    version 是**内容修订计数**（每次 edit 自增，rollback 也自增到新版），与 name 里的
-    业务版本号正交。prompt_store 读表覆盖 prompts/*.md 文件；DB 无行则回落文件。
+    name 是逻辑提示词 id（'classify' / 'dedup'——**无版本后缀**）。三槽模型
+    （与外部 AI 客服 skill 的 draft→published→superseded 同构）：
+      current  = content_md/version（在用，load_prompt 只读这里）
+      draft    = draft_md（候选修订，验证通过后 promote 为 current）
+      previous = skill_prompt_history 的上一版（rollback 已有）
+    version 是内容修订计数（每次 edit/promote 自增）。
+    prompt_store 读表覆盖 prompts/*.md 文件；DB 无行则回落文件。
     """
 
     __tablename__ = "skill_prompts"
@@ -882,6 +886,12 @@ class SkillPrompt(Base):
     frontmatter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     content_md: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # draft 槽（ADR-0016 P1）：候选修订，不影响 load_prompt；promote 后置 NULL
+    draft_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    draft_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

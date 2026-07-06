@@ -30,7 +30,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.db import make_session
@@ -42,14 +41,10 @@ _VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 
 
-def _prompt_version() -> str:
-    return get_settings().escalation_prompt_version
-
-
 def _load_system_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    return load_prompt(f"escalation_classify_{_prompt_version()}")
+    return load_prompt("escalation_classify")
 
 
 @dataclass(slots=True, frozen=True)
@@ -109,7 +104,7 @@ def classify_escalation_payload(
             LLMMessage(role="system", content=_load_system_prompt()),
             LLMMessage(role="user", content=user_prompt),
         ],
-        agent=f"escalation_classify_{_prompt_version()}",
+        agent="escalation_classify",
         temperature=0.0,
         response_format={"type": "json_object"},
     )
@@ -181,7 +176,7 @@ def classify_escalation_ticket(
                     "reason": result.reason,
                     "model": result.model,
                     "cost_usd": result.cost_usd,
-                    "agent": f"escalation_classify_{_prompt_version()}",
+                    "agent": "escalation_classify",
                     "source": "ai_cs_escalation",
                 },
             )

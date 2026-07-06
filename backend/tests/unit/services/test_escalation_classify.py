@@ -139,5 +139,5 @@ def test_classify_ticket_writes_predicted_and_audit(
     assert t.predicted_type == "Bug_fix"
     assert float(t.predicted_confidence) == 0.9
     d = db_session.query(AgentDecision).filter_by(subject_id=t.id).one()
-    assert d.proposal["agent"] == "escalation_classify_v1"
+    assert d.proposal["agent"] == "escalation_classify"
     assert d.proposal["source"] == "ai_cs_escalation"

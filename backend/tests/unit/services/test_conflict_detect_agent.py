@@ -195,7 +195,7 @@ def test_detect_writes_split_decision(world: Session, monkeypatch: pytest.Monkey
     assert d.proposal["decision"] == "split"
     assert len(d.proposal["sub_issues"]) == 2
     assert d.proposal["model"] == "fake-model"
-    assert d.proposal["prompt_version"] == "v1"
+    assert d.proposal["skill"] == "conflict_detect"
     # D3-D 仅审计建议，不改工单
     world.refresh(t)
     assert t.type == "Raw"

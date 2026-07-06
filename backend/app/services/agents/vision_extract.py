@@ -35,8 +35,7 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 def _load_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    version = get_settings().vision_prompt_version
-    return load_prompt(f"vision_extract_{version}")
+    return load_prompt("vision_extract")
 
 
 @dataclass(slots=True)

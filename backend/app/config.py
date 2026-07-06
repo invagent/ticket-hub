@@ -81,11 +81,10 @@ class Settings(BaseSettings):
     dashscope_model: str = "deepseek-v4-flash"  # e.g. deepseek-v4-pro / deepseek-v3.2
     # 逗号分隔的 failover 顺序；2026-06-11 评测 deepseek-v4-flash 最优故默认在前
     llm_provider_order: str = "dashscope,glm"
-    # classify Agent 的 prompt 版本（prompts/classify_{version}.md），评测对比时可切回 v1
-    classify_prompt_version: str = "v2"
+    # 提示词版本统一走 skill_prompts 三槽（draft/current/previous，ADR-0016 P1），
+    # 不再有 *_prompt_version 配置项。
     # D3-D 拆单判定 Agent；仅写 agent_decisions 审计行，不改工单
     conflict_detect_enabled: bool = True
-    conflict_detect_prompt_version: str = "v1"
     # D3-D split 执行器：conf ≥ 阈值自动物化 Child；低于阈值留给主管审批。
     # 默认关闭自动 — 先灰度手动执行，稳定后再开
     split_auto_enabled: bool = False
@@ -94,7 +93,6 @@ class Settings(BaseSettings):
     # 向量存 ticket_embeddings JSON 列、Python 余弦召回（当前量级足够；
     # 量大再迁 pgvector）。
     dedup_enabled: bool = True
-    dedup_prompt_version: str = "v1"
     dedup_recall_threshold: float = 0.80  # 余弦相似度下限，低于不送 LLM
     dedup_recall_top_k: int = 5  # 送 LLM 判定的候选数上限
     dedup_candidate_pool: int = 200  # 召回扫描的最近工单数
@@ -111,12 +109,10 @@ class Settings(BaseSettings):
     vision_enabled: bool = False
     vision_model: str = "qwen-vl-max"  # 报错截图要准确 OCR；可换 qwen-vl-plus 省成本
     vision_api_key: str = ""  # 留空则回落 dashscope_api_key
-    vision_prompt_version: str = "v1"
     vision_max_images_per_ticket: int = 5  # 单工单最多识别张数（防异常附件刷量）
 
     # ---- D4 第③段 AI 客服 escalation ----
     # 客户对 AI 客服回答不满意 → cs-escalation webhook → 二次分类（黄金三元组）
-    escalation_prompt_version: str = "v1"
     # escalation 自动毕业 hub_issue 的置信门槛（比普通 0.80 高——这条链直接推 Linear）
     escalation_auto_enabled: bool = False
     escalation_auto_confidence: float = 0.85
@@ -130,7 +126,6 @@ class Settings(BaseSettings):
     ai_cs_app_key: str = ""  # 签名密钥 app_key（MD5(appid+create_time+app_key)）
     ai_cs_managed_skills: str = "customer-service,customer-service-feishu"
     # 反思诊断工作台：LLM 反思推断（三步排查 → 病因判定），主管手动触发
-    escalation_reflect_prompt_version: str = "v1"
 
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
@@ -144,7 +139,6 @@ class Settings(BaseSettings):
     hub_dedup_enabled: bool = True
     hub_dedup_threshold: float = 0.85  # 余弦下限
     hub_dedup_top_k: int = 5
-    hub_dedup_prompt_version: str = "v1"
 
     # ---- PII ----
     pii_master_key: str = ""  # base64-encoded 32-byte AES key; required in prod

@@ -17,8 +17,8 @@ def _clear_cache():
 
 
 def test_load_falls_back_to_file_when_no_db_row(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 真实文件 classify_v2.md 存在 → 文件兜底（DB 在单测里读不到表）
-    content = ps.load_prompt("classify_v2")
+    # 真实文件 classify.md 存在 → 文件兜底（DB 在单测里读不到表）
+    content = ps.load_prompt("classify")
     assert "分类" in content or "Operation" in content
 
 
@@ -30,9 +30,9 @@ def test_load_missing_raises() -> None:
 def test_db_override_beats_file(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     # 让 make_session() 返回测试 session，模拟 DB 有行覆盖文件
     monkeypatch.setattr(ps, "make_session", lambda: _CtxSession(db_session))
-    db_session.add(SkillPrompt(name="classify_v2", type="llm", content_md="DB 覆盖内容", version=3))
+    db_session.add(SkillPrompt(name="classify", type="llm", content_md="DB 覆盖内容", version=3))
     db_session.commit()
-    assert ps.load_prompt("classify_v2") == "DB 覆盖内容"
+    assert ps.load_prompt("classify") == "DB 覆盖内容"
 
 
 class _CtxSession:
@@ -50,30 +50,28 @@ class _CtxSession:
 
 def test_import_from_files_idempotent(db_session: Session) -> None:
     n1 = ps.import_prompts_from_files(db_session)
-    assert n1 >= 5  # classify_v1/v2, dedup, conflict, escalation, vision...
+    assert n1 >= 5  # classify/v2, dedup, conflict, escalation, vision...
     n2 = ps.import_prompts_from_files(db_session)
     assert n2 == 0  # 已存在跳过
-    assert ps.get_prompt_row(db_session, "classify_v2") is not None
+    assert ps.get_prompt_row(db_session, "classify") is not None
 
 
 def test_edit_bumps_version_and_history(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    v = ps.edit_prompt(
-        db_session, "dedup_v1", "新去重提示词", operator="user:boss", reason="调阈值"
-    )
+    v = ps.edit_prompt(db_session, "dedup", "新去重提示词", operator="user:boss", reason="调阈值")
     assert v == 2
-    row = ps.get_prompt_row(db_session, "dedup_v1")
+    row = ps.get_prompt_row(db_session, "dedup")
     assert row is not None and row.content_md == "新去重提示词" and row.version == 2
-    hist = ps.list_history(db_session, "dedup_v1")
+    hist = ps.list_history(db_session, "dedup")
     assert [h.version for h in hist] == [2, 1]  # 倒序
 
 
 def test_edit_no_change_keeps_version(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    row = ps.get_prompt_row(db_session, "dedup_v1")
+    row = ps.get_prompt_row(db_session, "dedup")
     assert row is not None
     same = row.content_md
-    v = ps.edit_prompt(db_session, "dedup_v1", same, operator="user:boss")
+    v = ps.edit_prompt(db_session, "dedup", same, operator="user:boss")
     assert v == 1  # 无变化不升版
 
 
@@ -84,15 +82,52 @@ def test_edit_missing_raises(db_session: Session) -> None:
 
 def test_rollback(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
-    orig = ps.get_prompt_row(db_session, "classify_v2").content_md  # type: ignore[union-attr]
-    ps.edit_prompt(db_session, "classify_v2", "改坏了", operator="user:boss")  # v2
-    new_v = ps.rollback_prompt(db_session, "classify_v2", 1, operator="user:boss")  # v3 = v1 内容
+    orig = ps.get_prompt_row(db_session, "classify").content_md  # type: ignore[union-attr]
+    ps.edit_prompt(db_session, "classify", "改坏了", operator="user:boss")  # v2
+    new_v = ps.rollback_prompt(db_session, "classify", 1, operator="user:boss")  # v3 = v1 内容
     assert new_v == 3
-    row = ps.get_prompt_row(db_session, "classify_v2")
+    row = ps.get_prompt_row(db_session, "classify")
     assert row is not None and row.content_md == orig
 
 
 def test_rollback_missing_version_raises(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
     with pytest.raises(ps.PromptEditError, match="history version"):
-        ps.rollback_prompt(db_session, "classify_v2", 99, operator="user:boss")
+        ps.rollback_prompt(db_session, "classify", 99, operator="user:boss")
+
+
+# ---- 三槽（ADR-0016 P1）----------------------------------------------------
+
+
+def test_draft_save_promote_previous_roundtrip(db_session: Session) -> None:
+    ps.import_prompts_from_files(db_session)
+    orig = ps.get_prompt_row(db_session, "classify").content_md  # type: ignore[union-attr]
+
+    # draft 不影响 current
+    ps.save_draft(db_session, "classify", "候选新提示词", operator="user:boss")
+    row = ps.get_prompt_row(db_session, "classify")
+    assert row is not None and row.draft_md == "候选新提示词" and row.content_md == orig
+    # promote 前无 previous（只有 v1）
+    assert ps.get_previous_content(db_session, "classify") is None
+
+    # promote：draft→current(v2)，旧 current 成 previous，draft 清空
+    new_v = ps.promote_draft(db_session, "classify", operator="user:boss", reason="验证通过")
+    assert new_v == 2
+    row = ps.get_prompt_row(db_session, "classify")
+    assert row is not None and row.content_md == "候选新提示词" and row.draft_md is None
+    prev = ps.get_previous_content(db_session, "classify")
+    assert prev is not None and prev[0] == 1 and prev[1] == orig
+
+
+def test_discard_draft(db_session: Session) -> None:
+    ps.import_prompts_from_files(db_session)
+    ps.save_draft(db_session, "dedup", "草稿", operator="user:boss")
+    ps.discard_draft(db_session, "dedup", operator="user:boss")
+    row = ps.get_prompt_row(db_session, "dedup")
+    assert row is not None and row.draft_md is None
+
+
+def test_promote_without_draft_raises(db_session: Session) -> None:
+    ps.import_prompts_from_files(db_session)
+    with pytest.raises(ps.PromptEditError, match="no draft"):
+        ps.promote_draft(db_session, "classify", operator="user:boss")

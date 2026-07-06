@@ -25,7 +25,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.db import make_session
@@ -38,15 +37,15 @@ _VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 
-
-def _prompt_version() -> str:
-    return get_settings().classify_prompt_version
+# ADR-0016 P1：skill 名固定（版本走 skill_prompts 三槽 draft/current/previous），
+# 不再有 classify_v1/v2 双名双轨。
+_SKILL_NAME = "classify"
 
 
 def _load_system_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    return load_prompt(f"classify_{_prompt_version()}")
+    return load_prompt(_SKILL_NAME)
 
 
 @dataclass(slots=True, frozen=True)
@@ -70,10 +69,12 @@ def classify_payload(
     product_line_code: str | None,
     module: str | None,
     router: LLMRouter | None = None,
+    system_prompt_override: str | None = None,
 ) -> ClassifyResult:
     """Pure function: takes ticket fields, returns ClassifyResult.
 
     Caller responsible for persistence. Tested in isolation with mocked router.
+    system_prompt_override 供 draft 验证器注入候选提示词（不落库、不影响生产）。
     """
     router = router or LLMRouter.from_settings()
     user_prompt = _format_user_prompt(
@@ -84,10 +85,10 @@ def classify_payload(
     )
     resp = router.complete(
         [
-            LLMMessage(role="system", content=_load_system_prompt()),
+            LLMMessage(role="system", content=system_prompt_override or _load_system_prompt()),
             LLMMessage(role="user", content=user_prompt),
         ],
-        agent=f"classify_{_prompt_version()}",
+        agent=_SKILL_NAME if system_prompt_override is None else f"{_SKILL_NAME}:draft",
         temperature=0.0,
         response_format={"type": "json_object"},
     )
@@ -177,7 +178,7 @@ def classify_ticket(ticket_id: int, db: Session | None = None) -> ClassifyResult
                     "reason": result.reason,
                     "model": result.model,
                     "cost_usd": result.cost_usd,
-                    "prompt_version": _prompt_version(),
+                    "skill": _SKILL_NAME,
                 },
             )
         )
