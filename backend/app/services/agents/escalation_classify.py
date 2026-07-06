@@ -37,14 +37,14 @@ from app.models import AgentDecision, Ticket
 
 logger = get_logger(__name__)
 
-_VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
+_VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task", "Complaint"})
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 
 
 def _load_system_prompt() -> str:
-    from app.services.skills.prompt_store import load_prompt
+    from app.services.skills.prompt_store import assemble_prompt, load_prompt
 
-    return load_prompt("escalation_classify")
+    return assemble_prompt(load_prompt("escalation_classify"))
 
 
 @dataclass(slots=True, frozen=True)

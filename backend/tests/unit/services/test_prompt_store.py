@@ -131,3 +131,18 @@ def test_promote_without_draft_raises(db_session: Session) -> None:
     ps.import_prompts_from_files(db_session)
     with pytest.raises(ps.PromptEditError, match="no draft"):
         ps.promote_draft(db_session, "classify", operator="user:boss")
+
+
+# ---- type_taxonomy 共享（ADR-0016 P2a）------------------------------------
+
+
+def test_assemble_prompt_substitutes_taxonomy(db_session: Session) -> None:
+    ps.import_prompts_from_files(db_session)
+    # classify.md 含 {{TYPE_TAXONOMY}} 占位符 → 组装后应含五型定义、无占位符残留
+    assembled = ps.assemble_prompt(ps.load_prompt("classify"))
+    assert "{{TYPE_TAXONOMY}}" not in assembled
+    assert "Complaint" in assembled and "Operation" in assembled
+
+
+def test_assemble_prompt_no_placeholder_passthrough(db_session: Session) -> None:
+    assert ps.assemble_prompt("纯文本无占位符") == "纯文本无占位符"

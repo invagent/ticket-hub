@@ -68,6 +68,22 @@ def test_create_links_and_audits(world: Session) -> None:
     assert sh.to_status == "created"
 
 
+def test_complaint_not_auto_graduated(world: Session) -> None:
+    """ADR-0016 P2a：投诉停 ticket 层，无 override 不自动毕业。"""
+    t = _make_ticket(world, 20, predicted_type="Complaint")
+    with pytest.raises(HubIssueCreateError, match="投诉"):
+        ensure_hub_issue_for_ticket(t.id, created_by="agent:auto", db=world)
+
+
+def test_complaint_can_be_converted_with_override(world: Session) -> None:
+    """主管把投诉转成 Bug/Op/Demand 后可毕业（type_override 放行）。"""
+    t = _make_ticket(world, 21, predicted_type="Complaint")
+    res = ensure_hub_issue_for_ticket(
+        t.id, created_by="user:boss", type_override="Bug_fix", db=world
+    )
+    assert res.created is True and res.type == "Bug_fix"
+
+
 def test_create_idempotent_on_linked_ticket(world: Session) -> None:
     t = _make_ticket(world, 2)
     first = ensure_hub_issue_for_ticket(t.id, created_by="user:boss", db=world)

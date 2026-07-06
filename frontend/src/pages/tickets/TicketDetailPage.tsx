@@ -212,6 +212,8 @@ const TYPE_LABELS: Record<string, { label: string; bg: string; fg: string; bd: s
   Bug_fix: { label: "Bug 修复", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
   Demand: { label: "需求", bg: "#eaf0f8", fg: "#3d6bb3", bd: "#cfdcee" },
   Internal_task: { label: "内部任务", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
+  // ADR-0016：投诉——实心红高亮，突出「需人工第一时间处理」
+  Complaint: { label: "投诉", bg: "#b04a4a", fg: "#ffffff", bd: "#b04a4a" },
 };
 
 export function PredictedTypeBadge({ type }: { type: string }) {

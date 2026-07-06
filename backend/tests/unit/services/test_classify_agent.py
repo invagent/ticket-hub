@@ -70,6 +70,15 @@ def test_classify_payload_happy_path() -> None:
     assert res.model == "fake-model"
 
 
+def test_classify_payload_complaint_type() -> None:
+    """ADR-0016 P2a：Complaint 第 5 型被接受。"""
+    router = _router_with('{"type": "Complaint", "confidence": 0.9, "reason": "服务投诉"}')
+    res = classify_payload(
+        title="投诉处理太慢", body="催了三天没人管", product_line_code="p", module="m", router=router
+    )
+    assert res.type == "Complaint"
+
+
 def test_classify_payload_invalid_type_raises() -> None:
     router = _router_with('{"type": "Unknown", "confidence": 0.9}')
     with pytest.raises(ClassifyError, match="invalid type"):

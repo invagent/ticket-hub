@@ -80,6 +80,12 @@ def ensure_hub_issue_for_ticket(
         raise HubIssueCreateError(f"ticket {ticket_id} is a split Parent — graduate its children")
 
     issue_type = type_override or ticket.predicted_type
+    # ADR-0016 P2a：投诉不毕业 hub_issue（停 ticket 层转人工）。type_override
+    # 允许主管把投诉转成 Op/Bug/Demand 后毕业，故只在无 override 时挡。
+    if type_override is None and issue_type == "Complaint":
+        raise HubIssueCreateError(
+            f"ticket {ticket_id} is Complaint — 投诉停 ticket 层转人工，不自动毕业 hub_issue"
+        )
     if issue_type not in _VALID_TYPES:
         raise HubIssueCreateError(
             f"ticket {ticket_id} has no valid type (predicted={ticket.predicted_type!r}, "

@@ -73,6 +73,21 @@ def clear_cache() -> None:
     _cache.clear()
 
 
+_TAXONOMY_PLACEHOLDER = "{{TYPE_TAXONOMY}}"
+
+
+def assemble_prompt(body: str) -> str:
+    """ADR-0016 P2a：把 {{TYPE_TAXONOMY}} 占位符替换成共享的 type_taxonomy 片段。
+
+    类型定义单点——改 type_taxonomy 一处，classify/triage/escalation_classify
+    三条链同步生效。无占位符则原样返回（不强制）。也用于 draft 验证器：override
+    的 draft 正文同样经此组装，保证验证的是最终提示词。
+    """
+    if _TAXONOMY_PLACEHOLDER not in body:
+        return body
+    return body.replace(_TAXONOMY_PLACEHOLDER, load_prompt("type_taxonomy").strip())
+
+
 # ---- admin 操作（编辑/回滚/预览/导入）---------------------------------------
 
 

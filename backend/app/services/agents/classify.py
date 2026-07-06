@@ -33,7 +33,8 @@ from app.models import AgentDecision, Ticket
 logger = get_logger(__name__)
 
 
-_VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
+# ADR-0016 P2a：Complaint 第 5 型（投诉，链路停 ticket 层转人工，不毕业 hub_issue）
+_VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task", "Complaint"})
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 
@@ -42,10 +43,16 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
 _SKILL_NAME = "classify"
 
 
+def _assemble(body: str) -> str:
+    from app.services.skills.prompt_store import assemble_prompt
+
+    return assemble_prompt(body)
+
+
 def _load_system_prompt() -> str:
     from app.services.skills.prompt_store import load_prompt
 
-    return load_prompt(_SKILL_NAME)
+    return _assemble(load_prompt(_SKILL_NAME))
 
 
 @dataclass(slots=True, frozen=True)
@@ -83,9 +90,14 @@ def classify_payload(
         product_line=product_line_code or "",
         module=module or "",
     )
+    system = (
+        _assemble(system_prompt_override)
+        if system_prompt_override is not None
+        else _load_system_prompt()
+    )
     resp = router.complete(
         [
-            LLMMessage(role="system", content=system_prompt_override or _load_system_prompt()),
+            LLMMessage(role="system", content=system),
             LLMMessage(role="user", content=user_prompt),
         ],
         agent=_SKILL_NAME if system_prompt_override is None else f"{_SKILL_NAME}:draft",
