@@ -83,8 +83,7 @@ class Settings(BaseSettings):
     llm_provider_order: str = "dashscope,glm"
     # 提示词版本统一走 skill_prompts 三槽（draft/current/previous，ADR-0016 P1），
     # 不再有 *_prompt_version 配置项。
-    # D3-D 拆单判定 Agent；仅写 agent_decisions 审计行，不改工单
-    conflict_detect_enabled: bool = True
+    # ADR-0016 P2c：拆单判定并入 triage（conflict_detect 已退役删除）。
     # D3-D split 执行器：conf ≥ 阈值自动物化 Child；低于阈值留给主管审批。
     # 默认关闭自动 — 先灰度手动执行，稳定后再开
     split_auto_enabled: bool = False

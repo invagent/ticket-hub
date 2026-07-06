@@ -43,12 +43,16 @@ _MIXED = (
 
 
 def test_triage_single_problem() -> None:
-    r = triage_payload(title="报错", body="500", product_line_code="p", module="m", router=_router(_SINGLE))
+    r = triage_payload(
+        title="报错", body="500", product_line_code="p", module="m", router=_router(_SINGLE)
+    )
     assert r.type == "Bug_fix" and r.is_mixed is False and r.sub_problems == ()
 
 
 def test_triage_mixed() -> None:
-    r = triage_payload(title="x", body="y", product_line_code="p", module="m", router=_router(_MIXED))
+    r = triage_payload(
+        title="x", body="y", product_line_code="p", module="m", router=_router(_MIXED)
+    )
     assert r.is_mixed is True
     assert len(r.sub_problems) == 2
     assert r.sub_problems[1].type == "Operation"
@@ -56,7 +60,9 @@ def test_triage_mixed() -> None:
 
 def test_triage_complaint() -> None:
     c = '{"type":"Complaint","confidence":0.9,"reason":"投诉","is_mixed":false,"sub_problems":[]}'
-    r = triage_payload(title="投诉", body="太慢", product_line_code="p", module="m", router=_router(c))
+    r = triage_payload(
+        title="投诉", body="太慢", product_line_code="p", module="m", router=_router(c)
+    )
     assert r.type == "Complaint"
 
 
@@ -106,9 +112,7 @@ def _mk(db: Session, **ov) -> Ticket:  # type: ignore[no-untyped-def]
 def test_run_triage_single_writes_classify_only(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from app.services.agents import triage as mod
 
-    monkeypatch.setattr(
-        mod.LLMRouter, "from_settings", classmethod(lambda _c: _router(_SINGLE))
-    )
+    monkeypatch.setattr(mod.LLMRouter, "from_settings", classmethod(lambda _c: _router(_SINGLE)))
     t = _mk(world)
     res = run_ticket_triage(t.id, db=world)
     assert res is not None and res.type == "Bug_fix"
@@ -122,9 +126,7 @@ def test_run_triage_single_writes_classify_only(world: Session, monkeypatch) -> 
 def test_run_triage_mixed_writes_split(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from app.services.agents import triage as mod
 
-    monkeypatch.setattr(
-        mod.LLMRouter, "from_settings", classmethod(lambda _c: _router(_MIXED))
-    )
+    monkeypatch.setattr(mod.LLMRouter, "from_settings", classmethod(lambda _c: _router(_MIXED)))
     t = _mk(world, short_code="TKT-TRI-2", source_ticket_id="tri-2")
     run_ticket_triage(t.id, db=world)
     decisions = world.query(AgentDecision).filter_by(subject_id=t.id).all()

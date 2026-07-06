@@ -32,12 +32,11 @@ from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.trace import get_trace_id
 from app.db import get_session, make_session
+from app.models import Ticket
 from app.services.agents.classify import classify_ticket
-from app.services.agents.conflict_detect import detect_ticket_conflict
-from app.services.agents.dedup import detect_ticket_duplicate
-from app.services.agents.dedup_execute import auto_mount_recent_duplicate
 from app.services.agents.escalation_classify import classify_escalation_ticket
 from app.services.agents.split import execute_split_for_ticket
+from app.services.agents.triage import run_ticket_triage
 from app.services.agents.vision_extract import extract_ticket_attachments
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
 from app.services.ingest.escalation_ingester import EscalationIngester
@@ -56,73 +55,80 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+def _route_by_type(
+    ticket_id: int, ticket_type: str | None, confidence: float, *, bar: float
+) -> None:
+    """ADR-0016：按类型分流。Complaint 停 ticket 层转人工（不毕业）；其余在置信度
+    过门槛时毕业 hub_issue（内部对 Bug/Demand 做 hub_dedup + 推 Linear）。"""
+    settings = get_settings()
+    if ticket_type == "Complaint":
+        return  # 投诉停 ticket 层，进工作台高亮人工队列
+    if settings.hub_issue_auto_enabled and confidence >= bar:
+        create_hub_issue_for_ticket_auto(ticket_id)
+
+
+def _route_child(child_id: int) -> None:
+    """拆分子单分流：优先用继承的 predicted_type（triage sub_type，原子不再分类）；
+    旧提案无继承类型时兜底跑 classify（不跑 triage，避免递归拆分）。"""
+    settings = get_settings()
+    db = make_session()
+    try:
+        child = db.get(Ticket, child_id)
+        ptype = child.predicted_type if child else None
+        pconf = float(child.predicted_confidence) if child and child.predicted_confidence else None
+    finally:
+        db.close()
+    if ptype is None:
+        cls = classify_ticket(child_id)  # 兜底：向后兼容旧 conflict_detect 提案
+        if cls is None:
+            return
+        ptype, pconf = cls.type, cls.confidence
+    _route_by_type(child_id, ptype, pconf or 0.0, bar=settings.hub_issue_auto_confidence)
+
+
 def run_post_ingest_agents(ticket_id: int) -> None:
-    """All LLM agents that run after a fresh (non-dedup) ingest.
+    """入库后 LLM 链（ADR-0016 P2c 重排）：分诊 → 先原子化 → 按类型分流.
 
-    Single BackgroundTask entry so call sites stay one-liners. Each agent
-    swallows its own failures — one agent failing must not stop the next.
-
-    Chain: vision_extract (截图 OCR 补进 body) → classify → (auto hub_issue +
-    Linear when confidence clears the bar) → dedup (advisory audit) →
-    conflict_detect → (auto split when confidence clears the bar) → classify
-    each child. Vision runs first so classify/dedup see the error text from
-    screenshots. Children never re-run conflict_detect / dedup / vision.
+    vision_extract(截图OCR) → triage(classify+conflict 合一：定型+是否混合) →
+      混合: 自动拆开关开且过门槛 → split 原子化 → 每子单按继承类型分流；
+            否则停摆进「待拆分」人工队列（split_ticket 审计已由 triage 写）。
+      非混合: 按 type 分流（Complaint 停 ticket 层；其余毕业 hub_issue）。
+    单一 BG task；各步失败自吞不阻塞。子单原子、永不再拆。
     """
     settings = get_settings()
     if settings.vision_enabled:
         extract_ticket_attachments(ticket_id)
 
-    def _classify_and_maybe_graduate(tid: int) -> None:
-        cls = classify_ticket(tid)
-        if (
-            cls is not None
-            and settings.hub_issue_auto_enabled
-            and cls.confidence >= settings.hub_issue_auto_confidence
-        ):
-            create_hub_issue_for_ticket_auto(tid)
+    tri = run_ticket_triage(ticket_id)
+    if tri is None:
+        return  # triage 失败：留 predicted_type=None，人工可见（不误分流）
 
-    _classify_and_maybe_graduate(ticket_id)
-    if settings.dedup_enabled:
-        detect_ticket_duplicate(ticket_id)
-        auto_mount_recent_duplicate(ticket_id)  # 90 天内重复自动挂 hub（默认关）
-    if not settings.conflict_detect_enabled:
+    if tri.is_mixed:
+        if settings.split_auto_enabled and tri.confidence >= settings.split_auto_confidence:
+            split_res = execute_split_for_ticket(ticket_id, executed_by="agent:split_auto")
+            if split_res is not None:
+                for child_id in split_res.child_ticket_ids:
+                    _route_child(child_id)
+        # 未开自动拆 → 停摆等人工（split_ticket 提案已在队列）
         return
-    res = detect_ticket_conflict(ticket_id)
-    if (
-        res is not None
-        and res.decision == "split"
-        and settings.split_auto_enabled
-        and res.confidence >= settings.split_auto_confidence
-    ):
-        split_res = execute_split_for_ticket(ticket_id, executed_by="agent:split_auto")
-        if split_res is not None:
-            for child_id in split_res.child_ticket_ids:
-                _classify_and_maybe_graduate(child_id)
+
+    _route_by_type(ticket_id, tri.type, tri.confidence, bar=settings.hub_issue_auto_confidence)
 
 
 def run_escalation_agents(ticket_id: int) -> None:
-    """Post-ingest chain for ai_cs escalation tickets (D4 第③段).
+    """AI 客服 escalation 链（D4 第③段，ADR-0016 P2c 对齐分流）.
 
-    Same shape as run_post_ingest_agents but swaps classify →
-    escalation_classify (golden-triple二次分类) and uses the higher
-    ESCALATION_AUTO_CONFIDENCE bar for auto-graduation (this chain builds a
-    hub_issue and pushes Linear). dedup/conflict_detect run as usual.
+    escalation 有黄金三元组上下文，**保留专用 escalation_classify**（不走 triage）。
+    escalation 工单已聚焦（AI 客服筛过一轮），不做混合拆分。分流终局与主链一致：
+    Complaint 停 ticket；其余在 ESCALATION_AUTO_CONFIDENCE 过门槛时毕业。
     """
     settings = get_settings()
     if settings.vision_enabled:
         extract_ticket_attachments(ticket_id)
     cls = classify_escalation_ticket(ticket_id)
-    if (
-        cls is not None
-        and settings.escalation_auto_enabled
-        and cls.confidence >= settings.escalation_auto_confidence
-    ):
-        create_hub_issue_for_ticket_auto(ticket_id)
-    if settings.dedup_enabled:
-        detect_ticket_duplicate(ticket_id)
-        auto_mount_recent_duplicate(ticket_id)
-    if settings.conflict_detect_enabled:
-        detect_ticket_conflict(ticket_id)
+    if cls is None:
+        return
+    _route_by_type(ticket_id, cls.type, cls.confidence, bar=settings.escalation_auto_confidence)
 
 
 class IngestResponse(BaseModel):

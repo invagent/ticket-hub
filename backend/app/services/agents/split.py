@@ -53,6 +53,9 @@ from app.services.system_settings import get_default_pool_user_id
 
 logger = get_logger(__name__)
 
+# 子单可继承的类型（Complaint 不进拆分子单——投诉停 ticket 层转人工）
+_VALID_CHILD_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task"})
+
 
 class SplitError(Exception):
     """Proposal can't be executed / reverted; message is supervisor-facing."""
@@ -193,11 +196,19 @@ def execute_split(
     router = Router(db, default_pool_user_id=get_default_pool_user_id(db))
 
     child_ids: list[int] = []
+    from decimal import Decimal
+
+    # ADR-0016 P2c：triage 提案的 sub_issue 带 sub_type → 子单直接继承类型/置信度
+    # （原子单不再分类）。旧 conflict_detect 提案无 sub_type → 留 None，由 caller
+    # 兜底跑 classify（向后兼容 SIT 存量待拆分提案）。
+    parent_conf = decision.proposal.get("confidence")
     for i, sub in enumerate(sub_issues_raw, start=1):
         title = str(sub.get("title") or "").strip()
         if not title:
             raise SplitError(f"decision {decision_id} sub_issue #{i} has empty title")
         summary = str(sub.get("summary") or "")
+        sub_type = sub.get("sub_type")
+        inherit_type = sub_type if sub_type in _VALID_CHILD_TYPES else None
 
         child = Ticket(
             short_code=tickets.next_short_code(),
@@ -218,6 +229,13 @@ def execute_split(
             # slicing the original text (parent keeps the full body)
             title=title,
             body=summary or None,
+            predicted_type=inherit_type,
+            predicted_confidence=(
+                Decimal(f"{float(parent_conf):.2f}")
+                if inherit_type and isinstance(parent_conf, int | float)
+                else None
+            ),
+            classified_at=datetime.now(UTC) if inherit_type else None,
         )
         db.add(child)
         db.flush()  # need child.id for routing + history
