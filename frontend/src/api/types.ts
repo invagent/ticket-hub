@@ -1027,6 +1027,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/close-complaint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Complaint Endpoint
+         * @description 人工确认关闭投诉工单（判定为纯安抚场景、无需转出口时）。
+         */
+        post: operations["close_complaint_endpoint_api_supervisor_close_complaint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/complaint-tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Complaint Tickets
+         * @description 投诉工单人工队列（ADR-0016：Complaint 停 ticket 层，绝不自动毕业）。
+         *
+         *     人工两条出路：纯情绪投诉 → close-complaint 关闭；投诉裹着真问题 →
+         *     create-hub-issue 带 type 覆盖转型毕业（转毕业后 hub_issue_id 落值，
+         *     自动离开本队列）。
+         */
+        get: operations["list_complaint_tickets_api_supervisor_complaint_tickets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/config-warnings": {
         parameters: {
             query?: never;
@@ -1658,6 +1702,43 @@ export interface components {
             ok: boolean;
             /** Required */
             required: boolean;
+        };
+        /** CloseComplaintBody */
+        CloseComplaintBody: {
+            /** Reason */
+            reason?: string | null;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** CloseComplaintResponse */
+        CloseComplaintResponse: {
+            /** Status */
+            status: string;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** ComplaintTicketItem */
+        ComplaintTicketItem: {
+            /** Confidence */
+            confidence: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Short Code */
+            short_code: string;
+            /** Source Code */
+            source_code: string | null;
+            /** Ticket Id */
+            ticket_id: number;
+            /** Title */
+            title: string | null;
+        };
+        /** ComplaintTicketsResponse */
+        ComplaintTicketsResponse: {
+            /** Items */
+            items: components["schemas"]["ComplaintTicketItem"][];
         };
         /** ConfigWarningItem */
         ConfigWarningItem: {
@@ -5510,6 +5591,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiCsStatusResponse"];
+                };
+            };
+        };
+    };
+    close_complaint_endpoint_api_supervisor_close_complaint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloseComplaintBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseComplaintResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_complaint_tickets_api_supervisor_complaint_tickets_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplaintTicketsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

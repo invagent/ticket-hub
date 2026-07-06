@@ -4,11 +4,12 @@
  * 上段：工单整体看板（今日/本周/本月切换）
  *   状态漏斗（点击跳工单列表带筛选）· SLO 指标卡（真实环比，无编造趋势线）·
  *   来源分布条
- * 下段：需人工介入队列（六类混排，彩色类型标 + 行内快捷操作）
- *   紫=拆单提案 青=重复提案 琥珀=Linear待人工 红=未分配 emerald=待诊断
- *   灰=SLA通知（原主管工作台 inbox，保留 ack 功能不丢失）
+ * 下段：需人工介入队列（七类混排，彩色类型标 + 行内快捷操作）
+ *   紫=拆单提案（含 triage 混合单闸门停摆，ADR-0016）青=重复提案
+ *   琥珀=Linear待人工 红=未分配 深红实心=投诉（人工关闭/转型毕业，绝不自动）
+ *   emerald=待诊断 灰=SLA通知（原主管工作台 inbox，保留 ack 功能不丢失）
  *
- * 数据：/api/metrics/workbench + 5 个 supervisor 队列端点 + /api/tickets。
+ * 数据：/api/metrics/workbench + 6 个 supervisor 队列端点 + /api/tickets。
  * member/assignee 只看看板（队列端点 require_supervisor）。
  */
 import type { ReactNode } from "react";
@@ -42,15 +43,28 @@ const SRC_LABELS: Record<string, string> = {
   ai_cs: "AI客服",
 };
 
-type QueueType = "split" | "dup" | "linear" | "unassigned" | "esc" | "notice";
+type QueueType = "split" | "dup" | "linear" | "unassigned" | "complaint" | "esc" | "notice";
 
-const QUEUE_TYPES: Record<QueueType, { label: string; c: string; bg: string; bd: string }> = {
+// fg 缺省用 c（描边 chip）；投诉用实心深红（fg=白）与「未分配」浅红区分
+const QUEUE_TYPES: Record<
+  QueueType,
+  { label: string; c: string; bg: string; bd: string; fg?: string }
+> = {
   split: { label: "拆单提案", c: "#7a5ba6", bg: "#f2edf8", bd: "#ddd0ec" },
   dup: { label: "重复提案", c: "#2383a0", bg: "#e7f2f6", bd: "#c9e0e8" },
   linear: { label: "Linear待人工", c: "#9a6c1c", bg: "#faf3e3", bd: "#eddfba" },
   unassigned: { label: "未分配", c: "#b04a4a", bg: "#fbf1ef", bd: "#eed7d2" },
+  complaint: { label: "投诉", c: "#b04a4a", bg: "#b04a4a", bd: "#b04a4a", fg: "#ffffff" },
   esc: { label: "待诊断", c: "#1e8a63", bg: "#e6f4ed", bd: "#bfdccd" },
   notice: { label: "SLA通知", c: "#8b8577", bg: "#f3f0e9", bd: "#e8e3d9" },
+};
+
+const HUB_TYPES = ["Operation", "Bug_fix", "Demand", "Internal_task"] as const;
+const HUB_TYPE_LABELS: Record<(typeof HUB_TYPES)[number], string> = {
+  Operation: "运营",
+  Bug_fix: "Bug修复",
+  Demand: "需求",
+  Internal_task: "内部任务",
 };
 
 type QueueRow = {
@@ -63,6 +77,8 @@ type QueueRow = {
   primary?: { label: string; run: () => void; pending?: boolean };
   secondary?: { label: string; run: () => void; pending?: boolean };
   link?: { label: string; to: string };
+  // 投诉行专属：选类型转毕业 + 人工关闭（ADR-0016 投诉停 ticket 层）
+  complaintTicketId?: number;
 };
 
 function currentRole(): string {
@@ -398,6 +414,10 @@ function HumanQueue() {
     queryKey: ["tickets", "unassigned-queue"],
     queryFn: () => api.get("/api/tickets", { unassigned_only: true, page_size: 50 }),
   });
+  const complaints = useQuery({
+    queryKey: ["supervisor", "complaint-tickets"],
+    queryFn: () => api.get("/api/supervisor/complaint-tickets"),
+  });
   const escPending = useQuery({
     queryKey: ["supervisor", "escalation-pending-diagnosis"],
     queryFn: () => api.get("/api/supervisor/escalation-pending-diagnosis"),
@@ -453,6 +473,24 @@ function HumanQueue() {
       } else {
         setError(`仍无法推送：${d.pending_reason ?? "未知原因"}`);
       }
+    },
+    onError: onErr,
+  });
+  const closeComplaint = useMutation({
+    mutationFn: (ticketId: number) =>
+      api.post("/api/supervisor/close-complaint", { ticket_id: ticketId }),
+    onSuccess: () => {
+      setFlash("投诉已关闭");
+      invalidate("complaint-tickets")();
+    },
+    onError: onErr,
+  });
+  const convertComplaint = useMutation({
+    mutationFn: (v: { ticketId: number; type: string }) =>
+      api.post("/api/supervisor/create-hub-issue", { ticket_id: v.ticketId, type: v.type }),
+    onSuccess: (d) => {
+      setFlash(`已转 ${HUB_TYPE_LABELS[d.type as (typeof HUB_TYPES)[number]] ?? d.type} 毕业：${d.hub_issue_short_code}`);
+      invalidate("complaint-tickets")();
     },
     onError: onErr,
   });
@@ -537,6 +575,17 @@ function HumanQueue() {
         link: { label: "手动分配", to: "/tickets?unassigned=true" },
       });
     }
+    for (const c of complaints.data?.items ?? []) {
+      out.push({
+        key: `complaint-${c.ticket_id}`,
+        type: "complaint",
+        id: c.short_code,
+        title: c.title ?? "（无标题）",
+        sub: `AI 判定投诉${c.confidence != null ? `（置信 ${Math.round(c.confidence * 100)}%）` : ""} · 纯情绪→关闭；裹着真问题→选类型转毕业`,
+        since: c.created_at,
+        complaintTicketId: c.ticket_id,
+      });
+    }
     for (const e of escPending.data?.items ?? []) {
       out.push({
         key: `esc-${e.ticket_id}`,
@@ -570,7 +619,7 @@ function HumanQueue() {
       (a, b) => new Date(a.since ?? 0).getTime() - new Date(b.since ?? 0).getTime(),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splits.data, dups.data, pendingHubs.data, unassigned.data, escPending.data, inbox.data]);
+  }, [splits.data, dups.data, pendingHubs.data, unassigned.data, complaints.data, escPending.data, inbox.data]);
 
   const counts = useMemo(() => {
     const c = {} as Record<QueueType, number>;
@@ -582,7 +631,11 @@ function HumanQueue() {
 
   const visible = active.length ? rows.filter((r) => active.includes(r.type)) : rows;
   const loading =
-    splits.isLoading || dups.isLoading || pendingHubs.isLoading || unassigned.isLoading;
+    splits.isLoading ||
+    dups.isLoading ||
+    pendingHubs.isLoading ||
+    unassigned.isLoading ||
+    complaints.isLoading;
 
   return (
     <>
@@ -669,7 +722,7 @@ function HumanQueue() {
                 <div className="flex-none w-[88px]">
                   <span
                     className="text-[10px] font-bold px-2 py-[2.5px] rounded-full border"
-                    style={{ background: t.bg, color: t.c, borderColor: t.bd }}
+                    style={{ background: t.bg, color: t.fg ?? t.c, borderColor: t.bd }}
                   >
                     {t.label}
                   </span>
@@ -687,7 +740,17 @@ function HumanQueue() {
                 >
                   等待 {w.text}
                 </div>
-                <div className="flex-none flex gap-1.5 w-[172px] justify-end">
+                <div className="flex-none flex gap-1.5 min-w-[172px] justify-end">
+                  {row.complaintTicketId != null && (
+                    <ComplaintActions
+                      onConvert={(type) =>
+                        convertComplaint.mutate({ ticketId: row.complaintTicketId!, type })
+                      }
+                      onClose={() => closeComplaint.mutate(row.complaintTicketId!)}
+                      converting={convertComplaint.isPending}
+                      closing={closeComplaint.isPending}
+                    />
+                  )}
                   {row.primary && (
                     <button
                       onClick={row.primary.run}
@@ -720,6 +783,50 @@ function HumanQueue() {
           })}
         </div>
       )}
+    </>
+  );
+}
+
+/** 投诉行动作：选类型转毕业（复用 create-hub-issue type 覆盖）或人工关闭。 */
+function ComplaintActions({
+  onConvert,
+  onClose,
+  converting,
+  closing,
+}: {
+  onConvert: (type: string) => void;
+  onClose: () => void;
+  converting: boolean;
+  closing: boolean;
+}) {
+  const [type, setType] = useState<string>("Operation");
+  return (
+    <>
+      <select
+        value={type}
+        onChange={(e) => setType(e.target.value)}
+        className="text-[11.5px] px-1.5 py-[3.5px] rounded-md border border-hub-border bg-white text-hub-textSecondary"
+      >
+        {HUB_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {HUB_TYPE_LABELS[t]}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => onConvert(type)}
+        disabled={converting}
+        className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+      >
+        转毕业
+      </button>
+      <button
+        onClick={onClose}
+        disabled={closing}
+        className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-rose-border disabled:opacity-50 hover:bg-hub-rose-light"
+      >
+        关闭
+      </button>
     </>
   );
 }

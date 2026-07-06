@@ -15,6 +15,8 @@
   POST /api/supervisor/dismiss-dedup               — decline a dedup proposal
   GET  /api/supervisor/pending-hub-issues          — Linear push blocked, awaiting human
   POST /api/supervisor/repush-linear               — retry a blocked Linear push
+  GET  /api/supervisor/complaint-tickets           — Complaint queue awaiting human
+  POST /api/supervisor/close-complaint             — human-confirmed complaint close
   GET  /api/supervisor/ai-cs/status                — knowledge-feedback feature on/configured
   GET  /api/supervisor/ai-cs/skills                — list managed AI 客服 skills
   GET  /api/supervisor/ai-cs/skills/{name}         — skill published files + history
@@ -743,6 +745,114 @@ def list_escalation_pending_diagnosis(
         if len(items) >= min(limit, 100):
             break
     return EscalationPendingResponse(items=items)
+
+
+# ---- 投诉队列 (ADR-0016 P2d) --------------------------------------------------
+
+
+class ComplaintTicketItem(BaseModel):
+    ticket_id: int
+    short_code: str
+    title: str | None
+    source_code: str | None
+    confidence: float | None
+    created_at: datetime
+
+
+class ComplaintTicketsResponse(BaseModel):
+    items: list[ComplaintTicketItem]
+
+
+class CloseComplaintBody(BaseModel):
+    ticket_id: int
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class CloseComplaintResponse(BaseModel):
+    ticket_id: int
+    status: str
+
+
+_TICKET_TERMINAL_STATUSES = ("done", "closed", "rejected", "superseded")
+
+
+@router.get("/complaint-tickets", response_model=ComplaintTicketsResponse)
+def list_complaint_tickets(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> ComplaintTicketsResponse:
+    """投诉工单人工队列（ADR-0016：Complaint 停 ticket 层，绝不自动毕业）。
+
+    人工两条出路：纯情绪投诉 → close-complaint 关闭；投诉裹着真问题 →
+    create-hub-issue 带 type 覆盖转型毕业（转毕业后 hub_issue_id 落值，
+    自动离开本队列）。
+    """
+    rows = (
+        db.query(Ticket)
+        .filter(
+            Ticket.deleted_at.is_(None),
+            Ticket.predicted_type == "Complaint",
+            Ticket.hub_issue_id.is_(None),
+            Ticket.status.notin_(_TICKET_TERMINAL_STATUSES),
+        )
+        .order_by(Ticket.created_at.asc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    return ComplaintTicketsResponse(
+        items=[
+            ComplaintTicketItem(
+                ticket_id=t.id,
+                short_code=t.short_code,
+                title=t.title,
+                source_code=t.source_code,
+                confidence=(
+                    float(t.predicted_confidence) if t.predicted_confidence is not None else None
+                ),
+                created_at=t.created_at,
+            )
+            for t in rows
+        ]
+    )
+
+
+@router.post("/close-complaint", response_model=CloseComplaintResponse)
+def close_complaint_endpoint(
+    body: CloseComplaintBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> CloseComplaintResponse:
+    """人工确认关闭投诉工单（判定为纯安抚场景、无需转出口时）。"""
+    t = db.get(Ticket, body.ticket_id)
+    if t is None or t.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    if t.predicted_type != "Complaint":
+        raise HTTPException(
+            status_code=409, detail=f"非投诉工单（predicted_type={t.predicted_type}）"
+        )
+    if t.status in _TICKET_TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail=f"工单已是终态（{t.status}）")
+    prev = t.status
+    t.status = "closed"
+    db.add(
+        StatusHistory(
+            entity_type="ticket",
+            entity_id=t.id,
+            from_status=prev,
+            to_status="closed",
+            changed_by=f"user:{user.name}",
+            reason=body.reason or "投诉人工确认关闭",
+        )
+    )
+    db.commit()
+    logger.info(
+        "supervisor_close_complaint",
+        ticket_id=t.id,
+        from_status=prev,
+        operator_user_id=user.user_id,
+    )
+    return CloseComplaintResponse(ticket_id=t.id, status="closed")
 
 
 @router.post("/repush-linear", response_model=RepushLinearResponse)

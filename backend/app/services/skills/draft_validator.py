@@ -11,7 +11,9 @@ triage（ADR-0016 P2）落地后同样走这里。
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,12 +80,16 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
         return ValidationReport(supported=True, message="库里没有可回放的工单样本")
 
     # classify 与 triage 的 payload 都返回带 .type/.confidence 的结果，接口一致
+    run_payload: Callable[..., Any]
+    agent_error: type[Exception]
     if name == "triage":
-        from app.services.agents.triage import TriageError as AgentError
-        from app.services.agents.triage import triage_payload as run_payload
+        from app.services.agents.triage import TriageError, triage_payload
+
+        run_payload, agent_error = triage_payload, TriageError
     else:
-        from app.services.agents.classify import ClassifyError as AgentError
-        from app.services.agents.classify import classify_payload as run_payload
+        from app.services.agents.classify import ClassifyError, classify_payload
+
+        run_payload, agent_error = classify_payload, ClassifyError
 
     current_prompt = row.content_md
     draft_prompt = row.draft_md
@@ -109,7 +115,7 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
                 system_prompt_override=draft_prompt,
             )
             dft_type, dft_conf = dft.type, dft.confidence
-        except (AgentError, LLMRouterError) as e:
+        except (agent_error, LLMRouterError) as e:
             err = str(e)[:200]
             errors += 1
         is_changed = err is None and cur_type != dft_type
