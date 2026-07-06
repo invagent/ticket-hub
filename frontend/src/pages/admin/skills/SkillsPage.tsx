@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getByPath, postByPath, putByPath, ApiError } from "@/api/client";
 import { AdminTabs } from "../AdminTabs";
@@ -25,9 +26,21 @@ export function SkillsPage() {
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
       <h1 className="m-0 text-[17px] font-bold">管理</h1>
       <AdminTabs />
+      {/* ADR-0016 P0：内部编排 skill vs 对客 skill 的认知区分 */}
+      <div className="bg-hub-teal-light border border-hub-teal-border rounded-[9px] px-3.5 py-2 mb-3 text-[11.5px] text-hub-teal-deep flex items-center gap-2 flex-wrap">
+        <span className="font-bold flex-none">⚙️ 此处管理 hub 内部编排 Agent 的提示词</span>
+        <span>（分类 / 拆分检测 / 查重 / OCR / 反思推断——影响工单流水线，仅管理员）。</span>
+        <span>
+          面向客户的 <b>AI 客服对客 skill</b>（答复规范/知识运用）请去{" "}
+          <Link to="/reflect" className="font-bold underline underline-offset-2">
+            反思诊断工作台
+          </Link>{" "}
+          修订与发布。
+        </span>
+      </div>
       <header className="flex items-center justify-between mb-3">
         <p className="text-[11.5px] text-hub-textMuted">
-          DB 化版本提示词（内部分类/反思 agent 用），热加载即生效；编辑留历史、可回滚。
+          DB 化版本提示词，热加载即生效；编辑留历史、可回滚。
         </p>
         <button
           onClick={() => imp.mutate()}

@@ -33,6 +33,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
@@ -707,11 +708,19 @@ def list_escalation_pending_diagnosis(
     """AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
 
     diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
-    —— 与 dedup 召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+    —— 与召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
+
+    ADR-0016：反思只对 Operation 有意义（Bug/Demand 走 Linear，投诉走人工）——
+    predicted_type 过滤 Operation；NULL（分类失败/未跑）也保留进队列，
+    避免 LLM 挂掉时新失败悄悄漏出人工视野。
     """
     rows = (
         db.query(Ticket)
-        .filter(Ticket.deleted_at.is_(None), Ticket.source_code == "ai_cs")
+        .filter(
+            Ticket.deleted_at.is_(None),
+            Ticket.source_code == "ai_cs",
+            or_(Ticket.predicted_type == "Operation", Ticket.predicted_type.is_(None)),
+        )
         .order_by(Ticket.created_at.desc())
         .limit(min(limit, 100) * 3)  # 过采样，Python 过滤后再截断
         .all()

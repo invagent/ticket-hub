@@ -362,7 +362,9 @@ def test_escalation_context_non_ai_cs(app_client: TestClient, world: Session) ->
 # ---- 反思诊断工作台：diagnosis + reflect --------------------------------
 
 
-def _mk_escalation(world: Session, ticket_id: int = 700) -> None:
+def _mk_escalation(
+    world: Session, ticket_id: int = 700, *, predicted_type: str | None = None
+) -> None:
     if not world.query(Source).filter_by(code="ai_cs").count():
         world.add(Source(code="ai_cs", name="AI 客服"))
     world.add(
@@ -374,6 +376,7 @@ def _mk_escalation(world: Session, ticket_id: int = 700) -> None:
             type="Raw",
             status="received",
             title="开票超时",
+            predicted_type=predicted_type,
             source_payload={
                 "ai_cs": {
                     "original_question": "开票超时",
@@ -537,3 +540,15 @@ def test_escalation_pending_diagnosis_queue(app_client: TestClient, world: Sessi
     assert 711 not in ids
     row = next(it for it in r.json()["items"] if it["ticket_id"] == 710)
     assert row["dissatisfaction"] == "做了还是超时"
+
+
+def test_escalation_queue_operation_only_filter(app_client: TestClient, world: Session) -> None:
+    """ADR-0016：反思队列只收 Operation（含未分类 NULL），Bug/Demand 走 Linear 不进队列。"""
+    _mk_escalation(world, 720, predicted_type="Operation")
+    _mk_escalation(world, 721, predicted_type="Bug_fix")
+    _mk_escalation(world, 722, predicted_type="Demand")
+    _mk_escalation(world, 723, predicted_type=None)  # 分类失败/未跑 → 保留人工可见
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 720 in ids and 723 in ids
+    assert 721 not in ids and 722 not in ids
