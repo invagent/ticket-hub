@@ -106,26 +106,20 @@ def test_draft_endpoints_roundtrip(app_client: TestClient, world: Session) -> No
     assert detail["previous_version"] == 1
 
     # discard
-    app_client.put(
-        "/api/admin/skills/classify/draft", json={"content_md": "x"}, headers=_bearer(1)
-    )
+    app_client.put("/api/admin/skills/classify/draft", json={"content_md": "x"}, headers=_bearer(1))
     r = app_client.delete("/api/admin/skills/classify/draft", headers=_bearer(1))
     assert r.status_code == 200 and r.json()["has_draft"] is False
 
 
 def test_promote_no_draft_409(app_client: TestClient, world: Session) -> None:
     app_client.post("/api/admin/skills/import-from-files", headers=_bearer(1))
-    r = app_client.post(
-        "/api/admin/skills/classify/draft/promote", json={}, headers=_bearer(1)
-    )
+    r = app_client.post("/api/admin/skills/classify/draft/promote", json={}, headers=_bearer(1))
     assert r.status_code == 409
 
 
 def test_validate_unsupported_skill(app_client: TestClient, world: Session) -> None:
     app_client.post("/api/admin/skills/import-from-files", headers=_bearer(1))
-    r = app_client.post(
-        "/api/admin/skills/dedup/draft/validate", json={}, headers=_bearer(1)
-    )
+    r = app_client.post("/api/admin/skills/dedup/draft/validate", json={}, headers=_bearer(1))
     assert r.status_code == 200
     assert r.json()["supported"] is False
 
