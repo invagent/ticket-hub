@@ -22,7 +22,7 @@ from app.models import Ticket
 
 logger = get_logger(__name__)
 
-_SUPPORTED = frozenset({"classify"})
+_SUPPORTED = frozenset({"classify", "triage"})
 _MAX_SAMPLE = 20
 
 
@@ -77,7 +77,13 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
     if not tickets:
         return ValidationReport(supported=True, message="库里没有可回放的工单样本")
 
-    from app.services.agents.classify import ClassifyError, classify_payload
+    # classify 与 triage 的 payload 都返回带 .type/.confidence 的结果，接口一致
+    if name == "triage":
+        from app.services.agents.triage import TriageError as AgentError
+        from app.services.agents.triage import triage_payload as run_payload
+    else:
+        from app.services.agents.classify import ClassifyError as AgentError
+        from app.services.agents.classify import classify_payload as run_payload
 
     current_prompt = row.content_md
     draft_prompt = row.draft_md
@@ -87,7 +93,7 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
         cur_type = cur_conf = dft_type = dft_conf = None
         err: str | None = None
         try:
-            cur = classify_payload(
+            cur = run_payload(
                 title=t.title,
                 body=t.body,
                 product_line_code=t.product_line_code,
@@ -95,7 +101,7 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
                 system_prompt_override=current_prompt,
             )
             cur_type, cur_conf = cur.type, cur.confidence
-            dft = classify_payload(
+            dft = run_payload(
                 title=t.title,
                 body=t.body,
                 product_line_code=t.product_line_code,
@@ -103,7 +109,7 @@ def validate_draft(db: Session, name: str, *, sample: int = 8) -> ValidationRepo
                 system_prompt_override=draft_prompt,
             )
             dft_type, dft_conf = dft.type, dft.confidence
-        except (ClassifyError, LLMRouterError) as e:
+        except (AgentError, LLMRouterError) as e:
             err = str(e)[:200]
             errors += 1
         is_changed = err is None and cur_type != dft_type
