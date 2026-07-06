@@ -1,9 +1,10 @@
-"""Evaluation runner for Agent decision quality — D3 classify edition.
+"""Evaluation runner for Agent decision quality — triage edition (ADR-0016 P2e).
 
 Reads a jsonl dataset (one record per line, see schema below) and runs each
-record through the classify agent (`classify_payload`, real LLM call via
-LLMRouter). Emits a report with overall/per-class accuracy, a confusion
-matrix, total cost, and every mismatch for error analysis.
+record through the main-chain agent (default `triage_payload`; `--agent
+classify` keeps the legacy child-fallback classifier evaluable). Emits a
+report with overall/per-class accuracy, a confusion matrix, total cost, and
+every mismatch for error analysis.
 
 Dataset schema (tests/eval/dataset_v1.jsonl):
     id             unique record id (ksm-001 / sample-001 / syn-005)
@@ -11,15 +12,21 @@ Dataset schema (tests/eval/dataset_v1.jsonl):
     title, body    ticket text (body may be null)
     product_line   our product line code or null
     module         module name or null
-    expected_type  Operation | Bug_fix | Demand | Internal_task
-    expected_dedup reserved for D3-E (null for now)
+    expected_type  Operation | Bug_fix | Demand | Internal_task | Complaint
+    expected_mixed true if the record混合多个独立问题 (optional; absent = single)
+    expected_dedup reserved (60 条全 null，未标注——不编造)
     needs_review   human label still unconfirmed (counted separately)
     note           labeling rationale
 
 Acceptance gate (upgrade_plan v0.5.6 / D3): classify accuracy ≥ 90%.
+triage additionally reports is_mixed diagnostics: on a single-problem dataset
+the mixed-flag rate should be ~0 — flagged records are listed for review
+(误拆代价 > 漏拆, per ADR-0016).
 
 Usage (from backend/, venv must have app deps + GLM_API_KEY in .env):
     .venv/bin/python ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl
+    # legacy classify agent (child fallback):
+    .venv/bin/python ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl --agent classify
     # validate dataset only, no LLM calls:
     .venv/bin/python ../scripts/eval/run_eval.py tests/eval/dataset_v1.jsonl --validate
     # smoke-run on the first N records:
@@ -41,7 +48,7 @@ REPO_ROOT = SCRIPT_DIR.parent.parent  # ticket-hub/
 BACKEND_DIR = REPO_ROOT / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-VALID_TYPES = ("Operation", "Bug_fix", "Demand", "Internal_task")
+VALID_TYPES = ("Operation", "Bug_fix", "Demand", "Internal_task", "Complaint")
 REQUIRED_FIELDS = ("id", "title", "expected_type")
 
 
@@ -78,13 +85,23 @@ def validate_dataset(records: list[dict]) -> list[str]:
 
 
 def run_classify_eval(
-    records: list[dict], *, limit: int | None = None, provider: str | None = None
+    records: list[dict],
+    *,
+    limit: int | None = None,
+    provider: str | None = None,
+    agent: str = "triage",
 ) -> dict:
-    """Run each record through classify_payload (real LLM). Returns report dict."""
+    """Run each record through the chosen agent's payload fn (real LLM)."""
     # Imported here so --validate works without app deps / API keys.
     from app.config import get_settings
     from app.core.llm_router import LLMRouter, LLMRouterError
-    from app.services.agents.classify import ClassifyError, classify_payload
+
+    if agent == "triage":
+        from app.services.agents.triage import TriageError as AgentError
+        from app.services.agents.triage import triage_payload as run_payload
+    else:
+        from app.services.agents.classify import ClassifyError as AgentError
+        from app.services.agents.classify import classify_payload as run_payload
 
     settings = get_settings()
     if not (settings.glm_api_key or settings.dashscope_api_key):
@@ -99,6 +116,8 @@ def run_classify_eval(
     confusion: Counter[tuple[str, str]] = Counter()  # (expected, predicted)
     mismatches: list[dict] = []
     errors: list[dict] = []
+    mixed_flags: list[dict] = []  # triage only: is_mixed diagnostics
+    mixed_correct = mixed_missed = mixed_false = 0
     total_cost = 0.0
     confidences: list[float] = []
     t0 = time.monotonic()
@@ -106,14 +125,14 @@ def run_classify_eval(
     for i, rec in enumerate(subset, start=1):
         expected = rec["expected_type"]
         try:
-            result = classify_payload(
+            result = run_payload(
                 title=rec.get("title"),
                 body=rec.get("body"),
                 product_line_code=rec.get("product_line"),
                 module=rec.get("module"),
                 router=router,
             )
-        except (ClassifyError, LLMRouterError) as e:
+        except (AgentError, LLMRouterError) as e:
             errors.append({"id": rec["id"], "error": str(e)})
             print(f"  [{i}/{len(subset)}] {rec['id']} ERROR: {e}", file=sys.stderr)
             continue
@@ -134,8 +153,35 @@ def run_classify_eval(
                     "needs_review": rec.get("needs_review", False),
                 }
             )
+        mixed_mark = ""
+        if agent == "triage":
+            is_mixed = bool(getattr(result, "is_mixed", False))
+            exp_mixed = bool(rec.get("expected_mixed", False))
+            if is_mixed and exp_mixed:
+                mixed_correct += 1
+            elif is_mixed and not exp_mixed:
+                mixed_false += 1
+            elif exp_mixed and not is_mixed:
+                mixed_missed += 1
+            if is_mixed != exp_mixed:
+                mixed_flags.append(
+                    {
+                        "id": rec["id"],
+                        "title": rec["title"][:80],
+                        "expected_mixed": exp_mixed,
+                        "predicted_mixed": is_mixed,
+                        "sub_problems": [
+                            {"title": s.title, "type": s.type}
+                            for s in getattr(result, "sub_problems", ())
+                        ],
+                    }
+                )
+            if is_mixed:
+                mixed_mark = " [mixed]"
         mark = "✓" if ok else f"✗ {expected}→{result.type}"
-        print(f"  [{i}/{len(subset)}] {rec['id']} {mark} (conf={result.confidence:.2f})")
+        print(
+            f"  [{i}/{len(subset)}] {rec['id']} {mark} (conf={result.confidence:.2f}){mixed_mark}"
+        )
 
     elapsed = time.monotonic() - t0
     scored = sum(confusion.values())
@@ -159,7 +205,8 @@ def run_classify_eval(
     confirmed_scored = len(confirmed_ids - error_ids)
     confirmed_wrong = sum(1 for m in mismatches if m["id"] in confirmed_ids)
 
-    return {
+    report: dict = {
+        "agent": agent,
         "dataset_records": len(records),
         "evaluated": len(subset),
         "scored": scored,
@@ -178,6 +225,14 @@ def run_classify_eval(
         "avg_cost_per_ticket_usd": round(total_cost / scored, 6) if scored else None,
         "elapsed_seconds": round(elapsed, 1),
     }
+    if agent == "triage":
+        report["mixed_diagnostics"] = {
+            "correct": mixed_correct,  # expected_mixed=true 且判 mixed
+            "false_positive": mixed_false,  # 单一问题误判 mixed（误拆风险）
+            "missed": mixed_missed,  # 混合问题漏判（漏拆，代价较低）
+            "disagreements": mixed_flags,
+        }
+    return report
 
 
 def main() -> int:
@@ -186,6 +241,12 @@ def main() -> int:
     parser.add_argument("--validate", action="store_true", help="offline dataset check only")
     parser.add_argument(
         "--provider", default=None, help="restrict to one provider: glm | dashscope"
+    )
+    parser.add_argument(
+        "--agent",
+        default="triage",
+        choices=("triage", "classify"),
+        help="triage=主链合并agent（默认）；classify=子单兜底分类器",
     )
     parser.add_argument("--limit", type=int, default=None, help="evaluate first N records only")
     parser.add_argument("--threshold", type=float, default=0.9, help="accuracy gate (default 0.9)")
@@ -212,15 +273,21 @@ def main() -> int:
         print("validation OK (no LLM calls made)")
         return 0
 
-    report = run_classify_eval(records, limit=args.limit, provider=args.provider)
+    report = run_classify_eval(records, limit=args.limit, provider=args.provider, agent=args.agent)
     report["dataset"] = str(args.dataset)
     report["provider"] = args.provider or "default-chain"
     report["threshold"] = args.threshold
 
     Path(args.out).write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     acc = report["accuracy"]
-    print(f"\n=== classify accuracy: {acc} (gate ≥ {args.threshold}) ===")
+    print(f"\n=== {args.agent} accuracy: {acc} (gate ≥ {args.threshold}) ===")
     print(f"confirmed-labels-only accuracy: {report['accuracy_confirmed_labels_only']}")
+    if "mixed_diagnostics" in report:
+        md = report["mixed_diagnostics"]
+        print(
+            f"mixed diagnostics: correct={md['correct']} "
+            f"false_positive={md['false_positive']} missed={md['missed']}"
+        )
     print(f"total cost: ${report['total_cost_usd']} | report: {args.out}")
     if acc is not None and acc < args.threshold:
         print("GATE FAILED", file=sys.stderr)
