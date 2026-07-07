@@ -41,8 +41,8 @@ const CAUSES = [
 
 const CAUSE_HINTS: Record<string, string> = {
   skill: "修订 skill 提示词可解 → 右侧开药，改完创建 draft 后 replay 验证。",
-  knowledge: "需在知识库中修订对应条目（本页范围外）；可先在 skill 中加兜底话术避免继续答错，修订后 replay 验证。",
-  retrieval: "知识库缺少该主题条目，或检索词不匹配 → 补充知识条目后再 replay 验证是否命中。",
+  knowledge: "下方「知识库核对」查到的条目内容有误/过期 → 去飞书更正该条目，点「重新检索」确认，再 replay（当前 skill + 最新知识）验证。",
+  retrieval: "下方「知识库核对」无命中 = 知识缺失 → 去飞书补充该主题条目，点「重新检索」确认命中后再 replay 验证。",
 };
 
 function currentRole(): string {
@@ -67,7 +67,8 @@ function citeKey(c: Cited): string {
 
 export function ReflectWorkbenchPage() {
   const role = currentRole();
-  const isSupervisor = role === "supervisor" || role === "admin";
+  // ADR-0016 P5：知识运营也可用反思工作台（后端 require_knowledge_op 同口径）
+  const isSupervisor = role === "knowledge_op" || role === "supervisor" || role === "admin";
   const [params, setParams] = useSearchParams();
   const selectedId = Number(params.get("ticket")) || null;
 
@@ -85,7 +86,7 @@ export function ReflectWorkbenchPage() {
   }, [selectedId, tickets.data, setParams]);
 
   if (!isSupervisor) {
-    return <div className="p-6 text-sm text-hub-textMuted font-hub">仅主管/管理员可访问反思诊断工作台。</div>;
+    return <div className="p-6 text-sm text-hub-textMuted font-hub">仅知识运营/主管/管理员可访问反思诊断工作台。</div>;
   }
 
   return (
@@ -632,7 +633,114 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
           </div>
         )}
 
+        {/* 知识库核对（ADR-0016 P3）：按失败问题查飞书 KB — knowledge/retrieval 病因依据 */}
+        <KbCheckPanel question={ctx.original_question} causes={causes} />
+
         {error && <div className="text-xs text-red-600">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** 知识库核对：查飞书 KB 看正解有没有覆盖。命中=看知识对不对/AI用没用好；空=检索缺失。 */
+function KbCheckPanel({ question, causes }: { question: string; causes: string[] }) {
+  const status = useQuery({
+    queryKey: ["kb-status"],
+    queryFn: () => api.get("/api/supervisor/kb/status"),
+    staleTime: 5 * 60_000,
+  });
+  const [force, setForce] = useState(0);
+  const search = useQuery({
+    queryKey: ["kb-search", question, force],
+    queryFn: () =>
+      api.get("/api/supervisor/kb/search", { q: question, limit: 5, force: force > 0 }),
+    enabled: !!question && status.data?.configured === true && !status.data?.error,
+    staleTime: 60_000,
+  });
+
+  // 知识库未接入 → 不喧宾夺主，仅一行灰字（skill-only 诊断不需要它）
+  if (status.data && !status.data.configured) {
+    return (
+      <div className="border border-[#e8e3d9] rounded-[10px] bg-[#fbf9f5] px-3.5 py-2.5 text-[11px] text-[#8b8577]">
+        知识库核对：飞书知识库未接入（FEISHU_WIKI_SPACE_ID 未配置），knowledge/retrieval
+        病因需人工到飞书核对。
+      </div>
+    );
+  }
+  const hits = (search.data?.hits ?? []) as {
+    node_token: string;
+    title: string;
+    snippet: string;
+    url: string;
+    score: number;
+  }[];
+  const empty = search.isSuccess && hits.length === 0;
+  const relevant = causes.includes("knowledge") || causes.includes("retrieval");
+
+  return (
+    <div
+      className={`border-[1.5px] rounded-[10px] px-3.5 py-3 ${
+        relevant ? "border-[#c9a86a] bg-[#fbf6ea]" : "border-[#e8e3d9] bg-[#fbf9f5]"
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[12.5px] font-bold text-[#8a713a]">知识库核对</span>
+        <span className="text-[10.5px] text-[#8b8577]">
+          飞书 · {status.data?.doc_count ?? "…"} 篇
+        </span>
+        <button
+          onClick={() => setForce((v) => v + 1)}
+          className="ml-auto text-[10.5px] text-[#177e83] hover:underline"
+          title="改完知识库后强制刷新（清缓存重查）"
+        >
+          {search.isFetching ? "检索中…" : "↻ 重新检索"}
+        </button>
+      </div>
+
+      {status.data?.error ? (
+        <div className="text-[11px] text-[#b04a4a]">知识库连接异常：{status.data.error}</div>
+      ) : search.isLoading ? (
+        <div className="text-[11px] text-[#8b8577]">按问题检索知识库中…</div>
+      ) : empty ? (
+        <div className="text-[11.5px] text-[#b04a4a] leading-relaxed">
+          ⚠ 知识库<b>未检索到相关条目</b> —— 指向 <b>检索缺失（retrieval）</b>：该主题知识
+          缺失或检索词不匹配。去飞书补充条目后点「重新检索」验证。
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[11px] text-[#7a7466]">
+            命中 {hits.length} 条 —— 逐条核对：知识<b>本身对不对</b>（错/过期 = knowledge）、
+            AI <b>用没用好</b>（对但没采纳 = skill）。
+          </div>
+          {hits.map((h) => (
+            <div
+              key={h.node_token}
+              className="bg-white border border-[#e8e3d9] rounded-[7px] px-2.5 py-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold flex-1 min-w-0 truncate">{h.title}</span>
+                <span className="text-[9.5px] text-[#8b8577] font-mono flex-none">
+                  相关 {h.score}
+                </span>
+                {h.url && (
+                  <a
+                    href={h.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10.5px] text-[#177e83] hover:underline flex-none"
+                  >
+                    在飞书打开 ↗
+                  </a>
+                )}
+              </div>
+              <div className="text-[11px] text-[#57524a] mt-0.5 line-clamp-2">{h.snippet}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 text-[10.5px] text-[#8b8577]">
+        知识改动在飞书完成；改完点「重新检索」，再用右侧「replay（当前 skill + 最新知识）」
+        重答验证。
       </div>
     </div>
   );

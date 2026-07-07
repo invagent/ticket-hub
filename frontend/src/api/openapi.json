@@ -2858,6 +2858,107 @@
         "title": "KSMAck",
         "type": "object"
       },
+      "KbHitItem": {
+        "properties": {
+          "char_count": {
+            "title": "Char Count",
+            "type": "integer"
+          },
+          "node_token": {
+            "title": "Node Token",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_token",
+          "title",
+          "snippet",
+          "url",
+          "score",
+          "char_count"
+        ],
+        "title": "KbHitItem",
+        "type": "object"
+      },
+      "KbSearchResponse": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KbHitItem"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "hits"
+        ],
+        "title": "KbSearchResponse",
+        "type": "object"
+      },
+      "KbStatusResponse": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "doc_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Count"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "space_id": {
+            "title": "Space Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "space_id",
+          "doc_count",
+          "error"
+        ],
+        "title": "KbStatusResponse",
+        "type": "object"
+      },
       "LinearSyncReportOut": {
         "properties": {
           "cleared_count": {
@@ -9695,6 +9796,91 @@
           }
         },
         "summary": "List Inbox",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/kb/search": {
+      "get": {
+        "description": "按失败问题检索飞书知识库。空结果 = 检索缺失（retrieval 病因）；\n命中条目供人工判断「知识对不对/AI 用没用好」。force=1 强刷缓存（KB 改完复查）。",
+        "operationId": "kb_search_endpoint_api_supervisor_kb_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kb Search Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/kb/status": {
+      "get": {
+        "description": "知识库连通状态——UI 据此显示「知识库核对」面板或降级提示。",
+        "operationId": "kb_status_endpoint_api_supervisor_kb_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Kb Status Endpoint",
         "tags": [
           "supervisor"
         ]

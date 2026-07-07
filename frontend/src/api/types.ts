@@ -1298,6 +1298,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/kb/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kb Search Endpoint
+         * @description 按失败问题检索飞书知识库。空结果 = 检索缺失（retrieval 病因）；
+         *     命中条目供人工判断「知识对不对/AI 用没用好」。force=1 强刷缓存（KB 改完复查）。
+         */
+        get: operations["kb_search_endpoint_api_supervisor_kb_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/kb/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kb Status Endpoint
+         * @description 知识库连通状态——UI 据此显示「知识库核对」面板或降级提示。
+         */
+        get: operations["kb_status_endpoint_api_supervisor_kb_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/notifications/{notification_id}/ack": {
         parameters: {
             query?: never;
@@ -2620,6 +2661,39 @@ export interface components {
              * @default 0
              */
             code: number;
+        };
+        /** KbHitItem */
+        KbHitItem: {
+            /** Char Count */
+            char_count: number;
+            /** Node Token */
+            node_token: string;
+            /** Score */
+            score: number;
+            /** Snippet */
+            snippet: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** KbSearchResponse */
+        KbSearchResponse: {
+            /** Hits */
+            hits: components["schemas"]["KbHitItem"][];
+            /** Query */
+            query: string;
+        };
+        /** KbStatusResponse */
+        KbStatusResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Doc Count */
+            doc_count: number | null;
+            /** Error */
+            error: string | null;
+            /** Space Id */
+            space_id: string;
         };
         /** LinearSyncReportOut */
         LinearSyncReportOut: {
@@ -6072,6 +6146,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kb_search_endpoint_api_supervisor_kb_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+                force?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kb_status_endpoint_api_supervisor_kb_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbStatusResponse"];
                 };
             };
         };

@@ -50,6 +50,14 @@ def _isolate_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         # Vision 同理：清 key + 关开关，防 ingest BG task 真调多模态。
         "VISION_ENABLED": "false",
         "VISION_API_KEY": "",
+        # 知识反哺 / AI 客服 / 飞书 wiki：本地 .env 可能配了真实凭证并开了开关，
+        # 单测必须回默认关闭（否则 status/kb 端点断言与真实调用被污染）。
+        "KNOWLEDGE_FEEDBACK_ENABLED": "false",
+        "AI_CS_APP_ID": "",
+        "AI_CS_APP_KEY": "",
+        "AI_CS_BASE_URL": "",
+        "FEISHU_WIKI_SPACE_ID": "",
+        "FEISHU_WIKI_ROOT_NODE": "",
     }
     for k, v in overrides.items():
         monkeypatch.setenv(k, v)

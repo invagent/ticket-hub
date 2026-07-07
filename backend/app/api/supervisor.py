@@ -24,6 +24,8 @@
   POST /api/supervisor/ai-cs/replay                — re-answer with current/draft skill (test)
   POST /api/supervisor/ai-cs/publish               — publish a skill draft to production
   GET  /api/supervisor/tickets/{id}/escalation-context — golden triple for reflect UI
+  GET  /api/supervisor/kb/status                   — 飞书知识库连通状态
+  GET  /api/supervisor/kb/search?q=                 — 按问题检索知识库（KB 病因诊断）
 
 All endpoints require role IN ('supervisor', 'admin') — EXCEPT the reflect
 workbench group (escalation-pending-diagnosis / ai-cs/* / escalation-context /
@@ -1099,6 +1101,76 @@ def _ai_cs_http_error(e: AiCsError) -> HTTPException:
     if isinstance(e, AiCsBusinessError):
         return HTTPException(status_code=400, detail=str(e))
     return HTTPException(status_code=502, detail=f"AI 客服 不可用：{e}")
+
+
+# ---- 飞书知识库检索（ADR-0016 P3 反思闭环 · knowledge/retrieval 病因诊断依据）----
+
+
+class KbStatusResponse(BaseModel):
+    configured: bool  # 配了 FEISHU_WIKI_SPACE_ID
+    space_id: str
+    doc_count: int | None
+    error: str | None  # 遍历失败原因（如权限/网络）；None 表示正常
+
+
+class KbHitItem(BaseModel):
+    node_token: str
+    title: str
+    snippet: str
+    url: str
+    score: float
+    char_count: int
+
+
+class KbSearchResponse(BaseModel):
+    query: str
+    hits: list[KbHitItem]
+
+
+@router.get("/kb/status", response_model=KbStatusResponse)
+def kb_status_endpoint(
+    _user: AuthedUser = Depends(require_knowledge_op),
+) -> KbStatusResponse:
+    """知识库连通状态——UI 据此显示「知识库核对」面板或降级提示。"""
+    from app.services.knowledge_feedback import kb_search as kb
+
+    st = kb.kb_status()
+    return KbStatusResponse(
+        configured=st.configured, space_id=st.space_id, doc_count=st.doc_count, error=st.error
+    )
+
+
+@router.get("/kb/search", response_model=KbSearchResponse)
+def kb_search_endpoint(
+    q: str,
+    _user: AuthedUser = Depends(require_knowledge_op),
+    limit: int = 5,
+    force: bool = False,
+) -> KbSearchResponse:
+    """按失败问题检索飞书知识库。空结果 = 检索缺失（retrieval 病因）；
+    命中条目供人工判断「知识对不对/AI 用没用好」。force=1 强刷缓存（KB 改完复查）。"""
+    from app.services.knowledge_feedback import kb_search as kb
+
+    try:
+        hits = kb.search_kb(q, limit=min(max(limit, 1), 20), force=force)
+    except kb.KbDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"知识库检索失败：{e}") from e
+    return KbSearchResponse(
+        query=q,
+        hits=[
+            KbHitItem(
+                node_token=h.doc.node_token,
+                title=h.doc.title,
+                snippet=h.snippet,
+                url=h.doc.url,
+                score=h.score,
+                char_count=h.doc.char_count,
+            )
+            for h in hits
+        ],
+    )
 
 
 @router.get("/ai-cs/status", response_model=AiCsStatusResponse)

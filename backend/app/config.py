@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # 从 wiki 页面链接 /wiki/<node_token> 反查 space_id（scripts/feishu_wiki_dump.py）。
     feishu_wiki_space_id: str = ""
     feishu_wiki_root_node: str = ""
+    # 生成「在飞书打开」链接的租户域名前缀（无 trailing slash）；空则不出链接
+    feishu_wiki_link_base: str = "https://icn1dae2f6c3.feishu.cn"
 
     # ---- KSM ----
     ksm_base_url: str = "https://ierpuat.kingdee.com"
