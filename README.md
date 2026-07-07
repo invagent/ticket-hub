@@ -5,6 +5,11 @@
 > 本仓库由 [feishu-workorder](https://github.com/invagent/feishu-workorder) 演进而来。
 > 详细背景与 7 阶段路线图见 `feishu-workorder/upgrade_plan.md`（v0.5.6, 2398 行）。
 
+## 产品操作手册
+
+面向客服处理人 / 主管 / 知识运营 / 管理员的界面使用说明（角色权限、工作台队列、工单管理、
+研发协同、反思诊断工作台、管理后台逐页讲解）：**[`docs/manual/operation-manual.md`](docs/manual/operation-manual.md)**。
+
 ## 状态
 
 - **当前阶段**：D3🟡（A/B/C 完成，D/E 待开工）
@@ -26,6 +31,7 @@ ticket-hub/
 │   └── perf/webhook_locust.py  D6 性能压测
 ├── backend/config/mappings/    KSM 问题类型映射 yaml（D0~D1 早期联调）
 ├── docs/
+│   ├── manual/                  产品操作手册（面向使用者，非开发者）
 │   ├── adr/                    架构决策记录
 │   ├── spec/                   data_model / api / routing 三份规格
 │   └── runbook/                D6 运维剧本
