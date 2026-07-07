@@ -72,6 +72,21 @@ class LinkedTicket(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SubIssueItem(BaseModel):
+    """owner-split 子 issue（ADR-0016 P4）— 详情页里程碑列表行。"""
+
+    id: int
+    linear_identifier: str
+    title: str
+    assignee_user_id: int | None
+    status: str | None  # 镜像 Linear 列名
+    state_type: str | None
+    released_at: datetime | None
+    notified_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class HubIssueDetail(HubIssueSummary):
     canonical_body: str | None
     # Operation-only（其余 Operation 字段已在 Summary）
@@ -91,6 +106,8 @@ class HubIssueDetail(HubIssueSummary):
     supersede_reason: str | None
     # linked tickets — convenience field for the detail page
     linked_tickets: list[LinkedTicket] = []
+    # owner-split 子 issue 里程碑（ADR-0016 P4）
+    sub_issues: list[SubIssueItem] = []
 
 
 class HubIssueListResponse(BaseModel):
@@ -143,6 +160,15 @@ def get_hub_issue(
     linked = TicketRepository(db).list_for_hub_issue(hub_issue_id)
     detail = HubIssueDetail.model_validate(hub)
     detail.linked_tickets = [LinkedTicket.model_validate(t) for t in linked]
+    from app.models import HubIssueLinearIssue
+
+    subs = (
+        db.query(HubIssueLinearIssue)
+        .filter(HubIssueLinearIssue.hub_issue_id == hub_issue_id)
+        .order_by(HubIssueLinearIssue.id)
+        .all()
+    )
+    detail.sub_issues = [SubIssueItem.model_validate(s) for s in subs]
     return detail
 
 
@@ -327,6 +353,70 @@ def self_bug_endpoint(
     except dc.DevCollabError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return SelfBugResponse(hub_issue_id=r.hub_issue_id, short_code=r.short_code)
+
+
+class OwnerSplitSubTask(BaseModel):
+    title: str = Field(..., min_length=1, max_length=512)
+    assignee_user_id: int | None = None
+
+
+class OwnerSplitBody(BaseModel):
+    subtasks: list[OwnerSplitSubTask] = Field(..., min_length=2, max_length=20)
+
+
+class OwnerSplitSubIssueOut(BaseModel):
+    id: int
+    linear_identifier: str
+    title: str
+    assignee_user_id: int | None
+
+
+class OwnerSplitResponse(BaseModel):
+    hub_issue_id: int
+    sub_issues: list[OwnerSplitSubIssueOut]
+
+
+@router.post("/{hub_issue_id}/owner-split", response_model=OwnerSplitResponse)
+def owner_split_endpoint(
+    hub_issue_id: int,
+    body: OwnerSplitBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> OwnerSplitResponse:
+    """按责任人拆分（ADR-0016 P4 v1 手动）：N 个子任务 → N 个 Linear 子 issue
+    （parentId 挂主 issue）+ 跟踪行。每子 issue Done 由轮询自动发 x/n 进度通知。"""
+    from app.services.hub_issues import owner_split as os_svc
+
+    try:
+        r = os_svc.execute_owner_split(
+            db,
+            hub_issue_id,
+            subtasks=[
+                os_svc.SubTaskIn(title=s.title, assignee_user_id=s.assignee_user_id)
+                for s in body.subtasks
+            ],
+            executed_by=f"user:{user.name}",
+        )
+    except os_svc.OwnerSplitError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "hub_issue_owner_split",
+        hub_issue_id=hub_issue_id,
+        n=len(r.sub_issues),
+        operator_user_id=user.user_id,
+    )
+    return OwnerSplitResponse(
+        hub_issue_id=r.hub_issue_id,
+        sub_issues=[
+            OwnerSplitSubIssueOut(
+                id=s.id,
+                linear_identifier=s.linear_identifier,
+                title=s.title,
+                assignee_user_id=s.assignee_user_id,
+            )
+            for s in r.sub_issues
+        ],
+    )
 
 
 class FeedbackBody(BaseModel):

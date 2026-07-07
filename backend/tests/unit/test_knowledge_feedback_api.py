@@ -429,6 +429,54 @@ def test_clear_diagnosis(app_client: TestClient, world: Session) -> None:
     assert ctx["diagnosis"] is None
 
 
+def test_multi_cause_checklist_roundtrip(app_client: TestClient, world: Session) -> None:
+    """ADR-0016 P3 决策 6：多病因集合 + 每病因修复清单，勾选保留、全绿 resolved。"""
+    _mk_escalation(world, 705)
+    # 判定双病因 → 清单两项全未勾
+    r = app_client.put(
+        "/api/supervisor/tickets/705/diagnosis",
+        headers=_bearer(2),
+        json={"causes": ["knowledge", "skill"], "correct_answer": "实为通道拥堵"},
+    )
+    assert r.status_code == 200
+    d = r.json()["diagnosis"]
+    assert d["causes"] == ["knowledge", "skill"]
+    assert d["cause"] == "knowledge"  # 主病因 = 第一个（旧消费方/队列过滤兼容）
+    assert d["checklist"] == [
+        {"cause": "knowledge", "done": False},
+        {"cause": "skill", "done": False},
+    ]
+    assert d["resolved"] is False
+
+    # 勾掉 skill 一项（重发集合 + checklist_done）——knowledge 的未勾状态保留
+    r = app_client.put(
+        "/api/supervisor/tickets/705/diagnosis",
+        headers=_bearer(2),
+        json={"causes": ["knowledge", "skill"], "checklist_done": {"skill": True}},
+    )
+    d = r.json()["diagnosis"]
+    assert d["checklist"] == [
+        {"cause": "knowledge", "done": False},
+        {"cause": "skill", "done": True},
+    ]
+    assert d["resolved"] is False
+
+    # 全部勾完 → resolved 闭环；且不带 checklist_done 重存时 done 进度保留
+    r = app_client.put(
+        "/api/supervisor/tickets/705/diagnosis",
+        headers=_bearer(2),
+        json={"causes": ["knowledge", "skill"], "checklist_done": {"knowledge": True}},
+    )
+    d = r.json()["diagnosis"]
+    assert d["resolved"] is True
+    r = app_client.put(
+        "/api/supervisor/tickets/705/diagnosis",
+        headers=_bearer(2),
+        json={"causes": ["knowledge", "skill"]},
+    )
+    assert r.json()["diagnosis"]["resolved"] is True  # 进度未被冲掉
+
+
 def test_diagnosis_invalid_cause_422(app_client: TestClient, world: Session) -> None:
     _mk_escalation(world, 702)
     r = app_client.put(
@@ -476,7 +524,7 @@ def test_reflect_runs_and_caches(
         seen.update(kw)
         return rf.ReflectResult(
             steps=[{"title": "t", "detail": "d", "verdict": None, "good": None}],
-            cause="skill",
+            causes=["skill"],
             confidence=0.9,
             reason="r",
             suggested_revision="改规则 2",

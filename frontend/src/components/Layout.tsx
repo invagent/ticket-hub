@@ -9,6 +9,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
   supervisor: "主管",
+  knowledge_op: "知识运营",
   assignee: "处理人",
   member: "普通成员",
 };
@@ -67,12 +68,24 @@ function AdminIcon({ active }: { active: boolean }) {
   );
 }
 
-const navItems: { to: string; label: string; icon: (p: { active: boolean }) => ReactNode }[] = [
+// roles 缺省 = 所有角色可见（ADR-0016 P5 权限双层：知识运营只多「反思诊断」，
+// 够不到「管理」；反思诊断对 member/assignee 隐藏——后端同口径 403）
+const navItems: {
+  to: string;
+  label: string;
+  icon: (p: { active: boolean }) => ReactNode;
+  roles?: string[];
+}[] = [
   { to: "/", label: "工作台", icon: GridIcon },
   { to: "/tickets", label: "工单", icon: TicketIcon },
   { to: "/hub-issues", label: "研发协同", icon: LinkIcon },
-  { to: "/reflect", label: "反思诊断", icon: TargetIcon },
-  { to: "/admin/users", label: "管理", icon: AdminIcon },
+  {
+    to: "/reflect",
+    label: "反思诊断",
+    icon: TargetIcon,
+    roles: ["knowledge_op", "supervisor", "admin"],
+  },
+  { to: "/admin/users", label: "管理", icon: AdminIcon, roles: ["supervisor", "admin"] },
 ];
 
 export function Layout() {
@@ -92,6 +105,8 @@ export function Layout() {
     }
   })();
   const initials = user?.name ? user.name.slice(-1) : "?";
+  const role: string = user?.role ?? "";
+  const visibleNav = navItems.filter((item) => !item.roles || item.roles.includes(role));
 
   return (
     <div className="min-h-screen flex">
@@ -103,7 +118,7 @@ export function Layout() {
           <div className="text-[14.5px] font-bold tracking-[.2px] text-hub-text">ticket-hub</div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
-          {navItems.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

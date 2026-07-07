@@ -3,13 +3,14 @@
  *
  * 三段式「医生看病」工作流：
  *   ① 看症状 · 诊断 — 黄金三元组 / 完整会话 / 引用知识（低分预警）/ 人工正解 /
- *     AI 反思推断（LLM 三步排查）/ 病因判定（skill|knowledge|retrieval）
+ *     AI 反思推断（LLM 三步排查）/ 病因判定（skill|knowledge|retrieval
+ *     **多选集合** + 每病因修复清单，全绿闭环——ADR-0016 决策 6）
  *   ② 开药 · 修订 skill — 多文件编辑 → 创建 draft（不影响生产）
  *   ③ 试药与处方 — replay 用 draft 重答同一问题 → 旧/新答复 + 引用 diff → 发布
  *
  * 数据：escalation-context（含 diagnosis/reflection 缓存）+ ai-cs/* 七端点
- * + PUT diagnosis + POST reflect。仅主管可见；AI 客服服务不可用时诊断区照常，
- * 修订/试跑区降级为提示条。
+ * + PUT diagnosis + POST reflect。知识运营/主管/管理员可见（ADR-0016 P5
+ * require_knowledge_op）；AI 客服服务不可用时诊断区照常，修订/试跑区降级为提示条。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -181,9 +182,15 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
   const qc = useQueryClient();
   const conversation = (ctx.conversation ?? []) as ConvTurn[];
   const cites = (ctx.cited_knowledge ?? []) as Cited[];
-  const diagnosis = ctx.diagnosis as { cause?: string | null; correct_answer?: string | null } | null;
+  const diagnosis = ctx.diagnosis as {
+    cause?: string | null;
+    causes?: string[];
+    checklist?: { cause: string; done: boolean }[];
+    resolved?: boolean;
+    correct_answer?: string | null;
+  } | null;
   const reflection = ctx.reflection as
-    | { steps?: ReflectStep[]; cause?: string; confidence?: number; reason?: string; suggested_revision?: string | null; model?: string }
+    | { steps?: ReflectStep[]; cause?: string; causes?: string[]; confidence?: number; reason?: string; suggested_revision?: string | null; model?: string }
     | null;
 
   const [convOpen, setConvOpen] = useState(true);
@@ -191,12 +198,20 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
   const [answerDraft, setAnswerDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const cause = diagnosis?.cause ?? null;
+  // 多病因集合（ADR-0016 决策 6）；旧单值 cause 数据兼容
+  const causes: string[] = diagnosis?.causes ?? (diagnosis?.cause ? [diagnosis.cause] : []);
+  const cause = causes[0] ?? null; // 主病因（提示文案用）
+  const checklist = diagnosis?.checklist ?? [];
   const correctAnswer = diagnosis?.correct_answer ?? "";
+  const reflectionCauses: string[] =
+    reflection?.causes ?? (reflection?.cause ? [reflection.cause] : []);
 
   const saveDiagnosis = useMutation({
-    mutationFn: (body: { cause: string | null; correct_answer: string | null }) =>
-      putByPath("/api/supervisor/tickets/{ticket_id}/diagnosis", { ticket_id: ticketId }, body),
+    mutationFn: (body: {
+      causes: string[] | null;
+      checklist_done?: Record<string, boolean>;
+      correct_answer: string | null;
+    }) => putByPath("/api/supervisor/tickets/{ticket_id}/diagnosis", { ticket_id: ticketId }, body),
     onSuccess: () => {
       setError(null);
       setAnswerDraft(null);
@@ -215,8 +230,19 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
     onError: (e) => setError(errMsg(e)),
   });
 
-  const pickCause = (key: string) =>
-    saveDiagnosis.mutate({ cause: cause === key ? null : key, correct_answer: correctAnswer || null });
+  // 病因勾选（多选切换）：集合空 → 传 null 清除诊断
+  const pickCause = (key: string) => {
+    const next = causes.includes(key) ? causes.filter((c) => c !== key) : [...causes, key];
+    saveDiagnosis.mutate({ causes: next.length ? next : null, correct_answer: correctAnswer || null });
+  };
+  const toggleChecklist = (key: string, done: boolean) =>
+    saveDiagnosis.mutate({
+      causes,
+      checklist_done: { [key]: done },
+      correct_answer: correctAnswer || null,
+    });
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((x) => b.includes(x));
 
   const skillsUsed = ctx.skills_used ?? [];
 
@@ -383,7 +409,12 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
               />
               <div className="flex gap-2">
                 <button
-                  onClick={() => saveDiagnosis.mutate({ cause, correct_answer: answerDraft.trim() || null })}
+                  onClick={() =>
+                    saveDiagnosis.mutate({
+                      causes: causes.length ? causes : null,
+                      correct_answer: answerDraft.trim() || null,
+                    })
+                  }
                   disabled={saveDiagnosis.isPending}
                   className="text-[11.5px] font-semibold text-white bg-[#57524a] rounded-md px-3 py-1 disabled:opacity-40"
                 >
@@ -456,37 +487,55 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
               <div className="mt-0.5 px-3 py-2 bg-white border border-[#cfe4e2] rounded-lg">
                 <div className="flex items-baseline gap-1.5 flex-wrap">
                   <span className="text-[11px] font-bold text-[#8b8577]">推断结论 →</span>
-                  <span className="text-xs font-bold text-[#177e83] bg-white border border-[#7fb5b2] rounded-full px-2.5 py-0.5">
-                    {CAUSES.find((c) => c.key === reflection.cause)?.label ?? reflection.cause}
-                  </span>
+                  {reflectionCauses.map((rc, i) => (
+                    <span
+                      key={rc}
+                      className="text-xs font-bold text-[#177e83] bg-white border border-[#7fb5b2] rounded-full px-2.5 py-0.5"
+                    >
+                      {CAUSES.find((c) => c.key === rc)?.label ?? rc}
+                      {reflectionCauses.length > 1 && i === 0 && (
+                        <span className="text-[9.5px] font-normal text-[#8b8577]"> 主</span>
+                      )}
+                    </span>
+                  ))}
                   {typeof reflection.confidence === "number" && (
                     <span className="text-[10.5px] text-[#8b8577]">置信 {(reflection.confidence * 100).toFixed(0)}%</span>
                   )}
                 </div>
                 <div className="text-[11.5px] text-[#3f6b6d] mt-1">{reflection.reason}</div>
                 <button
-                  onClick={() => reflection.cause && pickCause(reflection.cause)}
-                  disabled={!!reflection.cause && cause === reflection.cause}
+                  onClick={() =>
+                    reflectionCauses.length &&
+                    saveDiagnosis.mutate({
+                      causes: reflectionCauses,
+                      correct_answer: correctAnswer || null,
+                    })
+                  }
+                  disabled={reflectionCauses.length > 0 && sameSet(causes, reflectionCauses)}
                   className={`mt-2 text-[11.5px] font-bold rounded-md px-3 py-1.5 ${
-                    cause === reflection.cause
+                    sameSet(causes, reflectionCauses) && causes.length > 0
                       ? "text-[#14666a] bg-[#e9f3f2] border border-[#cfe4e2] cursor-default"
                       : "text-white bg-[#177e83]"
                   }`}
                 >
-                  {cause === reflection.cause ? "已采纳该诊断" : "采纳该诊断 →"}
+                  {sameSet(causes, reflectionCauses) && causes.length > 0
+                    ? "已采纳该诊断"
+                    : "采纳该诊断 →"}
                 </button>
               </div>
             </>
           )}
         </div>
 
-        {/* 下诊断 · 病因判定 */}
+        {/* 下诊断 · 病因判定（多选集合，ADR-0016 决策 6） */}
         <div className="border-[1.5px] border-[#9fc9c7] rounded-[10px] bg-[#f2f8f7] px-3.5 py-3">
-          <div className="text-[12.5px] font-bold text-[#14666a] mb-2">下诊断 · 病因判定（可覆盖系统推断）</div>
+          <div className="text-[12.5px] font-bold text-[#14666a] mb-2">
+            下诊断 · 病因判定（可多选，一次失败可能多病因并存）
+          </div>
           <div className="flex flex-col gap-1.5">
             {CAUSES.map((cz) => {
-              const on = cause === cz.key;
-              const isSystemPick = reflection?.cause === cz.key;
+              const on = causes.includes(cz.key);
+              const isSystemPick = reflectionCauses.includes(cz.key);
               return (
                 <button
                   key={cz.key}
@@ -497,9 +546,14 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
                   }`}
                 >
                   <span
-                    className="w-3 h-3 flex-none rounded-full bg-white"
-                    style={{ border: on ? "4px solid #177e83" : "2px solid #b9ccca" }}
-                  />
+                    className="w-3 h-3 flex-none rounded-[3.5px] bg-white text-white text-[9px] font-bold flex items-center justify-center"
+                    style={{
+                      border: on ? "none" : "2px solid #b9ccca",
+                      background: on ? "#177e83" : "#fff",
+                    }}
+                  >
+                    {on ? "✓" : ""}
+                  </span>
                   <span className="text-[12.5px] font-bold flex-none">{cz.label}</span>
                   <span className="text-[11.5px] text-[#7a7466]">{cz.desc}</span>
                   {isSystemPick && (
@@ -513,10 +567,70 @@ function DiagnosisColumn({ ticketId, ctx }: { ticketId: number; ctx: EscalationC
           </div>
           <div className="mt-2 px-2.5 py-2 bg-white border border-[#d8ebe9] rounded-[7px] text-[11.5px] text-[#3f6b6d]">
             {cause
-              ? (reflection?.cause === cause && reflection?.reason) || CAUSE_HINTS[cause]
+              ? (reflectionCauses.includes(cause) && reflection?.reason) || CAUSE_HINTS[cause]
               : "先看上面的引用：引用错 → 知识库问题；引用对但答复没用好 → skill 问题；没引用 → 检索缺失。"}
           </div>
         </div>
+
+        {/* 修复清单：每病因一项，全绿闭环 */}
+        {checklist.length > 0 && (
+          <div
+            className={`border-[1.5px] rounded-[10px] px-3.5 py-3 ${
+              diagnosis?.resolved
+                ? "border-[#9ecdb2] bg-[#eef7f1]"
+                : "border-[#e3d9be] bg-[#fbf7ec]"
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={`text-[12.5px] font-bold ${diagnosis?.resolved ? "text-[#1e8a63]" : "text-[#8a713a]"}`}
+              >
+                修复清单（{checklist.filter((i) => i.done).length}/{checklist.length}）
+              </span>
+              {diagnosis?.resolved && (
+                <span className="text-[10px] font-bold text-white bg-[#2f7d4f] rounded-full px-2 py-px">
+                  修复闭环 ✓
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {checklist.map((item) => {
+                const cz = CAUSES.find((c) => c.key === item.cause);
+                return (
+                  <button
+                    key={item.cause}
+                    onClick={() => toggleChecklist(item.cause, !item.done)}
+                    disabled={saveDiagnosis.isPending}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-[7px] text-left bg-white border border-[#e8e3d9]"
+                  >
+                    <span
+                      className="w-3.5 h-3.5 flex-none rounded-[4px] text-white text-[9.5px] font-bold flex items-center justify-center"
+                      style={{
+                        border: item.done ? "none" : "2px solid #c9c3b6",
+                        background: item.done ? "#2f7d4f" : "#fff",
+                      }}
+                    >
+                      {item.done ? "✓" : ""}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${item.done ? "line-through text-[#8b8577]" : ""}`}
+                    >
+                      {item.cause === "skill"
+                        ? `修订 skill 提示词${cz ? `（${cz.label}）` : ""} — 右侧改 draft → 试药 → 发布`
+                        : item.cause === "knowledge"
+                          ? "修订知识条目 — 飞书知识库更正后勾此项"
+                          : "补充知识条目/优化检索 — 补全后勾此项"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 text-[10.5px] text-[#8b8577]">
+              每病因一项，全部勾完即修复闭环；skill 项走右侧 replay 验证，知识库两项待
+              KB API 接入后支持在线调试（当前人工确认后勾选）。
+            </div>
+          </div>
+        )}
 
         {error && <div className="text-xs text-red-600">{error}</div>}
       </div>

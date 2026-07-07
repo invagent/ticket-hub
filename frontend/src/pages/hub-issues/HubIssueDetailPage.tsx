@@ -2,11 +2,20 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, getByPath, postByPath } from "@/api/client";
+import { api, ApiError, getByPath, postByPath } from "@/api/client";
 import type { paths } from "@/api/types";
 
 type HubIssueDetail =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
+function isSupervisor(): boolean {
+  try {
+    const role = JSON.parse(localStorage.getItem("auth_user") ?? "null")?.role ?? "";
+    return role === "supervisor" || role === "admin";
+  } catch {
+    return false;
+  }
+}
 
 // 对齐设计稿：Operation 运营=amber / Bug_fix=rose / Demand 需求=blue / Internal_task 内部=neutral
 const TYPE_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
@@ -39,6 +48,9 @@ export function HubIssueDetailPage() {
           <Header data={detail.data} />
           <CommonMeta data={detail.data} />
           <TypeSpecificSection data={detail.data} />
+          {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") && (
+            <SubIssuesSection data={detail.data} />
+          )}
           <SupplyRequestSection data={detail.data} />
           <LinkedTickets tickets={detail.data.linked_tickets} />
           {detail.data.canonical_body && (
@@ -339,6 +351,196 @@ function SupplyRequestSection({ data }: { data: HubIssueDetail }) {
       {notice && <p className="text-[11px] text-hub-green">{notice}</p>}
       {error && <p className="text-[11px] text-hub-rose">{error}</p>}
     </section>
+  );
+}
+
+/* ---- owner-split（ADR-0016 P4）：按责任人拆分 + 子任务里程碑 ---- */
+
+// Linear state_type → 里程碑行配色
+const SUB_STATE_COLOR: Record<string, string> = {
+  completed: "#2f7d4f",
+  started: "#177e83",
+  canceled: "#b04a4a",
+};
+
+function SubIssuesSection({ data }: { data: HubIssueDetail }) {
+  const subs = data.sub_issues ?? [];
+  const supervisor = isSupervisor();
+  const [splitting, setSplitting] = useState(false);
+
+  if (subs.length === 0 && !(supervisor && data.linear_uuid)) return null;
+
+  const done = subs.filter((s) => s.released_at != null).length;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-3">
+        <SectionTitle>
+          子任务里程碑{subs.length > 0 && `（${done}/${subs.length} 已上线）`}
+        </SectionTitle>
+        {subs.length === 0 && supervisor && !splitting && (
+          <button
+            onClick={() => setSplitting(true)}
+            className="text-[11.5px] text-hub-teal hover:underline"
+          >
+            按责任人拆分…
+          </button>
+        )}
+      </div>
+      {subs.length > 0 ? (
+        <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
+          {subs.map((s, i) => {
+            const color = SUB_STATE_COLOR[s.state_type ?? ""] ?? "#8b8577";
+            return (
+              <div
+                key={s.id}
+                className="flex items-center gap-3 text-xs px-3.5 py-2 border-b border-hub-borderLight last:border-b-0 hover:bg-hub-panel"
+              >
+                <span className="text-[11px] text-hub-textFaint font-mono flex-none">
+                  {i + 1}/{subs.length}
+                </span>
+                <span className="font-mono text-hub-textSecondary flex-none">
+                  {s.linear_identifier}
+                </span>
+                <span className="flex-1 min-w-0 truncate">{s.title}</span>
+                <span className="text-[11px] font-semibold flex-none" style={{ color }}>
+                  {s.status ?? "待同步"}
+                </span>
+                <span className="text-[11px] text-hub-textMuted flex-none w-[150px] text-right">
+                  {s.released_at
+                    ? `上线 ${new Date(s.released_at).toLocaleString()}`
+                    : "处理中"}
+                </span>
+              </div>
+            );
+          })}
+          <div className="px-3.5 py-2 text-[11px] text-hub-textMuted bg-hub-panel">
+            每个子任务上线即自动向客户发进度通知（{done}/{subs.length}
+            ）；全部完成时发最终通知并关闭客户源工单。
+          </div>
+        </div>
+      ) : splitting ? (
+        <OwnerSplitForm data={data} onDone={() => setSplitting(false)} />
+      ) : (
+        <p className="text-[11px] text-hub-textMuted">
+          需求含多个独立子任务、分属不同责任人时，可拆分为多个 Linear 子 issue
+          分别跟踪，每个完成即自动通知客户进度。
+        </p>
+      )}
+    </section>
+  );
+}
+
+type SubTaskDraft = { title: string; assignee_user_id: string };
+
+function OwnerSplitForm({ data, onDone }: { data: HubIssueDetail; onDone: () => void }) {
+  const qc = useQueryClient();
+  const [rows, setRows] = useState<SubTaskDraft[]>([
+    { title: "", assignee_user_id: "" },
+    { title: "", assignee_user_id: "" },
+  ]);
+  const [error, setError] = useState<string | null>(null);
+
+  const users = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+  });
+  const userList = (users.data ?? []) as { id: number; name: string }[];
+
+  const submit = useMutation({
+    mutationFn: () =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/owner-split",
+        { hub_issue_id: data.id },
+        {
+          subtasks: rows.map((r) => ({
+            title: r.title.trim(),
+            assignee_user_id: r.assignee_user_id ? Number(r.assignee_user_id) : null,
+          })),
+        },
+      ),
+    onSuccess: () => {
+      setError(null);
+      onDone();
+      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) {
+        const d = (e.body as { detail?: string } | undefined)?.detail;
+        setError(d ?? e.message);
+      } else {
+        setError(String(e));
+      }
+    },
+  });
+
+  const valid = rows.length >= 2 && rows.every((r) => r.title.trim());
+  const set = (i: number, patch: Partial<SubTaskDraft>) =>
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="bg-white border border-hub-border rounded-[10px] p-4 space-y-2">
+      {rows.map((r, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[11px] text-hub-textFaint font-mono w-6 flex-none">{i + 1}.</span>
+          <input
+            value={r.title}
+            onChange={(e) => set(i, { title: e.target.value })}
+            placeholder={`子任务 ${i + 1} 标题（如：导出接口）`}
+            className="flex-1 px-3 py-1.5 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal"
+          />
+          <select
+            value={r.assignee_user_id}
+            onChange={(e) => set(i, { assignee_user_id: e.target.value })}
+            className="w-[150px] flex-none px-2 py-1.5 text-xs border border-hub-border rounded-[7px] bg-white text-hub-textSecondary"
+          >
+            <option value="">责任人（可空）</option>
+            {userList.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+          {rows.length > 2 && (
+            <button
+              onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+              className="text-hub-textFaint hover:text-hub-rose flex-none text-sm"
+              title="删除此行"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={() => setRows((prev) => [...prev, { title: "", assignee_user_id: "" }])}
+          disabled={rows.length >= 20}
+          className="px-3 py-1.5 text-xs font-semibold border border-hub-border rounded-md text-hub-textSecondary disabled:opacity-50"
+        >
+          + 加一行
+        </button>
+        <div className="flex-1" />
+        <button
+          onClick={() => submit.mutate()}
+          disabled={!valid || submit.isPending}
+          className="px-3.5 py-1.5 text-xs font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95"
+        >
+          {submit.isPending ? "创建中…" : `拆分为 ${rows.length} 个子 issue`}
+        </button>
+        <button
+          onClick={onDone}
+          className="px-3.5 py-1.5 text-xs font-semibold border border-hub-border rounded-md text-hub-textSecondary"
+        >
+          取消
+        </button>
+      </div>
+      <p className="text-[11px] text-hub-textMuted">
+        每个子任务建一个 Linear 子 issue（挂在 {data.linear_identifier} 下），落到责任人所属
+        team；子任务 Done 后 5 分钟内自动向客户发 x/n 进度通知（最后一个完成才关闭客户源工单）。
+      </p>
+      {error && <p className="text-[11px] text-hub-rose">{error}</p>}
+    </div>
   );
 }
 

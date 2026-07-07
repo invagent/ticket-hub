@@ -23,6 +23,7 @@ type UserDetailOut =
 const ROLE_DEFS: { key: string; desc: string }[] = [
   { key: "member", desc: "仅查看与自己相关的工单，不可被 AI 路由分配" },
   { key: "assignee", desc: "可被 AI 路由分配为处理人，处理名下工单并回复客户" },
+  { key: "knowledge_op", desc: "知识运营：反思诊断 + 对客 AI 客服 skill / 知识库维护（ADR-0016 权限双层）" },
   { key: "supervisor", desc: "可修正 AI 分类、执行拆单/合并、管理本组分工范围" },
   { key: "admin", desc: "全部权限，含人员、目录、Skill 与系统配置" },
 ];
@@ -30,6 +31,7 @@ const ROLE_DEFS: { key: string; desc: string }[] = [
 const ROLE_BADGE: Record<string, string> = {
   member: "bg-hub-neutral-light text-hub-neutral border-hub-neutral-border",
   assignee: "bg-hub-cyan-light text-hub-cyan border-hub-cyan-border",
+  knowledge_op: "bg-hub-purple-light text-hub-purple border-hub-purple-border",
   supervisor: "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border",
   admin: "bg-hub-text text-hub-page border-hub-text",
 };
@@ -468,7 +470,7 @@ function ProfilePanel({ userId }: { userId: number }) {
 
       {/* ② 角色权限 */}
       <Card n={2} title="角色权限" note="单选，保存即生效">
-        <div className="grid grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-5 gap-2.5">
           {ROLE_DEFS.map((rc) => {
             const on = rc.key === u.role;
             return (

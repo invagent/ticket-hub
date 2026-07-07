@@ -235,11 +235,14 @@ class KSMWritebackSender:
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:
-        """Map an outbox row to one of: 'reply' | 'lock' | 'close' | 'supply'."""
+        """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply'
+        | 'release_note'（关单）| 'progress_note'（不关单）."""
         if row.kind == "reply":
             return "reply"
         if row.kind == "release_note":
             return "release_note"
+        if row.kind == "progress_note":
+            return "progress_note"
         if row.kind == "supply":
             return "supply"
         if row.kind == "status":
@@ -262,6 +265,10 @@ class KSMWritebackSender:
         elif action == "release_note":
             # 发版通知（研发协同）：文案在 payload.note，同 reply 走答复关单
             self._handle_close(fresh, _s((row.payload or {}).get("note")).strip())
+        elif action == "progress_note":
+            # owner-split 进度通知（ADR-0016 P4）：x<n 只回复不关单
+            # （is_deal=False —— 第 1 条通知就关掉客户单是 review 抓出的坑）
+            self._handle_progress(fresh, _s((row.payload or {}).get("note")).strip())
         elif action == "close":
             self._handle_close(fresh, self._released_text(row))
         elif action == "supply":
@@ -302,6 +309,27 @@ class KSMWritebackSender:
                 node_id=fields.node_id,
                 deal_opinion=reply,
                 is_deal=True,
+            )
+        )
+
+    def _handle_progress(self, fields: _KSMFields, note: str) -> None:
+        """回复不关单（is_deal=False）——owner-split x/n 进度通知。"""
+        self._client.handle_order(
+            HandleOrderRequest(
+                account=self._settings.ksm_handler_name,
+                account_name=self._settings.ksm_handler_name,
+                account_number=self._settings.ksm_handler_number,
+                bill_id=fields.bill_id,
+                linkman=fields.linkman,
+                customer_email=fields.email,
+                customer_mobile=fields.mobile,
+                product_id=fields.product_id,
+                version_id=fields.version_id,
+                module_id=fields.module_id,
+                back_type=fields.back_type,
+                node_id=fields.node_id,
+                deal_opinion=note,
+                is_deal=False,
             )
         )
 

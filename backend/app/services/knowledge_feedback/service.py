@@ -121,22 +121,54 @@ def save_diagnosis(
     db: Session,
     ticket_id: int,
     *,
-    cause: str | None,
+    cause: str | None = None,
+    causes: list[str] | None = None,
+    checklist_done: dict[str, bool] | None = None,
     correct_answer: str | None,
     operator: str,
 ) -> dict[str, Any] | None:
     """Persist the supervisor's cause verdict + verified correct answer on the
-    escalation ticket (cause=None clears the diagnosis). Audit via
-    status_history; status itself never changes."""
-    if cause is not None and cause not in _VALID_DIAGNOSIS_CAUSES:
-        raise ValueError(
-            f"invalid cause {cause!r}; must be one of {sorted(_VALID_DIAGNOSIS_CAUSES)}"
-        )
+    escalation ticket. Audit via status_history; status itself never changes.
+
+    ADR-0016 P3（决策 6）：病因是集合。`causes` 优先；旧单值 `cause` 兼容
+    （包成单元素集合）。两者都空 = 清除诊断。每个病因自动生成一条修复清单项
+    `checklist: [{cause, done}]`——更新时保留已勾的 done（除非 checklist_done
+    显式改写）；全部 done 即「修复闭环」（skill 病因走 replay 发布，
+    knowledge/retrieval 待飞书 KB API 后接调试动作，先人工勾）。
+    """
+    effective = list(causes) if causes else ([cause] if cause else [])
+    seen: list[str] = []
+    for c in effective:
+        if c not in _VALID_DIAGNOSIS_CAUSES:
+            raise ValueError(
+                f"invalid cause {c!r}; must be one of {sorted(_VALID_DIAGNOSIS_CAUSES)}"
+            )
+        if c not in seen:
+            seen.append(c)
+    effective = seen
     ticket = _escalation_ticket(db, ticket_id)
+
+    # 保留旧清单的 done 状态（主管分批修复，改病因集合不清空进度）
+    prev = ((ticket.source_payload or {}).get("ai_cs") or {}).get("diagnosis") or {}
+    prev_done = {
+        item.get("cause"): bool(item.get("done"))
+        for item in (prev.get("checklist") or [])
+        if isinstance(item, dict)
+    }
     diagnosis: dict[str, Any] | None = None
-    if cause is not None or correct_answer:
+    if effective or correct_answer:
+        checklist = [
+            {
+                "cause": c,
+                "done": (checklist_done or {}).get(c, prev_done.get(c, False)),
+            }
+            for c in effective
+        ]
         diagnosis = {
-            "cause": cause,
+            "cause": effective[0] if effective else None,  # 主病因（队列过滤/旧消费方）
+            "causes": effective,
+            "checklist": checklist,
+            "resolved": bool(checklist) and all(i["done"] for i in checklist),
             "correct_answer": correct_answer or None,
             "by": operator,
             "at": datetime.now(UTC).isoformat(),
@@ -148,10 +180,10 @@ def save_diagnosis(
         from_status=ticket.status,
         to_status=ticket.status,  # audit event — no status transition
         changed_by=operator,
-        reason=f"反思诊断：病因判定 {cause or '（清除）'}",
-        metadata={"kind": "escalation_diagnosis", "cause": cause},
+        reason=f"反思诊断：病因判定 {'+'.join(effective) or '（清除）'}",
+        metadata={"kind": "escalation_diagnosis", "causes": effective},
     )
-    logger.info("escalation_diagnosis_saved", ticket_id=ticket.id, cause=cause)
+    logger.info("escalation_diagnosis_saved", ticket_id=ticket.id, causes=effective)
     return diagnosis
 
 

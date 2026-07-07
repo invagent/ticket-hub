@@ -121,6 +121,8 @@ class LinearClient:
             variables["input"]["labelIds"] = req.label_ids
         if req.assignee_id:
             variables["input"]["assigneeId"] = req.assignee_id
+        if req.parent_id:
+            variables["input"]["parentId"] = req.parent_id
 
         body = self._graphql(_CREATE_ISSUE_MUTATION, variables)
         issue_create = body.get("issueCreate") or {}

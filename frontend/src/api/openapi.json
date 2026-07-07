@@ -790,6 +790,34 @@
             ],
             "title": "Cause"
           },
+          "causes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causes"
+          },
+          "checklist_done": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checklist Done"
+          },
           "correct_answer": {
             "anyOf": [
               {
@@ -2165,6 +2193,14 @@
             ],
             "title": "Status Changed At"
           },
+          "sub_issues": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SubIssueItem"
+            },
+            "title": "Sub Issues",
+            "type": "array"
+          },
           "supersede_reason": {
             "anyOf": [
               {
@@ -3091,6 +3127,106 @@
           "channel_count"
         ],
         "title": "NotifyReleaseResponse",
+        "type": "object"
+      },
+      "OwnerSplitBody": {
+        "properties": {
+          "subtasks": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerSplitSubTask"
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Subtasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subtasks"
+        ],
+        "title": "OwnerSplitBody",
+        "type": "object"
+      },
+      "OwnerSplitResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "sub_issues": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerSplitSubIssueOut"
+            },
+            "title": "Sub Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "sub_issues"
+        ],
+        "title": "OwnerSplitResponse",
+        "type": "object"
+      },
+      "OwnerSplitSubIssueOut": {
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "linear_identifier": {
+            "title": "Linear Identifier",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "linear_identifier",
+          "title",
+          "assignee_user_id"
+        ],
+        "title": "OwnerSplitSubIssueOut",
+        "type": "object"
+      },
+      "OwnerSplitSubTask": {
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "OwnerSplitSubTask",
         "type": "object"
       },
       "PartnerIn": {
@@ -4610,6 +4746,92 @@
         "title": "SplitSubIssueOut",
         "type": "object"
       },
+      "SubIssueItem": {
+        "description": "owner-split 子 issue（ADR-0016 P4）— 详情页里程碑列表行。",
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "linear_identifier": {
+            "title": "Linear Identifier",
+            "type": "string"
+          },
+          "notified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notified At"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "state_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Type"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "linear_identifier",
+          "title",
+          "assignee_user_id",
+          "status",
+          "state_type",
+          "released_at",
+          "notified_at"
+        ],
+        "title": "SubIssueItem",
+        "type": "object"
+      },
       "SupervisorIn": {
         "properties": {
           "deputy_supervisor_id": {
@@ -5634,7 +5856,7 @@
           "role": {
             "anyOf": [
               {
-                "pattern": "^(member|assignee|supervisor|admin)$",
+                "pattern": "^(member|assignee|supervisor|admin|knowledge_op)$",
                 "type": "string"
               },
               {
@@ -8507,6 +8729,59 @@
           }
         },
         "summary": "Notify Release Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/owner-split": {
+      "post": {
+        "description": "按责任人拆分（ADR-0016 P4 v1 手动）：N 个子任务 → N 个 Linear 子 issue\n（parentId 挂主 issue）+ 跟踪行。每子 issue Done 由轮询自动发 x/n 进度通知。",
+        "operationId": "owner_split_endpoint_api_hub_issues__hub_issue_id__owner_split_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerSplitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerSplitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Owner Split Endpoint",
         "tags": [
           "hub-issues"
         ]

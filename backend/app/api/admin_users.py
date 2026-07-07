@@ -101,7 +101,9 @@ class UserDetailOut(BaseModel):
 
 
 class UserPatch(BaseModel):
-    role: str | None = Field(default=None, pattern="^(member|assignee|supervisor|admin)$")
+    role: str | None = Field(
+        default=None, pattern="^(member|assignee|supervisor|admin|knowledge_op)$"
+    )
     is_active: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)
     email: str | None = Field(default=None, max_length=255)

@@ -812,6 +812,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/owner-split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Owner Split Endpoint
+         * @description 按责任人拆分（ADR-0016 P4 v1 手动）：N 个子任务 → N 个 Linear 子 issue
+         *     （parentId 挂主 issue）+ 跟踪行。每子 issue Done 由轮询自动发 x/n 进度通知。
+         */
+        post: operations["owner_split_endpoint_api_hub_issues__hub_issue_id__owner_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/{hub_issue_id}/reply": {
         parameters: {
             query?: never;
@@ -1909,6 +1930,12 @@ export interface components {
         DiagnosisBody: {
             /** Cause */
             cause?: string | null;
+            /** Causes */
+            causes?: string[] | null;
+            /** Checklist Done */
+            checklist_done?: {
+                [key: string]: boolean;
+            } | null;
             /** Correct Answer */
             correct_answer?: string | null;
         };
@@ -2389,6 +2416,11 @@ export interface components {
             status: string;
             /** Status Changed At */
             status_changed_at?: string | null;
+            /**
+             * Sub Issues
+             * @default []
+             */
+            sub_issues: components["schemas"]["SubIssueItem"][];
             /** Supersede Reason */
             supersede_reason: string | null;
             /** Superseded By Hub Issue Id */
@@ -2687,6 +2719,36 @@ export interface components {
             channel_count: number;
             /** Hub Issue Id */
             hub_issue_id: number;
+        };
+        /** OwnerSplitBody */
+        OwnerSplitBody: {
+            /** Subtasks */
+            subtasks: components["schemas"]["OwnerSplitSubTask"][];
+        };
+        /** OwnerSplitResponse */
+        OwnerSplitResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Sub Issues */
+            sub_issues: components["schemas"]["OwnerSplitSubIssueOut"][];
+        };
+        /** OwnerSplitSubIssueOut */
+        OwnerSplitSubIssueOut: {
+            /** Assignee User Id */
+            assignee_user_id: number | null;
+            /** Id */
+            id: number;
+            /** Linear Identifier */
+            linear_identifier: string;
+            /** Title */
+            title: string;
+        };
+        /** OwnerSplitSubTask */
+        OwnerSplitSubTask: {
+            /** Assignee User Id */
+            assignee_user_id?: number | null;
+            /** Title */
+            title: string;
         };
         /** PartnerIn */
         PartnerIn: {
@@ -3180,6 +3242,28 @@ export interface components {
         SplitSubIssueOut: {
             /** Summary */
             summary: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * SubIssueItem
+         * @description owner-split 子 issue（ADR-0016 P4）— 详情页里程碑列表行。
+         */
+        SubIssueItem: {
+            /** Assignee User Id */
+            assignee_user_id: number | null;
+            /** Id */
+            id: number;
+            /** Linear Identifier */
+            linear_identifier: string;
+            /** Notified At */
+            notified_at: string | null;
+            /** Released At */
+            released_at: string | null;
+            /** State Type */
+            state_type: string | null;
+            /** Status */
+            status: string | null;
             /** Title */
             title: string;
         };
@@ -5258,6 +5342,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotifyReleaseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    owner_split_endpoint_api_hub_issues__hub_issue_id__owner_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerSplitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerSplitResponse"];
                 };
             };
             /** @description Validation Error */

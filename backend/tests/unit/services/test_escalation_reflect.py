@@ -36,8 +36,9 @@ def _good_output(**ov) -> dict:  # type: ignore[type-arg, no-untyped-def]
 def test_parse_happy_path() -> None:
     import json
 
+    # 旧单值 cause 兼容：包装成单元素 causes 集合
     r = _parse(json.dumps(_good_output()))
-    assert r["cause"] == "skill"
+    assert r["causes"] == ["skill"]
     assert r["confidence"] == 0.86
     assert len(r["steps"]) == 3
     assert r["steps"][1]["verdict"] == "命中" and r["steps"][1]["good"] is True
@@ -57,6 +58,34 @@ def test_parse_invalid_cause_raises() -> None:
 
     with pytest.raises(ReflectError, match="invalid cause"):
         _parse(json.dumps(_good_output(cause="both")))
+
+
+def test_parse_multi_causes() -> None:
+    """ADR-0016 决策 6：多病因集合，主次排序 + 去重保序。"""
+    import json
+
+    out = _good_output(causes=["knowledge", "skill", "knowledge"])
+    del out["cause"]
+    r = _parse(json.dumps(out))
+    assert r["causes"] == ["knowledge", "skill"]
+
+
+def test_parse_multi_causes_invalid_member_raises() -> None:
+    import json
+
+    out = _good_output(causes=["skill", "nope"])
+    del out["cause"]
+    with pytest.raises(ReflectError, match="invalid cause"):
+        _parse(json.dumps(out))
+
+
+def test_parse_empty_causes_raises() -> None:
+    import json
+
+    out = _good_output(causes=[])
+    del out["cause"]
+    with pytest.raises(ReflectError, match="missing/empty causes"):
+        _parse(json.dumps(out))
 
 
 def test_parse_missing_steps_raises() -> None:

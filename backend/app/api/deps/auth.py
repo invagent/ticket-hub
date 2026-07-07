@@ -31,7 +31,7 @@ from app.config import get_settings
 class AuthedUser:
     user_id: int
     name: str
-    role: str  # 'member' | 'assignee' | 'supervisor' | 'admin'
+    role: str  # 'member' | 'assignee' | 'supervisor' | 'admin' | 'knowledge_op'
 
 
 def _extract_token(request: Request) -> str:
@@ -73,6 +73,18 @@ def require_supervisor(user: AuthedUser = Depends(require_user)) -> AuthedUser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="supervisor or admin role required",
+        )
+    return user
+
+
+def require_knowledge_op(user: AuthedUser = Depends(require_user)) -> AuthedUser:
+    """知识运营能力（ADR-0016 P5 权限双层）：AI 客服对客 skill（反思工作台）
+    + 飞书 KB/FAQ。supervisor/admin 天然涵盖；knowledge_op 只有这一块——
+    够不到内部编排 skill（require_admin）与主管修正权（require_supervisor）。"""
+    if user.role not in ("knowledge_op", "supervisor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="knowledge_op, supervisor or admin role required",
         )
     return user
 

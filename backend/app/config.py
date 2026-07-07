@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     feishu_app_token: str = ""  # bitable app id (legacy table-as-storage; D6 退役)
     feishu_table_id: str = ""  # ticket bitable table id (legacy)
     feishu_duty_table_id: str = ""  # 值班表 table id（D1 用作 assignment seed）
+    # 知识库 wiki（ADR-0016 P3 反思闭环 KB/FAQ 调试地基；需 wiki:wiki + docx readonly）。
+    # space_id 定位知识空间；root_node 可选（只读某目录子树，留空=整个空间）。
+    # 从 wiki 页面链接 /wiki/<node_token> 反查 space_id（scripts/feishu_wiki_dump.py）。
+    feishu_wiki_space_id: str = ""
+    feishu_wiki_root_node: str = ""
 
     # ---- KSM ----
     ksm_base_url: str = "https://ierpuat.kingdee.com"

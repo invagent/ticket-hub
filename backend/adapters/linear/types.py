@@ -34,6 +34,8 @@ class CreateIssueRequest:
     assignee_id: str | None = None
     # Priority: 0=No priority, 1=Urgent, 2=High, 3=Medium, 4=Low
     priority: int = 0
+    # Parent issue UUID — owner-split 子 issue 挂 hub 主 issue（ADR-0016 P4）
+    parent_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

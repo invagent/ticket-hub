@@ -209,6 +209,30 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
     assert row.status == "sent" and row.sent_at is not None and row.attempts == 1
 
 
+# ---- progress_note → lock + handle(is_deal=False) 不关单（ADR-0016 P4）------
+
+
+def test_progress_note_replies_without_closing(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    row = _outbox(
+        world,
+        t,
+        hub,
+        kind="progress_note",
+        payload={"note": "3 个子任务已完成第 1 个", "progress": {"x": 1, "n": 3}},
+    )
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    assert len(client.handles) == 1
+    h = client.handles[0]
+    assert h.is_deal is False  # 只回复不关单——第 1 条通知就关掉客户单是 review 抓出的坑
+    assert h.deal_opinion == "3 个子任务已完成第 1 个"
+    world.refresh(row)
+    assert row.status == "sent"
+
+
 # ---- status in_progress → lock only -----------------------------------------
 
 

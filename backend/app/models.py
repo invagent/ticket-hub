@@ -93,7 +93,10 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("feishu_uid", name="uq_users_feishu_uid"),
-        CheckConstraint("role IN ('assignee','supervisor','admin','member')", name="ck_users_role"),
+        CheckConstraint(
+            "role IN ('assignee','supervisor','admin','member','knowledge_op')",
+            name="ck_users_role",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -649,6 +652,39 @@ class TicketHubIssueHistory(Base):
     )
 
 
+class HubIssueLinearIssue(Base):
+    """owner-split 子 issue 跟踪（ADR-0016 P4）：1 hub_issue 挂 N 个 Linear 子 issue.
+
+    主管手动按责任人分解（v1），每行一个 Linear 子 issue（parentId 挂 hub 主 issue）。
+    status/state_type 镜像 Linear（同 hub_issues.linear_status 剧本，轮询回写）；
+    released_at 在 state_type 转 completed 时落值并触发进度通知（x/n 文案，
+    x<n → progress_note 不关单，x=n → release_note 关单）；notified_at 防重。
+    """
+
+    __tablename__ = "hub_issue_linear_issues"
+    __table_args__ = (Index("ix_hub_issue_linear_issues_hub", "hub_issue_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hub_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("hub_issues.id"), nullable=False)
+    linear_uuid: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    linear_identifier: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    assignee_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
+    status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    state_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class StatusHistory(Base):
     """Status transition audit, shared by ticket + hub_issue."""
 
@@ -987,7 +1023,8 @@ class SyncOutbox(Base):
     __tablename__ = "sync_outbox"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('reply','status','supply','release_note')", name="ck_sync_outbox_kind"
+            "kind IN ('reply','status','supply','release_note','progress_note')",
+            name="ck_sync_outbox_kind",
         ),
         CheckConstraint(
             "status IN ('pending','sent','failed','skipped')",

@@ -25,7 +25,10 @@
   POST /api/supervisor/ai-cs/publish               — publish a skill draft to production
   GET  /api/supervisor/tickets/{id}/escalation-context — golden triple for reflect UI
 
-All endpoints require role IN ('supervisor', 'admin').
+All endpoints require role IN ('supervisor', 'admin') — EXCEPT the reflect
+workbench group (escalation-pending-diagnosis / ai-cs/* / escalation-context /
+diagnosis / reflect), which uses require_knowledge_op（ADR-0016 P5 权限双层：
+知识运营管对客 skill，够不到内部编排 skill 与主管修正权）.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
-from app.api.deps.auth import AuthedUser, require_supervisor
+from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor
 from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
 from app.db import get_session
@@ -703,7 +706,7 @@ class EscalationPendingResponse(BaseModel):
     response_model=EscalationPendingResponse,
 )
 def list_escalation_pending_diagnosis(
-    _user: AuthedUser = Depends(require_supervisor),
+    _user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> EscalationPendingResponse:
@@ -1072,7 +1075,11 @@ class EscalationContextResponse(BaseModel):
 
 
 class DiagnosisBody(BaseModel):
-    cause: str | None = None  # skill | knowledge | retrieval | None（清除）
+    # 旧单值（兼容）；新客户端用 causes 集合（ADR-0016 决策 6 多病因）
+    cause: str | None = None  # skill | knowledge | retrieval
+    causes: list[str] | None = None  # 主次排序集合；与 cause 同给时 causes 优先
+    # 修复清单勾选状态：{cause: done}——只改勾选、不改集合时也走本端点
+    checklist_done: dict[str, bool] | None = None
     correct_answer: str | None = Field(default=None, max_length=4000)
 
 
@@ -1096,7 +1103,7 @@ def _ai_cs_http_error(e: AiCsError) -> HTTPException:
 
 @router.get("/ai-cs/status", response_model=AiCsStatusResponse)
 def ai_cs_status_endpoint(
-    _user: AuthedUser = Depends(require_supervisor),
+    _user: AuthedUser = Depends(require_knowledge_op),
 ) -> AiCsStatusResponse:
     """Whether the knowledge-feedback feature is on + configured — the UI hides
     the reflect panel when off."""
@@ -1113,7 +1120,7 @@ def ai_cs_status_endpoint(
 
 @router.get("/ai-cs/skills", response_model=list[SkillSummaryModel])
 def ai_cs_list_skills_endpoint(
-    _user: AuthedUser = Depends(require_supervisor),
+    _user: AuthedUser = Depends(require_knowledge_op),
 ) -> list[SkillSummaryModel]:
     from app.config import get_settings
 
@@ -1142,7 +1149,7 @@ def ai_cs_list_skills_endpoint(
 @router.get("/ai-cs/skills/{name}", response_model=SkillDetailModel)
 def ai_cs_get_skill_endpoint(
     name: str,
-    _user: AuthedUser = Depends(require_supervisor),
+    _user: AuthedUser = Depends(require_knowledge_op),
 ) -> SkillDetailModel:
     from app.config import get_settings
 
@@ -1182,7 +1189,7 @@ def ai_cs_get_skill_endpoint(
 def ai_cs_create_draft_endpoint(
     name: str,
     body: CreateDraftBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_knowledge_op),
 ) -> CreateDraftResponse:
     """Create a skill draft off the current published version. Empty files
     inherits published; non-empty upserts. Draft is NOT live until published."""
@@ -1213,7 +1220,7 @@ def ai_cs_create_draft_endpoint(
 @router.post("/ai-cs/replay", response_model=ReplayResponse)
 def ai_cs_replay_endpoint(
     body: ReplayBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_knowledge_op),
 ) -> ReplayResponse:
     """Re-answer a question with the current or a draft skill + latest
     knowledge — the reflect/test button. Pass skill_draft_version to test an
@@ -1256,7 +1263,7 @@ def ai_cs_replay_endpoint(
 @router.post("/ai-cs/publish", response_model=PublishResponse)
 def ai_cs_publish_endpoint(
     body: PublishBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> PublishResponse:
     """Publish a skill draft to production. If ticket_id is given, record a
@@ -1295,7 +1302,7 @@ def ai_cs_publish_endpoint(
 @router.get("/tickets/{ticket_id}/escalation-context", response_model=EscalationContextResponse)
 def ai_cs_escalation_context_endpoint(
     ticket_id: int,
-    _user: AuthedUser = Depends(require_supervisor),
+    _user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> EscalationContextResponse:
     """The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so
@@ -1323,7 +1330,7 @@ def ai_cs_escalation_context_endpoint(
 def save_diagnosis_endpoint(
     ticket_id: int,
     body: DiagnosisBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> DiagnosisResponse:
     """Persist the supervisor's cause verdict (skill/knowledge/retrieval) and
@@ -1333,6 +1340,8 @@ def save_diagnosis_endpoint(
             db,
             ticket_id,
             cause=body.cause,
+            causes=body.causes,
+            checklist_done=body.checklist_done,
             correct_answer=body.correct_answer,
             operator=f"user:{user.user_id}",
         )
@@ -1347,7 +1356,7 @@ def save_diagnosis_endpoint(
 @router.post("/tickets/{ticket_id}/reflect", response_model=ReflectResponse)
 def run_reflect_endpoint(
     ticket_id: int,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> ReflectResponse:
     """Run the LLM reflect agent (3-step audit → inferred cause) over the

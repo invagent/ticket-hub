@@ -47,8 +47,9 @@ from adapters.linear import (
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import make_session
-from app.models import HubIssue
+from app.models import HubIssue, HubIssueLinearIssue
 from app.services.cascade.status_cascade import apply_hub_status
+from app.services.hub_issues.owner_split import notify_sub_issue_done
 
 logger = get_logger(__name__)
 
@@ -67,6 +68,10 @@ class StatusSyncReport:
     status_changed: int = 0  # hub_issue.status transitions
     linear_status_refreshed: int = 0  # display-layer updates (incl. transitions)
     missing_in_linear: int = 0  # pushed but Linear no longer returns them
+    # owner-split 子 issue（ADR-0016 P4）
+    sub_scanned: int = 0
+    sub_completed: int = 0  # 本轮转 completed 的子 issue 数
+    sub_outbox: int = 0  # 进度/发版通知入队 outbox 行数
     failed: bool = False
 
 
@@ -94,14 +99,29 @@ def sync_linear_statuses(
         .all()
     )
     report.scanned = len(hubs)
-    if not hubs:
+    # owner-split 子 issue：只轮询未完成的（released_at 落值后不再跟踪；
+    # 子 issue reopen 不回滚通知——通知已对客发出，撤回是人工事务）
+    subs = list(
+        db.execute(
+            select(HubIssueLinearIssue)
+            .where(HubIssueLinearIssue.released_at.is_(None))
+            .order_by(HubIssueLinearIssue.id)
+            .limit(_SCAN_LIMIT)
+        )
+        .scalars()
+        .all()
+    )
+    report.sub_scanned = len(subs)
+    if not hubs and not subs:
         return report
 
     owns_client = client is None
     if client is None:
         client = LinearClient(LinearConfig.from_settings(settings))
     try:
-        states = client.get_issue_states([h.linear_uuid for h in hubs if h.linear_uuid])
+        states = client.get_issue_states(
+            [h.linear_uuid for h in hubs if h.linear_uuid] + [s.linear_uuid for s in subs]
+        )
     except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
         logger.warning("linear_status_sync_failed", error=str(e))
         report.failed = True
@@ -139,6 +159,19 @@ def sync_linear_statuses(
         if cascade.changed:
             report.status_changed += 1
 
+    # owner-split 子 issue：镜像状态；转 completed → released_at + x/n 进度通知
+    for sub in subs:
+        state = by_uuid.get(sub.linear_uuid)
+        if state is None:
+            report.missing_in_linear += 1
+            continue
+        sub.status = state.state_name
+        sub.state_type = state.state_type
+        if state.state_type == "completed":
+            sub.released_at = now
+            report.sub_completed += 1
+            report.sub_outbox += notify_sub_issue_done(db, sub)
+
     db.commit()
     logger.info(
         "linear_status_sync_done",
@@ -146,6 +179,9 @@ def sync_linear_statuses(
         status_changed=report.status_changed,
         linear_status_refreshed=report.linear_status_refreshed,
         missing_in_linear=report.missing_in_linear,
+        sub_scanned=report.sub_scanned,
+        sub_completed=report.sub_completed,
+        sub_outbox=report.sub_outbox,
     )
     return report
 
@@ -161,6 +197,9 @@ def poll_linear_statuses() -> dict[str, int | bool]:
             "status_changed": report.status_changed,
             "linear_status_refreshed": report.linear_status_refreshed,
             "missing_in_linear": report.missing_in_linear,
+            "sub_scanned": report.sub_scanned,
+            "sub_completed": report.sub_completed,
+            "sub_outbox": report.sub_outbox,
             "failed": report.failed,
         }
     except Exception:

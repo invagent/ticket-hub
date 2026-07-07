@@ -81,6 +81,7 @@ export function UserSelect({
 const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
   supervisor: "主管",
+  knowledge_op: "知识运营",
   assignee: "处理人",
   member: "普通成员",
 };

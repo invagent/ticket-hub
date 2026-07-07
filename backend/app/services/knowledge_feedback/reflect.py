@@ -8,6 +8,10 @@ answer, the LLM walks a fixed 3-step audit and infers the root cause:
     knowledge  引用的知识本身有误/过期    → 修订知识条目
     retrieval  没检索到相关知识           → 补充知识条目
 
+ADR-0016 P3（决策 6）：病因是**集合**（非单选）——一次失败可能同时是
+知识过期 + skill 没用好。LLM 输出 `causes`（主次排序数组，兼容旧单值
+`cause`）；修复清单（每病因一个待办项）在 diagnosis 侧由人工维护。
+
 The result is cached on ticket.source_payload['ai_cs']['reflection'] so
 re-opening the workbench doesn't re-run the LLM; a new run overwrites.
 """
@@ -36,17 +40,26 @@ class ReflectError(Exception):
 @dataclass(slots=True, frozen=True)
 class ReflectResult:
     steps: list[dict[str, Any]]
-    cause: str
+    causes: list[str]  # 主次排序；causes[0] 为主病因
     confidence: float
     reason: str
     suggested_revision: str | None
     cost_usd: float
     model: str
 
+    @property
+    def cause(self) -> str:
+        """主病因（旧单值消费方兼容）。"""
+        return self.causes[0]
+
     def as_payload(self) -> dict[str, Any]:
-        """Shape persisted under source_payload['ai_cs']['reflection']."""
+        """Shape persisted under source_payload['ai_cs']['reflection'].
+
+        同时写 causes（集合）与 cause（主病因）——旧 UI/队列过滤读 cause。
+        """
         return {
             "steps": self.steps,
+            "causes": self.causes,
             "cause": self.cause,
             "confidence": self.confidence,
             "reason": self.reason,
@@ -131,7 +144,7 @@ def run_reflect(
     parsed = _parse(resp.content)
     return ReflectResult(
         steps=parsed["steps"],
-        cause=parsed["cause"],
+        causes=parsed["causes"],
         confidence=parsed["confidence"],
         reason=parsed["reason"],
         suggested_revision=parsed["suggested_revision"],
@@ -148,9 +161,18 @@ def _parse(content: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ReflectError(f"expected JSON object, got {type(data).__name__}")
 
-    cause = data.get("cause")
-    if cause not in _VALID_CAUSES:
-        raise ReflectError(f"invalid cause {cause!r}; must be one of {sorted(_VALID_CAUSES)}")
+    # 多病因集合（ADR-0016 决策 6）：优先 causes 数组；兼容旧单值 cause
+    raw_causes = data.get("causes")
+    if raw_causes is None and data.get("cause") is not None:
+        raw_causes = [data["cause"]]
+    if not isinstance(raw_causes, list) or not raw_causes:
+        raise ReflectError(f"missing/empty causes: {data!r}")
+    causes: list[str] = []
+    for c in raw_causes:
+        if c not in _VALID_CAUSES:
+            raise ReflectError(f"invalid cause {c!r}; must be one of {sorted(_VALID_CAUSES)}")
+        if c not in causes:  # 去重保序
+            causes.append(str(c))
 
     raw_steps = data.get("steps")
     if not isinstance(raw_steps, list) or not raw_steps:
@@ -179,7 +201,7 @@ def _parse(content: str) -> dict[str, Any]:
     suggested = data.get("suggested_revision")
     return {
         "steps": steps,
-        "cause": cause,
+        "causes": causes,
         "confidence": confidence,
         "reason": str(data.get("reason") or ""),
         "suggested_revision": str(suggested) if suggested else None,
