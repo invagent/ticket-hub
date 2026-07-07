@@ -21,7 +21,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_users_role", "users", type_="check")
+    # 历史 PG 库的 users 表从未建过命名 CHECK（role 约束只在 models metadata /
+    # SQLite 测试里），故 DROP IF EXISTS 幂等——存在则替换、不存在则直接建。
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_role")
     op.create_check_constraint(
         "ck_users_role",
         "users",
@@ -31,7 +33,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("UPDATE users SET role='member' WHERE role='knowledge_op'")
-    op.drop_constraint("ck_users_role", "users", type_="check")
+    op.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_role")
     op.create_check_constraint(
         "ck_users_role",
         "users",
