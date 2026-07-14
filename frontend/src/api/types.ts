@@ -1211,6 +1211,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/drain-zhichi-writeback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drain Zhichi Writeback Endpoint
+         * @description 手动跑一轮智齿 outbox drain。尊重 zhichi_writeback_enabled / _dry_run——
+         *     主管按需 flush pending 回写并立即看结果，不必等 2min beat。
+         */
+        post: operations["drain_zhichi_writeback_endpoint_api_supervisor_drain_zhichi_writeback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/escalation-pending-diagnosis": {
         parameters: {
             query?: never;
@@ -2027,6 +2048,25 @@ export interface components {
         };
         /** DrainKsmWritebackResponse */
         DrainKsmWritebackResponse: {
+            /** Deferred */
+            deferred: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Errors */
+            errors: string[];
+            /** Failed */
+            failed: number;
+            /** Scanned */
+            scanned: number;
+            /** Sent */
+            sent: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /** DrainZhichiWritebackResponse */
+        DrainZhichiWritebackResponse: {
             /** Deferred */
             deferred: number;
             /** Dry Run */
@@ -3607,10 +3647,6 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -6018,6 +6054,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DrainKsmWritebackResponse"];
+                };
+            };
+        };
+    };
+    drain_zhichi_writeback_endpoint_api_supervisor_drain_zhichi_writeback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainZhichiWritebackResponse"];
                 };
             };
         };

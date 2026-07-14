@@ -980,6 +980,48 @@ def drain_ksm_writeback_endpoint(
     )
 
 
+class DrainZhichiWritebackResponse(BaseModel):
+    enabled: bool
+    dry_run: bool
+    scanned: int
+    sent: int
+    skipped: int
+    failed: int
+    deferred: int
+    errors: list[str]
+
+
+@router.post("/drain-zhichi-writeback", response_model=DrainZhichiWritebackResponse)
+def drain_zhichi_writeback_endpoint(
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DrainZhichiWritebackResponse:
+    """手动跑一轮智齿 outbox drain。尊重 zhichi_writeback_enabled / _dry_run——
+    主管按需 flush pending 回写并立即看结果，不必等 2min beat。"""
+    from app.config import get_settings
+    from app.services.zhichi.writeback import drain_zhichi_outbox
+
+    settings = get_settings()
+    report = drain_zhichi_outbox(db, settings=settings)
+    logger.info(
+        "supervisor_drain_zhichi_writeback",
+        operator_user_id=user.user_id,
+        scanned=report.scanned,
+        sent=report.sent,
+        failed=report.failed,
+    )
+    return DrainZhichiWritebackResponse(
+        enabled=settings.zhichi_writeback_enabled,
+        dry_run=settings.zhichi_writeback_dry_run,
+        scanned=report.scanned,
+        sent=report.sent,
+        skipped=report.skipped,
+        failed=report.failed,
+        deferred=report.deferred,
+        errors=report.errors[:20],
+    )
+
+
 # ---- Phase 1 知识反哺闭环：AI 客服 skill 管理 + replay ----------------------
 #
 # 主管从 escalation 工单反思 → 改 AI 客服 skill draft → replay 试跑对比旧/新答复

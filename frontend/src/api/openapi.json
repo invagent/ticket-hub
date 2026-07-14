@@ -1019,6 +1019,57 @@
         "title": "DrainKsmWritebackResponse",
         "type": "object"
       },
+      "DrainZhichiWritebackResponse": {
+        "properties": {
+          "deferred": {
+            "title": "Deferred",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "dry_run",
+          "scanned",
+          "sent",
+          "skipped",
+          "failed",
+          "deferred",
+          "errors"
+        ],
+        "title": "DrainZhichiWritebackResponse",
+        "type": "object"
+      },
       "EditBody": {
         "properties": {
           "content_md": {
@@ -5996,13 +6047,6 @@
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -9625,6 +9669,28 @@
           }
         },
         "summary": "Drain Ksm Writeback Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/drain-zhichi-writeback": {
+      "post": {
+        "description": "手动跑一轮智齿 outbox drain。尊重 zhichi_writeback_enabled / _dry_run——\n主管按需 flush pending 回写并立即看结果，不必等 2min beat。",
+        "operationId": "drain_zhichi_writeback_endpoint_api_supervisor_drain_zhichi_writeback_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainZhichiWritebackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Zhichi Writeback Endpoint",
         "tags": [
           "supervisor"
         ]
