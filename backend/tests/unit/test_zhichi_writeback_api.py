@@ -26,9 +26,7 @@ def world(db_session: Session) -> Session:
 
 
 def test_requires_supervisor(app_client: TestClient, world: Session) -> None:
-    r = app_client.post(
-        "/api/supervisor/drain-zhichi-writeback", headers=_bearer(3, role="member")
-    )
+    r = app_client.post("/api/supervisor/drain-zhichi-writeback", headers=_bearer(3, role="member"))
     assert r.status_code == 403
 
 
