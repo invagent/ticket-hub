@@ -32,6 +32,7 @@ celery_app = Celery(
         "app.services.metrics.materializer",
         "app.services.hub_issues.linear_status_sync",
         "app.services.ksm.writeback_task",
+        "app.services.zhichi.writeback_task",
     ],
 )
 
