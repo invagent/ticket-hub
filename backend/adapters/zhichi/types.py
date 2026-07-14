@@ -14,7 +14,8 @@ class ZhichiConfig:
 
     @classmethod
     def from_settings(cls, s: Any) -> ZhichiConfig:
-        return cls(appid=s.zhichi_appid, app_key=s.zhichi_app_key)
+        base = getattr(s, "zhichi_base_url", "") or "https://www.soboten.com"
+        return cls(appid=s.zhichi_appid, app_key=s.zhichi_app_key, base_url=base.rstrip("/"))
 
 
 @dataclass(slots=True, frozen=True)
