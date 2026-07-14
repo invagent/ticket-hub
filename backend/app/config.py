@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     zhichi_appid: str = ""
     zhichi_app_key: str = ""
 
+    # ---- 智齿出站回写 sender（消费 sync_outbox，镜像 KSM 灰度剧本）----
+    # 默认全关 + dry_run：配好 appid/app_key + 部署后先 dry_run 观察组装的 payload，
+    # 再翻 zhichi_writeback_dry_run=false 真打智齿。与 KSM 同剧本。
+    zhichi_base_url: str = "https://www.soboten.com"
+    zhichi_writeback_enabled: bool = False  # 总开关：关时 drain 直接跳过
+    zhichi_writeback_dry_run: bool = True  # 只组装+标 skipped，不真发
+    zhichi_writeback_batch: int = 20  # 每轮 drain 处理的 pending 行数上限
+    zhichi_writeback_max_attempts: int = 5  # 失败重试上限，超过标 failed 转人工
+    zhichi_fallback_agent_name: str = "莉莉"  # deal_agent_name 为空时的默认回复坐席
+
     # ---- LLM Providers (D3 onwards) ----
     openai_api_key: str = ""
     deepseek_api_key: str = ""
