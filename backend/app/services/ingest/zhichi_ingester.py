@@ -29,6 +29,65 @@ from app.services.routing.router import Router, RouteRequest
 logger = get_logger(__name__)
 
 
+def _parse_extend_fields(raw: dict[str, Any]) -> dict[str, str]:
+    """extend_fields_list → {field_name: value}。
+
+    field_type=='6'（下拉列表）取 field_text，其余取 field_value（智齿契约）。
+    """
+    out: dict[str, str] = {}
+    lst = raw.get("extend_fields_list")
+    if not isinstance(lst, list):
+        return out
+    for f in lst:
+        if not isinstance(f, dict):
+            continue
+        name = f.get("field_name")
+        if not name:
+            continue
+        val = f.get("field_text") if str(f.get("field_type")) == "6" else f.get("field_value")
+        if val:
+            out[str(name)] = str(val)
+    return out
+
+
+def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
+    """智齿真实推送 {source, raw, fields} → 归一化扁平 dict。
+
+    fields 中文块为主源（智齿已映射好），raw + extend_fields_list 兜底。
+    无 raw/fields 时原样返回（向后兼容旧扁平格式）。
+    整个原始信封挂 `_envelope`，供 source_payload 存档 + 出站回写读 raw。
+    """
+    raw_obj = payload.get("raw")
+    fields_obj = payload.get("fields")
+    if not isinstance(raw_obj, dict) and not isinstance(fields_obj, dict):
+        return payload  # 旧扁平格式，原样
+    raw = raw_obj if isinstance(raw_obj, dict) else {}
+    fields = fields_obj if isinstance(fields_obj, dict) else {}
+    ext = _parse_extend_fields(raw)
+
+    def pick(*cands: Any) -> Any:
+        for c in cands:
+            if c:
+                return c
+        return None
+
+    return {
+        "ticketid": pick(fields.get("工单来源ID"), raw.get("ticketid")),
+        "title": pick(fields.get("主题"), raw.get("ticket_title")),
+        "content": pick(fields.get("问题描述"), raw.get("ticket_content")),
+        "productLineCode": pick(fields.get("产品线"), ext.get("产品分类")),
+        "moduleName": pick(fields.get("产品模块"), ext.get("产品分类")),
+        "customer": {
+            "name": pick(fields.get("联系人"), fields.get("反馈人"), ext.get("联系人")),
+            "mobile": pick(fields.get("联系人手机"), fields.get("反馈人手机"), ext.get("联系手机")),
+            "email": pick(fields.get("反馈人邮箱"), raw.get("user_emails")),
+            "erp_uid": pick(fields.get("对接ERP"), ext.get("对接ERP")),
+        },
+        "company": pick(fields.get("客户名称"), raw.get("enterprise_name")),
+        "_envelope": payload,  # 出站回写要用的原始信封整体
+    }
+
+
 @dataclass(slots=True, frozen=True)
 class IngestResult:
     ticket_id: int
@@ -53,6 +112,7 @@ class ZhichiIngester:
         self._router = Router(db, default_pool_user_id=default_pool_user_id)
 
     def ingest(self, payload: dict[str, Any]) -> IngestResult:
+        payload = _flatten_envelope(payload)
         ticketid = self._require_str(payload, "ticketid")
 
         existing = self._tickets.find_by_source("zhichi", ticketid)
@@ -93,7 +153,7 @@ class ZhichiIngester:
             source_ticket_id=ticketid,
             type="Raw",
             status="received",
-            source_payload=payload,
+            source_payload=payload.get("_envelope") or payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=payload.get("productLineCode") or payload.get("product"),
             module=payload.get("moduleName")

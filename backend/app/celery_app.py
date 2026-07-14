@@ -63,4 +63,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.services.ksm.writeback_task.drain_ksm_writeback",
         "schedule": crontab(minute="*/2"),
     },
+    # 智齿出站回写 drain（zhichi_writeback_enabled 未开则任务内自动跳过）
+    "drain_zhichi_writeback_every_2min": {
+        "task": "app.services.zhichi.writeback_task.drain_zhichi_writeback",
+        "schedule": crontab(minute="*/2"),
+    },
 }

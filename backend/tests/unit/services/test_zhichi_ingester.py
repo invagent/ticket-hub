@@ -141,3 +141,107 @@ def test_webhook_zhichi_missing_ticketid_returns_400(app_client) -> None:  # typ
         json={"title": "no id"},
     )
     assert resp.status_code == 400
+
+
+# ---- 真实信封格式 {source, raw, fields}（工单参数.txt 权威格式）----
+
+_ENVELOPE = {
+    "source": "zhichi",
+    "raw": {
+        "ticketid": "T20260101001",
+        "ticket_title": "工单标题",
+        "ticket_content": "问题描述内容",
+        "ticket_level": 2,
+        "user_emails": "user@example.com",
+        "deal_agent_name": "莉莉",
+        "enterprise_name": "某某有限公司",
+        "extend_fields_list": [
+            {
+                "field_name": "产品分类",
+                "field_type": "6",
+                "field_text": "星空旗舰版-开票",
+                "field_value": "opt1",
+            },
+            {
+                "field_name": "联系手机",
+                "field_type": "1",
+                "field_text": "",
+                "field_value": "13800000000",
+            },
+        ],
+    },
+    "fields": {
+        "工单来源ID": "T20260101001",
+        "主题": "工单标题",
+        "问题描述": "问题描述内容",
+        "产品线": "金蝶发票云",
+        "产品模块": "星空旗舰版-开票",
+        "联系人": "张三",
+        "联系人手机": "13800000000",
+        "反馈人邮箱": "user@example.com",
+        "客户名称": "某某有限公司",
+    },
+}
+
+
+def test_ingest_envelope_maps_fields(world: Session) -> None:
+    res = ZhichiIngester(world).ingest(_ENVELOPE)
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.source_ticket_id == "T20260101001"
+    assert t.title == "工单标题"
+    assert t.body == "问题描述内容"
+    assert t.product_line_code == "金蝶发票云"
+    assert t.module == "星空旗舰版-开票"
+    assert t.reporter["name"] == "张三"
+    assert t.reporter["mobile"] == "13800000000"
+    assert t.reporter["email"] == "user@example.com"
+    # source_payload 存整个信封，出站回写要用 raw.deal_agent_name / ticket_level
+    assert t.source_payload["raw"]["deal_agent_name"] == "莉莉"
+    assert t.source_payload["raw"]["ticket_level"] == 2
+
+
+def test_ingest_legacy_flat_still_works(world: Session) -> None:
+    """向后兼容：无 raw/fields 的旧扁平格式仍解析。"""
+    res = ZhichiIngester(world).ingest(
+        {"ticketid": "OLD1", "title": "旧格式", "content": "正文", "product": "cloud-erp"}
+    )
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.source_ticket_id == "OLD1"
+    assert t.title == "旧格式"
+    assert t.product_line_code == "cloud-erp"
+
+
+def test_ingest_extend_fields_type6_takes_text(world: Session) -> None:
+    """extend_fields_list field_type=6（下拉）取 field_text；仅 raw 无 fields 时兜底。"""
+    payload = {
+        "source": "zhichi",
+        "raw": {
+            "ticketid": "T-EXT",
+            "ticket_title": "标题",
+            "ticket_content": "正文",
+            "extend_fields_list": [
+                {
+                    "field_name": "产品分类",
+                    "field_type": "6",
+                    "field_text": "云星空-税务",
+                    "field_value": "code123",
+                },
+                {
+                    "field_name": "对接ERP",
+                    "field_type": "1",
+                    "field_text": "",
+                    "field_value": "ERP-777",
+                },
+            ],
+        },
+    }
+    res = ZhichiIngester(world).ingest(payload)
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    # field_type=6 取 field_text（不是 field_value 的 code123）
+    assert t.product_line_code == "云星空-税务"
