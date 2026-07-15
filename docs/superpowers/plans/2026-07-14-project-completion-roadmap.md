@@ -95,10 +95,12 @@
 
 ### P2-2 Operation 未命中 + 非 escalation → 直接答复客户
 - **问题**：图说 KSM/智齿的新 Operation 未命中现有 hub 时「直接答复客户」，代码里 `_route_by_type` 对 Operation 只毕业不答复
-- **改法**：Operation 毕业后，若非 escalation 来源且 hub_dedup 未命中 → 触发自动答复流程（走 cascade → outbox）。需定义「答复内容从哪来」——可能需要一个 Operation 自动答复 skill 或复用 AI 客服
-- **待澄清**：自动答复的内容来源（LLM 生成？知识库检索？固定模板？）——这块 ADR 没细化，需与产品确认
-- **文件**：`webhooks.py` `_route_by_type` + 新答复逻辑
-- **工作量**：中-大（依赖答复内容来源方案）
+- **决策（2026-07-14）**：**复用现有 `adapters/ai_cs`**（知识反哺 replay 用的那个公司 AI 客服 agent）来生成答复。参考项目 ticket-hub 用 `INTERNAL_AGENT_URL`（`agent_client.py` ask），新项目已有等价的 `adapters/ai_cs/client.py`，直接复用不新建。
+- **改法**：Operation 毕业后，若非 escalation 来源且 hub_dedup 未命中 → 调 `ai_cs` agent 生成答复（入参「{产品线}-{模块}：{原始问题}」，agent 自处理脱敏）→ 写入 hub_issue.reply_content → cascade → outbox 回写客户。参考 runner.py S6(agent-answer)→S7(answer-router A/B/C/D)→D(reply-humanize)。
+- **注意**：agent 可能返回「需转研发/需补料」信号（参考项目 answer-router 分 A/B/C/D）——需处理 agent 答不了时的降级（转人工/留 hub 等主管）。
+- **灰度**：新增开关 `operation_auto_reply_enabled`（默认 false）
+- **文件**：`webhooks.py` `_route_by_type` + 新 `services/agents/operation_answer.py`（调 ai_cs）+ config 开关
+- **工作量**：中-大
 
 ### P2-3 Demand 单/多责任人自动分流
 - **问题**：图说 Demand 未命中要判「单/多责任人」自动走「推 1 Linear issue」或「owner-split N 子 issue」；代码里所有 Demand 都单 issue，owner-split 只主管手动
@@ -114,9 +116,9 @@
 - **工作量**：中
 
 ### P2-5 Internal_task 飞书任务集成
-- **问题**：图最简单一支「内部处理」，但 `feishu_task_id`/`feishu_task_status` 几乎无实现
-- **改法**：Internal_task 毕业 → 建飞书任务 → 状态回同步
-- **待澄清**：是否真需要飞书任务集成？还是 Internal_task 只在 hub 内部流转即可
+- **问题**：图最简单一支「内部处理」，但 `feishu_task_id`/`feishu_task_status` 几乎无实现（三个占位字段永远 NULL）
+- **决策（2026-07-14）**：**要做**——Internal_task 毕业后自动在飞书创建任务派给内部人，状态回同步。**但排到后面完善**（本批次不做，归入 P4/后续迭代）。
+- **改法**：Internal_task 毕业 → 飞书任务 API 建任务 → 回写 feishu_task_id → beat 轮询同步 feishu_task_status
 - **工作量**：大（需接飞书任务 API）
 
 ---
@@ -234,6 +236,24 @@ P4 辅助（按需）
 4. **同事 V1 是否还在开发**？避免改动冲突。
 5. **优先级是否认可**：P0→P1→P2/P3 并行→P4
 
-## 建议的第一步
+## 确定的执行顺序（2026-07-14 用户拍板）
 
-**P0-1（救活 UAT）+ P1-2（智齿出站真打，凭证已齐最省事）** 作为起点——一个解决环境阻塞，一个用最小成本证明「入站→处理→出站」主链能端到端跑通，建立信心后再推 KSM 和架构增强。
+决策已定：① Operation 自动答复复用 `adapters/ai_cs`；② Internal_task 飞书任务要做但排后面；③ 凭证参考 ticket-hub；④ V1 同事已停止开发（可直接改 main）；⑤ 优先级按建议。
+
+执行批次：
+
+| 批次 | 项 | 状态 |
+|---|---|---|
+| 1️⃣ | P1-2 智齿出站真打（凭证已齐，最快见效） | ← 起点 |
+| 2️⃣ | P1-1 KSM 出站真打（参考项目抄凭证 + 配 handler 身份） | |
+| 3️⃣ | P1-3 Linear 推送（抄 Linear token） | |
+| 4️⃣ | P2-2 Operation 自动答复（复用 ai_cs agent，图核心分支） | |
+| 5️⃣ | P2-1 hub_dedup 全类型（3 行高价值） | |
+| 6️⃣ | P3 前端缺口（可与 4️⃣5️⃣ 并行） | |
+| 后续 | P2-3/P2-4、P2-5 飞书任务、P4 辅助 | 迭代 |
+
+P0-1（UAT 救活）独立于以上，需要 UAT root 权限时随时插入。
+
+## 起点
+
+**批次 1️⃣：P1-2 智齿出站真打**——凭证已配齐、代码已就绪（Task 1-8 + celery 修复），用最小成本证明「入站→处理→出站」主链端到端跑通。
