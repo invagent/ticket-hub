@@ -24,3 +24,9 @@ def test_zhichi_writeback_defaults() -> None:
     assert s.zhichi_writeback_batch == 20
     assert s.zhichi_writeback_max_attempts == 5
     assert s.zhichi_fallback_agent_name == "莉莉"
+
+
+def test_operation_auto_reply_defaults() -> None:
+    s = get_settings()
+    assert s.operation_auto_reply_enabled is False
+    assert s.operation_auto_reply_min_length == 10

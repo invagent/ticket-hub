@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     zhichi_writeback_max_attempts: int = 5  # 失败重试上限，超过标 failed 转人工
     zhichi_fallback_agent_name: str = "莉莉"  # deal_agent_name 为空时的默认回复坐席
 
+    # ---- Operation 自动答复（调 ai_cs replay 生成答复回写客户）----
+    # 默认关：开了才对新毕业的 Operation hub_issue 自动答复。出站真发仍受
+    # ksm/zhichi_writeback_enabled + dry_run 二层灰度保护（双保险）。
+    operation_auto_reply_enabled: bool = False
+    operation_auto_reply_min_length: int = 10  # 答复短于此视为无效，留主管
+
     # ---- LLM Providers (D3 onwards) ----
     openai_api_key: str = ""
     deepseek_api_key: str = ""
