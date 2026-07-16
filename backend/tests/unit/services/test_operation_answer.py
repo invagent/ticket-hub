@@ -1,0 +1,134 @@
+"""Operation 自动答复单测。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from unittest.mock import patch
+
+from sqlalchemy.orm import Session
+
+from adapters.ai_cs import AiCsError
+from adapters.ai_cs.types import ReplayResult
+from app.models import AgentDecision, HubIssue, Source, Ticket
+from app.services.agents.operation_answer import (
+    _is_answer_sendable,
+    auto_answer_operation,
+)
+
+
+@dataclass
+class _S:
+    operation_auto_reply_enabled: bool = True
+    operation_auto_reply_min_length: int = 10
+    knowledge_feedback_enabled: bool = True
+    ai_cs_app_id: str = "x"
+    ai_cs_app_key: str = "y"
+    ai_cs_base_url: str = "http://localhost:9090"
+    ai_cs_managed_skills: str = "customer-service"
+
+
+class _FakeClient:
+    def __init__(self, answer: str = "", raise_err: bool = False) -> None:
+        self._answer = answer
+        self._raise = raise_err
+
+    def replay(self, **kw: object) -> ReplayResult:
+        if self._raise:
+            raise AiCsError("boom")
+        return ReplayResult(
+            answer=self._answer, cited_knowledge=[], skills_used=[], trace_id="t1"
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def _seed_op_hub(db: Session, *, source: str = "ksm") -> tuple[HubIssue, Ticket]:
+    if db.query(Source).filter_by(code=source).first() is None:
+        db.add(Source(code=source, name=source.upper()))
+    hub = HubIssue(
+        short_code=f"HUB-OP-{source}",
+        type="Operation",
+        title="开票失败",
+        canonical_body="开票时提示网络错误",
+        status="created",
+        product="发票云",
+        module="开票",
+    )
+    db.add(hub)
+    db.flush()
+    t = Ticket(
+        short_code=f"TKT-OP-{source}",
+        source_code=source,
+        source_ticket_id=f"{source}-1",
+        type="Raw",
+        status="received",
+        hub_issue_id=hub.id,
+        title="开票失败",
+        body="开票时提示网络错误",
+    )
+    db.add(t)
+    db.flush()
+    return hub, t
+
+
+def test_sendable_rules() -> None:
+    assert _is_answer_sendable("请在设置页重新绑定后重试即可解决。", 10) is True
+    assert _is_answer_sendable("", 10) is False
+    assert _is_answer_sendable("好的", 10) is False  # 太短
+    assert _is_answer_sendable("抱歉，此问题需转人工客服处理。", 10) is False  # 转人工信号
+
+
+def test_auto_answer_sends(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票，若仍失败请提供截图。")
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 1
+    assert hub.reply_authored_by == "agent:ai_cs"
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None
+
+
+def test_auto_answer_empty_leaves_to_human(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="")
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 0
+
+
+def test_auto_answer_replay_error_leaves_to_human(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(raise_err=True)
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+
+
+def test_auto_answer_disabled(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    ok = auto_answer_operation(
+        db_session, hub.id, settings=_S(operation_auto_reply_enabled=False)
+    )
+    assert ok is False
+
+
+def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session, source="ai_cs")
+    db_session.commit()
+    # 即使 enabled，ai_cs 来源也不自动答复（走 reflect）
+    ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
