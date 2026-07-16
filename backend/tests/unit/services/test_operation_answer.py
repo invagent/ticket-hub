@@ -35,9 +35,7 @@ class _FakeClient:
     def replay(self, **kw: object) -> ReplayResult:
         if self._raise:
             raise AiCsError("boom")
-        return ReplayResult(
-            answer=self._answer, cited_knowledge=[], skills_used=[], trace_id="t1"
-        )
+        return ReplayResult(answer=self._answer, cited_knowledge=[], skills_used=[], trace_id="t1")
 
     def close(self) -> None:
         pass
@@ -120,9 +118,7 @@ def test_auto_answer_replay_error_leaves_to_human(db_session: Session) -> None:
 def test_auto_answer_disabled(db_session: Session) -> None:
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
-    ok = auto_answer_operation(
-        db_session, hub.id, settings=_S(operation_auto_reply_enabled=False)
-    )
+    ok = auto_answer_operation(db_session, hub.id, settings=_S(operation_auto_reply_enabled=False))
     assert ok is False
 
 

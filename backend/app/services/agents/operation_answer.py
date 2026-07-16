@@ -46,9 +46,7 @@ def auto_answer_operation(
 
     # escalation(ai_cs) 来源不自动答复（走 reflect 反思队列）
     linked = (
-        db.query(Ticket)
-        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
-        .first()
+        db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).first()
     )
     if linked is not None and linked.source_code == "ai_cs":
         return False

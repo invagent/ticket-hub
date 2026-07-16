@@ -125,9 +125,7 @@ def test_low_confidence_no_graduate(spy, monkeypatch: pytest.MonkeyPatch) -> Non
     assert calls["graduate"] == []  # 低于 0.80 门槛
 
 
-def test_operation_triggers_auto_answer_when_enabled(
-    spy, monkeypatch: pytest.MonkeyPatch
-) -> None:  # type: ignore[no-untyped-def]
+def test_operation_triggers_auto_answer_when_enabled(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
     wh, calls = spy
     _set_auto(monkeypatch, hub=True, split=False)
     monkeypatch.setenv("OPERATION_AUTO_REPLY_ENABLED", "true")
@@ -140,9 +138,7 @@ def test_operation_triggers_auto_answer_when_enabled(
     assert calls["auto_answer"] == [500]  # hub_issue_id = 5*100
 
 
-def test_operation_auto_answer_off_not_called(
-    spy, monkeypatch: pytest.MonkeyPatch
-) -> None:  # type: ignore[no-untyped-def]
+def test_operation_auto_answer_off_not_called(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
     wh, calls = spy
     _set_auto(monkeypatch, hub=True, split=False)
     monkeypatch.setenv("OPERATION_AUTO_REPLY_ENABLED", "false")

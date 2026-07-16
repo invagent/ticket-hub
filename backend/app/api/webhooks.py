@@ -35,10 +35,10 @@ from app.db import get_session, make_session
 from app.models import Ticket
 from app.services.agents.classify import classify_ticket
 from app.services.agents.escalation_classify import classify_escalation_ticket
+from app.services.agents.operation_answer import auto_answer_operation
 from app.services.agents.split import execute_split_for_ticket
 from app.services.agents.triage import run_ticket_triage
 from app.services.agents.vision_extract import extract_ticket_attachments
-from app.services.agents.operation_answer import auto_answer_operation
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
 from app.services.ingest.escalation_ingester import EscalationIngester
 from app.services.ingest.escalation_ingester import IngestError as EscalationIngestError
