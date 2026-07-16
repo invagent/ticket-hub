@@ -56,3 +56,4 @@ playwright/.cache/
 CLAUDE.local.md
 Codex.local.md
 sample/
+.gstack/
