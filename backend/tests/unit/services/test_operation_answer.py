@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from adapters.ai_cs import AiCsError
 from adapters.ai_cs.types import ReplayResult
 from app.models import AgentDecision, HubIssue, Source, Ticket
-from app.services.agents.operation_answer import auto_answer_operation
+from app.services.agents.operation_answer import AnswerRoute, auto_answer_operation
 
 
 @dataclass
@@ -68,7 +68,6 @@ def _seed_op_hub(db: Session, *, source: str = "ksm") -> tuple[HubIssue, Ticket]
 
 
 def test_auto_answer_d_sends(db_session: Session) -> None:
-    from app.services.agents.operation_answer import AnswerRoute
 
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
@@ -95,7 +94,6 @@ def test_auto_answer_d_sends(db_session: Session) -> None:
 
 def test_auto_answer_c_requests_supply(db_session: Session) -> None:
     from app.models import SyncOutbox
-    from app.services.agents.operation_answer import AnswerRoute
 
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
@@ -111,17 +109,12 @@ def test_auto_answer_c_requests_supply(db_session: Session) -> None:
     assert ok is True
     db_session.refresh(hub)
     assert hub.reply_content_version == 0  # 没答复，走补料
-    ob = (
-        db_session.query(SyncOutbox)
-        .filter_by(hub_issue_id=hub.id, kind="supply")
-        .first()
-    )
+    ob = db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id, kind="supply").first()
     assert ob is not None
     assert ob.payload.get("supply_note") == "请提供开票报错截图"
 
 
 def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
-    from app.services.agents.operation_answer import AnswerRoute
 
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
@@ -167,7 +160,7 @@ def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
 
 from types import SimpleNamespace  # noqa: E402
 
-from app.services.agents.operation_answer import AnswerRoute, _route_answer  # noqa: E402
+from app.services.agents.operation_answer import _route_answer  # noqa: E402
 
 
 class _FakeRouter:
@@ -185,7 +178,8 @@ class _FakeRouter:
 
 def test_route_answer_d() -> None:
     r = _route_answer(
-        "开票失败", "请在设置页重新绑定后重试。",
+        "开票失败",
+        "请在设置页重新绑定后重试。",
         router=_FakeRouter('{"branch":"D","supply_note":""}'),
     )
     assert r.branch == "D"
@@ -193,7 +187,8 @@ def test_route_answer_d() -> None:
 
 def test_route_answer_c_with_supply_note() -> None:
     r = _route_answer(
-        "开票失败", "需要更多信息",
+        "开票失败",
+        "需要更多信息",
         router=_FakeRouter('{"branch":"C","supply_note":"请提供开票报错截图"}'),
     )
     assert r.branch == "C"
@@ -202,7 +197,8 @@ def test_route_answer_c_with_supply_note() -> None:
 
 def test_route_answer_transfer() -> None:
     r = _route_answer(
-        "x", "无法回答",
+        "x",
+        "无法回答",
         router=_FakeRouter('{"branch":"transfer","supply_note":""}'),
     )
     assert r.branch == "transfer"

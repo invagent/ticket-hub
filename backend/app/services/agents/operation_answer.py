@@ -147,9 +147,7 @@ def auto_answer_operation(
         except SupplySyncError as e:
             logger.warning("operation_auto_supply_failed", hub_issue_id=hub.id, error=str(e))
             return False
-        _record_decision(
-            db, hub.id, branch="C", question=question, answer=answer, supply_note=note
-        )
+        _record_decision(db, hub.id, branch="C", question=question, answer=answer, supply_note=note)
         logger.info("operation_auto_supply_sent", hub_issue_id=hub.id)
         return True
 
