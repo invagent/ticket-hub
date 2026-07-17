@@ -134,3 +134,45 @@ def test_embedding_unavailable_degrades(
     hub = _hub(db_session, 60)
     out = hub_dedup.find_duplicate_hub(db_session, hub)
     assert out is None  # 降级不去重
+
+
+# ---- 全类型覆盖：Operation/Internal_task 不要求 linear_uuid + 不跨类型 ----
+
+
+def test_operation_candidate_no_linear_required(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 已有 Operation hub（无 linear_uuid，有 embedding）应能作候选
+    existing = _hub(db_session, 70, type="Operation", linear_uuid=None, embedding=[1.0, 0.0])
+    new = _hub(db_session, 71, type="Operation")
+    monkeypatch.setattr(hub_dedup, "load_prompt", lambda name: "判定提示词")
+    out = hub_dedup.find_duplicate_hub(
+        db_session,
+        new,
+        embedding_client=_FakeEmb([0.99, 0.1]),
+        router=_router(f'{{"is_dup": true, "dup_hub_id": {existing.id}, "confidence": 0.9}}'),
+    )  # type: ignore[arg-type]
+    assert out == existing.id  # Operation 不要求 linear_uuid 也能查到候选
+
+
+def test_no_cross_type_merge(db_session: Session) -> None:
+    # 已有 Bug_fix hub（已推 Linear），当前是 Operation → type 约束不合并
+    _hub(db_session, 80, type="Bug_fix", linear_uuid="u", embedding=[1.0, 0.0])
+    new = _hub(db_session, 81, type="Operation")
+    out = hub_dedup.find_duplicate_hub(
+        db_session, new, embedding_client=_FakeEmb([1.0, 0.0]), router=_router("{}")
+    )  # type: ignore[arg-type]
+    assert out is None  # 跨类型不合并
+
+
+def test_operation_not_pushed_still_candidate(db_session: Session) -> None:
+    # 对比 test_not_pushed_hub_not_candidate(Bug_fix)：Operation 无 linear 仍是候选
+    existing = _hub(db_session, 90, type="Operation", linear_uuid=None, embedding=[1.0, 0.0])
+    new = _hub(db_session, 91, type="Operation")
+    out = hub_dedup.find_duplicate_hub(
+        db_session,
+        new,
+        embedding_client=_FakeEmb([1.0, 0.0]),
+        router=_router(f'{{"is_dup": true, "dup_hub_id": {existing.id}}}'),
+    )  # type: ignore[arg-type]
+    assert out == existing.id

@@ -49,6 +49,22 @@ def ensure_hub_embedding(
     return vec
 
 
+def _candidate_query(hub: HubIssue):  # type: ignore[no-untyped-def]
+    """候选过滤按类型分流：同产品线 + 同类型 + 有 embedding。
+    研发类(Bug_fix/Demand)额外要求已推 Linear（保持"一 hub 一 Linear"）；
+    运营/内部类(Operation/Internal_task)不要求 linear_uuid（它们本就不推 Linear）。"""
+    q = select(HubIssue).where(
+        HubIssue.id != hub.id,
+        HubIssue.deleted_at.is_(None),
+        HubIssue.product_line_code == hub.product_line_code,
+        HubIssue.type == hub.type,  # 不跨类型合并
+        HubIssue.embedding.isnot(None),
+    )
+    if hub.type in ("Bug_fix", "Demand"):
+        q = q.where(HubIssue.linear_uuid.isnot(None))
+    return q
+
+
 def find_duplicate_hub(
     db: Session,
     hub: HubIssue,
@@ -63,17 +79,7 @@ def find_duplicate_hub(
         return None
 
     rows = (
-        db.execute(
-            select(HubIssue).where(
-                HubIssue.id != hub.id,
-                HubIssue.deleted_at.is_(None),
-                HubIssue.product_line_code == hub.product_line_code,
-                HubIssue.linear_uuid.isnot(None),  # 只跟已推 Linear 的合并
-                HubIssue.embedding.isnot(None),
-            )
-        )
-        .scalars()
-        .all()
+        db.execute(_candidate_query(hub)).scalars().all()
     )
     scored = sorted(
         ((cosine_similarity(vec, r.embedding or []), r) for r in rows),
