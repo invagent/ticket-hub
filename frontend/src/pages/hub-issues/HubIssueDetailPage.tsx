@@ -3,19 +3,11 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath, postByPath } from "@/api/client";
+import { isSupervisor } from "@/api/auth";
 import type { paths } from "@/api/types";
 
 type HubIssueDetail =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
-
-function isSupervisor(): boolean {
-  try {
-    const role = JSON.parse(localStorage.getItem("auth_user") ?? "null")?.role ?? "";
-    return role === "supervisor" || role === "admin";
-  } catch {
-    return false;
-  }
-}
 
 // 对齐设计稿：Operation 运营=amber / Bug_fix=rose / Demand 需求=blue / Internal_task 内部=neutral
 const TYPE_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
@@ -219,7 +211,7 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
     <section className="space-y-2">
       <div className="flex items-center gap-3">
         <SectionTitle>回复 v{data.reply_content_version}</SectionTitle>
-        {!editing && (
+        {isSupervisor() && !editing && (
           <button
             onClick={() => {
               setDraft(data.reply_content ?? "");
