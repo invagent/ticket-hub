@@ -161,4 +161,43 @@ describe("HubIssueDetailPage", () => {
     const link = screen.getByRole("link", { name: "HUB-31" });
     expect(link).toHaveAttribute("href", "/hub-issues/31");
   });
+
+  // #5 Operation 回复编辑器权限 gate
+  function stubOperationHub(id: number) {
+    server.use(
+      http.get(`*/api/hub-issues/${id}`, () =>
+        HttpResponse.json({
+          id,
+          short_code: "HUB-GATE",
+          type: "Operation",
+          title: "权限门测试",
+          status: "replied",
+          occurrence_count: 1,
+          ...baseHub,
+          reply_content: "已有回复",
+          reply_content_version: 1,
+          linked_tickets: [],
+        }),
+      ),
+    );
+  }
+
+  it("#5 supervisor 看到修改回复按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationHub(40);
+    renderPage(40);
+    expect(await screen.findByText("HUB-GATE")).toBeInTheDocument();
+    expect(screen.getByText("修改回复")).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#5 member 看不到修改回复按钮（只读回复正文）", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
+    stubOperationHub(41);
+    renderPage(41);
+    expect(await screen.findByText("HUB-GATE")).toBeInTheDocument();
+    expect(screen.getByText("已有回复")).toBeInTheDocument(); // 正文可读
+    expect(screen.queryByText("修改回复")).not.toBeInTheDocument(); // 编辑入口隐藏
+    localStorage.clear();
+  });
 });
