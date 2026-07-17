@@ -22,10 +22,12 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import make_session
 from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
 
 logger = get_logger(__name__)
 
@@ -107,6 +109,31 @@ def ensure_hub_issue_for_ticket(
     )
     db.add(hub)
     db.flush()  # need hub.id for the link
+
+    # ADR-0016 §2.1：所有类型毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
+    # 命中则当前 hub supersede 到原 hub，ticket 挂原 hub，占用复用不重复毕业。
+    if get_settings().hub_dedup_enabled:
+        dup_id = maybe_supersede_duplicate(db, hub)
+        if dup_id is not None:
+            ticket.hub_issue_id = dup_id
+            db.add(
+                TicketHubIssueHistory(
+                    ticket_id=ticket.id,
+                    hub_issue_id=dup_id,
+                    change_reason=f"hub-dedup 合并到 #{dup_id}（{created_by}）",
+                    human_confirmed=created_by.startswith("user:"),
+                )
+            )
+            db.commit()
+            dup = db.get(HubIssue, dup_id)
+            logger.info("hub_issue_dedup_merged", ticket_id=ticket.id, dup_hub_id=dup_id)
+            return HubIssueResult(
+                hub_issue_id=dup_id,
+                hub_issue_short_code=dup.short_code if dup else "",
+                ticket_id=ticket.id,
+                type=dup.type if dup else issue_type,
+                created=False,
+            )
 
     ticket.hub_issue_id = hub.id
     db.add(

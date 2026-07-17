@@ -138,3 +138,40 @@ def test_short_codes_increment(world: Session) -> None:
     r2 = ensure_hub_issue_for_ticket(b.id, created_by="user:boss", db=world)
     assert r1.hub_issue_short_code == "HUB-000001"
     assert r2.hub_issue_short_code == "HUB-000002"
+
+
+# ---- hub-dedup 全类型：毕业时命中重复 → 挂原 hub ----
+
+
+def test_graduate_merges_on_dedup_hit(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.services.hub_issues.creator as creator_mod
+
+    orig = HubIssue(
+        short_code="HUB-ORIG",
+        type="Bug_fix",
+        title="开票失败原始",
+        status="created",
+        product_line_code=None,
+        occurrence_count=1,
+    )
+    world.add(orig)
+    world.flush()
+    t = _make_ticket(world, 20)
+    # mock 查重命中 orig（并模拟 supersede 副作用）
+    monkeypatch.setattr(
+        creator_mod, "maybe_supersede_duplicate", lambda db, hub: orig.id
+    )
+    res = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
+    assert res.created is False
+    assert res.hub_issue_id == orig.id
+    world.refresh(t)
+    assert t.hub_issue_id == orig.id  # ticket 挂原 hub
+
+
+def test_graduate_creates_when_no_dup(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.services.hub_issues.creator as creator_mod
+
+    t = _make_ticket(world, 21)
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
+    res = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
+    assert res.created is True
