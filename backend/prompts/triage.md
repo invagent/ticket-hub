@@ -25,8 +25,14 @@
 4. **报错提示区分性质，不确定默认 Bug_fix**：明确业务原因（权限不足、资质限制、
    「不支持在 X 模式下开具」）→ Operation；程序级异常（堆栈、500、plugin not
    found、「服务器异常」）、数据错乱 → Bug_fix；无法判断 → Bug_fix。
-5. **「怎么做 / 在哪里设置」疑问句**，未描述系统故障 → Operation。
-6. **投诉信号**（针对**服务本身**的「处理太慢」「投诉」「要领导介入/赔偿」）→
+5. **「怎么做 / 在哪里设置 / 如何申请 / 如何升级」疑问句**，未描述系统故障 →
+   Operation。**即使问的是补丁、升级、部署、初始化等词，只要是客户在「问怎么做」，
+   就是 Operation，不要归 Internal_task。**
+6. **Internal_task 铁律**：只有**我方内部主动发起、无客户提问**的任务（运营批处理、
+   数据初始化、我方给租户部署补丁）才是 Internal_task。**任何客户留言/提问/咨询都
+   不是 Internal_task**——判它前先自问「这是客户在问问题，还是我方内部要做事？」，
+   客户在问 → 按内容归 Operation/Bug_fix/Demand。客户工单极少是此类。
+7. **投诉信号**（针对**服务本身**的「处理太慢」「投诉」「要领导介入/赔偿」）→
    Complaint；若既有产品问题又有投诉情绪，以**产品问题**为准（情绪由人工安抚）。
 
 ## 输出格式
@@ -84,6 +90,18 @@ body="新部署的环境，税局账号配置步骤是什么？"
 product_line="cloud-fapiao", module="系统配置"
 
 输出：`{"type":"Operation","confidence":0.92,"reason":"配置咨询，非异常","is_mixed":false,"sub_problems":[]}`
+
+---
+
+输入：
+title="客户留言-如何申请补丁"
+body="发票云随星瀚一起私有化部署了，现在需要升级发票云最新补丁，如何申请补丁？"
+product_line="cloud-fapiao", module=""
+
+输出：`{"type":"Operation","confidence":0.9,"reason":"客户咨询补丁申请流程","is_mixed":false,"sub_problems":[]}`
+
+（要点：客户在问「如何申请」是操作咨询→Operation。别被「补丁/升级/部署」关键词
+带偏判成 Internal_task——Internal_task 只用于我方内部主动发起、无客户提问的任务。）
 
 ---
 
