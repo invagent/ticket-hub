@@ -153,6 +153,15 @@ def test_push_idempotent_on_linear_uuid(world: Session) -> None:
     assert fake.requests == []
 
 
+def test_push_skips_already_superseded(world: Session) -> None:
+    # creator 毕业时已 hub-dedup 合并（superseded）→ linear_push 跳过不重复推
+    orig = _make_hub(world, 50, linear_uuid="u", linear_identifier="ENG-50")
+    hub = _make_hub(world, 51, superseded_by_hub_issue_id=orig.id)
+    fake = _FakeLinearClient()
+    assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
+    assert fake.requests == []
+
+
 def test_push_disabled_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LINEAR_PUSH_ENABLED", "false")
     get_settings.cache_clear()
