@@ -10,10 +10,7 @@ from sqlalchemy.orm import Session
 from adapters.ai_cs import AiCsError
 from adapters.ai_cs.types import ReplayResult
 from app.models import AgentDecision, HubIssue, Source, Ticket
-from app.services.agents.operation_answer import (
-    _is_answer_sendable,
-    auto_answer_operation,
-)
+from app.services.agents.operation_answer import auto_answer_operation
 
 
 @dataclass
@@ -70,18 +67,19 @@ def _seed_op_hub(db: Session, *, source: str = "ksm") -> tuple[HubIssue, Ticket]
     return hub, t
 
 
-def test_sendable_rules() -> None:
-    assert _is_answer_sendable("请在设置页重新绑定后重试即可解决。", 10) is True
-    assert _is_answer_sendable("", 10) is False
-    assert _is_answer_sendable("好的", 10) is False  # 太短
-    assert _is_answer_sendable("抱歉，此问题需转人工客服处理。", 10) is False  # 转人工信号
+def test_auto_answer_d_sends(db_session: Session) -> None:
+    from app.services.agents.operation_answer import AnswerRoute
 
-
-def test_auto_answer_sends(db_session: Session) -> None:
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
     fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票，若仍失败请提供截图。")
-    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
         ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is True
     db_session.refresh(hub)
@@ -92,14 +90,49 @@ def test_auto_answer_sends(db_session: Session) -> None:
         .filter_by(decision_type="auto_reply", subject_id=hub.id)
         .first()
     )
-    assert d is not None
+    assert d is not None and d.proposal["branch"] == "D"
 
 
-def test_auto_answer_empty_leaves_to_human(db_session: Session) -> None:
+def test_auto_answer_c_requests_supply(db_session: Session) -> None:
+    from app.models import SyncOutbox
+    from app.services.agents.operation_answer import AnswerRoute
+
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()
-    fake = _FakeClient(answer="")
-    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+    fake = _FakeClient(answer="需要更多信息才能定位")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="C", supply_note="请提供开票报错截图"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 0  # 没答复，走补料
+    ob = (
+        db_session.query(SyncOutbox)
+        .filter_by(hub_issue_id=hub.id, kind="supply")
+        .first()
+    )
+    assert ob is not None
+    assert ob.payload.get("supply_note") == "请提供开票报错截图"
+
+
+def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
+    from app.services.agents.operation_answer import AnswerRoute
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="无法回答")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="transfer"),
+        ),
+    ):
         ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is False
     db_session.refresh(hub)
