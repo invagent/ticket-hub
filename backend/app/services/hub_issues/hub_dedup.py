@@ -80,9 +80,7 @@ def find_duplicate_hub(
     if vec is None:
         return None
 
-    rows = (
-        db.execute(_candidate_query(hub)).scalars().all()
-    )
+    rows = db.execute(_candidate_query(hub)).scalars().all()
     scored = sorted(
         ((cosine_similarity(vec, r.embedding or []), r) for r in rows),
         key=lambda t: t[0],

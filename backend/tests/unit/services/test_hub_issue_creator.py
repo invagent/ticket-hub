@@ -158,9 +158,7 @@ def test_graduate_merges_on_dedup_hit(world: Session, monkeypatch: pytest.Monkey
     world.flush()
     t = _make_ticket(world, 20)
     # mock 查重命中 orig（并模拟 supersede 副作用）
-    monkeypatch.setattr(
-        creator_mod, "maybe_supersede_duplicate", lambda db, hub: orig.id
-    )
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: orig.id)
     res = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
     assert res.created is False
     assert res.hub_issue_id == orig.id
