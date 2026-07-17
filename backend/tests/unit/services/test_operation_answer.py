@@ -128,3 +128,58 @@ def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
     # 即使 enabled，ai_cs 来源也不自动答复（走 reflect）
     ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is False
+
+
+# ---- answer-router _route_answer 单测 ----
+
+from types import SimpleNamespace  # noqa: E402
+
+from app.services.agents.operation_answer import AnswerRoute, _route_answer  # noqa: E402
+
+
+class _FakeRouter:
+    def __init__(self, content: str, raise_err: bool = False) -> None:
+        self._content = content
+        self._raise = raise_err
+
+    def complete(self, messages: object, **kw: object) -> object:
+        if self._raise:
+            from app.core.llm_router import LLMRouterError
+
+            raise LLMRouterError("boom")
+        return SimpleNamespace(content=self._content, cost_usd=0.0, model="fake")
+
+
+def test_route_answer_d() -> None:
+    r = _route_answer(
+        "开票失败", "请在设置页重新绑定后重试。",
+        router=_FakeRouter('{"branch":"D","supply_note":""}'),
+    )
+    assert r.branch == "D"
+
+
+def test_route_answer_c_with_supply_note() -> None:
+    r = _route_answer(
+        "开票失败", "需要更多信息",
+        router=_FakeRouter('{"branch":"C","supply_note":"请提供开票报错截图"}'),
+    )
+    assert r.branch == "C"
+    assert r.supply_note == "请提供开票报错截图"
+
+
+def test_route_answer_transfer() -> None:
+    r = _route_answer(
+        "x", "无法回答",
+        router=_FakeRouter('{"branch":"transfer","supply_note":""}'),
+    )
+    assert r.branch == "transfer"
+
+
+def test_route_answer_llm_error_falls_back_transfer() -> None:
+    r = _route_answer("x", "y", router=_FakeRouter("", raise_err=True))
+    assert r.branch == "transfer"
+
+
+def test_route_answer_illegal_branch_falls_back_transfer() -> None:
+    r = _route_answer("x", "y", router=_FakeRouter('{"branch":"A","supply_note":""}'))
+    assert r.branch == "transfer"

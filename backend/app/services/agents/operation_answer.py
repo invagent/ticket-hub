@@ -7,10 +7,14 @@ Operation hub_issue 毕业后，调 ai_cs agent（replay）生成答复，harnes
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError
 from app.config import Settings, get_settings
+from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, Ticket
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
@@ -18,10 +22,43 @@ from app.services.knowledge_feedback.service import (
     KnowledgeFeedbackDisabledError,
     build_client,
 )
+from app.services.skills.prompt_store import load_prompt
 
 logger = get_logger(__name__)
 
 _TRANSFER_HINTS = ("转人工", "无法回答", "无法处理", "请联系", "人工客服")
+_VALID_BRANCHES = frozenset({"C", "D", "transfer"})
+
+
+@dataclass(slots=True, frozen=True)
+class AnswerRoute:
+    branch: str  # "C" | "D" | "transfer"
+    supply_note: str = ""
+
+
+def _route_answer(question: str, answer: str, *, router: LLMRouter | None = None) -> AnswerRoute:
+    """answer-router LLM 判 C/D/transfer。异常/非法一律兜底 transfer（留主管）。"""
+    try:
+        prompt = load_prompt("answer_router")
+        router = router or LLMRouter.from_settings()
+        resp = router.complete(
+            [
+                LLMMessage(role="system", content=prompt),
+                LLMMessage(role="user", content=f"客户问题：{question}\n\nagent 答复：{answer}"),
+                LLMMessage(role="user", content="只输出 JSON。"),
+            ],
+            agent="answer_router",
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.content)
+        branch = str(data.get("branch") or "").strip()
+        if branch not in _VALID_BRANCHES:
+            return AnswerRoute(branch="transfer")
+        return AnswerRoute(branch=branch, supply_note=str(data.get("supply_note") or "").strip())
+    except (LLMRouterError, json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
+        logger.warning("answer_router_failed", error=str(e))
+        return AnswerRoute(branch="transfer")
 
 
 def _is_answer_sendable(answer: str, min_length: int) -> bool:
