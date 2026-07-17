@@ -95,7 +95,17 @@ git commit -m "feat(zhichi): 出站回写配置项 + .env 模板"
 
 ---
 
-### Task 2: adapters/zhichi types + exceptions
+### ⚠️ Task 2 + Task 3 已存在（复用，不重建）
+
+**执行时发现**：`backend/adapters/zhichi/`（client.py/types.py/exceptions.py/__init__.py）已完整实现，9 个测试全绿。现有 API 与计划等价但命名不同：
+- `ZhichiConfig(appid=, app_key=, base_url=)`（字段 `appid` 非 `app_id`；已默认 soboten.com）
+- `ReplyTicketRequest(ticket_id, ticket_title, ticket_content, ticket_status, ticket_level, reply_agentid, reply_agent_name, reply_content="", reply_type="0", reply_file_str="")`
+- `ZhichiClient.reply_ticket(req)`（= save_ticket_reply）、`get_agent_by_name(name) -> Agent|None`（查不到返回 None）、`list_agents`、`get_ticket_by_id`、`upload_file`
+- 异常 `ZhichiError`/`ZhichiAuthError`/`ZhichiBusinessError(op, ret_code, ret_msg)`
+
+**Task 5 按现有 API 适配**（下方已改）。Task 2/3 跳过。
+
+### ~~Task 2: adapters/zhichi types + exceptions~~（已存在，跳过）
 
 **Files:**
 - Create: `backend/adapters/zhichi/__init__.py`
