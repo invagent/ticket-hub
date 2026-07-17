@@ -10,6 +10,7 @@ LLM 确认 → 命中则当前 hub supersede 到已有 hub、不重复建 Linear
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.llm_router.embeddings import EmbeddingClient, EmbeddingError, cosine_similarity
 from app.core.logging import get_logger
 from app.models import HubIssue
+from app.repositories.status_history import StatusHistoryRepository
 from app.services.skills.prompt_store import load_prompt
 
 logger = get_logger(__name__)
@@ -130,6 +132,34 @@ def find_duplicate_hub(
         logger.info("hub_dedup_hit", hub_issue_id=hub.id, dup_hub_id=dup_id)
         return dup_id
     return None
+
+
+def maybe_supersede_duplicate(db: Session, hub: HubIssue) -> int | None:
+    """查重命中则当前 hub supersede 到原 hub + 原 hub occurrence_count+1。
+    返回原 hub_id，否则 None（含降级）。也顺带把 hub.embedding 存好。Commits。
+    供 creator（所有类型毕业后）+ linear_push（Bug/Demand 推前兜底）共用。"""
+    dup_id = find_duplicate_hub(db, hub)
+    if dup_id is None:
+        return None
+    dup = db.get(HubIssue, dup_id)
+    if dup is None or dup.deleted_at is not None:
+        return None
+    now = datetime.now(UTC)
+    hub.superseded_by_hub_issue_id = dup_id
+    hub.supersede_reason = f"hub-dedup: 与 {dup.short_code} 同一问题，合并复用"
+    dup.occurrence_count += 1
+    dup.last_seen_at = now
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=hub.status,
+        to_status=hub.status,
+        changed_by="agent:hub_dedup",
+        reason=hub.supersede_reason,
+    )
+    db.commit()
+    logger.info("hub_superseded_by_dedup", hub_issue_id=hub.id, dup_hub_id=dup_id)
+    return dup_id
 
 
 class _HubDedupError(Exception):

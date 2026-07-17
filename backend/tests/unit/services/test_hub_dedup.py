@@ -176,3 +176,28 @@ def test_operation_not_pushed_still_candidate(db_session: Session) -> None:
         router=_router(f'{{"is_dup": true, "dup_hub_id": {existing.id}}}'),
     )  # type: ignore[arg-type]
     assert out == existing.id
+
+
+# ---- maybe_supersede_duplicate 公共函数 ----
+
+
+def test_maybe_supersede_marks_and_counts(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = _hub(db_session, 100, type="Operation", occurrence_count=1)
+    cur = _hub(db_session, 101, type="Operation")
+    monkeypatch.setattr(hub_dedup, "find_duplicate_hub", lambda db, hub: existing.id)
+    dup = hub_dedup.maybe_supersede_duplicate(db_session, cur)
+    assert dup == existing.id
+    db_session.refresh(cur)
+    db_session.refresh(existing)
+    assert cur.superseded_by_hub_issue_id == existing.id
+    assert existing.occurrence_count == 2
+
+
+def test_maybe_supersede_none_when_no_dup(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cur = _hub(db_session, 110, type="Operation")
+    monkeypatch.setattr(hub_dedup, "find_duplicate_hub", lambda db, hub: None)
+    assert hub_dedup.maybe_supersede_duplicate(db_session, cur) is None
