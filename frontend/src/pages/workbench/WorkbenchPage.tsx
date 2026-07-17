@@ -17,6 +17,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, ApiError } from "@/api/client";
+import { OpsPanel } from "@/pages/workbench/OpsPanel";
 
 type RangeKey = "today" | "week" | "month";
 
@@ -154,6 +155,8 @@ export function WorkbenchPage() {
       </div>
 
       {isSupervisor && <ConfigWarningBar />}
+
+      {isSupervisor && <OpsPanel />}
 
       {/* ① 工单整体看板 */}
       <SectionHeader n={1} title="工单整体看板" note={RANGE_NOTES[range]} />
