@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { getByPath } from "@/api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError, getByPath } from "@/api/client";
+import { isSupervisor } from "@/api/auth";
+import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
 
@@ -22,6 +25,22 @@ export function TicketDetailPage() {
     queryKey: ["ticket-history", id],
     queryFn: () => getByPath("/api/tickets/{ticket_id}/history", { ticket_id: id }),
     enabled: !Number.isNaN(id) && detail.isSuccess,
+  });
+
+  const qc = useQueryClient();
+  const [gradType, setGradType] = useState<string>("");
+  const [gradErr, setGradErr] = useState<string | null>(null);
+  const graduate = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/create-hub-issue", {
+        ticket_id: id,
+        type: gradType || (detail.data?.predicted_type ?? "Operation"),
+      }),
+    onSuccess: () => {
+      setGradErr(null);
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+    },
+    onError: (e) => setGradErr(e instanceof ApiError ? e.message : String(e)),
   });
 
   return (
@@ -102,6 +121,35 @@ export function TicketDetailPage() {
                 : "—"}
             </Field>
           </section>
+
+          {/* 手动毕业为 hub_issue（仅主管，未毕业时显示） */}
+          {isSupervisor() && detail.data.hub_issue_id == null && (
+            <section className="bg-white border border-hub-border rounded-[10px] p-4 flex items-center gap-3">
+              <span className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">
+                毕业为 hub_issue
+              </span>
+              <select
+                value={gradType || (detail.data.predicted_type ?? "Operation")}
+                onChange={(e) => setGradType(e.target.value)}
+                className="text-[12px] border border-hub-border rounded-md px-2 py-1"
+              >
+                {HUB_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {HUB_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => graduate.mutate()}
+                disabled={graduate.isPending}
+                className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+              >
+                {graduate.isPending ? "毕业中…" : "毕业为 hub_issue"}
+              </button>
+              {gradErr && <span className="text-[11.5px] text-hub-rose">{gradErr}</span>}
+            </section>
+          )}
 
           {detail.data.body && (
             <section className="space-y-1.5">

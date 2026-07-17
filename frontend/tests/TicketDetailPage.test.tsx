@@ -166,4 +166,56 @@ describe("TicketDetailPage", () => {
     // history query is gated on detail.isSuccess; should not have requested it
     expect(screen.queryByText("变更时间线")).not.toBeInTheDocument();
   });
+
+  // #3 工单手动毕业按钮
+  function stubTicket(id: number, hubIssueId: number | null) {
+    server.use(
+      http.get(`*/api/tickets/${id}`, () =>
+        HttpResponse.json({
+          id,
+          short_code: `TKT-${id}`,
+          source_code: "ksm",
+          source_ticket_id: `ksm-${id}`,
+          type: "Raw",
+          status: "received",
+          title: "毕业测试",
+          module: null,
+          assigned_user_id: null,
+          predicted_type: "Bug_fix",
+          ...baseTicket,
+          hub_issue_id: hubIssueId,
+        }),
+      ),
+      http.get(`*/api/tickets/${id}/history`, () =>
+        HttpResponse.json({ ticket_id: id, items: [] }),
+      ),
+    );
+  }
+
+  it("#3 supervisor + 未毕业 → 显示毕业按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(300, null);
+    renderPage(300);
+    expect(await screen.findByText("TKT-300")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "毕业为 hub_issue" })).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#3 已毕业（hub_issue_id 非空）→ 不显示毕业按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(301, 55);
+    renderPage(301);
+    expect(await screen.findByText("TKT-301")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "毕业为 hub_issue" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#3 member → 不显示毕业按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
+    stubTicket(302, null);
+    renderPage(302);
+    expect(await screen.findByText("TKT-302")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "毕业为 hub_issue" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
 });
