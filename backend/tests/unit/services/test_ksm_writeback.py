@@ -207,6 +207,11 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
     assert h.linkman == "王五" and h.customer_email == "w@x.com"
     world.refresh(row)
     assert row.status == "sent" and row.sent_at is not None and row.attempts == 1
+    # 关单回写成功 → 本地 ticket→closed、hub→resolved
+    world.refresh(t)
+    world.refresh(hub)
+    assert t.status == "closed"
+    assert hub.status == "resolved"
 
 
 # ---- progress_note → lock + handle(is_deal=False) 不关单（ADR-0016 P4）------
@@ -231,6 +236,9 @@ def test_progress_note_replies_without_closing(world: Session) -> None:
     assert h.deal_opinion == "3 个子任务已完成第 1 个"
     world.refresh(row)
     assert row.status == "sent"
+    # 进度通知不关单 → 本地状态不动
+    world.refresh(t)
+    assert t.status != "closed"
 
 
 # ---- status in_progress → lock only -----------------------------------------

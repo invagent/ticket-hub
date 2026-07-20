@@ -39,10 +39,15 @@ from adapters.zhichi import ReplyTicketRequest, ZhichiClient, ZhichiConfig, Zhic
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
+from app.repositories.status_history import StatusHistoryRepository
 
 logger = get_logger(__name__)
 
 _DEFAULT_RELEASED_NOTE = "您反馈的问题已处理完成，如仍有疑问欢迎继续反馈。"
+
+# 智齿回写成功且 ticket_status=3（已解决关单）后，本地工单/hub 推终态。
+# 已在终态的 ticket 不重置（幂等 + 不覆盖投诉 closed 等）。
+_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
 
 
 @dataclass(slots=True)
@@ -120,11 +125,44 @@ class ZhichiWritebackSender:
         row.status = "sent"
         row.sent_at = datetime.now(UTC)
         row.attempts += 1
+        # 关单类回写（ticket_status=3 已解决）真发成功后，本地工单/hub 推终态，
+        # 与智齿侧一致。补料（"2"）不关单，不动状态。
+        if status_code == "3":
+            self._close_local(row, ticket)
         self._db.commit()
         report.sent += 1
         logger.info(
             "zhichi_writeback_sent", outbox_id=row.id, ticket_id=ticket.id, status=status_code
         )
+
+    def _close_local(self, row: SyncOutbox, ticket: Ticket) -> None:
+        """关单真发成功后：ticket→closed、hub→resolved，记 status_history。
+        已在终态的不重置（幂等 + 保护投诉 closed 等）。不 commit（随外层）。"""
+        history = StatusHistoryRepository(self._db)
+        changed_by = "system:zhichi_writeback"
+        if ticket.status not in _TICKET_TERMINAL_STATUSES:
+            prev = ticket.status
+            ticket.status = "closed"
+            history.record(
+                entity_type="ticket",
+                entity_id=ticket.id,
+                from_status=prev,
+                to_status="closed",
+                changed_by=changed_by,
+                reason=f"智齿答复关单回写成功（outbox={row.id}, kind={row.kind}）",
+            )
+        hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
+        if hub is not None and hub.status != "resolved":
+            hub_prev = hub.status
+            hub.status = "resolved"
+            history.record(
+                entity_type="hub_issue",
+                entity_id=hub.id,
+                from_status=hub_prev,
+                to_status="resolved",
+                changed_by=changed_by,
+                reason=f"Operation 答复关单回写成功（outbox={row.id}）",
+            )
 
     def _resolve_status(self, row: SyncOutbox) -> str | None:
         """kind → ticket_status，或 None（skip）。"""
@@ -140,7 +178,13 @@ class ZhichiWritebackSender:
         return None
 
     def _reply(self, row: SyncOutbox, ticket: Ticket, status_code: str) -> None:
-        raw = (ticket.source_payload or {}).get("raw") or {}
+        # 智齿回写要求 ticket_title/content/level 与智齿侧原始工单一致，否则报
+        # 400016「工单信息已过期」。source_payload 可能是三层信封（有 raw 外壳）
+        # 或智齿原生扁平（字段在顶层，无 raw）——两种都要取到智齿的原始字段，
+        # 绝不能回落到被入库「标题优化」改写过的 ticket.title/body。
+        sp = ticket.source_payload or {}
+        nested = sp.get("raw")
+        raw: dict[str, Any] = nested if isinstance(nested, dict) else sp
         agent_name = _s(raw.get("deal_agent_name")) or self._settings.zhichi_fallback_agent_name
         agent = self._client.get_agent_by_name(agent_name)
         if agent is None:

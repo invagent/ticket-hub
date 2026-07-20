@@ -55,11 +55,16 @@ from adapters.ksm import (
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
+from app.repositories.status_history import StatusHistoryRepository
 from app.services.ksm.notice_store import NoticeStoreLike
 
 logger = get_logger(__name__)
 
 _DEFAULT_RELEASED_NOTE = "您反馈的问题已处理完成，如仍有疑问欢迎继续反馈。"
+
+# 关单类 action 真发成功后，本地 ticket→closed / hub→resolved（与智齿写回一致）。
+_CLOSING_ACTIONS = frozenset({"reply", "release_note", "close"})
+_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
 # lock errors that mean "already taken over" — benign, proceed to handle
 _ALREADY_LOCKED_HINTS = ("已被接管", "已接管", "已锁定", "重复接管")
 
@@ -230,9 +235,42 @@ class KSMWritebackSender:
         row.status = "sent"
         row.sent_at = datetime.now(UTC)
         row.attempts += 1
+        # 关单类 action 真发成功后，本地工单/hub 推终态，与 KSM 侧一致。
+        # 补料/接管/进度通知不关单，不动状态。
+        if action in _CLOSING_ACTIONS:
+            self._close_local(row, ticket)
         self._db.commit()
         report.sent += 1
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)
+
+    def _close_local(self, row: SyncOutbox, ticket: Ticket) -> None:
+        """关单真发成功后：ticket→closed、hub→resolved，记 status_history。
+        已在终态的不重置（幂等 + 保护投诉 closed 等）。不 commit（随外层）。"""
+        history = StatusHistoryRepository(self._db)
+        changed_by = "system:ksm_writeback"
+        if ticket.status not in _TICKET_TERMINAL_STATUSES:
+            prev = ticket.status
+            ticket.status = "closed"
+            history.record(
+                entity_type="ticket",
+                entity_id=ticket.id,
+                from_status=prev,
+                to_status="closed",
+                changed_by=changed_by,
+                reason=f"KSM 答复关单回写成功（outbox={row.id}, kind={row.kind}）",
+            )
+        hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
+        if hub is not None and hub.status != "resolved":
+            hub_prev = hub.status
+            hub.status = "resolved"
+            history.record(
+                entity_type="hub_issue",
+                entity_id=hub.id,
+                from_status=hub_prev,
+                to_status="resolved",
+                changed_by=changed_by,
+                reason=f"Operation 答复关单回写成功（outbox={row.id}）",
+            )
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:
         """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply'
