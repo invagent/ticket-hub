@@ -118,8 +118,10 @@ def auto_answer_operation(
     question = f"{product}-{module}：{body}" if module else f"{product}：{body}"
     question = question.lstrip("-：").strip() or body
 
+    # AI 客服服务端要求 skill 必须在受管理列表内，取第一个受管理 skill 作默认
+    skill = next((s.strip() for s in settings.ai_cs_managed_skills.split(",") if s.strip()), None)
     try:
-        result = client.replay(question=question, use_latest_knowledge=True)
+        result = client.replay(question=question, skill=skill, use_latest_knowledge=True)
         answer = result.answer
     except AiCsError as e:
         logger.warning("operation_auto_reply_replay_failed", hub_issue_id=hub.id, error=str(e))

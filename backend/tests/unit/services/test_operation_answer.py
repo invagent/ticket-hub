@@ -28,8 +28,10 @@ class _FakeClient:
     def __init__(self, answer: str = "", raise_err: bool = False) -> None:
         self._answer = answer
         self._raise = raise_err
+        self.replay_kwargs: dict[str, object] = {}
 
     def replay(self, **kw: object) -> ReplayResult:
+        self.replay_kwargs = kw
         if self._raise:
             raise AiCsError("boom")
         return ReplayResult(answer=self._answer, cited_knowledge=[], skills_used=[], trace_id="t1")
@@ -90,6 +92,25 @@ def test_auto_answer_d_sends(db_session: Session) -> None:
         .first()
     )
     assert d is not None and d.proposal["branch"] == "D"
+
+
+def test_auto_answer_passes_managed_skill_to_replay(db_session: Session) -> None:
+    """replay 必须带受管理 skill（AI 客服服务端要求 skill 在受管理列表内）。"""
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        auto_answer_operation(
+            db_session, hub.id, settings=_S(ai_cs_managed_skills="customer-service,cs-feishu")
+        )
+    # 取受管理列表第一个作默认
+    assert fake.replay_kwargs.get("skill") == "customer-service"
 
 
 def test_auto_answer_c_requests_supply(db_session: Session) -> None:
