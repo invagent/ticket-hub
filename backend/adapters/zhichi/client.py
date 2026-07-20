@@ -19,7 +19,7 @@ import hashlib
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -210,7 +210,12 @@ class ZhichiClient:
             "ticketid": req.ticket_id,
             "ticket_title": req.ticket_title,
             "ticket_content": req.ticket_content,
-            "get_ticket_datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            # 智齿按北京时间理解 get_ticket_datetime，且要求它晚于工单 update_datetime
+            # （证明基于最新状态回写），否则报 400016「获取工单信息已过期」。容器为 UTC，
+            # 必须显式用北京时区当前时间，不能用 datetime.now()（UTC 会早 8h → 400016）。
+            "get_ticket_datetime": datetime.now(timezone(timedelta(hours=8))).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
             "reply_content": req.reply_content,
             "reply_type": req.reply_type,
             "reply_file_str": req.reply_file_str,

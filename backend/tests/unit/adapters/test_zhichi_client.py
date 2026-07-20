@@ -205,3 +205,13 @@ def test_reply_ticket_sends_payload() -> None:
     assert "ticketid" in body
     assert "T1" in body
     assert "alice" in body
+    # get_ticket_datetime 必须是北京时间当前时刻（智齿 400016 修复）：晚于 UTC now，
+    # 接近 UTC+8。解析出来应落在 [UTC now, UTC now + 9h] 区间内（容忍执行耗时）。
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    sent = _json.loads(body)["get_ticket_datetime"]
+    sent_dt = datetime.strptime(sent, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    utc_now = datetime.now(timezone.utc)
+    # 北京时间字符串被当作 UTC 解析后，应比真实 UTC now 晚约 8h
+    assert timedelta(hours=7) < (sent_dt - utc_now) < timedelta(hours=9)
