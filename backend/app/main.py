@@ -15,6 +15,7 @@ from app.api import (
     admin_settings,
     admin_skills,
     admin_users,
+    ai_cs_query,
     auth,
     customers,
     health,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
     app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
     app.include_router(webhooks.router, prefix="/webhook", tags=["webhook"])
+    app.include_router(ai_cs_query.router, prefix="/api/ai-cs", tags=["ai-cs"])
 
     return app
 

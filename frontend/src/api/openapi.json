@@ -46,6 +46,70 @@
         "title": "AiCsStatusResponse",
         "type": "object"
       },
+      "AnswerRequest": {
+        "properties": {
+          "content": {
+            "default": "",
+            "description": "工单内容/问题描述",
+            "title": "Content",
+            "type": "string"
+          },
+          "product_category": {
+            "default": "",
+            "description": "产品分类（如 星瀚-收票），可空",
+            "title": "Product Category",
+            "type": "string"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "AI 客服 skill，不传用默认 customer-service",
+            "title": "Skill"
+          },
+          "title": {
+            "default": "",
+            "description": "工单标题",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "AnswerRequest",
+        "type": "object"
+      },
+      "AnswerResponse": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "supply_note": {
+            "title": "Supply Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "branch",
+          "supply_note",
+          "skill"
+        ],
+        "title": "AnswerResponse",
+        "type": "object"
+      },
       "AuthorReplyBody": {
         "properties": {
           "content": {
@@ -8385,6 +8449,59 @@
         "summary": "Set Supervisor",
         "tags": [
           "admin-users"
+        ]
+      }
+    },
+    "/api/ai-cs/answer": {
+      "post": {
+        "description": "生成 AI 客服答复 + 判定。title/content 至少一个非空。",
+        "operationId": "answer_api_ai_cs_answer_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "title": "Access Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer",
+        "tags": [
+          "ai-cs"
         ]
       }
     },

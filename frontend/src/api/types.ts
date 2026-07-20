@@ -638,6 +638,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai-cs/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer
+         * @description 生成 AI 客服答复 + 判定。title/content 至少一个非空。
+         */
+        post: operations["answer_api_ai_cs_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/feishu/callback": {
         parameters: {
             query?: never;
@@ -1756,6 +1776,43 @@ export interface components {
             enabled: boolean;
             /** Managed Skills */
             managed_skills: string[];
+        };
+        /** AnswerRequest */
+        AnswerRequest: {
+            /**
+             * Content
+             * @description 工单内容/问题描述
+             * @default
+             */
+            content: string;
+            /**
+             * Product Category
+             * @description 产品分类（如 星瀚-收票），可空
+             * @default
+             */
+            product_category: string;
+            /**
+             * Skill
+             * @description AI 客服 skill，不传用默认 customer-service
+             */
+            skill?: string | null;
+            /**
+             * Title
+             * @description 工单标题
+             * @default
+             */
+            title: string;
+        };
+        /** AnswerResponse */
+        AnswerResponse: {
+            /** Answer */
+            answer: string;
+            /** Branch */
+            branch: string;
+            /** Skill */
+            skill: string;
+            /** Supply Note */
+            supply_note: string;
         };
         /** AuthorReplyBody */
         AuthorReplyBody: {
@@ -5168,6 +5225,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_api_ai_cs_answer_post: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
