@@ -146,6 +146,11 @@ def answer_question(
     finally:
         client.close()
 
+    # AI 客服返回空答复（HTTP 成功但无内容）→ 视同答不上来，转人工，不把空串丢给调用方
+    if not answer.strip():
+        logger.warning("ai_cs_query_empty_answer", question=question[:80])
+        return AnswerResult(branch="transfer", answer="", supply_note="")
+
     route = route_answer(question, answer)
     return AnswerResult(answer=answer, branch=route.branch, supply_note=route.supply_note)
 

@@ -102,3 +102,32 @@ class _S:
 
 def test_resolve_default_skill_takes_first() -> None:
     assert resolve_default_skill(_S()) == "customer-service"  # type: ignore[arg-type]
+
+
+# ---- 空答复保护（服务层）----
+
+
+def test_answer_question_empty_reply_transfers() -> None:
+    """AI 客服返回空答复 → branch=transfer，不把空串当有效答复。"""
+    from unittest.mock import MagicMock
+
+    fake_client = MagicMock()
+    fake_client.replay.return_value = type("R", (), {"answer": "   "})()  # 纯空白答复
+    with (
+        patch("app.services.ai_cs.query.build_client", return_value=fake_client),
+        patch("app.services.ai_cs.query.route_answer") as route_mock,
+    ):
+
+        class _Cfg:
+            knowledge_feedback_enabled = True
+            ai_cs_app_id = "x"
+            ai_cs_app_key = "y"
+            ai_cs_managed_skills = "customer-service"
+
+        from app.services.ai_cs.query import answer_question
+
+        res = answer_question(title="t", content="c", settings=_Cfg())  # type: ignore[arg-type]
+    assert res.branch == "transfer"
+    assert res.answer == ""
+    route_mock.assert_not_called()  # 空答复不进 answer-router
+    fake_client.close.assert_called_once()  # 资源正常释放
