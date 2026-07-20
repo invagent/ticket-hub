@@ -13,6 +13,7 @@ Idempotency: dedupe by (source='zhichi', source_ticket_id=ticketid).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,38 @@ from app.services.ingest.catalog_upsert import upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
+
+
+_MAX_TITLE_LEN = 150
+# 智齿在客户未填主题时自动生成的兜底标题：客户留言-<手机号>（- 半角 / — 破折号）
+_FALLBACK_TITLE_RE = re.compile(r"^客户留言[-—]")
+_TAG_RE = re.compile(r"<[^>]+>")
+_ENTITIES = (("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&"))
+
+
+def _strip_html(s: str) -> str:
+    """轻量去标签 + 常见实体 + 折叠空白（智齿内容是简单 <p>/<br> 段，够用）。"""
+    text = _TAG_RE.sub(" ", s)
+    for a, b in _ENTITIES:
+        text = text.replace(a, b)
+    return " ".join(text.split())
+
+
+def _derive_title(raw_title: str | None, raw_content: str | None) -> str | None:
+    """标题派生：
+    - 正常人工标题 → 原样保留
+    - 「客户留言-…」兜底标题 或 空 → 用去 HTML 的问题内容
+    - 内容也空 → 退回原兜底标题（至少有手机号）
+    最终一律截前 150 字符。
+    """
+    t = (raw_title or "").strip()
+    is_fallback = not t or bool(_FALLBACK_TITLE_RE.match(t))
+    if not is_fallback:
+        return t[:_MAX_TITLE_LEN]
+    content = _strip_html(raw_content or "").strip()
+    if content:
+        return content[:_MAX_TITLE_LEN]
+    return (t or None) and t[:_MAX_TITLE_LEN]
 
 
 def _parse_extend_fields(raw: dict[str, Any]) -> dict[str, str]:
@@ -60,7 +93,16 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
     raw_obj = payload.get("raw")
     fields_obj = payload.get("fields")
     if not isinstance(raw_obj, dict) and not isinstance(fields_obj, dict):
-        return payload  # 旧扁平格式，原样
+        # 无信封：可能是智齿原生扁平推送（顶层 ticket_*/extend_fields_list，客户信息
+        # 在 extend_fields_list 里），也可能是旧简化扁平格式（customer 块 + productLineCode）。
+        # 原生格式的判别信号：有 extend_fields_list（原生必有）且无 customer 嵌套块。
+        if (
+            payload.get("ticketid")
+            and isinstance(payload.get("extend_fields_list"), list)
+            and not isinstance(payload.get("customer"), dict)
+        ):
+            return _flatten_native(payload)
+        return payload  # 旧简化扁平格式，原样交给下游 legacy 分支
     raw = raw_obj if isinstance(raw_obj, dict) else {}
     fields = fields_obj if isinstance(fields_obj, dict) else {}
     ext = _parse_extend_fields(raw)
@@ -73,7 +115,10 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "ticketid": pick(fields.get("工单来源ID"), raw.get("ticketid")),
-        "title": pick(fields.get("主题"), raw.get("ticket_title")),
+        "title": _derive_title(
+            pick(fields.get("主题"), raw.get("ticket_title")),
+            pick(fields.get("问题描述"), raw.get("ticket_content")),
+        ),
         "content": pick(fields.get("问题描述"), raw.get("ticket_content")),
         "productLineCode": pick(fields.get("产品线"), ext.get("产品分类")),
         "moduleName": pick(fields.get("产品模块"), ext.get("产品分类")),
@@ -85,6 +130,32 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "company": pick(fields.get("客户名称"), raw.get("enterprise_name")),
         "_envelope": payload,  # 出站回写要用的原始信封整体
+    }
+
+
+def _flatten_native(payload: dict[str, Any]) -> dict[str, Any]:
+    """智齿原生扁平推送（顶层直接 ticket_*/user_*/extend_fields_list，无 raw/fields）
+    → 归一化扁平 dict。字段来源见 docs/spec/2026-07-20-zhichi-real-payload-fix.md。
+
+    整个原始 payload 挂 `_envelope`，供 source_payload 存档 + 出站回写读
+    deal_agent_name / ticket_level。
+    """
+    ext = _parse_extend_fields(payload)
+    return {
+        "ticketid": payload.get("ticketid"),
+        "title": _derive_title(payload.get("ticket_title"), payload.get("ticket_content")),
+        "content": payload.get("ticket_content"),  # body 保留完整（含 HTML），只标题去 HTML
+        "productLineCode": ext.get("产品分类"),
+        "moduleName": ext.get("产品分类"),  # 智齿无独立模块，产品分类兼作模块
+        "customer": {
+            "name": ext.get("联系人"),
+            "mobile": ext.get("联系手机") or payload.get("user_tels"),
+            "email": payload.get("user_emails"),
+            "erp_uid": ext.get("对接ERP"),
+        },
+        "customerid": payload.get("userid"),
+        "company": payload.get("enterprise_name") or ext.get("公司/项目名称"),
+        "_envelope": payload,
     }
 
 

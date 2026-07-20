@@ -245,3 +245,120 @@ def test_ingest_extend_fields_type6_takes_text(world: Session) -> None:
     assert t is not None
     # field_type=6 取 field_text（不是 field_value 的 code123）
     assert t.product_line_code == "云星空-税务"
+
+
+# ---- 智齿原生扁平格式（线上真实推送，TKT-000015 结构）----
+# 顶层直接是 ticket_*/user_*/extend_fields_list，无 raw/fields 外壳。
+
+
+def _native_flat(**overrides) -> dict:  # type: ignore[no-untyped-def]
+    base = {
+        "ticketid": "e240351f6a7e4e518df9d61d1fa5af11",
+        "ticket_code": "20260720000001",
+        "ticket_title": "客户留言-13800000000",
+        "ticket_content": "<p>发票云找不到出货的注册邮件无法进行配置，如何处理</p>",
+        "user_emails": "user@example.com",
+        "user_tels": "13800000000",
+        "userid": "8bd452fb32274a22a03ce6a854ebc15b",
+        "enterprise_name": "",
+        "deal_agent_name": "",
+        "ticket_status": 0,
+        "ticket_level": 0,
+        "extend_fields_list": [
+            {
+                "field_name": "产品分类",
+                "field_type": "6",
+                "field_text": "星瀚-收票",
+                "field_value": "cf4110965a3f4077be70c7796f90b819",
+            },
+            {
+                "field_name": "对接ERP",
+                "field_type": "6",
+                "field_text": "星瀚",
+                "field_value": "751275257313121",
+            },
+            {"field_name": "联系人", "field_type": "1", "field_value": "李志坚"},
+            {"field_name": "联系手机", "field_type": "1", "field_value": "13800000000"},
+            {
+                "field_name": "公司/项目名称",
+                "field_type": "1",
+                "field_value": "金蝶软件（中国）有限公司",
+            },
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_ingest_native_flat_maps_fields(world: Session) -> None:
+    """线上真实扁平格式：extend_fields_list + 顶层字段全部正确映射（此前全落空）。"""
+    res = ZhichiIngester(world).ingest(_native_flat())
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.source_ticket_id == "e240351f6a7e4e518df9d61d1fa5af11"
+    assert t.product_line_code == "星瀚-收票"
+    assert t.module == "星瀚-收票"
+    assert t.reporter["name"] == "李志坚"
+    assert t.reporter["mobile"] == "13800000000"
+    assert t.reporter["email"] == "user@example.com"
+    # body 保留完整（含 HTML）
+    assert t.body == "<p>发票云找不到出货的注册邮件无法进行配置，如何处理</p>"
+    # source_payload 存原样，出站回写读 deal_agent_name / ticket_level
+    assert t.source_payload["ticket_code"] == "20260720000001"
+    assert t.source_payload["extend_fields_list"][0]["field_name"] == "产品分类"
+
+
+def test_native_flat_fallback_title_uses_content(world: Session) -> None:
+    """「客户留言-手机号」兜底标题 → 视同无标题，改用去 HTML 的内容。"""
+    res = ZhichiIngester(world).ingest(_native_flat())
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.title == "发票云找不到出货的注册邮件无法进行配置，如何处理"
+
+
+def test_native_flat_real_title_kept(world: Session) -> None:
+    """正常人工标题保留，不被内容覆盖。"""
+    res = ZhichiIngester(world).ingest(_native_flat(ticket_title="发票红冲失败"))
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.title == "发票红冲失败"
+
+
+def test_native_flat_title_truncated_to_150(world: Session) -> None:
+    """内容超 150 字 → 标题截前 150。"""
+    long_content = "<p>" + ("问" * 300) + "</p>"
+    res = ZhichiIngester(world).ingest(
+        _native_flat(ticket_title="客户留言-13800000000", ticket_content=long_content)
+    )
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.title == "问" * 150
+    assert len(t.title) == 150
+
+
+def test_native_flat_title_strips_html(world: Session) -> None:
+    """标题去 HTML 标签与常见实体。"""
+    res = ZhichiIngester(world).ingest(
+        _native_flat(ticket_content="<p>发票&nbsp;报错<br/>无法开具</p>")
+    )
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert "<" not in t.title
+    assert "&nbsp;" not in t.title
+    assert t.title == "发票 报错 无法开具"
+
+
+def test_native_flat_empty_title_and_content_falls_back(world: Session) -> None:
+    """兜底标题 + 内容也空 → 退回原兜底标题（至少有手机号），不为 None。"""
+    res = ZhichiIngester(world).ingest(
+        _native_flat(ticket_title="客户留言-13800000000", ticket_content="")
+    )
+    world.commit()
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.title == "客户留言-13800000000"
