@@ -233,3 +233,57 @@ def test_route_answer_llm_error_falls_back_transfer() -> None:
 def test_route_answer_illegal_branch_falls_back_transfer() -> None:
     r = _route_answer("x", "y", router=_FakeRouter('{"branch":"A","supply_note":""}'))
     assert r.branch == "transfer"
+
+
+# ---- replay 即时重试（网络/超时抖动兜底）----
+
+from adapters.ai_cs import AiCsBusinessError, AiCsNetworkError  # noqa: E402
+from app.services.agents.operation_answer import (  # noqa: E402
+    _REPLAY_MAX_ATTEMPTS,
+    _replay_with_retry,
+)
+
+
+class _SeqClient:
+    """按预设序列抛异常/返回，记录调用次数。"""
+
+    def __init__(self, outcomes: list) -> None:
+        self._outcomes = outcomes
+        self.calls = 0
+
+    def replay(self, **kw: object) -> ReplayResult:
+        out = self._outcomes[self.calls]
+        self.calls += 1
+        if isinstance(out, Exception):
+            raise out
+        return ReplayResult(answer=out, cited_knowledge=[], skills_used=[], trace_id="t")
+
+
+def test_replay_retry_succeeds_after_timeout() -> None:
+    """前两次超时，第三次成功 → 返回答复，共调用 3 次。"""
+    c = _SeqClient([AiCsNetworkError("timed out"), AiCsNetworkError("timed out"), "答复内容"])
+    ans = _replay_with_retry(c, question="q", skill="customer-service", hub_id=1)
+    assert ans == "答复内容"
+    assert c.calls == 3
+
+
+def test_replay_retry_exhausts_and_raises() -> None:
+    """连续超时耗尽重试 → 抛 AiCsNetworkError，调用次数=上限。"""
+    c = _SeqClient([AiCsNetworkError("timed out")] * _REPLAY_MAX_ATTEMPTS)
+    try:
+        _replay_with_retry(c, question="q", skill="s", hub_id=1)
+        raise AssertionError("should have raised")
+    except AiCsNetworkError:
+        pass
+    assert c.calls == _REPLAY_MAX_ATTEMPTS
+
+
+def test_replay_business_error_no_retry() -> None:
+    """业务错误（skill 非法等）不重试，第一次即抛。"""
+    c = _SeqClient([AiCsBusinessError("skill 非法"), "不该到这"])
+    try:
+        _replay_with_retry(c, question="q", skill="s", hub_id=1)
+        raise AssertionError("should have raised")
+    except AiCsBusinessError:
+        pass
+    assert c.calls == 1

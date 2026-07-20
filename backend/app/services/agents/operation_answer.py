@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from adapters.ai_cs import AiCsError
+from adapters.ai_cs import AiCsError, AiCsNetworkError
 from app.config import Settings, get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
@@ -28,6 +28,8 @@ from app.services.skills.prompt_store import load_prompt
 logger = get_logger(__name__)
 
 _VALID_BRANCHES = frozenset({"C", "D", "transfer"})
+# replay 网络/超时错误即时重试次数（偶发抖动兜底；业务错误不重试）
+_REPLAY_MAX_ATTEMPTS = 3
 
 
 @dataclass(slots=True, frozen=True)
@@ -87,6 +89,43 @@ def _record_decision(
     db.commit()
 
 
+def _replay_with_retry(client: object, *, question: str, skill: str | None, hub_id: int) -> str:
+    """调 ai_cs.replay 生成答复；网络/超时错误最多重试 _REPLAY_MAX_ATTEMPTS 次。
+
+    业务错误（skill 非法等）不重试直接抛——重试无意义。全部失败/业务错误抛
+    AiCsError 由调用方兜底留主管。
+    """
+    last_err: AiCsError | None = None
+    for attempt in range(1, _REPLAY_MAX_ATTEMPTS + 1):
+        try:
+            result = client.replay(  # type: ignore[attr-defined]
+                question=question, skill=skill, use_latest_knowledge=True
+            )
+            return str(result.answer)
+        except AiCsNetworkError as e:
+            last_err = e
+            logger.warning(
+                "operation_auto_reply_replay_timeout",
+                hub_issue_id=hub_id,
+                attempt=attempt,
+                max_attempts=_REPLAY_MAX_ATTEMPTS,
+                error=str(e),
+            )
+            continue  # 超时/网络抖动 → 重试
+        except AiCsError as e:
+            # 业务错误（skill 非法、鉴权等）重试无意义，直接失败
+            logger.warning("operation_auto_reply_replay_failed", hub_issue_id=hub_id, error=str(e))
+            raise
+    logger.warning(
+        "operation_auto_reply_replay_exhausted",
+        hub_issue_id=hub_id,
+        attempts=_REPLAY_MAX_ATTEMPTS,
+        error=str(last_err),
+    )
+    assert last_err is not None
+    raise last_err
+
+
 def auto_answer_operation(
     db: Session, hub_issue_id: int, *, settings: Settings | None = None
 ) -> bool:
@@ -121,11 +160,9 @@ def auto_answer_operation(
     # AI 客服服务端要求 skill 必须在受管理列表内，取第一个受管理 skill 作默认
     skill = next((s.strip() for s in settings.ai_cs_managed_skills.split(",") if s.strip()), None)
     try:
-        result = client.replay(question=question, skill=skill, use_latest_knowledge=True)
-        answer = result.answer
-    except AiCsError as e:
-        logger.warning("operation_auto_reply_replay_failed", hub_issue_id=hub.id, error=str(e))
-        return False
+        answer = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
+    except AiCsError:
+        return False  # 已在 _replay_with_retry 内记日志
     finally:
         client.close()
 
