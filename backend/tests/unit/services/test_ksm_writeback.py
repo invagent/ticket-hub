@@ -19,6 +19,7 @@ from adapters.ksm import (
 )
 from app.config import Settings
 from app.models import HubIssue, Source, SyncOutbox, Ticket
+from app.repositories.status_history import StatusHistoryRepository
 from app.services.ksm.notice_store import FakeNoticeStore, NoticeInfo
 from app.services.ksm.writeback import drain_ksm_outbox
 
@@ -256,6 +257,56 @@ def test_supply_locks_then_supplies(world: Session) -> None:
     assert client.supplies[0].bill_id == "BILL-1" and client.supplies[0].node_id == "NODE-OLD"
     world.refresh(row)
     assert row.status == "sent"
+
+
+# ---- supply 真发成功/dry_run/失败 → awaiting_supply（Task 3）------------------
+
+
+def test_supply_send_marks_awaiting_supply(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    world.refresh(row)
+    assert row.status == "sent"
+    world.refresh(t)
+    assert t.status == "awaiting_supply"
+    history = StatusHistoryRepository(world).find_for_entity(entity_type="ticket", entity_id=t.id)
+    assert any(
+        h.to_status == "awaiting_supply" and h.changed_by == "system:ksm_writeback" for h in history
+    )
+
+
+def test_supply_dry_run_does_not_mark_awaiting(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
+    client = FakeKSMClient()
+    report = drain_ksm_outbox(world, client=client, settings=_settings(ksm_writeback_dry_run=True))
+    assert report.skipped == 1 and report.sent == 0
+    assert not client.locks and not client.supplies
+    world.refresh(row)
+    assert row.status == "skipped"
+    world.refresh(t)
+    assert t.status == "received"
+
+
+def test_supply_send_failure_does_not_mark_awaiting(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    client.lock_error = KSMBusinessError(op="lockKsmOrder", message="单据不存在")
+    report = drain_ksm_outbox(
+        world, client=client, settings=_settings(ksm_writeback_max_attempts=1)
+    )
+    assert report.failed == 1 and not client.supplies
+    world.refresh(row)
+    assert row.status == "failed"
+    world.refresh(t)
+    assert t.status == "received"
 
 
 # ---- status in_progress → lock only -----------------------------------------
