@@ -17,7 +17,7 @@ class AiCsConfig:
     app_id: str
     app_key: str
     base_url: str = "http://localhost:9090"
-    timeout_seconds: float = 60.0  # replay regenerates an answer (LLM) — allow slack
+    timeout_seconds: float = 180.0  # replay 走 LLM，AI 客服服务端较慢，留足余量
     # Skills the AI 客服 side allows managing (mirror of its MANAGED_SKILLS env).
     managed_skills: tuple[str, ...] = ("customer-service", "customer-service-feishu")
 
@@ -29,6 +29,7 @@ class AiCsConfig:
             app_id=getattr(settings, "ai_cs_app_id", ""),
             app_key=getattr(settings, "ai_cs_app_key", ""),
             base_url=getattr(settings, "ai_cs_base_url", "") or "http://localhost:9090",
+            timeout_seconds=float(getattr(settings, "ai_cs_timeout_seconds", 180.0) or 180.0),
             managed_skills=skills or ("customer-service", "customer-service-feishu"),
         )
 

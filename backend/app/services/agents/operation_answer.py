@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError, AiCsNetworkError
@@ -190,6 +191,78 @@ def auto_answer_operation(
         logger.info("operation_auto_supply_sent", hub_issue_id=hub.id)
         return True
 
-    # transfer → 留主管
+    # transfer → 留主管。仍记 auto_reply 审计（branch=transfer），标记「已自动处理过」，
+    # 供异步补偿任务区分「已判转人工」与「replay 失败待重试」，避免无限重扫。
+    _record_decision(
+        db, hub.id, branch="transfer", question=question, answer=answer, supply_note=""
+    )
     logger.info("operation_auto_reply_transfer", hub_issue_id=hub.id)
     return False
+
+
+@dataclass(slots=True, frozen=True)
+class DrainReport:
+    scanned: int = 0
+    answered: int = 0
+    failed: int = 0
+
+
+def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None) -> DrainReport:
+    """扫描待自动答复的 Operation hub，逐个跑 auto_answer_operation（异步 + 补偿重试）.
+
+    ADR-0016 §3 的 Operation 自动答复原本在入库主链路同步跑，但 ai_cs replay 慢
+    （实测 ~138s/单），阻塞 worker。改由 Celery beat 每 2min 调本函数异步 drain，
+    既解耦入库链路，又兼作偶发 replay 失败的补偿重试。
+
+    扫描口径：type='Operation' + reply_content_version==0（未答复）+ 未删除 +
+    无 auto_reply AgentDecision（D/C/transfer 都会写审计 → 不重扫；只有 replay
+    失败/未处理的无审计，下轮补偿）+ 非 ai_cs 来源（ai_cs 走 reflect 反思队列，
+    auto_answer 内部也会拒，此处提前排除免得每轮空扫）。
+    """
+    settings = settings or get_settings()
+    if not settings.operation_auto_reply_enabled:
+        return DrainReport()
+
+    ai_cs_ticket = (
+        select(Ticket.id)
+        .where(
+            Ticket.hub_issue_id == HubIssue.id,
+            Ticket.deleted_at.is_(None),
+            Ticket.source_code == "ai_cs",
+        )
+        .exists()
+    )
+    already_processed = (
+        select(AgentDecision.id)
+        .where(
+            AgentDecision.decision_type == "auto_reply",
+            AgentDecision.subject_type == "hub_issue",
+            AgentDecision.subject_id == HubIssue.id,
+        )
+        .exists()
+    )
+    stmt = (
+        select(HubIssue.id)
+        .where(
+            HubIssue.type == "Operation",
+            HubIssue.deleted_at.is_(None),
+            HubIssue.reply_content_version == 0,
+            ~ai_cs_ticket,
+            ~already_processed,
+        )
+        .order_by(HubIssue.id)
+        .limit(settings.operation_auto_reply_batch)
+    )
+    hub_ids = list(db.scalars(stmt).all())
+
+    answered = 0
+    failed = 0
+    for hub_id in hub_ids:
+        try:
+            if auto_answer_operation(db, hub_id, settings=settings):
+                answered += 1
+        except Exception:
+            db.rollback()
+            logger.exception("operation_auto_reply_drain_item_failed", hub_issue_id=hub_id)
+            failed += 1
+    return DrainReport(scanned=len(hub_ids), answered=answered, failed=failed)

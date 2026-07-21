@@ -35,7 +35,6 @@ from app.db import get_session, make_session
 from app.models import Ticket
 from app.services.agents.classify import classify_ticket
 from app.services.agents.escalation_classify import classify_escalation_ticket
-from app.services.agents.operation_answer import auto_answer_operation
 from app.services.agents.split import execute_split_for_ticket
 from app.services.agents.triage import run_ticket_triage
 from app.services.agents.vision_extract import extract_ticket_attachments
@@ -66,19 +65,10 @@ def _route_by_type(
         return  # 投诉停 ticket 层，进工作台高亮人工队列
     if not (settings.hub_issue_auto_enabled and confidence >= bar):
         return
-    result = create_hub_issue_for_ticket_auto(ticket_id)
-    # Operation 毕业后尝试自动答复（灰度开关；escalation 来源在 auto_answer 内部排除）
-    if (
-        result is not None
-        and result.created
-        and result.type == "Operation"
-        and settings.operation_auto_reply_enabled
-    ):
-        db = make_session()
-        try:
-            auto_answer_operation(db, result.hub_issue_id, settings=settings)
-        finally:
-            db.close()
+    create_hub_issue_for_ticket_auto(ticket_id)
+    # Operation 自动答复不在入库主链路同步跑——replay 走 LLM 可能长达 2-3 分钟，会长时间
+    # 占用 worker。改由 Celery beat 任务 drain_operation_auto_reply 异步处理（每 2min 扫描
+    # 已毕业未答复的 Operation hub），兼作偶发失败的补偿重试。
 
 
 def _route_child(child_id: int) -> None:

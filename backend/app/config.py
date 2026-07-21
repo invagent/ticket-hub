@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     # ksm/zhichi_writeback_enabled + dry_run 二层灰度保护（双保险）。
     operation_auto_reply_enabled: bool = False
     operation_auto_reply_min_length: int = 10  # 答复短于此视为无效，留主管
+    operation_auto_reply_batch: int = 10  # 异步 drain 每轮扫描/处理的 hub 数上限
 
     # ---- LLM Providers (D3 onwards) ----
     openai_api_key: str = ""
@@ -138,6 +139,8 @@ class Settings(BaseSettings):
     ai_cs_app_id: str = ""  # AI 客服 open-api appid（沿用 sample AGENT_APPID 语义）
     ai_cs_app_key: str = ""  # 签名密钥 app_key（MD5(appid+create_time+app_key)）
     ai_cs_managed_skills: str = "customer-service,customer-service-feishu"
+    # replay 走 LLM 生成，AI 客服服务端可能较慢；客户端超时（秒）。可 .env 覆盖。
+    ai_cs_timeout_seconds: float = 180.0
     # 反思诊断工作台：LLM 反思推断（三步排查 → 病因判定），主管手动触发
 
     # ---- Linear / hub_issue (D4) ----
