@@ -39,8 +39,8 @@ def apply_supply_refill(db: Session, ticket: Ticket, new_payload: dict[str, Any]
     new_content = str(new_payload.get("content") or "").strip()
 
     ticket.source_payload = new_payload
+    stamp = datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M")
     if new_content:
-        stamp = datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M")
         prev_body = ticket.body or ""
         ticket.body = f"{prev_body}\n\n[补料回填 {stamp}]\n{new_content}".strip()
 
@@ -84,6 +84,9 @@ def apply_supply_refill(db: Session, ticket: Ticket, new_payload: dict[str, Any]
     )
     for d in cleared:
         db.delete(d)
+    if new_content:
+        prev_canonical = hub.canonical_body or ""
+        hub.canonical_body = f"{prev_canonical}\n\n[补料回填 {stamp}]\n{new_content}".strip()
     logger.info(
         "supply_refill_cleared_audit",
         ticket_id=ticket.id,
