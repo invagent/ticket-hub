@@ -258,3 +258,68 @@ def test_webhook_ksm_idempotent_replay(app_client, db_session: Session) -> None:
     assert r2.json() == {"code": 0}
     # Only one ticket exists despite two webhooks
     assert db_session.query(Ticket).filter_by(source_ticket_id="replay-001").count() == 1
+
+
+def test_ingest_supply_refill_when_awaiting(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 awaiting_supply → 调 apply_supply_refill，返回 deduped=True。"""
+    from app.models import Source, Ticket
+    from app.services.ingest import ksm_ingester as mod
+
+    if db_session.query(Source).filter_by(code="ksm").first() is None:
+        db_session.add(Source(code="ksm", name="KSM"))
+    existing = Ticket(
+        short_code="TKT-SR-1",
+        source_code="ksm",
+        source_ticket_id="bill-refill-1",
+        type="Raw",
+        status="awaiting_supply",
+        source_payload={"billId": "bill-refill-1"},
+        title="t",
+        body="b",
+    )
+    db_session.add(existing)
+    db_session.commit()
+
+    called: dict = {}
+
+    def fake_refill(db, ticket, payload):
+        called["ticket_id"] = ticket.id
+        called["payload"] = payload
+        return True
+
+    monkeypatch.setattr(mod, "apply_supply_refill", fake_refill)
+    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    result = ing.ingest({"billId": "bill-refill-1", "content": "新补料"})
+    assert called["ticket_id"] == existing.id
+    assert called["payload"]["content"] == "新补料"
+    assert result.deduped is True
+    assert result.ticket_id == existing.id
+
+
+def test_ingest_dedup_noop_when_not_awaiting(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 但非 awaiting_supply（重复心跳）→ 原 no-op，不调 refill。"""
+    from app.models import Source, Ticket
+    from app.services.ingest import ksm_ingester as mod
+
+    if db_session.query(Source).filter_by(code="ksm").first() is None:
+        db_session.add(Source(code="ksm", name="KSM"))
+    existing = Ticket(
+        short_code="TKT-SR-2",
+        source_code="ksm",
+        source_ticket_id="bill-refill-2",
+        type="Raw",
+        status="received",
+        source_payload={"billId": "bill-refill-2"},
+        title="t",
+        body="b",
+    )
+    db_session.add(existing)
+    db_session.commit()
+
+    called = {"n": 0}
+    monkeypatch.setattr(mod, "apply_supply_refill", lambda *a, **k: called.__setitem__("n", 1))
+    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    result = ing.ingest({"billId": "bill-refill-2", "content": "重复心跳"})
+    assert called["n"] == 0
+    assert result.deduped is True
+    assert result.ticket_id == existing.id
