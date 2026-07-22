@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -80,3 +81,52 @@ def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> st
         if u is not None and u.name:
             return str(u.name)
     return "主管"
+
+
+def close_overdue_answered(db: Session, *, settings: Settings | None = None) -> int:
+    """answered 停留超 `operation_auto_close_days` 自然日未被驳回 → 自动 closed。
+
+    扫描口径：type='Operation' + op_status=answered + 未删除 +
+    op_status_changed_at <= now-N天。驳回（ksm_ingester）会把 op_status 转回
+    processing 并刷新 op_status_changed_at，天然不会被本函数扫到——不需要额外
+    判断。受 `operation_auto_close_enabled` 开关（关则直接返回 0，不查库）。
+
+    只维护 op_status 业务层，不动 hub.status/ticket.status 底层机制：T+7 是纯
+    超时关闭，没有外部事件驱动关单回写（不像 KSM/智齿主动关单，那边有真实
+    ticket_status 变化要镜像）。底层状态继续留给主管人工判断是否需要 resolved/
+    走 status_cascade；两层状态本就设计为并存不互相替代（同 ksm/writeback.py
+    的 _close_local 注释）。逐个 apply_op_status 后由调用方 commit（仿 drain
+    模式，一单出错不影响其他单）。
+    """
+    settings = settings or get_settings()
+    if not settings.operation_auto_close_enabled:
+        return 0
+
+    cutoff = datetime.now(UTC) - timedelta(days=settings.operation_auto_close_days)
+    stmt = (
+        select(HubIssue.id)
+        .where(
+            HubIssue.type == "Operation",
+            HubIssue.deleted_at.is_(None),
+            HubIssue.op_status == OP_ANSWERED,
+            HubIssue.op_status_changed_at <= cutoff,
+        )
+        .order_by(HubIssue.id)
+    )
+    hub_ids = list(db.scalars(stmt).all())
+
+    closed = 0
+    for hub_id in hub_ids:
+        hub = db.get(HubIssue, hub_id)
+        if hub is None:
+            continue
+        changed = apply_op_status(
+            db,
+            hub,
+            to_status=OP_CLOSED,
+            handler=hub.op_handler or "agent",
+            reason=f"T+{settings.operation_auto_close_days} 未驳回自动关闭",
+        )
+        if changed:
+            closed += 1
+    return closed
