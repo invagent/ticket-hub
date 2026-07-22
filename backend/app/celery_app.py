@@ -33,6 +33,7 @@ celery_app = Celery(
         "app.services.hub_issues.linear_status_sync",
         "app.services.ksm.writeback_task",
         "app.services.zhichi.writeback_task",
+        "app.services.agents.operation_answer_task",
     ],
 )
 
@@ -67,6 +68,11 @@ celery_app.conf.beat_schedule = {
     # 智齿出站回写 drain（zhichi_writeback_enabled 未开则任务内自动跳过）
     "drain_zhichi_writeback_every_2min": {
         "task": "app.services.zhichi.writeback_task.drain_zhichi_writeback",
+        "schedule": crontab(minute="*/2"),
+    },
+    # Operation 自动答复异步 drain（operation_auto_reply_enabled 未开则任务内自动跳过）
+    "drain_operation_auto_reply_every_2min": {
+        "task": "app.services.agents.operation_answer_task.drain_operation_auto_reply",
         "schedule": crontab(minute="*/2"),
     },
 }

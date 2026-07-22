@@ -29,6 +29,7 @@ from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.supply_refill import apply_supply_refill
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -72,22 +73,17 @@ class KSMIngester:
         # 1. Idempotency: skip if already ingested
         existing = self._tickets.find_by_source("ksm", bill_id)
         if existing is not None:
-            logger.info(
-                "ksm_ingest_dedup",
-                bill_id=bill_id,
-                existing_ticket_id=existing.id,
-            )
-            return IngestResult(
-                ticket_id=existing.id,
-                short_code=existing.short_code,
-                customer_id=(existing.customer_identity_id and self._customer_id_of(existing)) or 0,
-                customer_identity_id=existing.customer_identity_id or 0,
-                routing_decision="dedup",
-                assigned_user_ids=(
-                    [existing.assigned_user_id] if existing.assigned_user_id else []
-                ),
-                deduped=True,
-            )
+            if existing.status == "awaiting_supply":
+                # 补料回填：客户补料后 KSM 重推同 billId。更新内容 + 复位 + 清审计，
+                # 让 drain_operation_auto_reply 重扫重答。仍 deduped=True（不走 post-ingest，
+                # 不重跑 triage/分类）——重答靠清审计后 drain 接管。
+                apply_supply_refill(self._db, existing, payload)
+                logger.info(
+                    "ksm_ingest_supply_refill", bill_id=bill_id, existing_ticket_id=existing.id
+                )
+                return self._dedup_result(existing)
+            logger.info("ksm_ingest_dedup", bill_id=bill_id, existing_ticket_id=existing.id)
+            return self._dedup_result(existing)
 
         # 2. Resolve customer identity
         identity_input = self._extract_identity(payload)
@@ -210,3 +206,15 @@ class KSMIngester:
 
         ident = self._db.get(CustomerIdentity, ticket.customer_identity_id)
         return ident.customer_id if ident else 0
+
+    def _dedup_result(self, existing: Ticket) -> IngestResult:
+        """已存在 ticket 的返回结果（重复心跳与补料回填共用；字段全取自 existing）。"""
+        return IngestResult(
+            ticket_id=existing.id,
+            short_code=existing.short_code,
+            customer_id=(existing.customer_identity_id and self._customer_id_of(existing)) or 0,
+            customer_identity_id=existing.customer_identity_id or 0,
+            routing_decision="dedup",
+            assigned_user_ids=[existing.assigned_user_id] if existing.assigned_user_id else [],
+            deduped=True,
+        )

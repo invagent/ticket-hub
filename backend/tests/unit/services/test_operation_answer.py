@@ -17,6 +17,7 @@ from app.services.agents.operation_answer import AnswerRoute, auto_answer_operat
 class _S:
     operation_auto_reply_enabled: bool = True
     operation_auto_reply_min_length: int = 10
+    operation_auto_reply_batch: int = 10
     knowledge_feedback_enabled: bool = True
     ai_cs_app_id: str = "x"
     ai_cs_app_key: str = "y"
@@ -175,6 +176,87 @@ def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
     # 即使 enabled，ai_cs 来源也不自动答复（走 reflect）
     ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is False
+
+
+# ---- drain_operation_auto_reply（异步扫描 + 补偿重试）----
+
+from app.services.agents.operation_answer import (  # noqa: E402
+    DrainReport,
+    drain_operation_auto_reply,
+)
+
+
+def test_drain_disabled_returns_empty(db_session: Session) -> None:
+    _seed_op_hub(db_session)
+    db_session.commit()
+    report = drain_operation_auto_reply(db_session, settings=_S(operation_auto_reply_enabled=False))
+    assert report == DrainReport()
+
+
+def test_drain_answers_unprocessed_hub(db_session: Session) -> None:
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 1
+    assert report.answered == 1
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 1
+
+
+def test_drain_skips_already_answered(db_session: Session) -> None:
+    """已答复（reply_content_version>0）的 hub 不再扫描。"""
+    hub, _t = _seed_op_hub(db_session)
+    hub.reply_content_version = 1
+    db_session.commit()
+    report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 0
+
+
+def test_drain_skips_transfer_recorded(db_session: Session) -> None:
+    """transfer 已写 auto_reply 审计 → 不重扫（避免无限重扫）。"""
+    hub, _t = _seed_op_hub(db_session)
+    db_session.add(
+        AgentDecision(
+            decision_type="auto_reply",
+            subject_type="hub_issue",
+            subject_id=hub.id,
+            proposal={"branch": "transfer"},
+        )
+    )
+    db_session.commit()
+    report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 0
+
+
+def test_drain_excludes_ai_cs_source(db_session: Session) -> None:
+    """ai_cs 来源提前排除，不进扫描集（免每轮空扫）。"""
+    _seed_op_hub(db_session, source="ai_cs")
+    db_session.commit()
+    report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 0
+
+
+def test_drain_retries_failed_replay_next_round(db_session: Session) -> None:
+    """replay 失败（无审计）→ 本轮 scanned 但 answered=0，下轮仍会重扫补偿。"""
+    _hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(raise_err=True)  # replay 抛 AiCsError → 留主管，不记审计
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        report1 = drain_operation_auto_reply(db_session, settings=_S())
+    assert report1.scanned == 1
+    assert report1.answered == 0
+    # 无审计 → 下轮仍在扫描集
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        report2 = drain_operation_auto_reply(db_session, settings=_S())
+    assert report2.scanned == 1
 
 
 # ---- answer-router _route_answer 单测 ----

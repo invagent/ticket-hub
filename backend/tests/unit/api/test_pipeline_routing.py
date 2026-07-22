@@ -33,7 +33,9 @@ def spy(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     """Patch the chain's agent calls; record graduate + split invocations."""
     import app.api.webhooks as wh
 
-    calls: dict[str, list] = {"graduate": [], "split": [], "route_child": [], "auto_answer": []}
+    # 注：Operation 自动答复已挪出入库主链路，改由 Celery beat 异步 drain
+    # （drain_operation_auto_reply），_route_by_type 不再同步调 auto_answer_operation。
+    calls: dict[str, list] = {"graduate": [], "split": [], "route_child": []}
     monkeypatch.setattr(wh, "extract_ticket_attachments", lambda tid: None)
 
     def fake_graduate(tid):  # type: ignore[no-untyped-def]
@@ -43,11 +45,6 @@ def spy(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
 
     monkeypatch.setattr(wh, "create_hub_issue_for_ticket_auto", fake_graduate)
     monkeypatch.setattr(wh, "_route_child", lambda cid: calls["route_child"].append(cid))
-    monkeypatch.setattr(
-        wh,
-        "auto_answer_operation",
-        lambda db, hub_id, settings=None: calls["auto_answer"].append(hub_id),
-    )
 
     def fake_split(tid, executed_by):  # type: ignore[no-untyped-def]
         calls["split"].append(tid)
@@ -114,7 +111,7 @@ def test_triage_none_no_routing(spy, monkeypatch: pytest.MonkeyPatch) -> None:  
     _set_auto(monkeypatch, hub=True, split=True)
     monkeypatch.setattr(wh, "run_ticket_triage", lambda tid: None)
     wh.run_post_ingest_agents(9)
-    assert calls == {"graduate": [], "split": [], "route_child": [], "auto_answer": []}
+    assert calls == {"graduate": [], "split": [], "route_child": []}
 
 
 def test_low_confidence_no_graduate(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
@@ -125,47 +122,6 @@ def test_low_confidence_no_graduate(spy, monkeypatch: pytest.MonkeyPatch) -> Non
     assert calls["graduate"] == []  # 低于 0.80 门槛
 
 
-def test_operation_triggers_auto_answer_when_enabled(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
-    wh, calls = spy
-    _set_auto(monkeypatch, hub=True, split=False)
-    monkeypatch.setenv("OPERATION_AUTO_REPLY_ENABLED", "true")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setattr(wh, "run_ticket_triage", lambda tid: _tri("Operation"))
-    wh.run_post_ingest_agents(5)
-    assert calls["graduate"] == [5]
-    assert calls["auto_answer"] == [500]  # hub_issue_id = 5*100
-
-
-def test_operation_auto_answer_off_not_called(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
-    wh, calls = spy
-    _set_auto(monkeypatch, hub=True, split=False)
-    monkeypatch.setenv("OPERATION_AUTO_REPLY_ENABLED", "false")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    monkeypatch.setattr(wh, "run_ticket_triage", lambda tid: _tri("Operation"))
-    wh.run_post_ingest_agents(5)
-    assert calls["graduate"] == [5]
-    assert calls["auto_answer"] == []  # 开关关，不触发
-
-
-def test_bug_fix_does_not_auto_answer(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
-    wh, calls = spy
-    _set_auto(monkeypatch, hub=True, split=False)
-    monkeypatch.setenv("OPERATION_AUTO_REPLY_ENABLED", "true")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-
-    # Bug_fix 毕业结果 type=Bug_fix → 不应触发自动答复
-    def fake_graduate_bug(tid):  # type: ignore[no-untyped-def]
-        calls["graduate"].append(tid)
-        return SimpleNamespace(created=True, type="Bug_fix", hub_issue_id=tid * 100)
-
-    monkeypatch.setattr(wh, "create_hub_issue_for_ticket_auto", fake_graduate_bug)
-    monkeypatch.setattr(wh, "run_ticket_triage", lambda tid: _tri("Bug_fix"))
-    wh.run_post_ingest_agents(11)
-    assert calls["graduate"] == [11]
-    assert calls["auto_answer"] == []  # Bug_fix 不自动答复
+# 注：Operation 自动答复已挪出入库主链路（改 Celery beat 异步 drain），入库链路
+# 只毕业 hub，不再同步触发答复。答复触发/开关/类型过滤逻辑由
+# tests/unit/services/test_operation_answer.py 的 drain_* 用例覆盖。
