@@ -137,11 +137,20 @@ def _replay_with_retry(client: object, *, question: str, skill: str | None, hub_
 
 
 def auto_answer_operation(
-    db: Session, hub_issue_id: int, *, settings: Settings | None = None
+    db: Session,
+    hub_issue_id: int,
+    *,
+    settings: Settings | None = None,
+    force: bool = False,
 ) -> bool:
-    """对新毕业的 Operation hub_issue 自动答复。True=已答复，False=留主管。"""
+    """对 Operation hub_issue 跑一次 replay→answer-router→落状态。True=已答复，False=留主管。
+
+    `force=True`（Task 8 人工重答 API 用）跳过 `operation_auto_reply_enabled`
+    总开关——主管手动点重答不该被"自动答复"总闸拦住。其余守卫（ai_cs 来源排
+    除、ai_cs 客户端未启用）对人工触发同样适用，不因 force 豁免。
+    """
     settings = settings or get_settings()
-    if not settings.operation_auto_reply_enabled:
+    if not force and not settings.operation_auto_reply_enabled:
         return False
 
     hub = db.get(HubIssue, hub_issue_id)

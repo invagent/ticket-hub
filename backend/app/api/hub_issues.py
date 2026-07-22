@@ -15,12 +15,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import AuthedUser, require_supervisor, require_user
+from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
+from app.models import HubIssue
 from app.repositories.ticket import HubIssueRepository, TicketRepository
+from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
+from app.services.hub_issues.op_status import OP_PROCESSING
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -252,6 +255,57 @@ def request_supply_endpoint(
         ticket_count=len(result.ticket_ids),
         outbox_count=len(result.outbox_ids),
     )
+
+
+# ---- 人工重答（Task 8，人工介入中主管改完 KB/skill 后同步重答一次）----------
+
+
+class ReAnswerResponse(BaseModel):
+    hub_issue_id: int
+    op_status: str
+    answered: bool
+
+
+@router.post("/{hub_issue_id}/re-answer", response_model=ReAnswerResponse)
+def re_answer_endpoint(
+    hub_issue_id: int,
+    user: AuthedUser = Depends(require_knowledge_op),
+    db: Session = Depends(get_session),
+) -> ReAnswerResponse:
+    """主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。
+
+    前置：hub 存在 + type=Operation + op_status=processing 且 op_handler!=
+    'agent'（人工介入中）。非人工介入中一律 409（含刚毕业未处理过、已答复、
+    补料中等——这些场景走各自专属流程，不该被重答抢跑）。
+    """
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
+    if hub.type != "Operation":
+        raise HTTPException(
+            status_code=409,
+            detail=f"hub_issue {hub.short_code} is type={hub.type!r} — re-answer is Operation-only",
+        )
+    if hub.op_status != OP_PROCESSING or hub.op_handler == "agent":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"hub_issue {hub.short_code} op_status={hub.op_status!r} "
+                f"op_handler={hub.op_handler!r} — re-answer requires 人工介入中 "
+                f"(op_status=processing and op_handler!='agent')"
+            ),
+        )
+
+    answered = auto_answer_operation(db, hub_issue_id, force=True)
+    db.refresh(hub)
+    logger.info(
+        "hub_issue_re_answered",
+        hub_issue_id=hub_issue_id,
+        answered=answered,
+        op_status=hub.op_status,
+        operator_user_id=user.user_id,
+    )
+    return ReAnswerResponse(hub_issue_id=hub.id, op_status=hub.op_status or "", answered=answered)
 
 
 # ---- 研发协同（2026-07 后台重构 批次5）--------------------------------------
