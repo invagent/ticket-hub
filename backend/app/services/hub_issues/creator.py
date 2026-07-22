@@ -18,6 +18,7 @@ linked to a hub_issue is never re-created (returns the existing link).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from app.db import make_session
 from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
+from app.services.hub_issues.op_status import OP_PROCESSING
 
 logger = get_logger(__name__)
 
@@ -104,6 +106,9 @@ def ensure_hub_issue_for_ticket(
         product_line_code=ticket.product_line_code,
         module=ticket.module,
         status="created",
+        op_status=OP_PROCESSING if issue_type == "Operation" else None,
+        op_handler="agent" if issue_type == "Operation" else None,
+        op_status_changed_at=datetime.now(UTC) if issue_type == "Operation" else None,
         assigned_user_id=ticket.assigned_user_id,
         occurrence_count=1,
     )

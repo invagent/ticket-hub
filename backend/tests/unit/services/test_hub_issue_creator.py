@@ -173,3 +173,28 @@ def test_graduate_creates_when_no_dup(world: Session, monkeypatch: pytest.Monkey
     monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
     res = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
     assert res.created is True
+
+
+# ---- op_status 初始化：仅 Operation 毕业时设，研发类恒 NULL ----
+
+
+def test_graduate_operation_inits_op_status(world: Session) -> None:
+    """Operation 毕业 → op_status=processing, handler=agent。"""
+    t = _make_ticket(world, 30, predicted_type="Operation")
+    res = ensure_hub_issue_for_ticket(t.id, created_by="user:boss", db=world)
+    hub = world.get(HubIssue, res.hub_issue_id)
+    assert hub is not None
+    assert hub.op_status == "processing"
+    assert hub.op_handler == "agent"
+    assert hub.op_status_changed_at is not None
+
+
+def test_graduate_bugfix_no_op_status(world: Session) -> None:
+    """研发类毕业 → op_status 恒 NULL。"""
+    t = _make_ticket(world, 31, predicted_type="Bug_fix")
+    res = ensure_hub_issue_for_ticket(t.id, created_by="user:boss", db=world)
+    hub = world.get(HubIssue, res.hub_issue_id)
+    assert hub is not None
+    assert hub.op_status is None
+    assert hub.op_handler is None
+    assert hub.op_status_changed_at is None
