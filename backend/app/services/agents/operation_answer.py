@@ -27,6 +27,7 @@ from app.services.hub_issues.op_status import (
     OP_RESUPPLIED,
     OP_SUPPLEMENTING,
     apply_op_status,
+    resolve_supervisor_name,
 )
 from app.services.knowledge_feedback.service import (
     KnowledgeFeedbackDisabledError,
@@ -70,18 +71,6 @@ def _route_answer(question: str, answer: str, *, router: LLMRouter | None = None
     except (LLMRouterError, json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
         logger.warning("answer_router_failed", error=str(e))
         return AnswerRoute(branch="transfer")
-
-
-def _supervisor_name(settings: Settings, db: Session) -> str:
-    """人工介入处理人名：default_pool 对应 user.name；未配则 '主管'。"""
-    uid = settings.default_pool_user_id
-    if uid is not None:
-        from app.models import User
-
-        u = db.get(User, uid)
-        if u is not None and u.name:
-            return str(u.name)
-    return "主管"
 
 
 def _record_decision(
@@ -188,7 +177,7 @@ def auto_answer_operation(
             db,
             hub,
             to_status=OP_EXCEPTION,
-            handler=_supervisor_name(settings, db),
+            handler=resolve_supervisor_name(db, settings),
             reason="replay 系统故障",
         )
         db.commit()
@@ -228,7 +217,7 @@ def auto_answer_operation(
         db,
         hub,
         to_status=OP_PROCESSING,
-        handler=_supervisor_name(settings, db),
+        handler=resolve_supervisor_name(db, settings),
         reason="agent 业务无解转人工",
     )
     _record_decision(

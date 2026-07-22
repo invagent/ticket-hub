@@ -23,13 +23,22 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.logging import get_logger
-from app.models import Ticket
+from app.models import HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
+from app.services.hub_issues.op_status import (
+    OP_ANSWERED,
+    OP_PROCESSING,
+    OP_RESUPPLIED,
+    OP_SUPPLEMENTING,
+    apply_op_status,
+    resolve_supervisor_name,
+)
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.ingest.catalog_upsert import upsert_catalog
-from app.services.ingest.supply_refill import apply_supply_refill
+from app.services.ingest.content_refresh import apply_content_refresh
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -73,15 +82,40 @@ class KSMIngester:
         # 1. Idempotency: skip if already ingested
         existing = self._tickets.find_by_source("ksm", bill_id)
         if existing is not None:
-            if existing.status == "awaiting_supply":
-                # 补料回填：客户补料后 KSM 重推同 billId。更新内容 + 复位 + 清审计，
-                # 让 drain_operation_auto_reply 重扫重答。仍 deduped=True（不走 post-ingest，
-                # 不重跑 triage/分类）——重答靠清审计后 drain 接管。
-                apply_supply_refill(self._db, existing, payload)
+            hub = self._db.get(HubIssue, existing.hub_issue_id) if existing.hub_issue_id else None
+            op = hub.op_status if hub is not None and hub.deleted_at is None else None
+            if op == OP_SUPPLEMENTING:
+                # 补料重提：客户补料后 KSM 重推同 billId。更新内容 → op_status 转
+                # resupplied，交给 drain_operation_auto_reply 重扫重答。仍
+                # deduped=True（不走 post-ingest，不重跑 triage/分类）。
+                assert hub is not None
+                apply_content_refresh(self._db, existing, payload)
+                apply_op_status(
+                    self._db, hub, to_status=OP_RESUPPLIED, handler="agent", reason="客户补料重提"
+                )
+                logger.info("ksm_ingest_resupply", bill_id=bill_id, existing_ticket_id=existing.id)
+                return self._dedup_result(existing)
+            if op == OP_ANSWERED:
+                # 驳回：已答复但客户不满意重提同一单。更新内容 + reject_count+1，
+                # op_status 转回 processing 交主管人工介入。
+                assert hub is not None
+                apply_content_refresh(self._db, existing, payload)
+                hub.reject_count += 1
+                apply_op_status(
+                    self._db,
+                    hub,
+                    to_status=OP_PROCESSING,
+                    handler=resolve_supervisor_name(self._db, get_settings()),
+                    reason=f"客户驳回（第{hub.reject_count}次）",
+                )
                 logger.info(
-                    "ksm_ingest_supply_refill", bill_id=bill_id, existing_ticket_id=existing.id
+                    "ksm_ingest_reject",
+                    bill_id=bill_id,
+                    existing_ticket_id=existing.id,
+                    reject_count=hub.reject_count,
                 )
                 return self._dedup_result(existing)
+            # closed（硬终态）/ 其他（未毕业 hub / 研发类无 op_status）→ 原 no-op
             logger.info("ksm_ingest_dedup", bill_id=bill_id, existing_ticket_id=existing.id)
             return self._dedup_result(existing)
 

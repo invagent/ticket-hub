@@ -260,44 +260,135 @@ def test_webhook_ksm_idempotent_replay(app_client, db_session: Session) -> None:
     assert db_session.query(Ticket).filter_by(source_ticket_id="replay-001").count() == 1
 
 
-def test_ingest_supply_refill_when_awaiting(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """已存在 ticket 且 awaiting_supply → 调 apply_supply_refill，返回 deduped=True。"""
-    from app.models import Source, Ticket
-    from app.services.ingest import ksm_ingester as mod
+def _seed_existing_with_hub(db_session, *, op_status, bill_id, short_code, hub_short_code):  # type: ignore[no-untyped-def]
+    from app.models import HubIssue, Source, Ticket
 
     if db_session.query(Source).filter_by(code="ksm").first() is None:
         db_session.add(Source(code="ksm", name="KSM"))
+    hub = HubIssue(
+        short_code=hub_short_code,
+        type="Operation",
+        title="t",
+        canonical_body="旧内容",
+        status="created",
+        op_status=op_status,
+        op_handler="agent",
+    )
+    db_session.add(hub)
+    db_session.flush()
     existing = Ticket(
-        short_code="TKT-SR-1",
+        short_code=short_code,
         source_code="ksm",
-        source_ticket_id="bill-refill-1",
+        source_ticket_id=bill_id,
         type="Raw",
-        status="awaiting_supply",
-        source_payload={"billId": "bill-refill-1"},
+        status="received",
+        source_payload={"billId": bill_id},
         title="t",
         body="b",
+        hub_issue_id=hub.id,
     )
     db_session.add(existing)
     db_session.commit()
+    return existing, hub
+
+
+def test_ingest_resupply_on_supplementing(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 hub.op_status=supplementing → 补料重提：content_refresh + op_status→resupplied/agent。"""
+    from app.services.hub_issues.op_status import OP_RESUPPLIED, OP_SUPPLEMENTING
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_SUPPLEMENTING,
+        bill_id="bill-resupply-1",
+        short_code="TKT-SR-1",
+        hub_short_code="HUB-SR-1",
+    )
 
     called: dict = {}
 
-    def fake_refill(db, ticket, payload):
+    def fake_refresh(db, ticket, payload):
         called["ticket_id"] = ticket.id
         called["payload"] = payload
         return True
 
-    monkeypatch.setattr(mod, "apply_supply_refill", fake_refill)
+    monkeypatch.setattr(mod, "apply_content_refresh", fake_refresh)
     ing = mod.KSMIngester(db_session, default_pool_user_id=None)
-    result = ing.ingest({"billId": "bill-refill-1", "content": "新补料"})
+    result = ing.ingest({"billId": "bill-resupply-1", "content": "新补料"})
+    db_session.commit()
+
     assert called["ticket_id"] == existing.id
     assert called["payload"]["content"] == "新补料"
     assert result.deduped is True
     assert result.ticket_id == existing.id
 
+    db_session.refresh(hub)
+    assert hub.op_status == OP_RESUPPLIED
+    assert hub.op_handler == "agent"
 
-def test_ingest_dedup_noop_when_not_awaiting(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """已存在 ticket 但非 awaiting_supply（重复心跳）→ 原 no-op，不调 refill。"""
+
+def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 hub.op_status=answered → 驳回：content_refresh + op_status→processing/主管 + reject_count+1。"""
+    from app.services.hub_issues.op_status import OP_ANSWERED, OP_PROCESSING
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_ANSWERED,
+        bill_id="bill-reject-1",
+        short_code="TKT-RJ-1",
+        hub_short_code="HUB-RJ-1",
+    )
+    assert hub.reject_count == 0
+
+    called: dict = {}
+    monkeypatch.setattr(
+        mod,
+        "apply_content_refresh",
+        lambda db, ticket, payload: called.setdefault("ticket_id", ticket.id) or True,
+    )
+    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    result = ing.ingest({"billId": "bill-reject-1", "content": "客户不满意"})
+    db_session.commit()
+
+    assert called["ticket_id"] == existing.id
+    assert result.deduped is True
+    assert result.ticket_id == existing.id
+
+    db_session.refresh(hub)
+    assert hub.op_status == OP_PROCESSING
+    assert hub.reject_count == 1
+    assert hub.op_handler == "主管"  # default_pool_user_id 未配 → 兜底 "主管"
+
+
+def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 hub.op_status=closed（硬终态）→ 原 no-op，不调 content_refresh。"""
+    from app.services.hub_issues.op_status import OP_CLOSED
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_CLOSED,
+        bill_id="bill-closed-1",
+        short_code="TKT-CL-1",
+        hub_short_code="HUB-CL-1",
+    )
+
+    called = {"n": 0}
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda *a, **k: called.__setitem__("n", 1))
+    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    result = ing.ingest({"billId": "bill-closed-1", "content": "又发一遍"})
+    db_session.commit()
+
+    assert called["n"] == 0
+    assert result.deduped is True
+    assert result.ticket_id == existing.id
+    db_session.refresh(hub)
+    assert hub.op_status == OP_CLOSED  # 未变
+
+
+def test_ingest_dedup_noop_when_no_hub(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 但未毕业 hub（重复心跳）→ 原 no-op，不调 content_refresh。"""
     from app.models import Source, Ticket
     from app.services.ingest import ksm_ingester as mod
 
@@ -317,7 +408,7 @@ def test_ingest_dedup_noop_when_not_awaiting(db_session, monkeypatch) -> None:  
     db_session.commit()
 
     called = {"n": 0}
-    monkeypatch.setattr(mod, "apply_supply_refill", lambda *a, **k: called.__setitem__("n", 1))
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda *a, **k: called.__setitem__("n", 1))
     ing = mod.KSMIngester(db_session, default_pool_user_id=None)
     result = ing.ingest({"billId": "bill-refill-2", "content": "重复心跳"})
     assert called["n"] == 0

@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue
 from app.repositories.status_history import StatusHistoryRepository
@@ -66,3 +67,16 @@ def apply_op_status(
         handler=handler,
     )
     return True
+
+
+def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> str:
+    """人工介入处理人名：default_pool 对应 user.name；未配则 '主管'。"""
+    settings = settings or get_settings()
+    uid = settings.default_pool_user_id
+    if uid is not None:
+        from app.models import User
+
+        u = db.get(User, uid)
+        if u is not None and u.name:
+            return str(u.name)
+    return "主管"
