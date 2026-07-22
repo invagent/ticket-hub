@@ -23,6 +23,7 @@ class _S:
     ai_cs_app_key: str = "y"
     ai_cs_base_url: str = "http://localhost:9090"
     ai_cs_managed_skills: str = "customer-service"
+    default_pool_user_id: int | None = None
 
 
 class _FakeClient:
@@ -52,6 +53,8 @@ def _seed_op_hub(db: Session, *, source: str = "ksm") -> tuple[HubIssue, Ticket]
         status="created",
         product="发票云",
         module="开票",
+        op_status="processing",
+        op_handler="agent",
     )
     db.add(hub)
     db.flush()
@@ -87,6 +90,7 @@ def test_auto_answer_d_sends(db_session: Session) -> None:
     db_session.refresh(hub)
     assert hub.reply_content_version == 1
     assert hub.reply_authored_by == "agent:ai_cs"
+    assert hub.op_status == "answered"
     d = (
         db_session.query(AgentDecision)
         .filter_by(decision_type="auto_reply", subject_id=hub.id)
@@ -131,6 +135,7 @@ def test_auto_answer_c_requests_supply(db_session: Session) -> None:
     assert ok is True
     db_session.refresh(hub)
     assert hub.reply_content_version == 0  # 没答复，走补料
+    assert hub.op_status == "supplementing"
     ob = db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id, kind="supply").first()
     assert ob is not None
     assert ob.payload.get("supply_note") == "请提供开票报错截图"
@@ -152,6 +157,8 @@ def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
     assert ok is False
     db_session.refresh(hub)
     assert hub.reply_content_version == 0
+    assert hub.op_status == "processing"
+    assert hub.op_handler != "agent"
 
 
 def test_auto_answer_replay_error_leaves_to_human(db_session: Session) -> None:
@@ -161,6 +168,9 @@ def test_auto_answer_replay_error_leaves_to_human(db_session: Session) -> None:
     with patch("app.services.agents.operation_answer.build_client", return_value=fake):
         ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is False
+    db_session.refresh(hub)
+    assert hub.op_status == "exception"
+    assert hub.op_handler != "agent"
 
 
 def test_auto_answer_disabled(db_session: Session) -> None:
@@ -212,28 +222,37 @@ def test_drain_answers_unprocessed_hub(db_session: Session) -> None:
 
 
 def test_drain_skips_already_answered(db_session: Session) -> None:
-    """已答复（reply_content_version>0）的 hub 不再扫描。"""
+    """op_status=answered 的 hub 不再扫描（不再靠 reply_content_version 判断）。"""
     hub, _t = _seed_op_hub(db_session)
-    hub.reply_content_version = 1
+    hub.op_status = "answered"
     db_session.commit()
     report = drain_operation_auto_reply(db_session, settings=_S())
     assert report.scanned == 0
 
 
 def test_drain_skips_transfer_recorded(db_session: Session) -> None:
-    """transfer 已写 auto_reply 审计 → 不重扫（避免无限重扫）。"""
+    """已转人工（op_handler != agent）→ 不重扫（避免抢主管介入中的工单）。"""
     hub, _t = _seed_op_hub(db_session)
-    db_session.add(
-        AgentDecision(
-            decision_type="auto_reply",
-            subject_type="hub_issue",
-            subject_id=hub.id,
-            proposal={"branch": "transfer"},
-        )
-    )
+    hub.op_handler = "主管"
     db_session.commit()
     report = drain_operation_auto_reply(db_session, settings=_S())
     assert report.scanned == 0
+
+
+def test_drain_scans_processing_agent_and_resupplied(db_session: Session) -> None:
+    """drain 扫 op_status=processing(handler=agent) 和 resupplied；排除人工介入。"""
+    _hub_agent, _ = _seed_op_hub(db_session, source="ksm")
+    hub_human, _ = _seed_op_hub(db_session, source="zhichi")
+    hub_human.op_handler = "主管"
+    hub_resupplied, _ = _seed_op_hub(db_session, source="zammad")
+    hub_resupplied.op_status = "resupplied"
+    db_session.commit()
+
+    fake = _FakeClient(raise_err=True)
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        report = drain_operation_auto_reply(db_session, settings=_S())
+
+    assert report.scanned == 2
 
 
 def test_drain_excludes_ai_cs_source(db_session: Session) -> None:
@@ -244,19 +263,22 @@ def test_drain_excludes_ai_cs_source(db_session: Session) -> None:
     assert report.scanned == 0
 
 
-def test_drain_retries_failed_replay_next_round(db_session: Session) -> None:
-    """replay 失败（无审计）→ 本轮 scanned 但 answered=0，下轮仍会重扫补偿。"""
-    _hub, _t = _seed_op_hub(db_session)
+def test_drain_replay_failure_falls_to_exception_not_rescanned(db_session: Session) -> None:
+    """replay 系统故障 → op_status=exception + 转人工，不再无限重扫（人工介入）。"""
+    hub, _t = _seed_op_hub(db_session)
     db_session.commit()
-    fake = _FakeClient(raise_err=True)  # replay 抛 AiCsError → 留主管，不记审计
+    fake = _FakeClient(raise_err=True)  # replay 抛 AiCsError → 落 exception 留主管
     with patch("app.services.agents.operation_answer.build_client", return_value=fake):
         report1 = drain_operation_auto_reply(db_session, settings=_S())
     assert report1.scanned == 1
     assert report1.answered == 0
-    # 无审计 → 下轮仍在扫描集
+    db_session.refresh(hub)
+    assert hub.op_status == "exception"
+    assert hub.op_handler != "agent"
+    # 已转人工（op_handler != agent）→ 下轮不再重扫
     with patch("app.services.agents.operation_answer.build_client", return_value=fake):
         report2 = drain_operation_auto_reply(db_session, settings=_S())
-    assert report2.scanned == 1
+    assert report2.scanned == 0
 
 
 # ---- answer-router _route_answer 单测 ----
