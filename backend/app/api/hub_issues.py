@@ -61,6 +61,11 @@ class HubIssueSummary(BaseModel):
     feedback_note: str | None = None
     self_found: bool = False
     status_changed_at: datetime | None = None
+    # Operation 状态机（op_status 专属层，仅 Operation 非空；研发类恒 NULL）
+    op_status: str | None = None
+    op_handler: str | None = None
+    reject_count: int = 0
+    op_status_changed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

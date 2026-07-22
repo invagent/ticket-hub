@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, ApiError, type HubIssueSummary } from "@/api/client";
+import { OpStatusBadge } from "@/components/OpStatusBadge";
 
 const TABS: { key: string; label: string }[] = [
   { key: "", label: "全部" },
@@ -310,15 +311,17 @@ export function HubIssuesListPage() {
                       </div>
                     </>
                   ) : h.type === "Operation" ? (
-                    h.reply_content_version > 0 ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-hub-green-light text-hub-green border border-hub-green-border">
-                        已回复 v{h.reply_content_version}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-hub-amber-light text-hub-amber-deep border border-hub-amber-border">
-                        未回复
-                      </span>
-                    )
+                    <>
+                      <OpStatusBadge status={h.op_status} />
+                      <div className="text-[10.5px] text-hub-textFaint mt-1">
+                        {h.op_handler === "agent" ? "AI 处理" : h.op_handler ? `处理人 ${h.op_handler}` : "—"}
+                        {h.reject_count > 0 && (
+                          <span className="ml-1 text-[9.5px] font-bold px-[6px] py-px rounded-full bg-hub-rose-light text-hub-rose border border-hub-rose-border">
+                            驳回 {h.reject_count} 次
+                          </span>
+                        )}
+                      </div>
+                    </>
                   ) : (
                     <span className="text-[10.5px] text-hub-textMuted">
                       {h.feishu_task_status ?? h.status}
