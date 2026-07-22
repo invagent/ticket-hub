@@ -56,6 +56,7 @@ from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.hub_issues.op_status import OP_ANSWERED, OP_CLOSED, apply_op_status
 from app.services.ksm.notice_store import NoticeStoreLike
 
 logger = get_logger(__name__)
@@ -272,6 +273,17 @@ class KSMWritebackSender:
                 to_status="resolved",
                 changed_by=changed_by,
                 reason=f"Operation 答复关单回写成功（outbox={row.id}）",
+            )
+        # op_status 业务层（与上面 hub.status 底层机制并存，互不替代）：
+        # 仅 Operation 且已在 answered 才顺带推进到 closed——T+7 beat 和这里
+        # 谁先到都行（apply_op_status 幂等）；处理人保持原值，关单不改处理人。
+        if hub is not None and hub.type == "Operation" and hub.op_status == OP_ANSWERED:
+            apply_op_status(
+                self._db,
+                hub,
+                to_status=OP_CLOSED,
+                handler=hub.op_handler or "agent",
+                reason=f"KSM 答复关单回写成功（outbox={row.id}）",
             )
 
     def _mark_awaiting_supply(self, row: SyncOutbox, ticket: Ticket) -> None:
