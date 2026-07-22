@@ -23,7 +23,7 @@ from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
-from app.services.hub_issues.op_status import OP_PROCESSING
+from app.services.hub_issues.op_status import OP_EXCEPTION, OP_PROCESSING
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -279,8 +279,11 @@ def re_answer_endpoint(
 ) -> ReAnswerResponse:
     """主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。
 
-    前置：hub 存在 + type=Operation + op_status=processing 且 op_handler!=
-    'agent'（人工介入中）。非人工介入中一律 409（含刚毕业未处理过、已答复、
+    前置：hub 存在 + type=Operation + op_status ∈ (processing, exception) 且
+    op_handler != 'agent'。processing 是人工介入中；exception 是 replay 系统
+    故障时置的转人工态——drain 不会自动重扫 exception（系统故障不该无限自动
+    重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能
+    点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、
     补料中等——这些场景走各自专属流程，不该被重答抢跑）。
     """
     hub = db.get(HubIssue, hub_issue_id)
@@ -291,13 +294,13 @@ def re_answer_endpoint(
             status_code=409,
             detail=f"hub_issue {hub.short_code} is type={hub.type!r} — re-answer is Operation-only",
         )
-    if hub.op_status != OP_PROCESSING or hub.op_handler == "agent":
+    if hub.op_status not in (OP_PROCESSING, OP_EXCEPTION) or hub.op_handler == "agent":
         raise HTTPException(
             status_code=409,
             detail=(
                 f"hub_issue {hub.short_code} op_status={hub.op_status!r} "
-                f"op_handler={hub.op_handler!r} — re-answer requires 人工介入中 "
-                f"(op_status=processing and op_handler!='agent')"
+                f"op_handler={hub.op_handler!r} — re-answer requires 人工介入中或处理异常 "
+                f"(op_status in ('processing','exception') and op_handler!='agent')"
             ),
         )
 

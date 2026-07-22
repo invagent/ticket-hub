@@ -58,6 +58,29 @@ def reanswer_world(db_session: Session) -> Session:
     db_session.add(
         HubIssue(id=92, short_code="HUB-000092", type="Bug_fix", title="bug", status="created")
     )
+    db_session.add(
+        HubIssue(
+            id=93,
+            short_code="HUB-000093",
+            type="Operation",
+            title="replay 故障",
+            canonical_body="replay 系统故障后卡死",
+            status="created",
+            op_status="exception",
+            op_handler="主管",  # 处理异常，主管修完系统故障后应能重答
+        )
+    )
+    db_session.add(
+        HubIssue(
+            id=94,
+            short_code="HUB-000094",
+            type="Operation",
+            title="异常+agent(防御)",
+            status="created",
+            op_status="exception",
+            op_handler="agent",  # 理论不该出现：exception 但 handler 仍是 agent
+        )
+    )
     db_session.flush()
     db_session.add(
         Ticket(
@@ -146,6 +169,46 @@ def test_re_answer_non_operation_409(app_client: TestClient, reanswer_world: Ses
     r = app_client.post("/api/hub-issues/92/re-answer", headers=_bearer(2))
     assert r.status_code == 409
     assert "Operation-only" in r.json()["detail"]
+
+
+def test_re_answer_exception_status_recoverable(
+    app_client: TestClient, reanswer_world: Session
+) -> None:
+    """op_status=exception + handler=主管 → 重答可执行（不 409），成功后落 answered。
+
+    exception 是 replay 系统故障时置的转人工态；主管修完系统故障后应能点重答把
+    工单拉回处理流程，不该永久卡死（无 drain 扫描，也无法重答 → 死胡同）。
+    """
+    from app.services.agents.operation_answer import AnswerRoute
+
+    fake = _FakeClient(answer="您好，系统已恢复，请重新尝试提交。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        r = app_client.post("/api/hub-issues/93/re-answer", headers=_bearer(2))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["answered"] is True
+    assert body["op_status"] == "answered"
+
+    hub = reanswer_world.get(HubIssue, 93)
+    reanswer_world.refresh(hub)
+    assert hub.op_status == "answered"
+
+
+def test_re_answer_exception_with_agent_handler_still_409(
+    app_client: TestClient, reanswer_world: Session
+) -> None:
+    """exception + op_handler='agent'（防御性场景，理论不该出现）→ 仍 409。
+
+    handler=='agent' 一律拒绝，不因 op_status 是 exception 而放行。
+    """
+    r = app_client.post("/api/hub-issues/94/re-answer", headers=_bearer(2))
+    assert r.status_code == 409
 
 
 def test_re_answer_missing_hub_409(app_client: TestClient, reanswer_world: Session) -> None:
