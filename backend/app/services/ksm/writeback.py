@@ -237,11 +237,10 @@ class KSMWritebackSender:
         row.sent_at = datetime.now(UTC)
         row.attempts += 1
         # 关单类 action 真发成功后，本地工单/hub 推终态，与 KSM 侧一致。
-        # 补料/接管/进度通知不关单，不动状态。
+        # 补料/接管/进度通知不关单，不动状态（补料识别已改走 hub.op_status==
+        # supplementing，由 auto_answer request_supply 入队时置，与此处无关）。
         if action in _CLOSING_ACTIONS:
             self._close_local(row, ticket)
-        elif action == "supply":
-            self._mark_awaiting_supply(row, ticket)
         self._db.commit()
         report.sent += 1
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)
@@ -285,26 +284,6 @@ class KSMWritebackSender:
                 handler=hub.op_handler or "agent",
                 reason=f"KSM 答复关单回写成功（outbox={row.id}）",
             )
-
-    def _mark_awaiting_supply(self, row: SyncOutbox, ticket: Ticket) -> None:
-        """补料请求真发成功后：ticket → awaiting_supply（挂起等客户回填）。
-
-        含义是「补料请求已送达客户」——dry_run（skipped，不进此路径）和失败
-        （_record_failure 后 return，不到这里）都不会置此状态。终态不动（幂等）。
-        不 commit（随外层）。
-        """
-        if ticket.status in _TICKET_TERMINAL_STATUSES:
-            return
-        prev = ticket.status
-        ticket.status = "awaiting_supply"
-        StatusHistoryRepository(self._db).record(
-            entity_type="ticket",
-            entity_id=ticket.id,
-            from_status=prev,
-            to_status="awaiting_supply",
-            changed_by="system:ksm_writeback",
-            reason=f"补料请求回写成功，挂起等客户回填（outbox={row.id}）",
-        )
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:
         """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply'

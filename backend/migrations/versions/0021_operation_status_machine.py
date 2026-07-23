@@ -39,7 +39,7 @@ def upgrade() -> None:
         SET op_status = CASE WHEN reply_content_version >= 1 THEN 'answered' ELSE 'processing' END,
             op_handler = 'agent',
             op_status_changed_at = COALESCE(status_changed_at, created_at)
-        WHERE type = 'Operation'
+        WHERE type = 'Operation' AND deleted_at IS NULL
         """
     )
 

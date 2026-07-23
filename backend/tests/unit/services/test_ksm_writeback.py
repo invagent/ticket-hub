@@ -323,10 +323,12 @@ def test_supply_locks_then_supplies(world: Session) -> None:
     assert row.status == "sent"
 
 
-# ---- supply 真发成功/dry_run/失败 → awaiting_supply（Task 3）------------------
+# ---- supply 真发成功/dry_run/失败 → ticket.status 不动（补料识别已改走 -----
+# hub.op_status==supplementing，由 auto_answer request_supply 入队时置，与
+# writeback 无关；此处只需确认 supply action 本身不误改 ticket.status）------
 
 
-def test_supply_send_marks_awaiting_supply(world: Session) -> None:
+def test_supply_send_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
@@ -336,14 +338,10 @@ def test_supply_send_marks_awaiting_supply(world: Session) -> None:
     world.refresh(row)
     assert row.status == "sent"
     world.refresh(t)
-    assert t.status == "awaiting_supply"
-    history = StatusHistoryRepository(world).find_for_entity(entity_type="ticket", entity_id=t.id)
-    assert any(
-        h.to_status == "awaiting_supply" and h.changed_by == "system:ksm_writeback" for h in history
-    )
+    assert t.status == "received"
 
 
-def test_supply_dry_run_does_not_mark_awaiting(world: Session) -> None:
+def test_supply_dry_run_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
@@ -357,7 +355,7 @@ def test_supply_dry_run_does_not_mark_awaiting(world: Session) -> None:
     assert t.status == "received"
 
 
-def test_supply_send_failure_does_not_mark_awaiting(world: Session) -> None:
+def test_supply_send_failure_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
