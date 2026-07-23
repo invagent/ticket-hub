@@ -34,6 +34,7 @@ celery_app = Celery(
         "app.services.ksm.writeback_task",
         "app.services.zhichi.writeback_task",
         "app.services.agents.operation_answer_task",
+        "app.services.agents.op_close_task",
     ],
 )
 
@@ -74,5 +75,10 @@ celery_app.conf.beat_schedule = {
     "drain_operation_auto_reply_every_2min": {
         "task": "app.services.agents.operation_answer_task.drain_operation_auto_reply",
         "schedule": crontab(minute="*/2"),
+    },
+    # Operation T+N 自动关闭（operation_auto_close_enabled 未开则任务内自动跳过）
+    "close_answered_operations_daily": {
+        "task": "app.services.agents.op_close_task.close_answered_operations",
+        "schedule": crontab(hour=3, minute=17),
     },
 }

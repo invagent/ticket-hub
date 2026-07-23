@@ -215,6 +215,70 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
     assert hub.status == "resolved"
 
 
+# ---- Task 6: 关单回写衔接 op_status=closed -----------------------------------
+
+
+def test_reply_close_advances_op_status_to_closed_when_answered(world: Session) -> None:
+    hub = _hub(world, op_status="answered", op_handler="agent:auto_answer")
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "请按步骤操作"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+
+    drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+
+    world.refresh(hub)
+    assert hub.status == "resolved"
+    assert hub.op_status == "closed"
+    # handler 保持原值，关单不改处理人
+    assert hub.op_handler == "agent:auto_answer"
+    history = StatusHistoryRepository(world).find_for_entity(
+        entity_type="hub_issue", entity_id=hub.id
+    )
+    assert any(h.to_status == "closed" and h.from_status == "answered" for h in history)
+
+
+def test_close_local_ignores_non_operation_hub_op_status(world: Session) -> None:
+    hub = _hub(world, type="Bug_fix", op_status=None)
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    drain_ksm_outbox(world, client=client, settings=_settings())
+    world.refresh(hub)
+    assert hub.status == "resolved"
+    assert hub.op_status is None
+
+
+def test_close_local_does_not_touch_op_status_when_not_answered(world: Session) -> None:
+    hub = _hub(world, op_status="processing", op_handler="agent:auto_answer")
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    drain_ksm_outbox(world, client=client, settings=_settings())
+    world.refresh(hub)
+    assert hub.status == "resolved"
+    # 尚未 answered（比如客户还没到自动答复阶段）→ 关单回写不越权推进 op_status
+    assert hub.op_status == "processing"
+
+
+def test_close_local_op_status_closed_is_idempotent(world: Session) -> None:
+    """op_status 已是 closed（比如 T+7 beat 先到）→ 关单回写不重复写 history。"""
+    hub = _hub(world, op_status="closed", op_handler="主管")
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    drain_ksm_outbox(world, client=client, settings=_settings())
+    world.refresh(hub)
+    assert hub.op_status == "closed"
+    assert hub.op_handler == "主管"
+    history = StatusHistoryRepository(world).find_for_entity(
+        entity_type="hub_issue", entity_id=hub.id
+    )
+    op_status_entries = [h for h in history if h.to_status == "closed"]
+    assert len(op_status_entries) == 0  # apply_op_status no-op：状态和处理人都没变
+
+
 # ---- progress_note → lock + handle(is_deal=False) 不关单（ADR-0016 P4）------
 
 
@@ -259,10 +323,12 @@ def test_supply_locks_then_supplies(world: Session) -> None:
     assert row.status == "sent"
 
 
-# ---- supply 真发成功/dry_run/失败 → awaiting_supply（Task 3）------------------
+# ---- supply 真发成功/dry_run/失败 → ticket.status 不动（补料识别已改走 -----
+# hub.op_status==supplementing，由 auto_answer request_supply 入队时置，与
+# writeback 无关；此处只需确认 supply action 本身不误改 ticket.status）------
 
 
-def test_supply_send_marks_awaiting_supply(world: Session) -> None:
+def test_supply_send_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
@@ -272,14 +338,10 @@ def test_supply_send_marks_awaiting_supply(world: Session) -> None:
     world.refresh(row)
     assert row.status == "sent"
     world.refresh(t)
-    assert t.status == "awaiting_supply"
-    history = StatusHistoryRepository(world).find_for_entity(entity_type="ticket", entity_id=t.id)
-    assert any(
-        h.to_status == "awaiting_supply" and h.changed_by == "system:ksm_writeback" for h in history
-    )
+    assert t.status == "received"
 
 
-def test_supply_dry_run_does_not_mark_awaiting(world: Session) -> None:
+def test_supply_dry_run_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})
@@ -293,7 +355,7 @@ def test_supply_dry_run_does_not_mark_awaiting(world: Session) -> None:
     assert t.status == "received"
 
 
-def test_supply_send_failure_does_not_mark_awaiting(world: Session) -> None:
+def test_supply_send_failure_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
     row = _outbox(world, t, hub, kind="supply", payload={"supply_note": "请提供错误截图"})

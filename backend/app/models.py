@@ -485,6 +485,11 @@ class HubIssue(Base):
             "feedback_status IS NULL OR feedback_status IN ('pending','resolved','stillbad')",
             name="ck_hub_issues_feedback_status",
         ),
+        CheckConstraint(
+            "op_status IS NULL OR op_status IN "
+            "('processing','answered','closed','supplementing','resupplied','exception')",
+            name="ck_hub_issues_op_status",
+        ),
         Index("ix_hub_issues_type_status", "type", "status"),
         Index("ix_hub_issues_product_module", "product", "module"),
         Index("ix_hub_issues_linear_uuid", "linear_uuid"),
@@ -509,6 +514,14 @@ class HubIssue(Base):
     reply_content_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reply_authored_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reply_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Operation 状态机（op_status 专属层，仅 Operation 非空；研发类恒 NULL）
+    op_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    op_handler: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reject_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    op_status_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

@@ -2189,6 +2189,40 @@
             "title": "Occurrence Count",
             "type": "integer"
           },
+          "op_handler": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Handler"
+          },
+          "op_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status"
+          },
+          "op_status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status Changed At"
+          },
           "priority": {
             "anyOf": [
               {
@@ -2221,6 +2255,11 @@
               }
             ],
             "title": "Product Line Code"
+          },
+          "reject_count": {
+            "default": 0,
+            "title": "Reject Count",
+            "type": "integer"
           },
           "release_notified_at": {
             "anyOf": [
@@ -2582,6 +2621,40 @@
             "title": "Occurrence Count",
             "type": "integer"
           },
+          "op_handler": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Handler"
+          },
+          "op_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status"
+          },
+          "op_status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status Changed At"
+          },
           "priority": {
             "anyOf": [
               {
@@ -2614,6 +2687,11 @@
               }
             ],
             "title": "Product Line Code"
+          },
+          "reject_count": {
+            "default": 0,
+            "title": "Reject Count",
+            "type": "integer"
           },
           "release_notified_at": {
             "anyOf": [
@@ -3782,6 +3860,29 @@
           "published"
         ],
         "title": "PublishResponse",
+        "type": "object"
+      },
+      "ReAnswerResponse": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "boolean"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "op_status": {
+            "title": "Op Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "op_status",
+          "answered"
+        ],
+        "title": "ReAnswerResponse",
         "type": "object"
       },
       "ReadinessResponse": {
@@ -9044,6 +9145,49 @@
           }
         },
         "summary": "Owner Split Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/re-answer": {
+      "post": {
+        "description": "主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。\n\n前置：hub 存在 + type=Operation + op_status=processing 且 op_handler!=\n'agent'（人工介入中）。非人工介入中一律 409（含刚毕业未处理过、已答复、\n补料中等——这些场景走各自专属流程，不该被重答抢跑）。",
+        "operationId": "re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReAnswerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Re Answer Endpoint",
         "tags": [
           "hub-issues"
         ]

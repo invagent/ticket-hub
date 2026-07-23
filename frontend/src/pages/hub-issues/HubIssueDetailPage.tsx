@@ -3,8 +3,15 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath, postByPath } from "@/api/client";
-import { isSupervisor } from "@/api/auth";
+import { currentRole, isSupervisor } from "@/api/auth";
+import { OpStatusBadge } from "@/components/OpStatusBadge";
 import type { paths } from "@/api/types";
+
+/** supervisor / admin / knowledge_op 可用（人工重答等知识运营权限，同后端 require_knowledge_op）。 */
+function isKnowledgeOp(): boolean {
+  const r = currentRole();
+  return r === "knowledge_op" || r === "supervisor" || r === "admin";
+}
 
 type HubIssueDetail =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
@@ -86,6 +93,24 @@ function Header({ data }: { data: HubIssueDetail }) {
           <>
             <span className="text-hub-textFaint">·</span>
             <span>负责人 user#{data.assigned_user_id}</span>
+          </>
+        )}
+        {data.type === "Operation" && data.op_status && (
+          <>
+            <span className="text-hub-textFaint">·</span>
+            <OpStatusBadge status={data.op_status} />
+            <span>
+              {data.op_handler === "agent"
+                ? "AI 处理"
+                : data.op_handler
+                  ? `处理人 ${data.op_handler}`
+                  : ""}
+            </span>
+            {data.reject_count > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-hub-rose-light text-hub-rose border border-hub-rose-border">
+                驳回 {data.reject_count} 次
+              </span>
+            )}
           </>
         )}
         {data.superseded_by_hub_issue_id != null && (
@@ -207,6 +232,24 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
     onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
   });
 
+  const reAnswer = useMutation({
+    mutationFn: () =>
+      postByPath("/api/hub-issues/{hub_issue_id}/re-answer", { hub_issue_id: data.id }),
+    onSuccess: (r) => {
+      setError(null);
+      setNotice(
+        r.answered
+          ? `已重答，op_status=${r.op_status}`
+          : `重答未产生新答复（op_status=${r.op_status}），可能未命中 skill 或答案未变`,
+      );
+      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const canReAnswer =
+    isKnowledgeOp() && data.op_status === "processing" && data.op_handler != null && data.op_handler !== "agent";
+
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-3">
@@ -221,6 +264,19 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
             className="text-[11.5px] text-hub-teal hover:underline"
           >
             {data.reply_content ? "修改回复" : "撰写回复"}
+          </button>
+        )}
+        {canReAnswer && (
+          <button
+            onClick={() => {
+              setNotice(null);
+              reAnswer.mutate();
+            }}
+            disabled={reAnswer.isPending}
+            className="text-[11.5px] text-hub-amber-deep hover:underline disabled:opacity-50"
+            title="改完 KB/skill 后同步重答一次（人工介入中才可用）"
+          >
+            {reAnswer.isPending ? "重答中…" : "重答"}
           </button>
         )}
       </div>

@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     operation_auto_reply_min_length: int = 10  # 答复短于此视为无效，留主管
     operation_auto_reply_batch: int = 10  # 异步 drain 每轮扫描/处理的 hub 数上限
 
+    # ---- Operation T+N 自动关闭（answered 停留超 N 天未被驳回 → 自动 closed）----
+    operation_auto_close_enabled: bool = False
+    operation_auto_close_days: int = 7  # 自然日；驳回会转回 processing 并刷新 op_status_changed_at
+
     # ---- LLM Providers (D3 onwards) ----
     openai_api_key: str = ""
     deepseek_api_key: str = ""

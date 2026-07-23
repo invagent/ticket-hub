@@ -853,6 +853,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/re-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re Answer Endpoint
+         * @description 主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。
+         *
+         *     前置：hub 存在 + type=Operation + op_status=processing 且 op_handler!=
+         *     'agent'（人工介入中）。非人工介入中一律 409（含刚毕业未处理过、已答复、
+         *     补料中等——这些场景走各自专属流程，不该被重答抢跑）。
+         */
+        post: operations["re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/{hub_issue_id}/reply": {
         parameters: {
             query?: never;
@@ -2525,12 +2549,23 @@ export interface components {
             module: string | null;
             /** Occurrence Count */
             occurrence_count: number;
+            /** Op Handler */
+            op_handler?: string | null;
+            /** Op Status */
+            op_status?: string | null;
+            /** Op Status Changed At */
+            op_status_changed_at?: string | null;
             /** Priority */
             priority: string | null;
             /** Product */
             product: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /**
+             * Reject Count
+             * @default 0
+             */
+            reject_count: number;
             /** Release Notified At */
             release_notified_at?: string | null;
             /** Reply Authored By */
@@ -2626,12 +2661,23 @@ export interface components {
             module: string | null;
             /** Occurrence Count */
             occurrence_count: number;
+            /** Op Handler */
+            op_handler?: string | null;
+            /** Op Status */
+            op_status?: string | null;
+            /** Op Status Changed At */
+            op_status_changed_at?: string | null;
             /** Priority */
             priority: string | null;
             /** Product */
             product: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /**
+             * Reject Count
+             * @default 0
+             */
+            reject_count: number;
             /** Release Notified At */
             release_notified_at?: string | null;
             /** Reply Content Version */
@@ -3028,6 +3074,15 @@ export interface components {
             skill_name: string;
             /** Version */
             version: string;
+        };
+        /** ReAnswerResponse */
+        ReAnswerResponse: {
+            /** Answered */
+            answered: boolean;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Op Status */
+            op_status: string;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
@@ -5579,6 +5634,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OwnerSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReAnswerResponse"];
                 };
             };
             /** @description Validation Error */

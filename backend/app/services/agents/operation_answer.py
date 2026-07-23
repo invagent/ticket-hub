@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError, AiCsNetworkError
@@ -20,6 +20,15 @@ from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, Ticket
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
+from app.services.hub_issues.op_status import (
+    OP_ANSWERED,
+    OP_EXCEPTION,
+    OP_PROCESSING,
+    OP_RESUPPLIED,
+    OP_SUPPLEMENTING,
+    apply_op_status,
+    resolve_supervisor_name,
+)
 from app.services.knowledge_feedback.service import (
     KnowledgeFeedbackDisabledError,
     build_client,
@@ -128,11 +137,20 @@ def _replay_with_retry(client: object, *, question: str, skill: str | None, hub_
 
 
 def auto_answer_operation(
-    db: Session, hub_issue_id: int, *, settings: Settings | None = None
+    db: Session,
+    hub_issue_id: int,
+    *,
+    settings: Settings | None = None,
+    force: bool = False,
 ) -> bool:
-    """对新毕业的 Operation hub_issue 自动答复。True=已答复，False=留主管。"""
+    """对 Operation hub_issue 跑一次 replay→answer-router→落状态。True=已答复，False=留主管。
+
+    `force=True`（Task 8 人工重答 API 用）跳过 `operation_auto_reply_enabled`
+    总开关——主管手动点重答不该被"自动答复"总闸拦住。其余守卫（ai_cs 来源排
+    除、ai_cs 客户端未启用）对人工触发同样适用，不因 force 豁免。
+    """
     settings = settings or get_settings()
-    if not settings.operation_auto_reply_enabled:
+    if not force and not settings.operation_auto_reply_enabled:
         return False
 
     hub = db.get(HubIssue, hub_issue_id)
@@ -163,6 +181,15 @@ def auto_answer_operation(
     try:
         answer = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
     except AiCsError:
+        # 系统故障（replay 全部失败/业务错误）→ 落 exception 转人工，不再无限重扫。
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_EXCEPTION,
+            handler=resolve_supervisor_name(db, settings),
+            reason="replay 系统故障",
+        )
+        db.commit()
         return False  # 已在 _replay_with_retry 内记日志
     finally:
         client.close()
@@ -176,6 +203,7 @@ def auto_answer_operation(
         except ReplySyncError as e:
             logger.warning("operation_auto_reply_author_failed", hub_issue_id=hub.id, error=str(e))
             return False
+        apply_op_status(db, hub, to_status=OP_ANSWERED, handler="agent", reason="agent 答复成功")
         _record_decision(db, hub.id, branch="D", question=question, answer=answer, supply_note="")
         logger.info("operation_auto_reply_sent", hub_issue_id=hub.id)
         return True
@@ -187,12 +215,20 @@ def auto_answer_operation(
         except SupplySyncError as e:
             logger.warning("operation_auto_supply_failed", hub_issue_id=hub.id, error=str(e))
             return False
+        apply_op_status(db, hub, to_status=OP_SUPPLEMENTING, handler="agent", reason="需补料")
         _record_decision(db, hub.id, branch="C", question=question, answer=answer, supply_note=note)
         logger.info("operation_auto_supply_sent", hub_issue_id=hub.id)
         return True
 
     # transfer → 留主管。仍记 auto_reply 审计（branch=transfer），标记「已自动处理过」，
     # 供异步补偿任务区分「已判转人工」与「replay 失败待重试」，避免无限重扫。
+    apply_op_status(
+        db,
+        hub,
+        to_status=OP_PROCESSING,
+        handler=resolve_supervisor_name(db, settings),
+        reason="agent 业务无解转人工",
+    )
     _record_decision(
         db, hub.id, branch="transfer", question=question, answer=answer, supply_note=""
     )
@@ -214,10 +250,11 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
     （实测 ~138s/单），阻塞 worker。改由 Celery beat 每 2min 调本函数异步 drain，
     既解耦入库链路，又兼作偶发 replay 失败的补偿重试。
 
-    扫描口径：type='Operation' + reply_content_version==0（未答复）+ 未删除 +
-    无 auto_reply AgentDecision（D/C/transfer 都会写审计 → 不重扫；只有 replay
-    失败/未处理的无审计，下轮补偿）+ 非 ai_cs 来源（ai_cs 走 reflect 反思队列，
-    auto_answer 内部也会拒，此处提前排除免得每轮空扫）。
+    扫描口径：type='Operation' + 未删除 + 非 ai_cs 来源（ai_cs 走 reflect 反思
+    队列，auto_answer 内部也会拒，此处提前排除免得每轮空扫）+ op_status 驱动——
+    (op_status=processing 且 op_handler='agent'，即刚毕业尚未处理过) 或
+    op_status=resupplied（客户补料后需要重答）。op_handler≠agent 代表已转人工
+    介入中，排除在外（不抢主管正在处理的工单）。
     """
     settings = settings or get_settings()
     if not settings.operation_auto_reply_enabled:
@@ -232,23 +269,16 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
         )
         .exists()
     )
-    already_processed = (
-        select(AgentDecision.id)
-        .where(
-            AgentDecision.decision_type == "auto_reply",
-            AgentDecision.subject_type == "hub_issue",
-            AgentDecision.subject_id == HubIssue.id,
-        )
-        .exists()
-    )
     stmt = (
         select(HubIssue.id)
         .where(
             HubIssue.type == "Operation",
             HubIssue.deleted_at.is_(None),
-            HubIssue.reply_content_version == 0,
             ~ai_cs_ticket,
-            ~already_processed,
+            or_(
+                and_(HubIssue.op_status == OP_PROCESSING, HubIssue.op_handler == "agent"),
+                HubIssue.op_status == OP_RESUPPLIED,
+            ),
         )
         .order_by(HubIssue.id)
         .limit(settings.operation_auto_reply_batch)
