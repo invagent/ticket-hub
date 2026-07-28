@@ -253,4 +253,39 @@ describe("TicketDetailPage", () => {
     expect(screen.queryByRole("button", { name: "重新关联" })).not.toBeInTheDocument();
     localStorage.clear();
   });
+
+  // Task 6: 手动指派单条
+  it("#6 supervisor → 显示指派按钮，点击后展示用户下拉 + 确认/取消", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(306, 55);
+    server.use(
+      http.get("*/api/admin/users", () =>
+        HttpResponse.json([
+          { id: 1, name: "张三", feishu_uid: "u1", employee_no: null, email: null, role: "assignee" },
+          { id: 2, name: "李四", feishu_uid: "u2", employee_no: null, email: null, role: "member" },
+        ]),
+      ),
+    );
+    renderPage(306);
+    expect(await screen.findByText("TKT-306")).toBeInTheDocument();
+    const assignBtn = screen.getByRole("button", { name: "指派" });
+    await userEvent.click(assignBtn);
+    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    // roles filter: assignee 出现，member 不出现
+    expect(await screen.findByText(/张三/)).toBeInTheDocument();
+    expect(screen.queryByText(/李四/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#6 member → 不显示指派按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
+    stubTicket(307, 55);
+    renderPage(307);
+    expect(await screen.findByText("TKT-307")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "指派" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
 });

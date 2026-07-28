@@ -144,4 +144,55 @@ describe("TicketsListPage", () => {
     const link = await screen.findByRole("link", { name: "TKT-42" });
     expect(link).toHaveAttribute("href", "/tickets/42");
   });
+
+  // Task 6: 批量指派
+  it("#6 supervisor 多选后浮动栏显示批量指派下拉，选人后按钮可点击", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    server.use(
+      http.get("*/api/tickets", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 1,
+              short_code: "TKT-1",
+              source_code: "ksm",
+              source_ticket_id: "ksm-1",
+              type: "Raw",
+              status: "received",
+              title: "应付审核报错",
+              module: "应付管理",
+              assigned_user_id: null,
+              ...baseTicket,
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 50,
+          has_more: false,
+        }),
+      ),
+      http.get("*/api/admin/users", () =>
+        HttpResponse.json([
+          { id: 1, name: "张三", feishu_uid: "u1", employee_no: null, email: null, role: "assignee" },
+        ]),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("TKT-1")).toBeInTheDocument();
+    const rowCheckbox = screen.getAllByRole("checkbox")[1]; // [0] = header select-all
+    await user.click(rowCheckbox);
+
+    expect(await screen.findByText(/已选/)).toBeInTheDocument();
+    const assignBtn = screen.getByRole("button", { name: "批量指派" });
+    expect(assignBtn).toBeDisabled();
+
+    const bulkSelect = screen.getByDisplayValue("指派给…");
+    await user.selectOptions(bulkSelect, "1");
+    expect(assignBtn).toBeEnabled();
+
+    localStorage.clear();
+  });
 });

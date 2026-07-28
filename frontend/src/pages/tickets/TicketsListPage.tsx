@@ -7,7 +7,9 @@ import { useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { UserSelect } from "@/components/selectors";
 import { RerouteResultDialog } from "./RerouteResultDialog";
+import { AssignResultDialog } from "./AssignResultDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
@@ -60,6 +62,8 @@ export function TicketsListPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showReroute, setShowReroute] = useState(false);
+  const [bulkAssignTo, setBulkAssignTo] = useState<number | undefined>(undefined);
+  const [showAssign, setShowAssign] = useState(false);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
   const tickets = useQuery({
@@ -304,7 +308,7 @@ export function TicketsListPage() {
         </div>
       )}
 
-      {/* 浮动操作栏（主管多选 → 重新触发分配） */}
+      {/* 浮动操作栏（主管多选 → 重新触发分配 / 批量指派） */}
       {isSupervisor && selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 px-6 py-3 bg-white border border-hub-border rounded-full shadow-lg text-sm font-hub">
           <span>
@@ -316,6 +320,22 @@ export function TicketsListPage() {
           >
             重新触发分配
           </button>
+          <span className="inline-flex items-center gap-2">
+            <UserSelect
+              value={bulkAssignTo}
+              onChange={setBulkAssignTo}
+              roles={["assignee", "supervisor", "admin"]}
+              placeholder="指派给…"
+              className="text-xs px-2.5 py-1.5 border border-hub-border rounded-full bg-hub-panel outline-none focus:border-hub-teal focus:bg-white min-w-[9rem]"
+            />
+            <button
+              onClick={() => bulkAssignTo != null && setShowAssign(true)}
+              disabled={bulkAssignTo == null}
+              className="px-4 py-1.5 rounded-full bg-hub-teal text-white text-xs font-semibold hover:brightness-95 disabled:opacity-40"
+            >
+              批量指派
+            </button>
+          </span>
           <button
             onClick={() => setSelectedIds(new Set())}
             className="text-hub-textMuted hover:text-hub-textSecondary text-xs"
@@ -330,6 +350,18 @@ export function TicketsListPage() {
           ticketIds={Array.from(selectedIds)}
           onClose={() => {
             setShowReroute(false);
+            setSelectedIds(new Set());
+          }}
+        />
+      )}
+
+      {showAssign && bulkAssignTo != null && (
+        <AssignResultDialog
+          ticketIds={Array.from(selectedIds)}
+          assignedUserId={bulkAssignTo}
+          onClose={() => {
+            setShowAssign(false);
+            setBulkAssignTo(undefined);
             setSelectedIds(new Set());
           }}
         />
