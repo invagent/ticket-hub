@@ -41,6 +41,7 @@ export function RelinkModal({
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", ticketId] });
       onClose();
     },
     onError: (e) => setErr(hubErrMsg(e)),

@@ -35,14 +35,18 @@ export function TicketDetailPage() {
   const [relinkOpen, setRelinkOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignTo, setAssignTo] = useState<number | undefined>(undefined);
+  const [assignErr, setAssignErr] = useState<string | null>(null);
   const assign = useMutation({
     mutationFn: (uid: number) =>
       api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
     onSuccess: () => {
+      setAssignErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
       setAssignOpen(false);
       setAssignTo(undefined);
     },
+    onError: (e) => setAssignErr(e instanceof ApiError ? e.message : String(e)),
   });
   const graduate = useMutation({
     mutationFn: () =>
@@ -99,7 +103,10 @@ export function TicketDetailPage() {
                 {isSupervisor() && !assignOpen && (
                   <button
                     type="button"
-                    onClick={() => setAssignOpen(true)}
+                    onClick={() => {
+                      setAssignErr(null);
+                      setAssignOpen(true);
+                    }}
                     className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
                   >
                     指派
@@ -126,11 +133,13 @@ export function TicketDetailPage() {
                       onClick={() => {
                         setAssignOpen(false);
                         setAssignTo(undefined);
+                        setAssignErr(null);
                       }}
                       className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border"
                     >
                       取消
                     </button>
+                    {assignErr && <span className="text-[11.5px] text-hub-rose">{assignErr}</span>}
                   </span>
                 )}
               </span>
