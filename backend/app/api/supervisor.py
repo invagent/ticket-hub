@@ -73,6 +73,11 @@ from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 from app.services.ksm.notice_store import NoticeStore
 from app.services.ksm.writeback import drain_ksm_outbox
 from app.services.supervisor.config_warnings import get_config_warnings
+from app.services.supervisor.manual_assign import (
+    AssignRequest,
+    ManualAssignService,
+    TargetUserInvalidError,
+)
 from app.services.supervisor.relink import (
     HubIssueNotFoundError,
     PermissionDeniedError,
@@ -151,6 +156,25 @@ class RerouteResponse(BaseModel):
     results: list[RerouteItemOut]
     assigned_count: int
     no_match_count: int
+
+
+class AssignBody(BaseModel):
+    ticket_ids: list[int] = Field(..., min_length=1, max_length=50)
+    assigned_user_id: int
+
+
+class AssignItemOut(BaseModel):
+    ticket_id: int
+    short_code: str
+    success: bool
+    prev_assigned_user_id: int | None
+    message: str
+
+
+class AssignResponse(BaseModel):
+    results: list[AssignItemOut]
+    assigned_count: int
+    not_found_count: int
 
 
 # ---- endpoints ------------------------------------------------------------
@@ -297,6 +321,46 @@ def reroute_tickets(
         ],
         assigned_count=result.assigned_count,
         no_match_count=result.no_match_count,
+    )
+
+
+@router.post("/assign", response_model=AssignResponse)
+def assign_tickets(
+    body: AssignBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> AssignResponse:
+    try:
+        result = ManualAssignService(db).assign(
+            AssignRequest(
+                ticket_ids=body.ticket_ids,
+                assigned_user_id=body.assigned_user_id,
+                operator_user_id=user.user_id,
+            )
+        )
+    except TargetUserInvalidError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    db.commit()
+    logger.info(
+        "supervisor_assign",
+        ticket_ids=body.ticket_ids,
+        assigned_user_id=body.assigned_user_id,
+        assigned_count=result.assigned_count,
+        operator_user_id=user.user_id,
+    )
+    return AssignResponse(
+        results=[
+            AssignItemOut(
+                ticket_id=r.ticket_id,
+                short_code=r.short_code,
+                success=r.success,
+                prev_assigned_user_id=r.prev_assigned_user_id,
+                message=r.message,
+            )
+            for r in result.results
+        ],
+        assigned_count=result.assigned_count,
+        not_found_count=result.not_found_count,
     )
 
 
