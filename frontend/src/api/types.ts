@@ -5498,6 +5498,7 @@ export interface operations {
                 assigned_user_id?: number | null;
                 product?: string | null;
                 module?: string | null;
+                search?: string | null;
                 page?: number;
                 page_size?: number;
             };

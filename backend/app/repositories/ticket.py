@@ -194,6 +194,7 @@ class HubIssueRepository:
         assigned_user_id: int | None = None,
         product: str | None = None,
         module: str | None = None,
+        search: str | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Page[HubIssue]:
@@ -217,6 +218,14 @@ class HubIssueRepository:
         if module:
             base = base.where(HubIssue.module == module)
             count_base = count_base.where(HubIssue.module == module)
+        if search:
+            like = f"%{search}%"
+            base = base.where(
+                or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like))
+            )
+            count_base = count_base.where(
+                or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like))
+            )
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (

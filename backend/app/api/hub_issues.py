@@ -135,6 +135,7 @@ def list_hub_issues(
     assigned_user_id: int | None = Query(None),
     product: str | None = Query(None),
     module: str | None = Query(None),
+    search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> HubIssueListResponse:
@@ -144,6 +145,7 @@ def list_hub_issues(
         assigned_user_id=assigned_user_id,
         product=product,
         module=module,
+        search=search,
         page=page,
         page_size=page_size,
     )
