@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -216,6 +217,40 @@ describe("TicketDetailPage", () => {
     renderPage(302);
     expect(await screen.findByText("TKT-302")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "毕业为 hub_issue" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  // #5 重新关联弹窗
+  it("#5 supervisor + 已毕业 → 显示重新关联按钮，点击打开弹窗", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(303, 55);
+    renderPage(303);
+    expect(await screen.findByText("TKT-303")).toBeInTheDocument();
+    const relinkBtn = screen.getByRole("button", { name: "重新关联" });
+    expect(relinkBtn).toBeInTheDocument();
+    await userEvent.click(relinkBtn);
+    expect(await screen.findByText("重新关联到其他 hub")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("搜索 short_code 或标题（≥2 字）"),
+    ).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#5 未毕业（hub_issue_id 为空）→ 不显示重新关联按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(304, null);
+    renderPage(304);
+    expect(await screen.findByText("TKT-304")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新关联" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("#5 member → 不显示重新关联按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
+    stubTicket(305, 55);
+    renderPage(305);
+    expect(await screen.findByText("TKT-305")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新关联" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 });

@@ -7,6 +7,7 @@ import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
+import { RelinkModal } from "./RelinkModal";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -30,6 +31,7 @@ export function TicketDetailPage() {
   const qc = useQueryClient();
   const [gradType, setGradType] = useState<string>("");
   const [gradErr, setGradErr] = useState<string | null>(null);
+  const [relinkOpen, setRelinkOpen] = useState(false);
   const graduate = useMutation({
     mutationFn: () =>
       api.post("/api/supervisor/create-hub-issue", {
@@ -84,12 +86,23 @@ export function TicketDetailPage() {
             </Field>
             <Field label="hub_issue">
               {detail.data.hub_issue_id ? (
-                <Link
-                  to={`/hub-issues/${detail.data.hub_issue_id}`}
-                  className="text-hub-teal hover:underline"
-                >
-                  HUB-{detail.data.hub_issue_id}
-                </Link>
+                <span className="inline-flex items-center gap-2">
+                  <Link
+                    to={`/hub-issues/${detail.data.hub_issue_id}`}
+                    className="text-hub-teal hover:underline"
+                  >
+                    HUB-{detail.data.hub_issue_id}
+                  </Link>
+                  {isSupervisor() && (
+                    <button
+                      type="button"
+                      onClick={() => setRelinkOpen(true)}
+                      className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                    >
+                      重新关联
+                    </button>
+                  )}
+                </span>
               ) : (
                 "—"
               )}
@@ -173,6 +186,14 @@ export function TicketDetailPage() {
 
           {/* Phase 1 知识反哺：仅 ai_cs escalation 工单 + 主管可见（组件内部自判） */}
           <KnowledgeReflectPanel ticketId={id} />
+
+          {relinkOpen && detail.data.hub_issue_id != null && (
+            <RelinkModal
+              ticketId={id}
+              currentHubId={detail.data.hub_issue_id}
+              onClose={() => setRelinkOpen(false)}
+            />
+          )}
 
           <section className="space-y-2">
             <h2 className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">变更时间线</h2>
