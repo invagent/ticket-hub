@@ -28,6 +28,7 @@ from app.core.logging import get_logger
 from app.db import make_session
 from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.cascade.reply_sync import backfill_reply_to_ticket
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
 from app.services.hub_issues.op_status import OP_PROCESSING
 
@@ -115,9 +116,12 @@ def ensure_hub_issue_for_ticket(
     db.add(hub)
     db.flush()  # need hub.id for the link
 
-    # ADR-0016 §2.1：所有类型毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
+    # ADR-0016 §2.1：自动毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
     # 命中则当前 hub supersede 到原 hub，ticket 挂原 hub，占用复用不重复毕业。
-    if get_settings().hub_dedup_enabled:
+    # 主管手动毕业（created_by=user:*）跳过查重——人已显式判断要单独建，
+    # 不该被自动相似度判断静默合并、推翻人的决定。
+    is_manual = created_by.startswith("user:")
+    if not is_manual and get_settings().hub_dedup_enabled:
         dup_id = maybe_supersede_duplicate(db, hub)
         if dup_id is not None:
             ticket.hub_issue_id = dup_id
@@ -129,8 +133,13 @@ def ensure_hub_issue_for_ticket(
                     human_confirmed=created_by.startswith("user:"),
                 )
             )
-            db.commit()
             dup = db.get(HubIssue, dup_id)
+            # #2 修复：合并到已答复 Operation hub 时，给新挂进来的 ticket 补发答复
+            # （回填缓存 + 入 reply outbox）——否则 author_reply 早已跑完，第二个
+            # 客户收不到回复。
+            if dup is not None:
+                backfill_reply_to_ticket(db, dup, ticket)
+            db.commit()
             logger.info("hub_issue_dedup_merged", ticket_id=ticket.id, dup_hub_id=dup_id)
             return HubIssueResult(
                 hub_issue_id=dup_id,

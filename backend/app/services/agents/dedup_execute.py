@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, Ticket, TicketHubIssueHistory
+from app.services.cascade.reply_sync import backfill_reply_to_ticket
 
 logger = get_logger(__name__)
 
@@ -172,6 +173,9 @@ def execute_dedup(
             human_confirmed=executed_by.startswith("user:"),
         )
     )
+    # #2 修复：合并到已答复 Operation hub 时，给新挂进来的 subject ticket 补发答复
+    # （回填缓存 + 入 reply outbox），否则第二个客户收不到回复。
+    backfill_reply_to_ticket(db, hub, subject)
     decision.proposal = {
         **decision.proposal,
         "materialized": {

@@ -175,6 +175,106 @@ def test_graduate_creates_when_no_dup(world: Session, monkeypatch: pytest.Monkey
     assert res.created is True
 
 
+def test_dedup_merge_into_answered_hub_backfills_reply(
+    world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """合并到已答复 Operation hub → 新 ticket 回填 cached_reply + 入 reply outbox。
+
+    #2 修复：否则第二个客户收不到答复。
+    """
+    import app.services.hub_issues.creator as creator_mod
+    from app.models import SyncOutbox
+
+    orig = HubIssue(
+        short_code="HUB-ANSWERED",
+        type="Operation",
+        title="开票失败",
+        status="created",
+        op_status="answered",
+        op_handler="agent",
+        reply_content="您好，请在【发票管理】重新发起开票。",
+        reply_content_version=1,
+        reply_authored_by="agent:ai_cs",
+        occurrence_count=1,
+    )
+    world.add(orig)
+    world.flush()
+    t = _make_ticket(world, 30, predicted_type="Operation")
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: orig.id)
+    res = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
+    assert res.created is False
+    world.refresh(t)
+    # 新 ticket 拿到答复缓存
+    assert t.cached_reply_content == "您好，请在【发票管理】重新发起开票。"
+    assert t.cached_reply_version == 1
+    # 且入了 reply outbox（新工单源系统 KSM 会收到答复）
+    ob = world.query(SyncOutbox).filter_by(ticket_id=t.id, kind="reply").first()
+    assert ob is not None
+    assert ob.source_ticket_id == t.source_ticket_id
+    assert ob.payload["reply_content"] == "您好，请在【发票管理】重新发起开票。"
+
+
+def test_dedup_merge_into_unanswered_hub_no_backfill(
+    world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """合并到未答复 hub（reply_v=0）→ 不回填（没答复可发）。"""
+    import app.services.hub_issues.creator as creator_mod
+    from app.models import SyncOutbox
+
+    orig = HubIssue(
+        short_code="HUB-UNANSWERED",
+        type="Operation",
+        title="开票失败",
+        status="created",
+        op_status="processing",
+        op_handler="agent",
+        reply_content_version=0,
+        occurrence_count=1,
+    )
+    world.add(orig)
+    world.flush()
+    t = _make_ticket(world, 31, predicted_type="Operation")
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: orig.id)
+    ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=world)
+    world.refresh(t)
+    assert t.cached_reply_content is None
+    assert world.query(SyncOutbox).filter_by(ticket_id=t.id, kind="reply").first() is None
+
+
+def test_manual_graduate_skips_dedup(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """主管手动毕业（created_by=user:*）不跑 hub_dedup——人已判断，机器不该覆盖。
+
+    即使查重会命中（mock 返回 orig.id），手动路径也应新建独立 hub，不被合并。
+    """
+    import app.services.hub_issues.creator as creator_mod
+
+    orig = HubIssue(
+        short_code="HUB-ORIG-M",
+        type="Bug_fix",
+        title="开票失败原始",
+        status="created",
+        occurrence_count=1,
+    )
+    world.add(orig)
+    world.flush()
+    t = _make_ticket(world, 22)
+    called = {"dedup": 0}
+
+    def _spy(db, hub):  # type: ignore[no-untyped-def]
+        called["dedup"] += 1
+        return orig.id  # 若被调用会命中合并
+
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", _spy)
+    res = ensure_hub_issue_for_ticket(
+        t.id, created_by="user:boss", type_override="Bug_fix", db=world
+    )
+    assert called["dedup"] == 0  # 手动路径根本不跑查重
+    assert res.created is True
+    assert res.hub_issue_id != orig.id  # 新建独立 hub，没被合并
+    world.refresh(t)
+    assert t.hub_issue_id == res.hub_issue_id
+
+
 # ---- op_status 初始化：仅 Operation 毕业时设，研发类恒 NULL ----
 
 
