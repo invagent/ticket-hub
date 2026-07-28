@@ -161,6 +161,69 @@ def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
     assert hub.op_handler != "agent"
 
 
+def test_auto_answer_d_short_answer_downgrades_to_transfer(db_session: Session) -> None:
+    """route 判 D 但答复过短（< min_length）→ 不发客户，降级留主管。"""
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="好的")  # 2 字，短于 min_length=10
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 0  # 没发出去
+    assert hub.op_status == "processing"
+    assert hub.op_handler != "agent"
+
+
+def test_auto_answer_d_transfer_keyword_downgrades_to_transfer(db_session: Session) -> None:
+    """route 判 D 但答复含转人工兜底话术 → 不发客户，降级留主管。"""
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="抱歉，这个问题无法处理，建议您转人工客服咨询。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+    db_session.refresh(hub)
+    assert hub.reply_content_version == 0
+    assert hub.op_status == "processing"
+
+
+def test_auto_answer_c_empty_supply_note_downgrades_to_transfer(db_session: Session) -> None:
+    """route 判 C 但 supply_note 为空 → 不拿 answer 当补料话术发客户，降级留主管。"""
+    from app.models import SyncOutbox
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="无法处理")  # 若误用作补料话术会发这句给客户
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="C", supply_note=""),  # 空 supply_note
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+    db_session.refresh(hub)
+    # 不该入 supply outbox（没拿 answer 当补料话术）
+    ob = db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id, kind="supply").first()
+    assert ob is None
+    assert hub.op_status == "processing"
+    assert hub.op_handler != "agent"
+
+
 def test_auto_answer_replay_error_leaves_to_human(db_session: Session) -> None:
     hub, _t = _seed_op_hub(db_session)
     db_session.commit()

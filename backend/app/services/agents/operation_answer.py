@@ -40,6 +40,29 @@ logger = get_logger(__name__)
 _VALID_BRANCHES = frozenset({"C", "D", "transfer"})
 # replay 网络/超时错误即时重试次数（偶发抖动兜底；业务错误不重试）
 _REPLAY_MAX_ATTEMPTS = 3
+# answer-router 判 D 后的确定性兜底：答复含这些词说明 agent 自己也没解决，
+# 不该当标准答案发客户——降级留主管（answer-router 偶尔误判 D 的保险）。
+_TRANSFER_KEYWORDS = (
+    "无法处理",
+    "无法回答",
+    "无法解答",
+    "转人工",
+    "人工客服",
+    "建议您联系",
+    "请联系客服",
+)
+
+
+def _is_answer_sendable(answer: str, settings: Settings) -> bool:
+    """确定性硬判：答复能否直接发客户。空/过短/含转人工兜底词 → 不可发。
+
+    answer-router 全交 LLM 判 D/C/transfer，此处补一层确定性 floor，避免
+    LLM 误判 D 时把劣质/兜底话术直接发给真实客户。
+    """
+    text = (answer or "").strip()
+    if len(text) < settings.operation_auto_reply_min_length:
+        return False
+    return not any(kw in text for kw in _TRANSFER_KEYWORDS)
 
 
 @dataclass(slots=True, frozen=True)
@@ -197,7 +220,26 @@ def auto_answer_operation(
     # answer-router LLM 判 C/D/transfer
     route = _route_answer(question, answer)
 
+    def _transfer(reason: str) -> bool:
+        """降级留主管：op_status→processing/主管 + 记 transfer 审计。返回 False。"""
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_PROCESSING,
+            handler=resolve_supervisor_name(db, settings),
+            reason=reason,
+        )
+        _record_decision(
+            db, hub.id, branch="transfer", question=question, answer=answer, supply_note=""
+        )
+        logger.info("operation_auto_reply_transfer", hub_issue_id=hub.id, reason=reason)
+        return False
+
     if route.branch == "D":
+        # answer-router 判可发，但加一层确定性 floor：空/过短/含转人工兜底词
+        # 一律不发客户，降级留主管（防 LLM 误判 D 把劣质答复发出去）。
+        if not _is_answer_sendable(answer, settings):
+            return _transfer("agent 答复未过确定性 floor（空/过短/含转人工词），降级留主管")
         try:
             author_reply(db, hub.id, content=answer, authored_by="agent:ai_cs")
         except ReplySyncError as e:
@@ -209,7 +251,11 @@ def auto_answer_operation(
         return True
 
     if route.branch == "C":
-        note = route.supply_note or answer
+        # supply_note 为空绝不拿 answer 当补料话术（answer 可能是"无法处理"之类，
+        # 发给客户是错的）——降级留主管。
+        note = (route.supply_note or "").strip()
+        if not note:
+            return _transfer("需补料但 supply_note 为空，降级留主管")
         try:
             request_supply(db, hub.id, note=note, requested_by="agent:ai_cs")
         except SupplySyncError as e:
@@ -222,18 +268,7 @@ def auto_answer_operation(
 
     # transfer → 留主管。仍记 auto_reply 审计（branch=transfer），标记「已自动处理过」，
     # 供异步补偿任务区分「已判转人工」与「replay 失败待重试」，避免无限重扫。
-    apply_op_status(
-        db,
-        hub,
-        to_status=OP_PROCESSING,
-        handler=resolve_supervisor_name(db, settings),
-        reason="agent 业务无解转人工",
-    )
-    _record_decision(
-        db, hub.id, branch="transfer", question=question, answer=answer, supply_note=""
-    )
-    logger.info("operation_auto_reply_transfer", hub_issue_id=hub.id)
-    return False
+    return _transfer("agent 业务无解转人工")
 
 
 @dataclass(slots=True, frozen=True)
