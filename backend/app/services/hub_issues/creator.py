@@ -115,9 +115,12 @@ def ensure_hub_issue_for_ticket(
     db.add(hub)
     db.flush()  # need hub.id for the link
 
-    # ADR-0016 §2.1：所有类型毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
+    # ADR-0016 §2.1：自动毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
     # 命中则当前 hub supersede 到原 hub，ticket 挂原 hub，占用复用不重复毕业。
-    if get_settings().hub_dedup_enabled:
+    # 主管手动毕业（created_by=user:*）跳过查重——人已显式判断要单独建，
+    # 不该被自动相似度判断静默合并、推翻人的决定。
+    is_manual = created_by.startswith("user:")
+    if not is_manual and get_settings().hub_dedup_enabled:
         dup_id = maybe_supersede_duplicate(db, hub)
         if dup_id is not None:
             ticket.hub_issue_id = dup_id

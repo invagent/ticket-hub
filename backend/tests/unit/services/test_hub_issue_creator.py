@@ -175,6 +175,40 @@ def test_graduate_creates_when_no_dup(world: Session, monkeypatch: pytest.Monkey
     assert res.created is True
 
 
+def test_manual_graduate_skips_dedup(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """主管手动毕业（created_by=user:*）不跑 hub_dedup——人已判断，机器不该覆盖。
+
+    即使查重会命中（mock 返回 orig.id），手动路径也应新建独立 hub，不被合并。
+    """
+    import app.services.hub_issues.creator as creator_mod
+
+    orig = HubIssue(
+        short_code="HUB-ORIG-M",
+        type="Bug_fix",
+        title="开票失败原始",
+        status="created",
+        occurrence_count=1,
+    )
+    world.add(orig)
+    world.flush()
+    t = _make_ticket(world, 22)
+    called = {"dedup": 0}
+
+    def _spy(db, hub):  # type: ignore[no-untyped-def]
+        called["dedup"] += 1
+        return orig.id  # 若被调用会命中合并
+
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", _spy)
+    res = ensure_hub_issue_for_ticket(
+        t.id, created_by="user:boss", type_override="Bug_fix", db=world
+    )
+    assert called["dedup"] == 0  # 手动路径根本不跑查重
+    assert res.created is True
+    assert res.hub_issue_id != orig.id  # 新建独立 hub，没被合并
+    world.refresh(t)
+    assert t.hub_issue_id == res.hub_issue_id
+
+
 # ---- op_status 初始化：仅 Operation 毕业时设，研发类恒 NULL ----
 
 
