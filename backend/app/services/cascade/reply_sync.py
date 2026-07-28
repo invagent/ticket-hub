@@ -117,3 +117,43 @@ def author_reply(
         cascaded_ticket_ids=cascaded,
         outbox_ids=outbox_ids,
     )
+
+
+def backfill_reply_to_ticket(db: Session, hub: HubIssue, ticket: Ticket) -> bool:
+    """给「后挂进已答复 hub」的新 ticket 补发答复：回填缓存 + 入 reply outbox。
+
+    hub_dedup 合并把新 ticket 挂到一个已答复的 Operation hub 时，author_reply
+    早已跑完、只覆盖了当时在库的 ticket——新挂进来的会漏掉答复，第二个客户收
+    不到回复。合并路径调本函数补上。
+
+    仅在 hub 已有答复（reply_content_version>=1）时生效。有源 ticket 才入 outbox
+    （Child 无源系统，只回填缓存）。不 commit（随调用方事务）。返回 True=已补发。
+    """
+    if hub.reply_content_version < 1 or not hub.reply_content:
+        return False
+
+    ticket.cached_reply_content = hub.reply_content
+    ticket.cached_reply_version = hub.reply_content_version
+    if ticket.source_code and ticket.source_ticket_id:
+        db.add(
+            SyncOutbox(
+                kind="reply",
+                target_source_code=ticket.source_code,
+                ticket_id=ticket.id,
+                source_ticket_id=ticket.source_ticket_id,
+                hub_issue_id=hub.id,
+                payload={
+                    "reply_content": hub.reply_content,
+                    "reply_version": hub.reply_content_version,
+                    "authored_by": hub.reply_authored_by or "agent:ai_cs",
+                    "hub_short_code": hub.short_code,
+                },
+            )
+        )
+    logger.info(
+        "reply_backfilled_to_merged_ticket",
+        hub_issue_id=hub.id,
+        ticket_id=ticket.id,
+        version=hub.reply_content_version,
+    )
+    return True

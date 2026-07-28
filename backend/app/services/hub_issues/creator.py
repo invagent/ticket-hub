@@ -28,6 +28,7 @@ from app.core.logging import get_logger
 from app.db import make_session
 from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.cascade.reply_sync import backfill_reply_to_ticket
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
 from app.services.hub_issues.op_status import OP_PROCESSING
 
@@ -132,8 +133,13 @@ def ensure_hub_issue_for_ticket(
                     human_confirmed=created_by.startswith("user:"),
                 )
             )
-            db.commit()
             dup = db.get(HubIssue, dup_id)
+            # #2 修复：合并到已答复 Operation hub 时，给新挂进来的 ticket 补发答复
+            # （回填缓存 + 入 reply outbox）——否则 author_reply 早已跑完，第二个
+            # 客户收不到回复。
+            if dup is not None:
+                backfill_reply_to_ticket(db, dup, ticket)
+            db.commit()
             logger.info("hub_issue_dedup_merged", ticket_id=ticket.id, dup_hub_id=dup_id)
             return HubIssueResult(
                 hub_issue_id=dup_id,
