@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.logging import get_logger
-from app.models import HubIssue, Ticket
+from app.models import Attachment, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.hub_issues.op_status import (
@@ -176,6 +176,17 @@ class KSMIngester:
         # multi_match → leave None; supervisor or D3 picks up
 
         self._db.flush()
+
+        # 4b. 建附件行（仅建行，不下载；下载+OCR 由异步流水线处理）
+        for url in payload.get("attachment_urls", []) or []:
+            self._db.add(
+                Attachment(
+                    ticket_id=ticket.id,
+                    source_url=url,
+                    kind="image",
+                    vision_status="queued",
+                )
+            )
 
         # 5. Status history
         self._history.record(
