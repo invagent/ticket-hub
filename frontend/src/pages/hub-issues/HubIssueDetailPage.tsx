@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getByPath, postByPath } from "@/api/client";
+import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/api/client";
 import { currentRole, isSupervisor } from "@/api/auth";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
+import { HubCollabActions } from "@/components/hubActions";
 import type { paths } from "@/api/types";
 
 /** supervisor / admin / knowledge_op 可用（人工重答等知识运营权限，同后端 require_knowledge_op）。 */
@@ -27,6 +28,7 @@ const TYPE_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
 export function HubIssueDetailPage() {
   const { hubIssueId } = useParams<{ hubIssueId: string }>();
   const id = Number(hubIssueId);
+  const qc = useQueryClient();
 
   const detail = useQuery({
     queryKey: ["hub-issue-detail", id],
@@ -44,7 +46,13 @@ export function HubIssueDetailPage() {
       {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
       {detail.data && (
         <div className="mt-3 space-y-4">
-          <Header data={detail.data} />
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <Header data={detail.data} />
+            <HubCollabActions
+              hub={detail.data as unknown as HubIssueSummary}
+              onChange={() => qc.invalidateQueries({ queryKey: ["hub-issue-detail", id] })}
+            />
+          </div>
           <CommonMeta data={detail.data} />
           <TypeSpecificSection data={detail.data} />
           {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") && (
@@ -121,6 +129,15 @@ function Header({ data }: { data: HubIssueDetail }) {
             </Link>{" "}
             取代
           </span>
+        )}
+        {data.feedback_status && (
+          <>
+            <span className="text-hub-textFaint">·</span>
+            <span>
+              回访: {data.feedback_status}
+              {data.feedback_note && ` — ${data.feedback_note}`}
+            </span>
+          </>
         )}
       </div>
     </header>

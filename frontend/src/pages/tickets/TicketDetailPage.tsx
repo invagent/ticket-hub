@@ -6,7 +6,9 @@ import { api, ApiError, getByPath } from "@/api/client";
 import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
+import { UserSelect } from "@/components/selectors";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
+import { RelinkModal } from "./RelinkModal";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -30,6 +32,22 @@ export function TicketDetailPage() {
   const qc = useQueryClient();
   const [gradType, setGradType] = useState<string>("");
   const [gradErr, setGradErr] = useState<string | null>(null);
+  const [relinkOpen, setRelinkOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignTo, setAssignTo] = useState<number | undefined>(undefined);
+  const [assignErr, setAssignErr] = useState<string | null>(null);
+  const assign = useMutation({
+    mutationFn: (uid: number) =>
+      api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
+    onSuccess: () => {
+      setAssignErr(null);
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      setAssignOpen(false);
+      setAssignTo(undefined);
+    },
+    onError: (e) => setAssignErr(e instanceof ApiError ? e.message : String(e)),
+  });
   const graduate = useMutation({
     mutationFn: () =>
       api.post("/api/supervisor/create-hub-issue", {
@@ -78,18 +96,73 @@ export function TicketDetailPage() {
             <Field label="特性">{detail.data.feature ?? "—"}</Field>
             <Field label="产品线">{detail.data.product_line_code ?? "—"}</Field>
             <Field label="负责人">
-              {detail.data.assigned_user_id
-                ? (detail.data.assigned_user_name ?? `用户 #${detail.data.assigned_user_id}`)
-                : "—"}
+              <span className="inline-flex items-center gap-2">
+                {detail.data.assigned_user_id
+                  ? (detail.data.assigned_user_name ?? `用户 #${detail.data.assigned_user_id}`)
+                  : "—"}
+                {isSupervisor() && !assignOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssignErr(null);
+                      setAssignOpen(true);
+                    }}
+                    className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                  >
+                    指派
+                  </button>
+                )}
+                {isSupervisor() && assignOpen && (
+                  <span className="inline-flex items-center gap-2">
+                    <UserSelect
+                      value={assignTo}
+                      onChange={setAssignTo}
+                      roles={["assignee", "supervisor", "admin"]}
+                      placeholder="选择处理人"
+                    />
+                    <button
+                      type="button"
+                      disabled={assignTo == null || assign.isPending}
+                      onClick={() => assignTo != null && assign.mutate(assignTo)}
+                      className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+                    >
+                      {assign.isPending ? "指派中…" : "确认"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignOpen(false);
+                        setAssignTo(undefined);
+                        setAssignErr(null);
+                      }}
+                      className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border"
+                    >
+                      取消
+                    </button>
+                    {assignErr && <span className="text-[11.5px] text-hub-rose">{assignErr}</span>}
+                  </span>
+                )}
+              </span>
             </Field>
             <Field label="hub_issue">
               {detail.data.hub_issue_id ? (
-                <Link
-                  to={`/hub-issues/${detail.data.hub_issue_id}`}
-                  className="text-hub-teal hover:underline"
-                >
-                  HUB-{detail.data.hub_issue_id}
-                </Link>
+                <span className="inline-flex items-center gap-2">
+                  <Link
+                    to={`/hub-issues/${detail.data.hub_issue_id}`}
+                    className="text-hub-teal hover:underline"
+                  >
+                    HUB-{detail.data.hub_issue_id}
+                  </Link>
+                  {isSupervisor() && (
+                    <button
+                      type="button"
+                      onClick={() => setRelinkOpen(true)}
+                      className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                    >
+                      重新关联
+                    </button>
+                  )}
+                </span>
               ) : (
                 "—"
               )}
@@ -173,6 +246,14 @@ export function TicketDetailPage() {
 
           {/* Phase 1 知识反哺：仅 ai_cs escalation 工单 + 主管可见（组件内部自判） */}
           <KnowledgeReflectPanel ticketId={id} />
+
+          {relinkOpen && detail.data.hub_issue_id != null && (
+            <RelinkModal
+              ticketId={id}
+              currentHubId={detail.data.hub_issue_id}
+              onClose={() => setRelinkOpen(false)}
+            />
+          )}
 
           <section className="space-y-2">
             <h2 className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">变更时间线</h2>

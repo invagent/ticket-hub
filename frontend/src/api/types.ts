@@ -866,8 +866,11 @@ export interface paths {
          * Re Answer Endpoint
          * @description 主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。
          *
-         *     前置：hub 存在 + type=Operation + op_status=processing 且 op_handler!=
-         *     'agent'（人工介入中）。非人工介入中一律 409（含刚毕业未处理过、已答复、
+         *     前置：hub 存在 + type=Operation + op_status ∈ (processing, exception) 且
+         *     op_handler != 'agent'。processing 是人工介入中；exception 是 replay 系统
+         *     故障时置的转人工态——drain 不会自动重扫 exception（系统故障不该无限自动
+         *     重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能
+         *     点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、
          *     补料中等——这些场景走各自专属流程，不该被重答抢跑）。
          */
         post: operations["re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post"];
@@ -1086,6 +1089,23 @@ export interface paths {
         get: operations["ai_cs_status_endpoint_api_supervisor_ai_cs_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Tickets */
+        post: operations["assign_tickets_api_supervisor_assign_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1837,6 +1857,35 @@ export interface components {
             skill: string;
             /** Supply Note */
             supply_note: string;
+        };
+        /** AssignBody */
+        AssignBody: {
+            /** Assigned User Id */
+            assigned_user_id: number;
+            /** Ticket Ids */
+            ticket_ids: number[];
+        };
+        /** AssignItemOut */
+        AssignItemOut: {
+            /** Message */
+            message: string;
+            /** Prev Assigned User Id */
+            prev_assigned_user_id: number | null;
+            /** Short Code */
+            short_code: string;
+            /** Success */
+            success: boolean;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** AssignResponse */
+        AssignResponse: {
+            /** Assigned Count */
+            assigned_count: number;
+            /** Not Found Count */
+            not_found_count: number;
+            /** Results */
+            results: components["schemas"]["AssignItemOut"][];
         };
         /** AuthorReplyBody */
         AuthorReplyBody: {
@@ -5449,6 +5498,7 @@ export interface operations {
                 assigned_user_id?: number | null;
                 product?: string | null;
                 module?: string | null;
+                search?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -5998,6 +6048,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiCsStatusResponse"];
+                };
+            };
+        };
+    };
+    assign_tickets_api_supervisor_assign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

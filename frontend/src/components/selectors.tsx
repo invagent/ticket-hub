@@ -54,8 +54,12 @@ export function UserSelect({
   className,
   disabled,
   required,
-}: SelectProps<number>) {
+  roles,
+}: SelectProps<number> & { roles?: string[] }) {
   const q = useUserOptions();
+  const opts = (q.data ?? []).filter(
+    (u: UserOpt) => !roles || roles.includes(u.role),
+  );
   return (
     <select
       value={value ?? ""}
@@ -69,7 +73,7 @@ export function UserSelect({
       }
     >
       {!required && <option value="">{placeholder}</option>}
-      {q.data?.map((u: UserOpt) => (
+      {opts.map((u: UserOpt) => (
         <option key={u.id} value={u.id}>
           {labelForUser(u)}
         </option>
