@@ -21,6 +21,7 @@ dependencies = [
     "pytz>=2024.2",
     "structlog>=24.4.0",
     "tenacity>=9.0.0",
+    "minio>=7.2.0",
 ]
 
 [project.optional-dependencies]

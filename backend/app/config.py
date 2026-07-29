@@ -33,12 +33,19 @@ class Settings(BaseSettings):
     # ---- Redis ----
     redis_url: str = "redis://localhost:6379/0"
 
-    # ---- MinIO / S3 ----
-    s3_endpoint: str = "http://localhost:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
-    s3_bucket: str = "ticket-hub-attachments"
-    s3_region: str = "us-east-1"
+    # ---- 存储（MinIO）----
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "ticket-hub-attachments"
+    minio_public_base: str = ""  # 公开访问前缀(nginx反代)，空则用 endpoint 拼
+    minio_secure: bool = False
+
+    # ---- 附件流水线灰度 ----
+    attachment_pipeline_enabled: bool = False
+    attachment_pipeline_dry_run: bool = True
+    attachment_max_bytes: int = 10 * 1024 * 1024
+    attachment_max_attempts: int = 3
 
     # ---- Feishu ----
     feishu_app_id: str = ""
