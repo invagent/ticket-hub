@@ -18,6 +18,9 @@ type DrainPath =
   | "/api/supervisor/drain-ksm-writeback"
   | "/api/supervisor/drain-zhichi-writeback";
 
+type AttachmentDrainResp =
+  paths["/api/supervisor/drain-attachments"]["post"]["responses"]["200"]["content"]["application/json"];
+
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
     const detail = (e.body as { detail?: unknown } | null)?.detail;
@@ -95,6 +98,47 @@ function DrainRow({ label, path }: { label: string; path: DrainPath }) {
   );
 }
 
+function AttachmentDrainRow() {
+  const qc = useQueryClient();
+  const [result, setResult] = useState<AttachmentDrainResp | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => api.post("/api/supervisor/drain-attachments"),
+    onSuccess: (d) => {
+      setResult(d as AttachmentDrainResp);
+      setErr(null);
+      void qc.invalidateQueries({ queryKey: ["workbench"] });
+    },
+    onError: (e) => setErr(errMsg(e)),
+  });
+
+  return (
+    <div className="flex flex-col gap-1 py-2 border-b border-hub-border last:border-0">
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-[13px] w-12">附件流水线</span>
+        <button
+          type="button"
+          onClick={() => mut.mutate()}
+          disabled={mut.isPending}
+          className="ml-auto text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          {mut.isPending ? "drain 中…" : "立即 drain"}
+        </button>
+      </div>
+      {result && (
+        <div className="text-[11.5px] text-hub-muted">
+          扫描 {result.scanned} · 提取 {result.extracted} · 跳过 {result.skipped} ·{" "}
+          <span className={result.failed > 0 ? "text-hub-rose font-semibold" : ""}>
+            失败 {result.failed}
+          </span>
+        </div>
+      )}
+      {err && <p className="text-[11.5px] text-hub-rose">{err}</p>}
+    </div>
+  );
+}
+
 export function OpsPanel() {
   return (
     <section className="bg-white border border-hub-border rounded-[10px] p-4 mb-6">
@@ -104,6 +148,7 @@ export function OpsPanel() {
       </div>
       <DrainRow label="KSM" path="/api/supervisor/drain-ksm-writeback" />
       <DrainRow label="智齿" path="/api/supervisor/drain-zhichi-writeback" />
+      <AttachmentDrainRow />
     </section>
   );
 }
