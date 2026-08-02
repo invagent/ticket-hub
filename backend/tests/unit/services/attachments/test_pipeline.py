@@ -68,8 +68,9 @@ def test_dry_run_skips(db_session, monkeypatch):
     rep = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
     assert rep.skipped == 1
     ksm.download_attachment.assert_not_called()
+    # dry_run 不改行状态——留 queued，翻掉 dry_run 后仍会被扫到真正处理（不永久卡 skipped）
     db_session.refresh(a)
-    assert a.vision_status == "skipped"
+    assert a.vision_status == "queued"
 
 
 def test_oversize_skips(db_session, monkeypatch):

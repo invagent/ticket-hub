@@ -72,13 +72,11 @@ def drain_pending_attachments(
     if not rows:
         return report
 
-    # dry_run 短路：只标 skipped，不建 client，不下载。
+    # dry_run 短路：不建 client、不下载，且**不改行状态**——留 queued。
+    # 观察窗口（enabled+dry_run）期间到达的附件，翻掉 dry_run 后仍会被扫到真正处理，
+    # 不会永久卡在 skipped（否则需手工 UPDATE 回 queued 才能补 OCR）。report 里计入 skipped 只作观察。
     if settings.attachment_pipeline_dry_run:
-        for att in rows:
-            att.vision_status = "skipped"
-            att.last_error = "dry_run"
-            report.skipped += 1
-        db.flush()
+        report.skipped = len(rows)
         return report
 
     # 惰性建 store（未配置 MinIO → 全批标 failed 转人工，不静默成功）。
@@ -133,6 +131,7 @@ def process_one(
         assert att.source_url is not None  # drain 查询已过滤 source_url IS NOT NULL
         img = ksm_client.download_attachment(att.source_url)
         if len(img) > settings.attachment_max_bytes:
+            att.size_bytes = len(img)
             att.vision_status = "skipped"
             att.last_error = f"oversize:{len(img)}"
             return "skipped"
