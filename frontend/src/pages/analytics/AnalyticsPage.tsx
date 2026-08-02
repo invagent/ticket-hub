@@ -151,6 +151,8 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
   const byProductLine = (data.by_product_line ?? []) as Array<Record<string, any>>;
   const plChartData = byProductLine.map((row) => ({
     product_line: row.product_line,
+    total: row.total,
+    overdue_count: row.overdue_count ?? 0,
     ...row.by_type,
   }));
 
@@ -235,13 +237,53 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="product_line" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const row = payload[0].payload as {
+                        total: number;
+                        overdue_count: number;
+                      };
+                      return (
+                        <div className="bg-white border border-hub-border rounded px-2 py-1.5 text-[11px]">
+                          <div className="font-semibold mb-0.5">{label}</div>
+                          {payload.map((p) => (
+                            <div key={String(p.dataKey)} style={{ color: p.color }}>
+                              {p.name}：{p.value}
+                            </div>
+                          ))}
+                          <div className="mt-0.5 text-hub-textSecondary">合计：{row.total}</div>
+                          <div style={{ color: row.overdue_count > 0 ? "#b04a4a" : undefined }}>
+                            超期：{row.overdue_count}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
                   <Legend wrapperStyle={{ fontSize: 10.5 }} />
                   {HUB_TYPES.map((t) => (
                     <Bar key={t} dataKey={t} name={TYPE_LABELS[t]} stackId="pl" fill={TYPE_COLORS[t]} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          )}
+          {plChartData.some((d) => d.overdue_count > 0) && (
+            <div
+              className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-hub-textSecondary"
+              data-testid="product-line-overdue"
+            >
+              <span className="text-hub-textFaint">超期工单：</span>
+              {plChartData
+                .filter((d) => d.overdue_count > 0)
+                .map((d) => (
+                  <span key={d.product_line}>
+                    {d.product_line}
+                    <span className="ml-1 font-semibold" style={{ color: "#b04a4a" }}>
+                      {d.overdue_count}
+                    </span>
+                  </span>
+                ))}
             </div>
           )}
         </div>

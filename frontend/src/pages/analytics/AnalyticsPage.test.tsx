@@ -83,6 +83,13 @@ describe("AnalyticsPage", () => {
     expect(screen.getByTestId("trend-line-chart")).toBeInTheDocument();
     expect(screen.getByTestId("hist-bar-chart")).toBeInTheDocument();
 
+    // 产品线超期数（来自 by_product_line[].overdue_count：cloud-erp=5, cloud-hr=2）
+    const overdue = screen.getByTestId("product-line-overdue");
+    expect(overdue).toHaveTextContent("cloud-erp");
+    expect(overdue).toHaveTextContent("5");
+    expect(overdue).toHaveTextContent("cloud-hr");
+    expect(overdue).toHaveTextContent("2");
+
     localStorage.clear();
   });
 
