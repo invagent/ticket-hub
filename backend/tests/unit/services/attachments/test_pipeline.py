@@ -98,6 +98,36 @@ def test_download_failure_retries_then_fails(db_session, monkeypatch):
     assert a.vision_status == "failed" and a.last_error
 
 
+def test_ocr_failure_after_upload_keeps_row_scannable_then_fails(db_session, monkeypatch):
+    """Review 场景：upload 成功但 vision.extract 抛错。storage_key 不能被写入，
+    否则 drain 的 storage_key IS NULL 过滤条件会把这行永久排除在外，卡成 stuck row。
+    """
+    _set_pipeline(monkeypatch, enabled=True, dry_run=False, max_attempts=2)
+    t = _mk_ticket(db_session)
+    a = _mk_att(db_session, t.id)
+    ksm, store, vision = _mocks()
+    vision.extract.side_effect = RuntimeError("vision timeout")
+
+    # 第一轮：upload 成功，OCR 失败 → attempts=1，storage_key 仍为 None，仍可被扫到。
+    rep1 = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
+    assert rep1.scanned == 1
+    assert rep1.failed == 0 and rep1.extracted == 0
+    db_session.refresh(a)
+    assert a.storage_key is None
+    assert a.vision_status == "queued"
+    assert a.download_attempts == 1
+    store.put_bytes.assert_called_once()
+
+    # 第二轮：row 依然被扫到（storage_key IS NULL 未被上一轮破坏）。
+    rep2 = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
+    assert rep2.scanned == 1
+    db_session.refresh(a)
+    assert a.storage_key is None
+    assert a.vision_status == "failed"
+    assert a.download_attempts == 2
+    assert "vision timeout" in (a.last_error or "")
+
+
 def test_only_scans_queued(db_session, monkeypatch):
     _set_pipeline(monkeypatch, enabled=True, dry_run=False)
     t = _mk_ticket(db_session)

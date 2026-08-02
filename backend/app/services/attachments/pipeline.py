@@ -34,7 +34,6 @@ _VISION_PROMPT = "识别图片中的报错文本与界面上下文，简述问�
 @dataclass(slots=True)
 class AttachmentDrainReport:
     scanned: int = 0
-    stored: int = 0
     extracted: int = 0
     skipped: int = 0
     failed: int = 0
@@ -112,7 +111,6 @@ def drain_pending_attachments(
         )
         if status == "extracted":
             report.extracted += 1
-            report.stored += 1
         elif status == "skipped":
             report.skipped += 1
         elif status == "failed":
@@ -141,11 +139,18 @@ def process_one(
 
         key = attachment_object_key(att.ticket_id, att.id, att.filename)
         content_type = att.mime or "image/png"
-        att.storage_key = store.put_bytes(key, img, content_type)  # public_url 回写 storage_key
-        att.size_bytes = len(img)
+        # 先只留局部变量，不写 att.storage_key：drain 扫描条件是 storage_key IS NULL，
+        # 若下面 vision 失败就 return，让这行继续可被扫到重试（否则会卡成 stuck row）。
+        # key 是确定性的，重试重新上传会覆盖同一个 MinIO 对象，不产生重复。
+        public_url = store.put_bytes(key, img, content_type)
+        size_bytes = len(img)
 
         result = vision_client.extract(prompt=_VISION_PROMPT, image_bytes=img, mime=content_type)
         text = getattr(result, "ocr_text", None) or getattr(result, "text", None) or ""
+
+        # OCR 也成功了，这里才把 storage_key 落地，标记为终态。
+        att.storage_key = public_url
+        att.size_bytes = size_bytes
         att.extracted_text = text
         att.vision_model = getattr(result, "model", None) or settings.vision_model
         att.vision_cost_usd = getattr(result, "cost_usd", None)
