@@ -35,6 +35,7 @@ celery_app = Celery(
         "app.services.zhichi.writeback_task",
         "app.services.agents.operation_answer_task",
         "app.services.agents.op_close_task",
+        "app.services.attachments.drain_task",
     ],
 )
 
@@ -80,5 +81,10 @@ celery_app.conf.beat_schedule = {
     "close_answered_operations_daily": {
         "task": "app.services.agents.op_close_task.close_answered_operations",
         "schedule": crontab(hour=3, minute=17),
+    },
+    # 附件异步流水线 drain（attachment_pipeline_enabled 未开则任务内自动跳过）
+    "drain_attachments_every_5min": {
+        "task": "app.services.attachments.drain_task.drain_attachments",
+        "schedule": crontab(minute="*/5"),
     },
 }

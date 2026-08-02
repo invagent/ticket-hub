@@ -1121,6 +1121,34 @@
         "title": "DraftResponse",
         "type": "object"
       },
+      "DrainAttachmentsResponse": {
+        "properties": {
+          "extracted": {
+            "title": "Extracted",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "extracted",
+          "skipped",
+          "failed"
+        ],
+        "title": "DrainAttachmentsResponse",
+        "type": "object"
+      },
       "DrainKsmWritebackResponse": {
         "properties": {
           "deferred": {
@@ -10054,6 +10082,28 @@
           }
         },
         "summary": "Dismiss Split Endpoint",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/drain-attachments": {
+      "post": {
+        "description": "手动跑一轮附件流水线 drain（download → MinIO → vision OCR）。尊重\nattachment_pipeline_enabled / _dry_run——主管按需 flush 队列，不必等 5min beat。",
+        "operationId": "drain_attachments_endpoint_api_supervisor_drain_attachments_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainAttachmentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Attachments Endpoint",
         "tags": [
           "supervisor"
         ]

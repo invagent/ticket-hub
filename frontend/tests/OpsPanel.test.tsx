@@ -17,12 +17,30 @@ function renderPanel() {
 describe("OpsPanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("渲染 KSM/智齿两行 + 立即 drain 按钮", () => {
+  it("渲染 KSM/智齿/附件流水线三行 + 立即 drain 按钮", () => {
     renderPanel();
     expect(screen.getByText("出站回写运维")).toBeInTheDocument();
     expect(screen.getByText("KSM")).toBeInTheDocument();
     expect(screen.getByText("智齿")).toBeInTheDocument();
-    expect(screen.getAllByText("立即 drain")).toHaveLength(2);
+    expect(screen.getByText("附件流水线")).toBeInTheDocument();
+    expect(screen.getAllByText("立即 drain")).toHaveLength(3);
+  });
+
+  it("点附件流水线 drain 调对端点并展示 scanned/extracted/skipped/failed", async () => {
+    const spy = vi.spyOn(clientMod.api, "post").mockResolvedValue({
+      scanned: 5,
+      extracted: 3,
+      skipped: 1,
+      failed: 1,
+    } as never);
+    renderPanel();
+    fireEvent.click(screen.getAllByText("立即 drain")[2]);
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("/api/supervisor/drain-attachments"),
+    );
+    await waitFor(() => expect(screen.getByText(/提取 3/)).toBeInTheDocument());
+    expect(screen.getByText(/扫描 5/)).toBeInTheDocument();
+    expect(screen.getByText(/失败 1/)).toBeInTheDocument();
   });
 
   it("点 KSM drain 调对端点并展示结果（failed 标红）", async () => {
