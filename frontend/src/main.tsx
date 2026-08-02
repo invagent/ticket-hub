@@ -65,6 +65,7 @@ import { PeopleScopesPage } from "./pages/admin/users/PeopleScopesPage";
 import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
 import { SkillsPage } from "./pages/admin/skills/SkillsPage";
 import { ReflectWorkbenchPage } from "./pages/reflect/ReflectWorkbenchPage";
+import { AnalyticsPage } from "./pages/analytics/AnalyticsPage";
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -108,6 +109,7 @@ createRoot(document.getElementById("root")!).render(
             {/* 旧主管工作台/Dashboard 已合并进工作台，老书签重定向 */}
             <Route path="/supervisor" element={<Navigate to="/" replace />} />
             <Route path="/reflect" element={<ReflectWorkbenchPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/tickets" element={<TicketsListPage />} />
             <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
             <Route path="/hub-issues" element={<HubIssuesListPage />} />

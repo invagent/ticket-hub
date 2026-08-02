@@ -58,6 +58,17 @@ function TargetIcon({ active }: { active: boolean }) {
   );
 }
 
+function ChartIcon({ active }: { active: boolean }) {
+  const c = active ? "#177e83" : "#8b8577";
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <rect x="2" y="8" width="2.6" height="5" fill={c} />
+      <rect x="6.2" y="4.5" width="2.6" height="8.5" fill={c} opacity=".75" />
+      <rect x="10.4" y="1.5" width="2.6" height="11.5" fill={c} />
+    </svg>
+  );
+}
+
 function AdminIcon({ active }: { active: boolean }) {
   const c = active ? "#177e83" : "#8b8577";
   return (
@@ -85,6 +96,7 @@ const navItems: {
     icon: TargetIcon,
     roles: ["knowledge_op", "supervisor", "admin"],
   },
+  { to: "/analytics", label: "统计看板", icon: ChartIcon, roles: ["supervisor", "admin"] },
   { to: "/admin/users", label: "管理", icon: AdminIcon, roles: ["supervisor", "admin"] },
 ];
 

@@ -37,6 +37,19 @@ Object.defineProperty(globalThis, "sessionStorage", {
   writable: true,
 });
 
+// jsdom 没有 ResizeObserver，recharts 的 <ResponsiveContainer> 挂载时会读它
+// 测尺寸——补一个空实现，测试环境不关心真实尺寸变化。
+class _ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+Object.defineProperty(globalThis, "ResizeObserver", {
+  value: _ResizeObserverStub,
+  configurable: true,
+  writable: true,
+});
+
 // Boot MSW once per test run; reset handlers between tests so each test
 // declares only the requests it cares about.
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
