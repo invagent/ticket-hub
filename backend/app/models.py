@@ -436,6 +436,10 @@ class Ticket(Base):
     predicted_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # 研发管理统计（handle_hours 回填自飞书耗时/未来由 SLA watcher 计算）
+    handle_hours: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
+    sla_standard_hours: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
+
     # Misc
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
