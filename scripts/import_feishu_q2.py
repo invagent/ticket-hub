@@ -155,6 +155,24 @@ def _existing_source_ids(db) -> set[str]:
     )
 
 
+def _ensure_feishu_source(db) -> None:
+    """确保 feishu source 种子存在（tickets.source_code FK 到 sources.code）。
+
+    SIT sources 表只种了 ai_cs/ksm/linear/zammad/zhichi，缺 feishu；三份 CSV
+    有 167 行会映射到 feishu（多维表格内部 + 空来源兜底），不建则正式写库触发 FK 违反。
+    is_active/created_at/updated_at 均有 DB server_default，只写 code/name 即可。
+    """
+    from sqlalchemy import text
+
+    db.execute(
+        text(
+            "INSERT INTO sources (code, name) VALUES ('feishu', '飞书多维表格导入') "
+            "ON CONFLICT (code) DO NOTHING"
+        )
+    )
+    db.commit()
+
+
 def _upsert_catalog(db, product_line: str, module: str) -> None:
     """产品线/模块无则建（同入库 catalog_upsert 逻辑，ON CONFLICT DO NOTHING）。"""
     from sqlalchemy import text
@@ -245,6 +263,7 @@ def main() -> None:
         if args.dry_run:
             _stats(rows, handler_idx)
             return
+        _ensure_feishu_source(db)
         _import(db, rows, handler_idx)
     finally:
         db.close()
