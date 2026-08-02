@@ -146,11 +146,34 @@ def compute_ticket_analytics(
     for pl, ptype, c in pl_rows:
         key = pl or "(未知)"
         d = pl_map.setdefault(
-            key, {"product_line": key, "total": 0, "by_type": dict.fromkeys(_TYPES, 0)}
+            key,
+            {
+                "product_line": key,
+                "total": 0,
+                "overdue_count": 0,
+                "by_type": dict.fromkeys(_TYPES, 0),
+            },
         )
         d["total"] += c
         if ptype in d["by_type"]:
             d["by_type"][ptype] += c
+    # 各产品线超期数（口径同 sla_rate：两列非空且 handle > std）
+    overdue_rows = db.execute(
+        select(Ticket.product_line_code, func.count())
+        .where(
+            and_(
+                flt,
+                Ticket.handle_hours.is_not(None),
+                Ticket.sla_standard_hours.is_not(None),
+                Ticket.handle_hours > Ticket.sla_standard_hours,
+            )
+        )
+        .group_by(Ticket.product_line_code)
+    ).all()
+    for pl, c in overdue_rows:
+        key = pl or "(未知)"
+        if key in pl_map:
+            pl_map[key]["overdue_count"] = c
     by_product_line = sorted(pl_map.values(), key=lambda x: x["total"], reverse=True)[:10]
 
     # 处理人负载 top15
