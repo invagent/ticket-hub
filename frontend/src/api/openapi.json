@@ -3269,6 +3269,51 @@
         "title": "KbStatusResponse",
         "type": "object"
       },
+      "KpiOut": {
+        "properties": {
+          "avg_handle_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Handle Hours"
+          },
+          "by_type": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Type",
+            "type": "object"
+          },
+          "sla_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Rate"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "by_type",
+          "avg_handle_hours",
+          "sla_rate"
+        ],
+        "title": "KpiOut",
+        "type": "object"
+      },
       "LinearSyncReportOut": {
         "properties": {
           "cleared_count": {
@@ -5382,6 +5427,54 @@
           "total_processed"
         ],
         "title": "SyncReportOut",
+        "type": "object"
+      },
+      "TicketAnalyticsOut": {
+        "properties": {
+          "by_assignee": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Assignee",
+            "type": "array"
+          },
+          "by_product_line": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Product Line",
+            "type": "array"
+          },
+          "handle_hours_hist": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Handle Hours Hist",
+            "type": "array"
+          },
+          "kpi": {
+            "$ref": "#/components/schemas/KpiOut"
+          },
+          "trend": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Trend",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kpi",
+          "by_product_line",
+          "by_assignee",
+          "trend",
+          "handle_hours_hist"
+        ],
+        "title": "TicketAnalyticsOut",
         "type": "object"
       },
       "TicketDetail": {
@@ -9491,6 +9584,89 @@
           }
         },
         "summary": "Dashboard Metrics",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/metrics/ticket-analytics": {
+      "get": {
+        "operationId": "ticket_analytics_api_metrics_ticket_analytics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product_line",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Line"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketAnalyticsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ticket Analytics",
         "tags": [
           "metrics"
         ]

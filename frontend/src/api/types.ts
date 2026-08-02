@@ -959,6 +959,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/ticket-analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ticket Analytics */
+        get: operations["ticket_analytics_api_metrics_ticket_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/workbench": {
         parameters: {
             query?: never;
@@ -2919,6 +2936,19 @@ export interface components {
             /** Space Id */
             space_id: string;
         };
+        /** KpiOut */
+        KpiOut: {
+            /** Avg Handle Hours */
+            avg_handle_hours: number | null;
+            /** By Type */
+            by_type: {
+                [key: string]: number;
+            };
+            /** Sla Rate */
+            sla_rate: number | null;
+            /** Total */
+            total: number;
+        };
         /** LinearSyncReportOut */
         LinearSyncReportOut: {
             /** Cleared Count */
@@ -3617,6 +3647,26 @@ export interface components {
             touched_user_ids: number[];
             /** Updated Count */
             updated_count: number;
+        };
+        /** TicketAnalyticsOut */
+        TicketAnalyticsOut: {
+            /** By Assignee */
+            by_assignee: {
+                [key: string]: unknown;
+            }[];
+            /** By Product Line */
+            by_product_line: {
+                [key: string]: unknown;
+            }[];
+            /** Handle Hours Hist */
+            handle_hours_hist: {
+                [key: string]: unknown;
+            }[];
+            kpi: components["schemas"]["KpiOut"];
+            /** Trend */
+            trend: {
+                [key: string]: unknown;
+            }[];
         };
         /** TicketDetail */
         TicketDetail: {
@@ -5877,6 +5927,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+        };
+    };
+    ticket_analytics_api_metrics_ticket_analytics_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                product_line?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketAnalyticsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

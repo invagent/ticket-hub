@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import AuthedUser, require_user
+from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.db import get_session
+from app.services.metrics.analytics import compute_ticket_analytics
 from app.services.metrics.dashboard import get_dashboard_metrics
 from app.services.metrics.workbench import compute_workbench_metrics
 
@@ -141,4 +142,37 @@ def workbench_metrics(
         funnel=FunnelOut(**asdict(m.funnel)),
         slo=[SloItemOut(**asdict(s)) for s in m.slo],
         sources=m.sources,
+    )
+
+
+class KpiOut(BaseModel):
+    total: int
+    by_type: dict[str, int]
+    avg_handle_hours: float | None
+    sla_rate: float | None
+
+
+class TicketAnalyticsOut(BaseModel):
+    kpi: KpiOut
+    by_product_line: list[dict]
+    by_assignee: list[dict]
+    trend: list[dict]
+    handle_hours_hist: list[dict]
+
+
+@router.get("/ticket-analytics", response_model=TicketAnalyticsOut)
+def ticket_analytics(
+    start: datetime | None = Query(None),
+    end: datetime | None = Query(None),
+    product_line: str | None = Query(None),
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> TicketAnalyticsOut:
+    r = compute_ticket_analytics(db, start=start, end=end, product_line=product_line)
+    return TicketAnalyticsOut(
+        kpi=KpiOut(**asdict(r.kpi)),
+        by_product_line=r.by_product_line,
+        by_assignee=r.by_assignee,
+        trend=r.trend,
+        handle_hours_hist=r.handle_hours_hist,
     )
