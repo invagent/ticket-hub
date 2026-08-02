@@ -1253,6 +1253,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/drain-attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drain Attachments Endpoint
+         * @description 手动跑一轮附件流水线 drain（download → MinIO → vision OCR）。尊重
+         *     attachment_pipeline_enabled / _dry_run——主管按需 flush 队列，不必等 5min beat。
+         */
+        post: operations["drain_attachments_endpoint_api_supervisor_drain_attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/drain-ksm-writeback": {
         parameters: {
             query?: never;
@@ -2175,6 +2196,17 @@ export interface components {
             has_draft: boolean;
             /** Name */
             name: string;
+        };
+        /** DrainAttachmentsResponse */
+        DrainAttachmentsResponse: {
+            /** Extracted */
+            extracted: number;
+            /** Failed */
+            failed: number;
+            /** Scanned */
+            scanned: number;
+            /** Skipped */
+            skipped: number;
         };
         /** DrainKsmWritebackResponse */
         DrainKsmWritebackResponse: {
@@ -6295,6 +6327,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drain_attachments_endpoint_api_supervisor_drain_attachments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainAttachmentsResponse"];
                 };
             };
         };

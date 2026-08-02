@@ -1086,6 +1086,42 @@ def drain_zhichi_writeback_endpoint(
     )
 
 
+# ---- 附件异步流水线 drain (ADR-0016 附件闸道) -------------------------------
+
+
+class DrainAttachmentsResponse(BaseModel):
+    scanned: int
+    extracted: int
+    skipped: int
+    failed: int
+
+
+@router.post("/drain-attachments", response_model=DrainAttachmentsResponse)
+def drain_attachments_endpoint(
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DrainAttachmentsResponse:
+    """手动跑一轮附件流水线 drain（download → MinIO → vision OCR）。尊重
+    attachment_pipeline_enabled / _dry_run——主管按需 flush 队列，不必等 5min beat。"""
+    from app.services.attachments.pipeline import drain_pending_attachments
+
+    report = drain_pending_attachments(db)
+    db.commit()
+    logger.info(
+        "supervisor_drain_attachments",
+        operator_user_id=user.user_id,
+        scanned=report.scanned,
+        extracted=report.extracted,
+        failed=report.failed,
+    )
+    return DrainAttachmentsResponse(
+        scanned=report.scanned,
+        extracted=report.extracted,
+        skipped=report.skipped,
+        failed=report.failed,
+    )
+
+
 # ---- Phase 1 知识反哺闭环：AI 客服 skill 管理 + replay ----------------------
 #
 # 主管从 escalation 工单反思 → 改 AI 客服 skill draft → replay 试跑对比旧/新答复
