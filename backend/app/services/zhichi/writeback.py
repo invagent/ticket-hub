@@ -35,7 +35,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from adapters.zhichi import ReplyTicketRequest, ZhichiClient, ZhichiConfig, ZhichiError
+from adapters.zhichi import (
+    ReplyTicketRequest,
+    ZhichiBusinessError,
+    ZhichiClient,
+    ZhichiConfig,
+    ZhichiError,
+)
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
@@ -48,6 +54,10 @@ _DEFAULT_RELEASED_NOTE = "您反馈的问题已处理完成，如仍有疑问欢
 # 智齿回写成功且 ticket_status=3（已解决关单）后，本地工单/hub 推终态。
 # 已在终态的 ticket 不重置（幂等 + 不覆盖投诉 closed 等）。
 _TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
+
+# 智齿侧工单已关闭——外部终态。回写注定失败且无意义，本地直接收尾（关单 + 记时间线），
+# 不再重试（标 skipped 不占 failed 待人工名额）。参照 KSM 的「已接管」良性错误容错思路。
+_ZHICHI_TICKET_CLOSED_CODES = frozenset({"400258"})
 
 
 @dataclass(slots=True)
@@ -114,6 +124,25 @@ class ZhichiWritebackSender:
 
         try:
             self._reply(row, ticket, status_code)
+        except ZhichiBusinessError as e:
+            if e.ret_code in _ZHICHI_TICKET_CLOSED_CODES:
+                # 智齿侧工单已关闭：回写无意义，本地收尾（关单 + 时间线）不重试。
+                # 标 skipped（drain 不再扫）而非 failed（failed 语义是转人工待处理，会误导）。
+                row.status = "skipped"
+                row.last_error = f"智齿侧工单已关闭(ret_code={e.ret_code})，本地收尾不重试"[:1000]
+                row.attempts += 1
+                self._close_local(row, ticket, reason_suffix="智齿侧工单已关闭")
+                self._db.commit()
+                report.skipped += 1
+                logger.info(
+                    "zhichi_writeback_ticket_closed_local_close",
+                    outbox_id=row.id,
+                    ticket_id=ticket.id,
+                    ret_code=e.ret_code,
+                )
+                return
+            self._record_failure(row, report, str(e))
+            return
         except ZhichiError as e:
             self._record_failure(row, report, str(e))
             return
@@ -135,11 +164,15 @@ class ZhichiWritebackSender:
             "zhichi_writeback_sent", outbox_id=row.id, ticket_id=ticket.id, status=status_code
         )
 
-    def _close_local(self, row: SyncOutbox, ticket: Ticket) -> None:
-        """关单真发成功后：ticket→closed、hub→resolved，记 status_history。
-        已在终态的不重置（幂等 + 保护投诉 closed 等）。不 commit（随外层）。"""
+    def _close_local(self, row: SyncOutbox, ticket: Ticket, *, reason_suffix: str = "") -> None:
+        """关单后：ticket→closed、hub→resolved，记 status_history（前端时间线直读）。
+        已在终态的不重置（幂等 + 保护投诉 closed 等）。不 commit（随外层）。
+
+        reason_suffix 非空时拼进时间线理由，区分来源：正常回写成功 vs 智齿侧已关闭收尾。
+        """
         history = StatusHistoryRepository(self._db)
         changed_by = "system:zhichi_writeback"
+        suffix = f"（{reason_suffix}）" if reason_suffix else ""
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
             ticket.status = "closed"
@@ -149,7 +182,7 @@ class ZhichiWritebackSender:
                 from_status=prev,
                 to_status="closed",
                 changed_by=changed_by,
-                reason=f"智齿答复关单回写成功（outbox={row.id}, kind={row.kind}）",
+                reason=f"智齿答复关单回写成功（outbox={row.id}, kind={row.kind}）{suffix}",
             )
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
         if hub is not None and hub.status != "resolved":
@@ -161,7 +194,7 @@ class ZhichiWritebackSender:
                 from_status=hub_prev,
                 to_status="resolved",
                 changed_by=changed_by,
-                reason=f"Operation 答复关单回写成功（outbox={row.id}）",
+                reason=f"Operation 答复关单回写成功（outbox={row.id}）{suffix}",
             )
 
     def _resolve_status(self, row: SyncOutbox) -> str | None:

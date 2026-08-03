@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from adapters.zhichi import ZhichiBusinessError
 from adapters.zhichi.types import Agent
 from app.models import HubIssue, Source, SyncOutbox, Ticket
 from app.services.zhichi.writeback import drain_zhichi_outbox
@@ -122,7 +123,7 @@ def test_drain_supply_does_not_close(db_session: Session) -> None:
 
 def test_drain_reply_preserves_terminal_ticket(db_session: Session) -> None:
     """已终态（如投诉 closed）的 ticket 不被回写重置。"""
-    t, hub, _ob = _seed(db_session)
+    t, _hub, _ob = _seed(db_session)
     t.status = "closed"  # 已终态
     db_session.commit()
     report = drain_zhichi_outbox(db_session, client=_FakeClient(), settings=_Settings())
@@ -275,3 +276,82 @@ def test_drain_native_flat_uses_original_zhichi_fields(db_session: Session) -> N
     assert req.ticket_level == "0"
     # deal_agent_name 空 → 回落默认坐席
     assert req.reply_agent_name == "莉莉"
+
+
+class _BusinessErrorClient(_FakeClient):
+    """reply_ticket 抛指定 ret_code 的 ZhichiBusinessError（模拟智齿业务级失败）。"""
+
+    def __init__(self, ret_code: str, ret_msg: str = "") -> None:
+        super().__init__()
+        self._ret_code = ret_code
+        self._ret_msg = ret_msg
+
+    def reply_ticket(self, req):  # type: ignore[no-untyped-def]
+        raise ZhichiBusinessError(
+            op="save_ticket_reply", ret_code=self._ret_code, ret_msg=self._ret_msg
+        )
+
+
+def test_drain_ticket_closed_marks_skipped_and_closes_local(db_session: Session) -> None:
+    """智齿侧工单已关闭（400258）：outbox 标 skipped（不重试）+ 本地关单收尾。"""
+    t, hub, ob = _seed(db_session)
+    db_session.commit()
+    fake = _BusinessErrorClient("400258", "工单已关闭")
+    report = drain_zhichi_outbox(db_session, client=fake, settings=_Settings())
+    # 不计入 failed（不占转人工名额），走 skipped
+    assert report.skipped == 1
+    assert report.failed == 0
+    db_session.refresh(t)
+    db_session.refresh(hub)
+    db_session.refresh(ob)
+    # 本地收尾到位
+    assert t.status == "closed"
+    assert hub.status == "resolved"
+    # outbox skipped + 只 attempts+1（不耗尽重试）
+    assert ob.status == "skipped"
+    assert ob.attempts == 1
+    assert "已关闭" in (ob.last_error or "")
+
+
+def test_drain_ticket_closed_records_timeline_node(db_session: Session) -> None:
+    """400258 收尾在 status_history 留「工单已关闭」时间线节点（前端时间线直读）。"""
+    from app.repositories.status_history import StatusHistoryRepository
+
+    t, _hub, _ob = _seed(db_session)
+    db_session.commit()
+    drain_zhichi_outbox(
+        db_session, client=_BusinessErrorClient("400258", "工单已关闭"), settings=_Settings()
+    )
+    rows = StatusHistoryRepository(db_session).find_for_entity(entity_type="ticket", entity_id=t.id)
+    closed = [r for r in rows if r.to_status == "closed"]
+    assert closed, "should record a closed transition on the ticket timeline"
+    assert "已关闭" in (closed[-1].reason or "")
+
+
+def test_drain_ticket_closed_skipped_not_redrained(db_session: Session) -> None:
+    """标 skipped 后不再被 drain 重扫（drain 只取 status='pending'）。"""
+    _t, _hub, ob = _seed(db_session)
+    db_session.commit()
+    drain_zhichi_outbox(db_session, client=_BusinessErrorClient("400258"), settings=_Settings())
+    db_session.refresh(ob)
+    assert ob.status == "skipped"
+    # 第二轮：无 pending，scanned=0
+    report2 = drain_zhichi_outbox(db_session, client=_FakeClient(), settings=_Settings())
+    assert report2.scanned == 0
+
+
+def test_drain_other_business_error_still_fails(db_session: Session) -> None:
+    """非「已关闭」的业务错误（如 400016 已过期）仍走 failure 重试路径，不误当终态。"""
+    t, _hub, ob = _seed(db_session)
+    db_session.commit()
+    fake = _BusinessErrorClient("400016", "获取工单信息已过期")
+    report = drain_zhichi_outbox(
+        db_session, client=fake, settings=_Settings(zhichi_writeback_max_attempts=1)
+    )
+    assert report.failed == 1
+    assert report.skipped == 0
+    db_session.refresh(t)
+    db_session.refresh(ob)
+    # 未收尾：本地状态不动
+    assert t.status == "received"
+    assert ob.status == "failed"
