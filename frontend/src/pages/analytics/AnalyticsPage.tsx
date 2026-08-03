@@ -339,11 +339,30 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
                   <LineChart data={trend}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
+                    {/* 双 Y 轴：工单量(~千) 与 处理时长(~小时) 量级差百倍，同轴会把时长线压平 */}
+                    <YAxis
+                      yAxisId="count"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "工单量", angle: -90, position: "insideLeft", fontSize: 10 }}
+                    />
+                    <YAxis
+                      yAxisId="hours"
+                      orientation="right"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "时长(h)", angle: 90, position: "insideRight", fontSize: 10 }}
+                    />
                     <Tooltip />
                     <Legend wrapperStyle={{ fontSize: 10.5 }} />
-                    <Line type="monotone" dataKey="total" name="工单量" stroke="#177e83" strokeWidth={2} />
                     <Line
+                      yAxisId="count"
+                      type="monotone"
+                      dataKey="total"
+                      name="工单量"
+                      stroke="#177e83"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      yAxisId="hours"
                       type="monotone"
                       dataKey="median_handle_hours"
                       name="中位处理时长(h)"
@@ -351,6 +370,7 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
                       strokeWidth={2}
                     />
                     <Line
+                      yAxisId="hours"
                       type="monotone"
                       dataKey="p90_handle_hours"
                       name="P90处理时长(h)"
