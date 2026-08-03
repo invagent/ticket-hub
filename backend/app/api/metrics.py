@@ -162,6 +162,7 @@ class TicketAnalyticsOut(BaseModel):
     trend: list[dict]
     handle_hours_hist: list[dict]
     available_months: list[str]
+    by_dev_staff: list[dict]
 
 
 @router.get("/ticket-analytics", response_model=TicketAnalyticsOut)
@@ -180,4 +181,5 @@ def ticket_analytics(
         trend=r.trend,
         handle_hours_hist=r.handle_hours_hist,
         available_months=r.available_months,
+        by_dev_staff=r.by_dev_staff,
     )

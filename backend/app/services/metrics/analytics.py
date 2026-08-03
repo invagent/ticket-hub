@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.models import Ticket, User
 
 _TYPES = ("Operation", "Bug_fix", "Demand", "Internal_task")
+_DEV_TYPES = ("Bug_fix", "Internal_task", "Demand")
 _HIST_BUCKETS = [(0, 4), (4, 8), (8, 24), (24, 72), (72, None)]
 
 
@@ -46,6 +47,7 @@ class TicketAnalytics:
     trend: list[dict[str, Any]] = field(default_factory=list)
     handle_hours_hist: list[dict[str, Any]] = field(default_factory=list)
     available_months: list[str] = field(default_factory=list)  # 全量数据里有工单的月份(降序)
+    by_dev_staff: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _base_filter(
@@ -264,6 +266,47 @@ def compute_ticket_analytics(
     ).all()
     available_months = sorted((m for (m,) in month_rows if m), reverse=True)
 
+    # 研发人员维度：研发三类工单(Bug_fix/Internal_task/Demand)按处理人聚合
+    # 工单数 + 类型构成
+    dev_flt = and_(flt, Ticket.predicted_type.in_(_DEV_TYPES))
+    dev_rows = db.execute(
+        select(Ticket.assigned_user_id, User.name, Ticket.predicted_type, func.count())
+        .join(User, User.id == Ticket.assigned_user_id, isouter=True)
+        .where(dev_flt)
+        .group_by(Ticket.assigned_user_id, User.name, Ticket.predicted_type)
+    ).all()
+    dev_map: dict[Any, dict[str, Any]] = {}
+    for uid, name, ptype, c in dev_rows:
+        d = dev_map.setdefault(
+            uid,
+            {
+                "user_id": uid,
+                "name": name or "(未分配)",
+                "total": 0,
+                "by_type": dict.fromkeys(_DEV_TYPES, 0),
+                "median_handle_hours": None,
+                "avg_handle_hours": None,
+            },
+        )
+        d["total"] += c
+        if ptype in d["by_type"]:
+            d["by_type"][ptype] += c
+    # 每人耗时（中位 Python 侧算，平均一并算）
+    hh_rows = db.execute(
+        select(Ticket.assigned_user_id, Ticket.handle_hours).where(
+            and_(dev_flt, Ticket.handle_hours.is_not(None))
+        )
+    ).all()
+    hh_by_user: dict[Any, list[float]] = {}
+    for uid, hh in hh_rows:
+        hh_by_user.setdefault(uid, []).append(float(hh))
+    for uid, values in hh_by_user.items():
+        if uid in dev_map:
+            sv = sorted(values)
+            dev_map[uid]["median_handle_hours"] = _percentile(sv, 0.5)
+            dev_map[uid]["avg_handle_hours"] = sum(sv) / len(sv)
+    by_dev_staff = sorted(dev_map.values(), key=lambda x: x["total"], reverse=True)[:20]
+
     return TicketAnalytics(
         kpi=kpi,
         by_module=by_module,
@@ -271,4 +314,5 @@ def compute_ticket_analytics(
         trend=trend,
         handle_hours_hist=hist,
         available_months=available_months,
+        by_dev_staff=by_dev_staff,
     )

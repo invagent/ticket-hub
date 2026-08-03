@@ -5468,6 +5468,14 @@
             "title": "By Assignee",
             "type": "array"
           },
+          "by_dev_staff": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Dev Staff",
+            "type": "array"
+          },
           "by_module": {
             "items": {
               "additionalProperties": true,
@@ -5502,7 +5510,8 @@
           "by_assignee",
           "trend",
           "handle_hours_hist",
-          "available_months"
+          "available_months",
+          "by_dev_staff"
         ],
         "title": "TicketAnalyticsOut",
         "type": "object"
