@@ -150,6 +150,9 @@ class KpiOut(BaseModel):
     by_type: dict[str, int]
     avg_handle_hours: float | None
     sla_rate: float | None
+    sla_base: int
+    unassigned_count: int
+    unassigned_avg_hours: float | None
 
 
 class TicketAnalyticsOut(BaseModel):

@@ -2944,10 +2944,16 @@ export interface components {
             by_type: {
                 [key: string]: number;
             };
+            /** Sla Base */
+            sla_base: number;
             /** Sla Rate */
             sla_rate: number | null;
             /** Total */
             total: number;
+            /** Unassigned Avg Hours */
+            unassigned_avg_hours: number | null;
+            /** Unassigned Count */
+            unassigned_count: number;
         };
         /** LinearSyncReportOut */
         LinearSyncReportOut: {

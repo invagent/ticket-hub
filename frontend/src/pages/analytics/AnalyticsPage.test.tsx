@@ -23,6 +23,9 @@ const sampleAnalytics = {
     by_type: { Operation: 40, Bug_fix: 50, Demand: 30, Internal_task: 8 },
     avg_handle_hours: 12.5,
     sla_rate: 0.72,
+    sla_base: 110,
+    unassigned_count: 18,
+    unassigned_avg_hours: 30.4,
   },
   by_module: [
     {
@@ -76,6 +79,9 @@ describe("AnalyticsPage", () => {
 
     expect(await screen.findByTestId("kpi-total")).toHaveTextContent("128");
     expect(screen.getByTestId("kpi-sla-rate")).toHaveTextContent("72.0%");
+    // SLA 分母口径标注 + 未分配工单卡片
+    expect(screen.getByTestId("kpi-sla-base")).toHaveTextContent("110");
+    expect(screen.getByTestId("kpi-unassigned")).toHaveTextContent("18");
 
     expect(screen.getByTestId("type-pie-chart")).toBeInTheDocument();
     expect(screen.getByTestId("module-bar-chart")).toBeInTheDocument();

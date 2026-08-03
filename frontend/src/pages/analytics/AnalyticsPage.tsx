@@ -171,7 +171,7 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
       {/* ① KPI 行 */}
       <div>
         <div className="text-xs font-semibold text-hub-textSecondary mb-2">工单总览</div>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           <div className="border border-hub-borderLight bg-white rounded-[9px] px-3.5 py-3 flex flex-col justify-center">
             <div className="text-[11.5px] text-hub-textMuted">工单总量</div>
             <div className="text-[26px] font-bold leading-none font-mono mt-1.5" data-testid="kpi-total">
@@ -219,6 +219,23 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
               data-testid="kpi-sla-rate"
             >
               {fmtPct(kpi.sla_rate)}
+            </div>
+            <div className="text-[10.5px] text-hub-textFaint mt-1" data-testid="kpi-sla-base">
+              基于 {kpi.sla_base?.toLocaleString() ?? 0} 条已完成工单
+            </div>
+          </div>
+
+          <div className="border border-hub-borderLight bg-white rounded-[9px] px-3.5 py-3 flex flex-col justify-center">
+            <div className="text-[11.5px] text-hub-textMuted">未分配工单</div>
+            <div
+              className="text-[26px] font-bold leading-none font-mono mt-1.5"
+              style={{ color: (kpi.unassigned_count ?? 0) > 0 ? "#b04a4a" : undefined }}
+              data-testid="kpi-unassigned"
+            >
+              {(kpi.unassigned_count ?? 0).toLocaleString()}
+            </div>
+            <div className="text-[10.5px] text-hub-textFaint mt-1">
+              平均 {fmtHours(kpi.unassigned_avg_hours)}
             </div>
           </div>
         </div>

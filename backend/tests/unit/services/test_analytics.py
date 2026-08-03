@@ -40,8 +40,12 @@ def test_kpi_counts_by_type_and_sla(db_session):
     assert r.kpi.total == 2
     assert r.kpi.by_type["Bug_fix"] == 1
     assert r.kpi.by_type["Operation"] == 1
-    # 1 达标(6<=8), 1 超期(50>40) → sla_rate=0.5
+    # 1 达标(6<=8), 1 超期(50>40) → sla_rate=0.5, 分母 sla_base=2
     assert abs(r.kpi.sla_rate - 0.5) < 1e-6
+    assert r.kpi.sla_base == 2
+    # 两条都未设 assigned_user_id → 未分配数=2
+    assert r.kpi.unassigned_count == 2
+    assert r.kpi.unassigned_avg_hours is not None
 
 
 def test_by_module_and_assignee(db_session):

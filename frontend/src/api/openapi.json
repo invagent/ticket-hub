@@ -3289,6 +3289,10 @@
             "title": "By Type",
             "type": "object"
           },
+          "sla_base": {
+            "title": "Sla Base",
+            "type": "integer"
+          },
           "sla_rate": {
             "anyOf": [
               {
@@ -3303,13 +3307,31 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "unassigned_avg_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unassigned Avg Hours"
+          },
+          "unassigned_count": {
+            "title": "Unassigned Count",
+            "type": "integer"
           }
         },
         "required": [
           "total",
           "by_type",
           "avg_handle_hours",
-          "sla_rate"
+          "sla_rate",
+          "sla_base",
+          "unassigned_count",
+          "unassigned_avg_hours"
         ],
         "title": "KpiOut",
         "type": "object"

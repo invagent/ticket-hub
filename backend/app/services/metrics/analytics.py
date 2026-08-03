@@ -33,6 +33,9 @@ class KpiBlock:
     by_type: dict[str, int]
     avg_handle_hours: float | None
     sla_rate: float | None
+    sla_base: int  # SLA 达成率的分母（handle+std 都非空的工单数），供前端标注口径
+    unassigned_count: int  # 未分配处理人的工单数
+    unassigned_avg_hours: float | None  # 未分配工单的平均处理时长
 
 
 @dataclass(slots=True)
@@ -132,8 +135,30 @@ def compute_ticket_analytics(
     )
     sla_rate = (sla_ok / sla_base) if sla_base else None
 
+    # 未分配工单（无处理人）——研发管理关注的"无人跟进"信号
+    unassigned_count = (
+        db.execute(
+            select(func.count())
+            .select_from(Ticket)
+            .where(and_(flt, Ticket.assigned_user_id.is_(None)))
+        ).scalar()
+        or 0
+    )
+    unassigned_avg = db.execute(
+        select(func.avg(Ticket.handle_hours)).where(
+            and_(flt, Ticket.assigned_user_id.is_(None), Ticket.handle_hours.is_not(None))
+        )
+    ).scalar()
+    unassigned_avg_hours = float(unassigned_avg) if unassigned_avg is not None else None
+
     kpi = KpiBlock(
-        total=total, by_type=by_type, avg_handle_hours=avg_handle_hours, sla_rate=sla_rate
+        total=total,
+        by_type=by_type,
+        avg_handle_hours=avg_handle_hours,
+        sla_rate=sla_rate,
+        sla_base=sla_base,
+        unassigned_count=unassigned_count,
+        unassigned_avg_hours=unassigned_avg_hours,
     )
 
     # 模块 × 类型（这批工单产品线单一=金蝶发票云，无区分度；module 才是有意义的细分维度）
