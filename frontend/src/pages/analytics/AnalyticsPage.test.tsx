@@ -55,6 +55,24 @@ const sampleAnalytics = {
     { bucket: "72h+", count: 5 },
   ],
   available_months: ["2026-07", "2026-06"],
+  by_dev_staff: [
+    {
+      user_id: 1,
+      name: "研发甲",
+      total: 42,
+      by_type: { Bug_fix: 30, Demand: 12, Internal_task: 0 },
+      median_handle_hours: 180.0,
+      avg_handle_hours: 224.2,
+    },
+    {
+      user_id: 2,
+      name: "研发乙",
+      total: 15,
+      by_type: { Bug_fix: 5, Demand: 10, Internal_task: 0 },
+      median_handle_hours: 40.0,
+      avg_handle_hours: 50.3,
+    },
+  ],
 };
 
 function mockAuth(role: string) {
@@ -99,6 +117,12 @@ describe("AnalyticsPage", () => {
     expect(overdue).toHaveTextContent("5");
     expect(overdue).toHaveTextContent("收票管理");
     expect(overdue).toHaveTextContent("2");
+
+    expect(screen.getByTestId("dev-staff-bar-chart")).toBeInTheDocument();
+    const devTable = screen.getByTestId("dev-staff-table");
+    expect(devTable).toHaveTextContent("研发甲");
+    expect(devTable).toHaveTextContent("224.2h");
+    expect(devTable).toHaveTextContent("研发乙");
 
     localStorage.clear();
   });
