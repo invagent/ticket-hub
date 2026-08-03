@@ -5453,6 +5453,13 @@
       },
       "TicketAnalyticsOut": {
         "properties": {
+          "available_months": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Months",
+            "type": "array"
+          },
           "by_assignee": {
             "items": {
               "additionalProperties": true,
@@ -5494,7 +5501,8 @@
           "by_module",
           "by_assignee",
           "trend",
-          "handle_hours_hist"
+          "handle_hours_hist",
+          "available_months"
         ],
         "title": "TicketAnalyticsOut",
         "type": "object"

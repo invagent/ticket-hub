@@ -98,3 +98,5 @@ def test_trend_by_month(db_session):
     r = compute_ticket_analytics(db_session)
     months = {x["month"] for x in r.trend}
     assert "2026-04" in months and "2026-05" in months
+    # available_months 降序，含全部有工单的月份
+    assert r.available_months == ["2026-05", "2026-04"]

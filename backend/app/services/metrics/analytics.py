@@ -45,6 +45,7 @@ class TicketAnalytics:
     by_assignee: list[dict[str, Any]] = field(default_factory=list)
     trend: list[dict[str, Any]] = field(default_factory=list)
     handle_hours_hist: list[dict[str, Any]] = field(default_factory=list)
+    available_months: list[str] = field(default_factory=list)  # 全量数据里有工单的月份(降序)
 
 
 def _base_filter(
@@ -255,10 +256,19 @@ def compute_ticket_analytics(
         label = f"{lo}-{hi}h" if hi is not None else f"{lo}h+"
         hist.append({"bucket": label, "count": c})
 
+    # 可选月份列表（全量数据里有工单的月份，降序）——供前端月份筛选下拉，
+    # 独立于 start/end（否则选中某月后其它月份就从下拉里消失了）
+    month_expr = _month_expr(db)
+    month_rows = db.execute(
+        select(month_expr).where(Ticket.deleted_at.is_(None)).distinct()
+    ).all()
+    available_months = sorted((m for (m,) in month_rows if m), reverse=True)
+
     return TicketAnalytics(
         kpi=kpi,
         by_module=by_module,
         by_assignee=by_assignee,
         trend=trend,
         handle_hours_hist=hist,
+        available_months=available_months,
     )

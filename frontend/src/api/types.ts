@@ -3656,6 +3656,8 @@ export interface components {
         };
         /** TicketAnalyticsOut */
         TicketAnalyticsOut: {
+            /** Available Months */
+            available_months: string[];
             /** By Assignee */
             by_assignee: {
                 [key: string]: unknown;

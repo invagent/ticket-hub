@@ -54,6 +54,7 @@ const sampleAnalytics = {
     { bucket: "4-8h", count: 25 },
     { bucket: "72h+", count: 5 },
   ],
+  available_months: ["2026-07", "2026-06"],
 };
 
 function mockAuth(role: string) {
@@ -72,7 +73,6 @@ describe("AnalyticsPage", () => {
     mockAuth("supervisor");
     server.use(
       http.get("*/api/metrics/ticket-analytics", () => HttpResponse.json(sampleAnalytics)),
-      http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
     );
 
     renderPage();
@@ -88,6 +88,10 @@ describe("AnalyticsPage", () => {
     expect(screen.getByTestId("assignee-bar-chart")).toBeInTheDocument();
     expect(screen.getByTestId("trend-line-chart")).toBeInTheDocument();
     expect(screen.getByTestId("hist-bar-chart")).toBeInTheDocument();
+    // 月份筛选下拉：全部 + available_months 各月
+    const monthSel = screen.getByTestId("month-select");
+    expect(monthSel).toBeInTheDocument();
+    expect(monthSel).toHaveTextContent("全部月份");
 
     // 模块超期数（来自 by_module[].overdue_count：开票管理=5, 收票管理=2）
     const overdue = screen.getByTestId("module-overdue");
@@ -103,7 +107,6 @@ describe("AnalyticsPage", () => {
     mockAuth("admin");
     server.use(
       http.get("*/api/metrics/ticket-analytics", () => HttpResponse.json(sampleAnalytics)),
-      http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
     );
 
     renderPage();

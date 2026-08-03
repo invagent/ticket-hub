@@ -30,10 +30,19 @@ import {
 } from "recharts";
 import { api } from "@/api/client";
 import { isSupervisor } from "@/api/auth";
-import { ProductLineSelect } from "@/components/selectors";
 
-type RangeKey = "3m" | "all";
-const RANGE_LABELS: Record<RangeKey, string> = { "3m": "最近3月", all: "全部" };
+const ALL_MONTHS = "__all__";
+
+// "2026-04" → 该月的北京时区闭区间 [start, end)（end 为下月 1 号）
+function monthRange(month: string): { start: string; end: string } {
+  const [y, m] = month.split("-").map(Number);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const start = `${y}-${pad(m)}-01T00:00:00+08:00`;
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const end = `${ny}-${pad(nm)}-01T00:00:00+08:00`;
+  return { start, end };
+}
 
 const HUB_TYPES = ["Operation", "Bug_fix", "Demand", "Internal_task"] as const;
 type HubType = (typeof HUB_TYPES)[number];
@@ -60,13 +69,6 @@ function fmtPct(r: number | null | undefined): string {
   return `${(r * 100).toFixed(1)}%`;
 }
 
-function startForRange(range: RangeKey): string | undefined {
-  if (range === "all") return undefined;
-  const d = new Date();
-  d.setMonth(d.getMonth() - 3);
-  return d.toISOString();
-}
-
 export function AnalyticsPage() {
   if (!isSupervisor()) {
     return (
@@ -79,19 +81,20 @@ export function AnalyticsPage() {
 }
 
 function AnalyticsPageInner() {
-  const [range, setRange] = useState<RangeKey>("3m");
-  const [productLine, setProductLine] = useState<string | undefined>(undefined);
+  const [month, setMonth] = useState<string>(ALL_MONTHS);
 
-  const start = useMemo(() => startForRange(range), [range]);
+  const params = useMemo(() => {
+    if (month === ALL_MONTHS) return {};
+    return monthRange(month);
+  }, [month]);
 
   const query = useQuery({
-    queryKey: ["ticket-analytics", range, productLine],
-    queryFn: () =>
-      api.get("/api/metrics/ticket-analytics", {
-        start,
-        product_line: productLine,
-      }),
+    queryKey: ["ticket-analytics", month],
+    queryFn: () => api.get("/api/metrics/ticket-analytics", params),
   });
+
+  // 月份下拉选项来自后端 available_months（全量，不随筛选变化）
+  const months = ((query.data?.available_months ?? []) as string[]).slice();
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
@@ -102,23 +105,19 @@ function AnalyticsPageInner() {
           <div className="text-[11.5px] text-hub-textFaint mt-0.5">工单维度统计（研发管理视角）</div>
         </div>
         <div className="flex-1" />
-        <ProductLineSelect value={productLine} onChange={setProductLine} placeholder="全部产品线" />
-        <div className="inline-flex bg-hub-segment border border-hub-border rounded-[9px] p-0.5 gap-0.5">
-          {(Object.keys(RANGE_LABELS) as RangeKey[]).map((k) => {
-            const on = k === range;
-            return (
-              <button
-                key={k}
-                onClick={() => setRange(k)}
-                className={`px-4 py-[5px] rounded-[7px] text-[12.5px] ${
-                  on ? "bg-white text-hub-teal-deep font-bold shadow-sm" : "text-hub-textSecondary"
-                }`}
-              >
-                {RANGE_LABELS[k]}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="border border-hub-border rounded-[9px] px-3 py-[6px] text-[12.5px] bg-white text-hub-text"
+          data-testid="month-select"
+        >
+          <option value={ALL_MONTHS}>全部月份</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {m.replace("-", " 年 ")} 月
+            </option>
+          ))}
+        </select>
       </div>
 
       {query.isLoading ? (
