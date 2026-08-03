@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
-from app.models import Customer, CustomerIdentity, User
+from app.models import Customer, CustomerIdentity, HubIssue, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -44,6 +44,7 @@ class TicketSummary(BaseModel):
     assigned_user_name: str | None = None
     predicted_type: str | None = None
     hub_issue_id: int | None
+    op_status: str | None = None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）
     received_at: datetime | None
     customer_replied_at: datetime | None
     created_at: datetime
@@ -111,10 +112,21 @@ def list_tickets(
         rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
         user_name_map = {r.id: r.name for r in rows}
 
+    # batch-load 所挂 hub_issue 的 op_status（仅 Operation 有值），避免 N+1
+    hub_ids = {t.hub_issue_id for t in p.items if t.hub_issue_id is not None}
+    hub_op_map: dict[int, str | None] = {}
+    if hub_ids:
+        hrows = db.execute(
+            select(HubIssue.id, HubIssue.op_status).where(HubIssue.id.in_(hub_ids))
+        ).all()
+        hub_op_map = {r.id: r.op_status for r in hrows}
+
     def _to_summary(t: Any) -> TicketSummary:
         s = TicketSummary.model_validate(t)
         if t.assigned_user_id is not None:
             s.assigned_user_name = user_name_map.get(t.assigned_user_id)
+        if t.hub_issue_id is not None:
+            s.op_status = hub_op_map.get(t.hub_issue_id)
         return s
 
     return TicketListResponse(

@@ -8,6 +8,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { UserSelect } from "@/components/selectors";
+import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
@@ -207,6 +208,7 @@ export function TicketsListPage() {
             <div className="w-[110px] flex-none">模块</div>
             <div className="w-[96px] flex-none">处理人</div>
             <div className="w-[100px] flex-none">状态</div>
+            <div className="w-[92px] flex-none">处理状态</div>
             <div className="w-[120px] flex-none text-right">收到时间</div>
           </div>
           {/* 行 */}
@@ -268,6 +270,13 @@ export function TicketsListPage() {
                 </div>
                 <div className="w-[100px] flex-none">
                   <StatusBadge status={t.status} />
+                </div>
+                <div className="w-[92px] flex-none">
+                  {t.op_status ? (
+                    <OpStatusBadge status={t.op_status} />
+                  ) : (
+                    <span className="text-hub-textFaint text-[10.5px]">—</span>
+                  )}
                 </div>
                 <div className="w-[120px] flex-none text-right text-[11px] text-hub-textFaint font-mono">
                   {t.received_at

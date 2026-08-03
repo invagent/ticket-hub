@@ -3723,6 +3723,8 @@ export interface components {
             id: number;
             /** Module */
             module: string | null;
+            /** Op Status */
+            op_status?: string | null;
             /** Parent Ticket Id */
             parent_ticket_id: number | null;
             /** Predicted Type */
@@ -3792,6 +3794,8 @@ export interface components {
             id: number;
             /** Module */
             module: string | null;
+            /** Op Status */
+            op_status?: string | null;
             /** Predicted Type */
             predicted_type?: string | null;
             /** Product Line Code */

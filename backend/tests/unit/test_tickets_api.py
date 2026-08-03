@@ -34,6 +34,7 @@ def world(db_session: Session) -> Session:
                 type="Operation",
                 title="op-issue",
                 status="waiting_reply",
+                op_status="processing",
                 assigned_user_id=1,
                 module="应付",
             ),
@@ -151,6 +152,15 @@ def test_list_tickets_default(app_client: TestClient, world: Session) -> None:
     short_codes = [it["short_code"] for it in body["items"]]
     assert short_codes[0] == "TKT-3"
     assert short_codes[-1] == "TKT-4"  # earliest received_at
+
+
+def test_list_tickets_op_status(app_client: TestClient, world: Session) -> None:
+    # TKT-2 挂 Operation hub(op_status=processing) → 带出；TKT-4 挂 Bug_fix hub → op_status 空
+    resp = app_client.get("/api/tickets", headers=_bearer())
+    by_code = {it["short_code"]: it for it in resp.json()["items"]}
+    assert by_code["TKT-2"]["op_status"] == "processing"
+    assert by_code["TKT-4"]["op_status"] is None  # 研发类 hub 无 op_status
+    assert by_code["TKT-3"]["op_status"] is None  # 未挂 hub
 
 
 def test_list_tickets_filter_source(app_client: TestClient, world: Session) -> None:

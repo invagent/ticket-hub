@@ -5721,6 +5721,17 @@
             ],
             "title": "Module"
           },
+          "op_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status"
+          },
           "parent_ticket_id": {
             "anyOf": [
               {
@@ -6015,6 +6026,17 @@
               }
             ],
             "title": "Module"
+          },
+          "op_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Status"
           },
           "predicted_type": {
             "anyOf": [
