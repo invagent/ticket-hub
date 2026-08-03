@@ -26,6 +26,9 @@ from app.models import Ticket, User
 _TYPES = ("Operation", "Bug_fix", "Demand", "Internal_task")
 _DEV_TYPES = ("Bug_fix", "Internal_task", "Demand")
 _HIST_BUCKETS = [(0, 4), (4, 8), (8, 24), (24, 72), (72, None)]
+# 研发维度排除名单：这些是客服/受理人，虽受理过研发类工单但非研发人员，
+# 不计入 by_dev_staff（该批数据 assigned_user_id 是受理处理人而非研发责任人）
+_NON_DEV_STAFF = frozenset({"刘伟成", "颜明霞", "杨慧莉", "曾青青", "杜德彬"})
 
 
 @dataclass(slots=True, frozen=True)
@@ -305,7 +308,11 @@ def compute_ticket_analytics(
             sv = sorted(values)
             dev_map[uid]["median_handle_hours"] = _percentile(sv, 0.5)
             dev_map[uid]["avg_handle_hours"] = sum(sv) / len(sv)
-    by_dev_staff = sorted(dev_map.values(), key=lambda x: x["total"], reverse=True)[:20]
+    by_dev_staff = sorted(
+        (d for d in dev_map.values() if d["name"] not in _NON_DEV_STAFF),
+        key=lambda x: x["total"],
+        reverse=True,
+    )[:20]
 
     return TicketAnalytics(
         kpi=kpi,

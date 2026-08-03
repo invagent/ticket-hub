@@ -249,7 +249,73 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
         </div>
       </div>
 
-      {/* ② 模块 × 类型 */}
+      {/* ② 研发人员维度（Bug修复/需求/内部任务 三类研发工单） */}
+      <div>
+        <div className="text-xs font-semibold text-hub-textSecondary mb-2">
+          研发人员维度（Bug修复 / 需求 / 内部任务）
+        </div>
+        {devChartData.length === 0 ? (
+          <div className="bg-white border border-hub-border rounded-[10px] p-4 text-xs text-hub-textFaint">
+            暂无研发工单
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {/* 工单量堆叠柱状 */}
+            <div className="bg-white border border-hub-border rounded-[10px] p-4">
+              <div className="text-[11.5px] text-hub-textMuted mb-2">研发工单量（按类型）</div>
+              <div
+                style={{ width: "100%", height: Math.max(200, devChartData.length * 30) }}
+                data-testid="dev-staff-bar-chart"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={devChartData} layout="vertical" margin={{ left: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 10.5 }} />
+                    {HUB_TYPES.filter((t) => t !== "Operation").map((t) => (
+                      <Bar
+                        key={t}
+                        dataKey={t}
+                        name={TYPE_LABELS[t]}
+                        stackId="dev"
+                        fill={TYPE_COLORS[t]}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            {/* 耗时表格 */}
+            <div className="bg-white border border-hub-border rounded-[10px] p-4">
+              <div className="text-[11.5px] text-hub-textMuted mb-2">研发人员处理耗时</div>
+              <table className="w-full text-[11.5px]" data-testid="dev-staff-table">
+                <thead>
+                  <tr className="text-hub-textMuted border-b border-hub-borderLight">
+                    <th className="text-left py-1 font-medium">研发人员</th>
+                    <th className="text-right py-1 font-medium">工单数</th>
+                    <th className="text-right py-1 font-medium">中位耗时</th>
+                    <th className="text-right py-1 font-medium">平均耗时</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {devChartData.map((d) => (
+                    <tr key={d.name} className="border-b border-hub-borderLight/50">
+                      <td className="py-1">{d.name}</td>
+                      <td className="text-right py-1 font-mono">{d.total}</td>
+                      <td className="text-right py-1 font-mono">{fmtHours(d.median_handle_hours)}</td>
+                      <td className="text-right py-1 font-mono">{fmtHours(d.avg_handle_hours)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ③ 模块 × 类型 */}
       <div>
         <div className="text-xs font-semibold text-hub-textSecondary mb-2">模块 × 类型分布</div>
         <div className="bg-white border border-hub-border rounded-[10px] p-4">
@@ -431,71 +497,6 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
         </div>
       </div>
 
-      {/* ⑤ 研发人员维度（Bug修复/内部任务/需求 三类研发工单） */}
-      <div>
-        <div className="text-xs font-semibold text-hub-textSecondary mb-2">
-          研发人员维度（Bug修复 / 需求 / 内部任务）
-        </div>
-        {devChartData.length === 0 ? (
-          <div className="bg-white border border-hub-border rounded-[10px] p-4 text-xs text-hub-textFaint">
-            暂无研发工单
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {/* 工单量堆叠柱状 */}
-            <div className="bg-white border border-hub-border rounded-[10px] p-4">
-              <div className="text-[11.5px] text-hub-textMuted mb-2">研发工单量（按类型）</div>
-              <div
-                style={{ width: "100%", height: Math.max(200, devChartData.length * 30) }}
-                data-testid="dev-staff-bar-chart"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={devChartData} layout="vertical" margin={{ left: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: 10.5 }} />
-                    {HUB_TYPES.filter((t) => t !== "Operation").map((t) => (
-                      <Bar
-                        key={t}
-                        dataKey={t}
-                        name={TYPE_LABELS[t]}
-                        stackId="dev"
-                        fill={TYPE_COLORS[t]}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            {/* 耗时表格 */}
-            <div className="bg-white border border-hub-border rounded-[10px] p-4">
-              <div className="text-[11.5px] text-hub-textMuted mb-2">研发人员处理耗时</div>
-              <table className="w-full text-[11.5px]" data-testid="dev-staff-table">
-                <thead>
-                  <tr className="text-hub-textMuted border-b border-hub-borderLight">
-                    <th className="text-left py-1 font-medium">研发人员</th>
-                    <th className="text-right py-1 font-medium">工单数</th>
-                    <th className="text-right py-1 font-medium">中位耗时</th>
-                    <th className="text-right py-1 font-medium">平均耗时</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {devChartData.map((d) => (
-                    <tr key={d.name} className="border-b border-hub-borderLight/50">
-                      <td className="py-1">{d.name}</td>
-                      <td className="text-right py-1 font-mono">{d.total}</td>
-                      <td className="text-right py-1 font-mono">{fmtHours(d.median_handle_hours)}</td>
-                      <td className="text-right py-1 font-mono">{fmtHours(d.avg_handle_hours)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

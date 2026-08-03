@@ -125,3 +125,17 @@ def test_by_dev_staff(db_session):
     # 按 total 降序：甲(3) 在 乙(1) 前
     dev_ids = [x["user_id"] for x in r.by_dev_staff]
     assert dev_ids.index(1) < dev_ids.index(2)
+
+
+def test_by_dev_staff_excludes_non_dev(db_session):
+    # 刘伟成是客服(排除名单),虽受理研发类工单也不进 by_dev_staff
+    _tk(db_session, predicted_type="Bug_fix", assigned_user_id=3, handle_hours=Decimal("5"))
+    _tk(db_session, predicted_type="Demand", assigned_user_id=4, handle_hours=Decimal("6"))
+    db_session.add(User(id=3, feishu_uid="ou_cs", name="刘伟成", role="member"))
+    db_session.add(User(id=4, feishu_uid="ou_dev", name="真研发", role="member"))
+    db_session.commit()
+
+    r = compute_ticket_analytics(db_session)
+    names = {x["name"] for x in r.by_dev_staff}
+    assert "刘伟成" not in names  # 排除名单
+    assert "真研发" in names
