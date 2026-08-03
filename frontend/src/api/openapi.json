@@ -5439,12 +5439,12 @@
             "title": "By Assignee",
             "type": "array"
           },
-          "by_product_line": {
+          "by_module": {
             "items": {
               "additionalProperties": true,
               "type": "object"
             },
-            "title": "By Product Line",
+            "title": "By Module",
             "type": "array"
           },
           "handle_hours_hist": {
@@ -5469,7 +5469,7 @@
         },
         "required": [
           "kpi",
-          "by_product_line",
+          "by_module",
           "by_assignee",
           "trend",
           "handle_hours_hist"

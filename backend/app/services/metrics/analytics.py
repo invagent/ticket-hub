@@ -38,7 +38,7 @@ class KpiBlock:
 @dataclass(slots=True)
 class TicketAnalytics:
     kpi: KpiBlock
-    by_product_line: list[dict[str, Any]] = field(default_factory=list)
+    by_module: list[dict[str, Any]] = field(default_factory=list)
     by_assignee: list[dict[str, Any]] = field(default_factory=list)
     trend: list[dict[str, Any]] = field(default_factory=list)
     handle_hours_hist: list[dict[str, Any]] = field(default_factory=list)
@@ -136,19 +136,19 @@ def compute_ticket_analytics(
         total=total, by_type=by_type, avg_handle_hours=avg_handle_hours, sla_rate=sla_rate
     )
 
-    # 产品线 × 类型
-    pl_rows = db.execute(
-        select(Ticket.product_line_code, Ticket.predicted_type, func.count())
+    # 模块 × 类型（这批工单产品线单一=金蝶发票云，无区分度；module 才是有意义的细分维度）
+    mod_rows = db.execute(
+        select(Ticket.module, Ticket.predicted_type, func.count())
         .where(flt)
-        .group_by(Ticket.product_line_code, Ticket.predicted_type)
+        .group_by(Ticket.module, Ticket.predicted_type)
     ).all()
-    pl_map: dict[str, dict[str, Any]] = {}
-    for pl, ptype, c in pl_rows:
-        key = pl or "(未知)"
-        d = pl_map.setdefault(
+    mod_map: dict[str, dict[str, Any]] = {}
+    for mod, ptype, c in mod_rows:
+        key = mod or "(未分类)"
+        d = mod_map.setdefault(
             key,
             {
-                "product_line": key,
+                "module": key,
                 "total": 0,
                 "overdue_count": 0,
                 "by_type": dict.fromkeys(_TYPES, 0),
@@ -157,9 +157,9 @@ def compute_ticket_analytics(
         d["total"] += c
         if ptype in d["by_type"]:
             d["by_type"][ptype] += c
-    # 各产品线超期数（口径同 sla_rate：两列非空且 handle > std）
+    # 各模块超期数（口径同 sla_rate：两列非空且 handle > std）
     overdue_rows = db.execute(
-        select(Ticket.product_line_code, func.count())
+        select(Ticket.module, func.count())
         .where(
             and_(
                 flt,
@@ -168,13 +168,13 @@ def compute_ticket_analytics(
                 Ticket.handle_hours > Ticket.sla_standard_hours,
             )
         )
-        .group_by(Ticket.product_line_code)
+        .group_by(Ticket.module)
     ).all()
-    for pl, c in overdue_rows:
-        key = pl or "(未知)"
-        if key in pl_map:
-            pl_map[key]["overdue_count"] = c
-    by_product_line = sorted(pl_map.values(), key=lambda x: x["total"], reverse=True)[:10]
+    for mod, c in overdue_rows:
+        key = mod or "(未分类)"
+        if key in mod_map:
+            mod_map[key]["overdue_count"] = c
+    by_module = sorted(mod_map.values(), key=lambda x: x["total"], reverse=True)[:10]
 
     # 处理人负载 top15
     as_rows = db.execute(
@@ -232,7 +232,7 @@ def compute_ticket_analytics(
 
     return TicketAnalytics(
         kpi=kpi,
-        by_product_line=by_product_line,
+        by_module=by_module,
         by_assignee=by_assignee,
         trend=trend,
         handle_hours_hist=hist,

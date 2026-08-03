@@ -7,7 +7,7 @@
  *
  * 顶部：时间范围切换（最近3月/全部）+ 产品线下拉（可选，复用 ProductLineSelect）。
  * ① KPI 行：总量 / 类型分布饼图 / 平均处理时长 / SLA 达成率（<80% 标红）
- * ② 产品线 × 类型堆叠柱状图
+ * ② 模块 × 类型堆叠柱状图（这批工单产品线单一，module 才有区分度）
  * ③ 处理人负载横向柱状图
  * ④ 月度趋势折线图（total + median/p90 处理时长）+ 耗时区间直方图
  */
@@ -148,9 +148,9 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
     value: (kpi.by_type as Record<string, number>)[t] ?? 0,
   }));
 
-  const byProductLine = (data.by_product_line ?? []) as Array<Record<string, any>>;
-  const plChartData = byProductLine.map((row) => ({
-    product_line: row.product_line,
+  const byModule = (data.by_module ?? []) as Array<Record<string, any>>;
+  const plChartData = byModule.map((row) => ({
+    module: row.module,
     total: row.total,
     overdue_count: row.overdue_count ?? 0,
     ...row.by_type,
@@ -224,18 +224,18 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
         </div>
       </div>
 
-      {/* ② 产品线 × 类型 */}
+      {/* ② 模块 × 类型 */}
       <div>
-        <div className="text-xs font-semibold text-hub-textSecondary mb-2">产品线 × 类型分布</div>
+        <div className="text-xs font-semibold text-hub-textSecondary mb-2">模块 × 类型分布</div>
         <div className="bg-white border border-hub-border rounded-[10px] p-4">
           {plChartData.length === 0 ? (
             <div className="text-xs text-hub-textFaint">暂无数据</div>
           ) : (
-            <div style={{ width: "100%", height: 280 }} data-testid="product-line-bar-chart">
+            <div style={{ width: "100%", height: 280 }} data-testid="module-bar-chart">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={plChartData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="product_line" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey="module" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip
                     content={({ active, payload, label }) => {
@@ -271,14 +271,14 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
           {plChartData.some((d) => d.overdue_count > 0) && (
             <div
               className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-hub-textSecondary"
-              data-testid="product-line-overdue"
+              data-testid="module-overdue"
             >
               <span className="text-hub-textFaint">超期工单：</span>
               {plChartData
                 .filter((d) => d.overdue_count > 0)
                 .map((d) => (
-                  <span key={d.product_line}>
-                    {d.product_line}
+                  <span key={d.module}>
+                    {d.module}
                     <span className="ml-1 font-semibold" style={{ color: "#b04a4a" }}>
                       {d.overdue_count}
                     </span>

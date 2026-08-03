@@ -24,15 +24,15 @@ const sampleAnalytics = {
     avg_handle_hours: 12.5,
     sla_rate: 0.72,
   },
-  by_product_line: [
+  by_module: [
     {
-      product_line: "cloud-erp",
+      module: "开票管理",
       total: 80,
       overdue_count: 5,
       by_type: { Operation: 30, Bug_fix: 30, Demand: 15, Internal_task: 5 },
     },
     {
-      product_line: "cloud-hr",
+      module: "收票管理",
       total: 48,
       overdue_count: 2,
       by_type: { Operation: 10, Bug_fix: 20, Demand: 15, Internal_task: 3 },
@@ -78,16 +78,16 @@ describe("AnalyticsPage", () => {
     expect(screen.getByTestId("kpi-sla-rate")).toHaveTextContent("72.0%");
 
     expect(screen.getByTestId("type-pie-chart")).toBeInTheDocument();
-    expect(screen.getByTestId("product-line-bar-chart")).toBeInTheDocument();
+    expect(screen.getByTestId("module-bar-chart")).toBeInTheDocument();
     expect(screen.getByTestId("assignee-bar-chart")).toBeInTheDocument();
     expect(screen.getByTestId("trend-line-chart")).toBeInTheDocument();
     expect(screen.getByTestId("hist-bar-chart")).toBeInTheDocument();
 
-    // 产品线超期数（来自 by_product_line[].overdue_count：cloud-erp=5, cloud-hr=2）
-    const overdue = screen.getByTestId("product-line-overdue");
-    expect(overdue).toHaveTextContent("cloud-erp");
+    // 模块超期数（来自 by_module[].overdue_count：开票管理=5, 收票管理=2）
+    const overdue = screen.getByTestId("module-overdue");
+    expect(overdue).toHaveTextContent("开票管理");
     expect(overdue).toHaveTextContent("5");
-    expect(overdue).toHaveTextContent("cloud-hr");
+    expect(overdue).toHaveTextContent("收票管理");
     expect(overdue).toHaveTextContent("2");
 
     localStorage.clear();

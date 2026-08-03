@@ -45,4 +45,4 @@ def test_ticket_analytics_ok_for_supervisor(app_client: TestClient, world: Sessi
     assert resp.status_code == 200
     body = resp.json()
     assert "kpi" in body and "total" in body["kpi"]
-    assert "by_product_line" in body and "trend" in body
+    assert "by_module" in body and "trend" in body

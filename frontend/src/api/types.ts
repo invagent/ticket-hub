@@ -3654,8 +3654,8 @@ export interface components {
             by_assignee: {
                 [key: string]: unknown;
             }[];
-            /** By Product Line */
-            by_product_line: {
+            /** By Module */
+            by_module: {
                 [key: string]: unknown;
             }[];
             /** Handle Hours Hist */

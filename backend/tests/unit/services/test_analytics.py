@@ -44,47 +44,47 @@ def test_kpi_counts_by_type_and_sla(db_session):
     assert abs(r.kpi.sla_rate - 0.5) < 1e-6
 
 
-def test_by_product_line_and_assignee(db_session):
+def test_by_module_and_assignee(db_session):
     _tk(
         db_session,
-        product_line_code="发票云",
+        module="开票管理",
         predicted_type="Bug_fix",
         assigned_user_id=None,
         handle_hours=Decimal("4"),
     )
     _tk(
         db_session,
-        product_line_code="发票云",
+        module="开票管理",
         predicted_type="Operation",
         handle_hours=Decimal("10"),
     )
     db_session.commit()
     r = compute_ticket_analytics(db_session)
-    pl = next(x for x in r.by_product_line if x["product_line"] == "发票云")
-    assert pl["total"] == 2
+    m = next(x for x in r.by_module if x["module"] == "开票管理")
+    assert m["total"] == 2
 
 
-def test_by_product_line_overdue_count(db_session):
-    # 一条超期(50>40) + 一条达标(6<=8)，同一产品线
+def test_by_module_overdue_count(db_session):
+    # 一条超期(50>40) + 一条达标(6<=8)，同一模块
     _tk(
         db_session,
-        product_line_code="费控云",
+        module="收票管理",
         predicted_type="Bug_fix",
         handle_hours=Decimal("50"),
         sla_standard_hours=Decimal("40"),
     )
     _tk(
         db_session,
-        product_line_code="费控云",
+        module="收票管理",
         predicted_type="Bug_fix",
         handle_hours=Decimal("6"),
         sla_standard_hours=Decimal("8"),
     )
     db_session.commit()
     r = compute_ticket_analytics(db_session)
-    pl = next(x for x in r.by_product_line if x["product_line"] == "费控云")
-    assert pl["total"] == 2
-    assert pl["overdue_count"] == 1
+    m = next(x for x in r.by_module if x["module"] == "收票管理")
+    assert m["total"] == 2
+    assert m["overdue_count"] == 1
 
 
 def test_trend_by_month(db_session):

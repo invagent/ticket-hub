@@ -154,7 +154,7 @@ class KpiOut(BaseModel):
 
 class TicketAnalyticsOut(BaseModel):
     kpi: KpiOut
-    by_product_line: list[dict]
+    by_module: list[dict]
     by_assignee: list[dict]
     trend: list[dict]
     handle_hours_hist: list[dict]
@@ -171,7 +171,7 @@ def ticket_analytics(
     r = compute_ticket_analytics(db, start=start, end=end, product_line=product_line)
     return TicketAnalyticsOut(
         kpi=KpiOut(**asdict(r.kpi)),
-        by_product_line=r.by_product_line,
+        by_module=r.by_module,
         by_assignee=r.by_assignee,
         trend=r.trend,
         handle_hours_hist=r.handle_hours_hist,
