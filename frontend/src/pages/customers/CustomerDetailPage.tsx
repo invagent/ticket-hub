@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getByPath, ApiError } from "@/api/client";
+import { useTabTitle } from "@/tabs/useTabTitle";
 import type { paths } from "@/api/types";
 
 type IdentityOut =
@@ -46,6 +47,8 @@ export function CustomerDetailPage() {
     enabled: !Number.isNaN(id),
     retry: false,
   });
+
+  useTabTitle(detail.data?.customer?.display_name);
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">

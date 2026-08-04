@@ -1,5 +1,9 @@
-import type { ReactNode } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { type ReactNode, useEffect, useRef } from "react";
+import { NavLink, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useTabs, keyOf } from "@/tabs/TabsContext";
+import { resolveTitle } from "@/tabs/tabTitle";
+import { authedRoutes } from "@/tabs/appRoutes";
+import { TabBar } from "@/tabs/TabBar";
 
 // Nav shell reskinned to the 2026-07 console redesign design system
 // (基准来源：反思诊断工作台；token 见 docs/design 或已上线的 /reflect 页面).
@@ -102,6 +106,30 @@ const navItems: {
 
 export function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { tabs, activeKey, openTab } = useTabs();
+
+  // ---- TabsSync：浏览器 location ↔ 活跃 tab 双向同步 ----
+  const curPath = location.pathname + location.search;
+  const curKey = keyOf(curPath);
+  // location 变（导航/页面内 Link/前进后退）→ 打开或激活对应 tab
+  useEffect(() => {
+    if (curKey === "/login") return;
+    openTab(curPath, resolveTitle(curPath));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curPath]);
+  // 活跃 tab 变（点标签）→ 地址栏跟随（仅当与当前 location 不同，防循环）
+  const lastNav = useRef(curKey);
+  useEffect(() => {
+    const active = tabs.find((t) => t.key === activeKey);
+    if (active && keyOf(curPath) !== activeKey && lastNav.current !== activeKey) {
+      lastNav.current = activeKey;
+      navigate(active.path);
+    } else {
+      lastNav.current = activeKey;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
 
   function logout() {
     localStorage.removeItem("auth_token");
@@ -173,8 +201,17 @@ export function Layout() {
           </button>
         </div>
       </nav>
-      <main className="flex-1 min-w-0 p-6">
-        <Outlet />
+      <main className="flex-1 min-w-0 flex flex-col h-screen">
+        <TabBar />
+        {/* keep-alive：所有已打开 tab 同时挂载，非活跃 hidden。每个 tab 用自己的
+            location 冻结渲染，useParams/useSearchParams 读到的是该 tab 的参数。 */}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {tabs.map((t) => (
+            <div key={t.key} hidden={t.key !== activeKey} className="p-6">
+              <Routes location={t.path}>{authedRoutes}</Routes>
+            </div>
+          ))}
+        </div>
       </main>
     </div>
   );

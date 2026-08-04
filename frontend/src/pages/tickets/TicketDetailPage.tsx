@@ -7,6 +7,7 @@ import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { UserSelect } from "@/components/selectors";
+import { useTabTitle } from "@/tabs/useTabTitle";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
 import { RelinkModal } from "./RelinkModal";
 
@@ -28,6 +29,9 @@ export function TicketDetailPage() {
     queryFn: () => getByPath("/api/tickets/{ticket_id}/history", { ticket_id: id }),
     enabled: !Number.isNaN(id) && detail.isSuccess,
   });
+
+  // 回填 tab 标题为真实短码（TKT-005890）
+  useTabTitle(detail.data?.short_code);
 
   const qc = useQueryClient();
   const [gradType, setGradType] = useState<string>("");
