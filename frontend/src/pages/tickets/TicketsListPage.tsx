@@ -1,13 +1,23 @@
 /**
- * 工单列表（2026-07 后台重构 屏幕4 换肤）。
- * 表格结构与字段沿用现状，应用新设计系统（暖底/边框/徽标语义色/13px 密度）；
- * 功能不变：来源/状态筛选、仅未分配、主管多选 + 重新触发分配、分页。
+ * 工单列表（2026-08 优化：react-table 可定制表格）。
+ * - 筛选：来源 / 状态 / 处理人多选(MultiUserSelect) / AI 分类多选 / 仅未分配
+ * - 列：新增 主产品名称 / 客户驳回次数 / 关联任务数；工单号+标题冻结(sticky)
+ * - 交互：列宽拖拽、列顺序拖拽、横向滚动；列偏好(顺序+宽度)持久化 localStorage
+ * - 保留：主管多选行 + 重新触发分配 / 批量指派、分页、URL 筛选驱动
  */
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
-import { UserSelect } from "@/components/selectors";
+import {
+  type ColumnDef,
+  type ColumnOrderState,
+  type ColumnSizingState,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { api, type TicketSummary } from "@/api/client";
+import { MultiUserSelect, UserSelect } from "@/components/selectors";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
@@ -51,12 +61,37 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
+
+// AI 分类多选可选项（研发/运营三类，对应后端 predicted_type）
+const TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "Demand", label: "需求" },
+  { value: "Bug_fix", label: "Bug 修复" },
+  { value: "Operation", label: "运营" },
+];
+
+const PREFS_KEY = "tickets_table_prefs_v1";
+type TablePrefs = { order?: ColumnOrderState; sizing?: ColumnSizingState };
+
+function loadPrefs(): TablePrefs {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
 export function TicketsListPage() {
   const [params, setParams] = useSearchParams();
   const sourceCode = params.get("source_code") ?? "";
   const status = params.get("status") ?? "";
   const unassigned = params.get("unassigned") === "true";
   const page = Number(params.get("page") ?? "1");
+  const assignedUserIds = params
+    .getAll("assigned_user_ids")
+    .map(Number)
+    .filter((n) => !Number.isNaN(n));
+  const predictedTypes = params.getAll("predicted_types");
 
   const authUser = getAuthUser();
   const isSupervisor = authUser?.role === "supervisor" || authUser?.role === "admin";
@@ -65,21 +100,48 @@ export function TicketsListPage() {
   const [showReroute, setShowReroute] = useState(false);
   const [bulkAssignTo, setBulkAssignTo] = useState<number | undefined>(undefined);
   const [showAssign, setShowAssign] = useState(false);
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const typeBoxRef = useRef<HTMLDivElement>(null);
+
+  // 列偏好（顺序 + 宽度）持久化
+  const initialPrefs = useMemo(loadPrefs, []);
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(initialPrefs.order ?? []);
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(initialPrefs.sizing ?? {});
+  const [dragCol, setDragCol] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ order: columnOrder, sizing: columnSizing }));
+  }, [columnOrder, columnSizing]);
+
+  useEffect(() => {
+    if (!typeMenuOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (typeBoxRef.current && !typeBoxRef.current.contains(e.target as Node))
+        setTypeMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [typeMenuOpen]);
 
   const tickets = useQuery({
-    queryKey: ["tickets", { sourceCode, status, unassigned, page }],
+    queryKey: [
+      "tickets",
+      { sourceCode, status, unassigned, page, assignedUserIds, predictedTypes },
+    ],
     queryFn: () =>
       api.get("/api/tickets", {
         source_code: sourceCode || undefined,
         status: status || undefined,
         unassigned_only: unassigned || undefined,
+        assigned_user_ids: assignedUserIds.length ? assignedUserIds : undefined,
+        predicted_types: predictedTypes.length ? predictedTypes : undefined,
         page,
         page_size: 50,
       }),
   });
 
-  const items = tickets.data?.items ?? [];
+  const items = useMemo(() => tickets.data?.items ?? [], [tickets.data]);
   const allSelected = items.length > 0 && items.every((t) => selectedIds.has(t.id));
   const someSelected = items.some((t) => selectedIds.has(t.id)) && !allSelected;
 
@@ -91,6 +153,15 @@ export function TicketsListPage() {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
+    next.set("page", "1");
+    setParams(next);
+    setSelectedIds(new Set());
+  }
+
+  function setMultiFilter(key: string, values: (string | number)[]) {
+    const next = new URLSearchParams(params);
+    next.delete(key);
+    for (const v of values) next.append(key, String(v));
     next.set("page", "1");
     setParams(next);
     setSelectedIds(new Set());
@@ -125,8 +196,252 @@ export function TicketsListPage() {
     setSelectedIds(allSelected ? new Set() : new Set(items.map((t) => t.id)));
   }
 
-  const selectCls =
-    "text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white";
+  const hasFilters =
+    sourceCode || status || unassigned || assignedUserIds.length || predictedTypes.length;
+
+  // ---- 列定义 --------------------------------------------------------------
+  const columns = useMemo<ColumnDef<TicketSummary>[]>(() => {
+    const cols: ColumnDef<TicketSummary>[] = [];
+    if (isSupervisor) {
+      cols.push({
+        id: "select",
+        header: () => (
+          <input
+            ref={headerCheckboxRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+            className="rounded"
+          />
+        ),
+        cell: ({ row }) => (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(row.original.id)}
+            onChange={() => toggleSelect(row.original.id)}
+            className="rounded"
+          />
+        ),
+        size: 36,
+        enableResizing: false,
+      });
+    }
+    cols.push(
+      {
+        id: "short_code",
+        header: "工单号",
+        accessorKey: "short_code",
+        size: 100,
+        cell: ({ row }) => (
+          <Link
+            to={`/tickets/${row.original.id}`}
+            className="text-hub-teal hover:underline font-mono text-xs"
+          >
+            {row.original.short_code}
+          </Link>
+        ),
+      },
+      {
+        id: "title",
+        header: "标题",
+        accessorKey: "title",
+        size: 260,
+        cell: ({ row }) => {
+          const closed = CLOSED_STATUSES.includes(row.original.status);
+          return (
+            <span
+              className={`text-[12.5px] font-semibold block truncate ${closed ? "text-hub-textFaint" : ""}`}
+              title={row.original.title ?? ""}
+            >
+              {row.original.title ?? "—"}
+            </span>
+          );
+        },
+      },
+      {
+        id: "predicted_type",
+        header: "AI 分类",
+        accessorKey: "predicted_type",
+        size: 90,
+        cell: ({ row }) =>
+          row.original.predicted_type ? (
+            <PredictedTypeBadge type={row.original.predicted_type} />
+          ) : (
+            <span className="text-hub-textFaint text-[10.5px]">未分类</span>
+          ),
+      },
+      {
+        id: "product_name",
+        header: "主产品",
+        accessorKey: "product_name",
+        size: 96,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary truncate block">
+            {row.original.product_name ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "module",
+        header: "模块",
+        accessorKey: "module",
+        size: 100,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary truncate block">
+            {row.original.module ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reject_count",
+        header: "驳回次数",
+        accessorKey: "reject_count",
+        size: 78,
+        cell: ({ row }) => {
+          const n = row.original.reject_count ?? 0;
+          return n > 0 ? (
+            <span className="text-[11.5px] font-bold text-hub-rose">{n}</span>
+          ) : (
+            <span className="text-hub-textFaint text-[11.5px]">0</span>
+          );
+        },
+      },
+      {
+        id: "children_count",
+        header: "关联任务",
+        accessorKey: "children_count",
+        size: 78,
+        cell: ({ row }) => {
+          const n = row.original.children_count ?? 1;
+          return (
+            <span className={`text-[11.5px] ${n > 1 ? "font-bold text-hub-teal" : "text-hub-textSecondary"}`}>
+              {n}
+            </span>
+          );
+        },
+      },
+      {
+        id: "source_code",
+        header: "来源",
+        accessorKey: "source_code",
+        size: 64,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textMuted">{row.original.source_code ?? "—"}</span>
+        ),
+      },
+      {
+        id: "assigned_user",
+        header: "处理人",
+        accessorKey: "assigned_user_name",
+        size: 100,
+        cell: ({ row }) =>
+          row.original.assigned_user_id != null ? (
+            <span className="flex items-center gap-1.5">
+              <span className="w-[18px] h-[18px] rounded-full bg-hub-teal text-white text-[9px] font-bold flex items-center justify-center flex-none">
+                {(row.original.assigned_user_name ?? "#").slice(-1)}
+              </span>
+              <span className="text-[11.5px] text-hub-textSecondary truncate">
+                {row.original.assigned_user_name ?? `#${row.original.assigned_user_id}`}
+              </span>
+            </span>
+          ) : (
+            <span className="text-hub-textFaint text-[11.5px]">—</span>
+          ),
+      },
+      {
+        id: "status",
+        header: "状态",
+        accessorKey: "status",
+        size: 100,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        id: "op_status",
+        header: "处理状态",
+        accessorKey: "op_status",
+        size: 92,
+        cell: ({ row }) =>
+          row.original.op_status ? (
+            <OpStatusBadge status={row.original.op_status} />
+          ) : (
+            <span className="text-hub-textFaint text-[10.5px]">—</span>
+          ),
+      },
+      {
+        id: "received_at",
+        header: "收到时间",
+        accessorKey: "received_at",
+        size: 120,
+        cell: ({ row }) => (
+          <span className="text-[11px] text-hub-textFaint font-mono">
+            {row.original.received_at
+              ? new Date(row.original.received_at).toLocaleString("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "—"}
+          </span>
+        ),
+      },
+    );
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupervisor, allSelected, selectedIds, items]);
+
+  // 冻结列：选择框 + 工单号 + 标题（sticky left）
+  const PINNED = useMemo(
+    () => new Set(isSupervisor ? ["select", "short_code", "title"] : ["short_code", "title"]),
+    [isSupervisor],
+  );
+
+  const table = useReactTable({
+    data: items,
+    columns,
+    state: { columnOrder, columnSizing },
+    onColumnOrderChange: setColumnOrder,
+    onColumnSizingChange: setColumnSizing,
+    columnResizeMode: "onChange",
+    enableColumnResizing: true,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  // 计算 sticky 列的 left 偏移（按当前可见顺序累加）
+  const leftOffsets = useMemo(() => {
+    const offsets: Record<string, number> = {};
+    let acc = 0;
+    for (const col of table.getVisibleLeafColumns()) {
+      if (PINNED.has(col.id)) {
+        offsets[col.id] = acc;
+        acc += col.getSize();
+      }
+    }
+    return offsets;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table, columnOrder, columnSizing, PINNED, items]);
+
+  function onHeaderDrop(targetId: string) {
+    if (!dragCol || dragCol === targetId) return;
+    const order = table.getVisibleLeafColumns().map((c) => c.id);
+    const from = order.indexOf(dragCol);
+    const to = order.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    setColumnOrder(order);
+    setDragCol(null);
+  }
+
+  function stickyStyle(colId: string, size: number): React.CSSProperties {
+    if (!PINNED.has(colId)) return { width: size, minWidth: size };
+    return {
+      width: size,
+      minWidth: size,
+      position: "sticky",
+      left: leftOffsets[colId] ?? 0,
+      zIndex: 2,
+    };
+  }
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
@@ -144,7 +459,7 @@ export function TicketsListPage() {
         <select
           value={sourceCode}
           onChange={(e) => setFilter("source_code", e.target.value)}
-          className={selectCls}
+          className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
         >
           <option value="">全部来源</option>
           <option value="ksm">KSM</option>
@@ -155,7 +470,7 @@ export function TicketsListPage() {
         <select
           value={status}
           onChange={(e) => setFilter("status", e.target.value)}
-          className={selectCls}
+          className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
         >
           <option value="">全部状态</option>
           <option value="received">received</option>
@@ -165,12 +480,77 @@ export function TicketsListPage() {
           <option value="replied">replied</option>
           <option value="done">done</option>
         </select>
+
+        {/* 处理人多选 */}
+        <MultiUserSelect
+          value={assignedUserIds}
+          onChange={(ids) => setMultiFilter("assigned_user_ids", ids)}
+          placeholder="处理人"
+          roles={["assignee", "supervisor", "admin"]}
+        />
+
+        {/* AI 分类多选 */}
+        <div ref={typeBoxRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setTypeMenuOpen((v) => !v)}
+            className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white min-w-[7rem] text-left flex items-center gap-1"
+          >
+            <span className={predictedTypes.length ? "text-hub-text" : "text-hub-textMuted"}>
+              {predictedTypes.length === 0
+                ? "AI 分类"
+                : `已选 ${predictedTypes.length} 类`}
+            </span>
+            <span className="flex-1" />
+            {predictedTypes.length > 0 && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMultiFilter("predicted_types", []);
+                }}
+                className="text-hub-textMuted hover:text-hub-rose text-[13px] leading-none"
+              >
+                ×
+              </span>
+            )}
+            <span className="text-hub-textFaint text-[9px]">▾</span>
+          </button>
+          {typeMenuOpen && (
+            <div className="absolute z-50 mt-1 w-[10rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
+              {TYPE_OPTIONS.map((o) => {
+                const checked = predictedTypes.includes(o.value);
+                return (
+                  <label
+                    key={o.value}
+                    className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const next = checked
+                          ? predictedTypes.filter((t) => t !== o.value)
+                          : [...predictedTypes, o.value];
+                        setMultiFilter("predicted_types", next);
+                      }}
+                      className="rounded"
+                    />
+                    {o.label}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-hub-textSecondary">
           <input type="checkbox" checked={unassigned} onChange={toggleUnassigned} className="rounded" />
           仅未分配
         </label>
         <div className="flex-1" />
-        {(sourceCode || status || unassigned) && (
+        {hasFilters && (
           <button
             onClick={() => {
               setParams(new URLSearchParams());
@@ -188,109 +568,61 @@ export function TicketsListPage() {
 
       {tickets.data && (
         <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
-          {/* 表头 */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2 bg-hub-panel border-b border-hub-border text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
-            {isSupervisor && (
-              <div className="w-4 flex-none">
-                <input
-                  ref={headerCheckboxRef}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleSelectAll}
-                  className="rounded"
-                />
-              </div>
-            )}
-            <div className="w-[92px] flex-none">工单号</div>
-            <div className="flex-1 min-w-0">标题</div>
-            <div className="w-[84px] flex-none">AI 分类</div>
-            <div className="w-[64px] flex-none">来源</div>
-            <div className="w-[110px] flex-none">模块</div>
-            <div className="w-[96px] flex-none">处理人</div>
-            <div className="w-[100px] flex-none">状态</div>
-            <div className="w-[92px] flex-none">处理状态</div>
-            <div className="w-[120px] flex-none text-right">收到时间</div>
+          <div className="overflow-x-auto">
+            <table
+              className="border-collapse"
+              style={{ width: table.getTotalSize(), minWidth: "100%" }}
+            >
+              <thead>
+                {table.getHeaderGroups().map((hg) => (
+                  <tr key={hg.id} className="bg-hub-panel border-b border-hub-border">
+                    {hg.headers.map((header) => {
+                      const pinned = PINNED.has(header.column.id);
+                      return (
+                        <th
+                          key={header.id}
+                          draggable={header.column.id !== "select"}
+                          onDragStart={() => setDragCol(header.column.id)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={() => onHeaderDrop(header.column.id)}
+                          className={`relative px-3.5 py-2 text-left text-[10.5px] font-bold text-hub-textMuted tracking-[.4px] whitespace-nowrap ${pinned ? "bg-hub-panel" : ""}`}
+                          style={stickyStyle(header.column.id, header.getSize())}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {header.column.getCanResize() && (
+                            <span
+                              onMouseDown={header.getResizeHandler()}
+                              onTouchStart={header.getResizeHandler()}
+                              onDragStart={(e) => e.preventDefault()}
+                              className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none hover:bg-hub-teal/30"
+                            />
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id} className="border-b border-hub-borderLight hover:bg-hub-panel">
+                    {row.getVisibleCells().map((cell) => {
+                      const pinned = PINNED.has(cell.column.id);
+                      return (
+                        <td
+                          key={cell.id}
+                          className={`px-3.5 py-2 align-middle ${pinned ? "bg-white" : ""}`}
+                          style={stickyStyle(cell.column.id, cell.column.getSize())}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {/* 行 */}
-          {items.map((t) => {
-            const closed = ["done", "closed", "superseded", "rejected"].includes(t.status);
-            return (
-              <div
-                key={t.id}
-                className="flex items-center gap-2.5 px-3.5 py-2 border-b border-hub-borderLight hover:bg-hub-panel"
-              >
-                {isSupervisor && (
-                  <div className="w-4 flex-none">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(t.id)}
-                      onChange={() => toggleSelect(t.id)}
-                      className="rounded"
-                    />
-                  </div>
-                )}
-                <div className="w-[92px] flex-none font-mono text-xs">
-                  <Link to={`/tickets/${t.id}`} className="text-hub-teal hover:underline">
-                    {t.short_code}
-                  </Link>
-                </div>
-                <div
-                  className={`flex-1 min-w-0 text-[12.5px] font-semibold truncate ${
-                    closed ? "text-hub-textFaint" : ""
-                  }`}
-                >
-                  {t.title ?? "—"}
-                </div>
-                <div className="w-[84px] flex-none">
-                  {t.predicted_type ? (
-                    <PredictedTypeBadge type={t.predicted_type} />
-                  ) : (
-                    <span className="text-hub-textFaint text-[10.5px]">未分类</span>
-                  )}
-                </div>
-                <div className="w-[64px] flex-none text-[11.5px] text-hub-textMuted">
-                  {t.source_code ?? "—"}
-                </div>
-                <div className="w-[110px] flex-none text-[11.5px] text-hub-textSecondary truncate">
-                  {t.module ?? "—"}
-                </div>
-                <div className="w-[96px] flex-none flex items-center gap-1.5">
-                  {t.assigned_user_id != null ? (
-                    <>
-                      <span className="w-[18px] h-[18px] rounded-full bg-hub-teal text-white text-[9px] font-bold flex items-center justify-center flex-none">
-                        {(t.assigned_user_name ?? "#").slice(-1)}
-                      </span>
-                      <span className="text-[11.5px] text-hub-textSecondary truncate">
-                        {t.assigned_user_name ?? `#${t.assigned_user_id}`}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-hub-textFaint text-[11.5px]">—</span>
-                  )}
-                </div>
-                <div className="w-[100px] flex-none">
-                  <StatusBadge status={t.status} />
-                </div>
-                <div className="w-[92px] flex-none">
-                  {t.op_status ? (
-                    <OpStatusBadge status={t.op_status} />
-                  ) : (
-                    <span className="text-hub-textFaint text-[10.5px]">—</span>
-                  )}
-                </div>
-                <div className="w-[120px] flex-none text-right text-[11px] text-hub-textFaint font-mono">
-                  {t.received_at
-                    ? new Date(t.received_at).toLocaleString("zh-CN", {
-                        month: "numeric",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—"}
-                </div>
-              </div>
-            );
-          })}
           {/* 分页 */}
           <div className="flex items-center gap-2 px-3.5 py-2 bg-hub-panel">
             <div className="text-[11px] text-hub-textFaint">

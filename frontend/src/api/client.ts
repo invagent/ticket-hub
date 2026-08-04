@@ -27,15 +27,23 @@ function authHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+type QueryValue = string | number | boolean | undefined | null | (string | number)[];
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
-  query?: Record<string, string | number | boolean | undefined | null>,
+  query?: Record<string, QueryValue>,
 ): Promise<T> {
   const url = new URL(`${API_BASE}${path}`, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+      if (v === undefined || v === null) continue;
+      // 数组值 → 重复 query key（FastAPI list[...] 的线上格式：?k=a&k=b）
+      if (Array.isArray(v)) {
+        for (const item of v) url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
     }
   }
   const resp = await fetch(url.toString().replace(window.location.origin, ""), {
@@ -87,7 +95,7 @@ export const api = {
   /** GET — query params auto-passed, return inferred from OpenAPI 200 response. */
   async get<P extends PathOf<"get">>(
     path: P,
-    query?: Record<string, string | number | boolean | undefined | null>,
+    query?: Record<string, QueryValue>,
   ): Promise<ResponseOf<paths[P], "get">> {
     return request(path as string, { method: "GET" }, query);
   },

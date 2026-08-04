@@ -233,6 +233,120 @@ def test_get_ticket_soft_deleted_returns_404(app_client: TestClient, world: Sess
     assert app_client.get("/api/tickets/104", headers=_bearer()).status_code == 404
 
 
+# ---- 工单列表优化：多选筛选 + 新字段（product_name/reject_count/children_count）----
+
+
+@pytest.fixture
+def world2(db_session: Session) -> Session:
+    """独立种子：覆盖 predicted_type 多选、product_line 名称、reject_count、拆分子单数。"""
+    from app.models import ProductLine
+
+    db_session.add(Source(code="ksm", name="KSM"))
+    db_session.add(ProductLine(code="cloud-fapiao", name="发票云"))
+    db_session.add(User(id=1, feishu_uid="ou_a", name="alice", role="assignee"))
+    db_session.add(User(id=2, feishu_uid="ou_b", name="bob", role="assignee"))
+    # 被驳回过 2 次的 Operation hub
+    db_session.add(
+        HubIssue(
+            id=50,
+            short_code="HUB-RJ",
+            type="Operation",
+            title="rj",
+            status="waiting_reply",
+            op_status="answered",
+            reject_count=2,
+        )
+    )
+    db_session.flush()
+    base = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
+    db_session.add_all(
+        [
+            # Operation：挂被驳回 hub + 有产品线
+            Ticket(
+                id=200,
+                short_code="TKT-A",
+                source_code="ksm",
+                source_ticket_id="a",
+                type="Raw",
+                status="linked",
+                title="op",
+                predicted_type="Operation",
+                product_line_code="cloud-fapiao",
+                hub_issue_id=50,
+                assigned_user_id=1,
+                received_at=base,
+            ),
+            # Bug_fix
+            Ticket(
+                id=201,
+                short_code="TKT-B",
+                source_code="ksm",
+                source_ticket_id="b",
+                type="Raw",
+                status="received",
+                title="bug",
+                predicted_type="Bug_fix",
+                assigned_user_id=2,
+                received_at=base + timedelta(minutes=1),
+            ),
+            # Parent：拆了 3 个子单
+            Ticket(
+                id=202,
+                short_code="TKT-P",
+                source_code="ksm",
+                source_ticket_id="p",
+                type="Parent",
+                status="split",
+                title="parent",
+                predicted_type="Demand",
+                children_ticket_ids=[301, 302, 303],
+                received_at=base + timedelta(minutes=2),
+            ),
+        ]
+    )
+    db_session.commit()
+    return db_session
+
+
+def test_filter_predicted_types_multi(app_client: TestClient, world2: Session) -> None:
+    """类型多选：predicted_types=Operation&predicted_types=Bug_fix。"""
+    r = app_client.get(
+        "/api/tickets?predicted_types=Operation&predicted_types=Bug_fix", headers=_bearer()
+    )
+    assert r.status_code == 200
+    assert {it["short_code"] for it in r.json()["items"]} == {"TKT-A", "TKT-B"}
+
+
+def test_filter_assigned_user_ids_multi(app_client: TestClient, world2: Session) -> None:
+    """处理人多选：assigned_user_ids=1&assigned_user_ids=2。"""
+    r = app_client.get("/api/tickets?assigned_user_ids=1&assigned_user_ids=2", headers=_bearer())
+    assert {it["short_code"] for it in r.json()["items"]} == {"TKT-A", "TKT-B"}
+
+
+def test_summary_product_name(app_client: TestClient, world2: Session) -> None:
+    """主产品名称：product_line_code=cloud-fapiao → name=发票云。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-A"]["product_name"] == "发票云"
+    assert by["TKT-B"]["product_name"] is None  # 无产品线
+
+
+def test_summary_reject_count(app_client: TestClient, world2: Session) -> None:
+    """驳回次数：挂 reject_count=2 的 hub → 2；无 hub → 0。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-A"]["reject_count"] == 2
+    assert by["TKT-B"]["reject_count"] == 0
+
+
+def test_summary_children_count(app_client: TestClient, world2: Session) -> None:
+    """关联任务数：Parent 有 3 子单 → 3；单问题 → 1。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-P"]["children_count"] == 3
+    assert by["TKT-B"]["children_count"] == 1
+
+
 # ============================================================================
 # /api/hub-issues
 # ============================================================================

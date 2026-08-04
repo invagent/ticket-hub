@@ -83,6 +83,8 @@ class TicketRepository:
         type_: str | None = None,
         status: str | None = None,
         assigned_user_id: int | None = None,
+        assigned_user_ids: list[int] | None = None,
+        predicted_types: list[str] | None = None,
         unassigned_only: bool = False,
         customer_identity_id: int | None = None,
         hub_issue_id: int | None = None,
@@ -106,6 +108,12 @@ class TicketRepository:
         if assigned_user_id is not None:
             base = base.where(Ticket.assigned_user_id == assigned_user_id)
             count_base = count_base.where(Ticket.assigned_user_id == assigned_user_id)
+        if assigned_user_ids:
+            base = base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
+            count_base = count_base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
+        if predicted_types:
+            base = base.where(Ticket.predicted_type.in_(predicted_types))
+            count_base = count_base.where(Ticket.predicted_type.in_(predicted_types))
         if unassigned_only:
             base = base.where(Ticket.assigned_user_id.is_(None))
             count_base = count_base.where(Ticket.assigned_user_id.is_(None))
@@ -220,9 +228,7 @@ class HubIssueRepository:
             count_base = count_base.where(HubIssue.module == module)
         if search:
             like = f"%{search}%"
-            base = base.where(
-                or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like))
-            )
+            base = base.where(or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like)))
             count_base = count_base.where(
                 or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like))
             )

@@ -3698,6 +3698,11 @@ export interface components {
             cached_reply_content: string | null;
             /** Cached Reply Version */
             cached_reply_version: number | null;
+            /**
+             * Children Count
+             * @default 1
+             */
+            children_count: number;
             /** Children Ticket Ids */
             children_ticket_ids: number[] | null;
             /**
@@ -3731,8 +3736,15 @@ export interface components {
             predicted_type?: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /** Product Name */
+            product_name?: string | null;
             /** Received At */
             received_at: string | null;
+            /**
+             * Reject Count
+             * @default 0
+             */
+            reject_count: number;
             /** Reporter */
             reporter: {
                 [key: string]: unknown;
@@ -3778,6 +3790,11 @@ export interface components {
             /** Assigned User Name */
             assigned_user_name?: string | null;
             /**
+             * Children Count
+             * @default 1
+             */
+            children_count: number;
+            /**
              * Created At
              * Format: date-time
              */
@@ -3800,8 +3817,15 @@ export interface components {
             predicted_type?: string | null;
             /** Product Line Code */
             product_line_code: string | null;
+            /** Product Name */
+            product_name?: string | null;
             /** Received At */
             received_at: string | null;
+            /**
+             * Reject Count
+             * @default 0
+             */
+            reject_count: number;
             /** Short Code */
             short_code: string;
             /** Source Code */
@@ -7000,6 +7024,8 @@ export interface operations {
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
+                assigned_user_ids?: number[] | null;
+                predicted_types?: string[] | null;
                 unassigned_only?: boolean;
                 customer_identity_id?: number | null;
                 hub_issue_id?: number | null;

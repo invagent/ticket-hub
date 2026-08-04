@@ -9,7 +9,7 @@
  *   <ModuleSelect productLineCode={...} value={...} onChange={...} />
  *   <FeatureSelect value={...} onChange={...} />
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
@@ -79,6 +79,121 @@ export function UserSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+// ---- MultiUserSelect（多选 + 关键词搜索）---------------------------------
+// 工单列表「处理人」筛选用：下拉勾选多个处理人 + 顶部输入框按姓名/工号过滤。
+// 值为 number[]（user id 列表）。复用 useUserOptions 缓存与 labelForUser。
+
+export function MultiUserSelect({
+  value,
+  onChange,
+  placeholder = "处理人",
+  roles,
+  className,
+}: {
+  value: number[];
+  onChange: (next: number[]) => void;
+  placeholder?: string;
+  roles?: string[];
+  className?: string;
+}) {
+  const q = useUserOptions();
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const all = (q.data ?? []).filter((u: UserOpt) => !roles || roles.includes(u.role));
+  const kwLower = kw.trim().toLowerCase();
+  const opts = kwLower
+    ? all.filter(
+        (u: UserOpt) =>
+          u.name.toLowerCase().includes(kwLower) ||
+          (u.employee_no ?? "").toLowerCase().includes(kwLower),
+      )
+    : all;
+  const selected = new Set(value);
+
+  function toggle(id: number) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(Array.from(next));
+  }
+
+  const label =
+    value.length === 0
+      ? placeholder
+      : value.length === 1
+        ? (all.find((u: UserOpt) => u.id === value[0])?.name ?? `#${value[0]}`)
+        : `已选 ${value.length} 人`;
+
+  return (
+    <div ref={boxRef} className={`relative ${className ?? ""}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white min-w-[9rem] text-left flex items-center gap-1"
+      >
+        <span className={value.length ? "text-hub-text" : "text-hub-textMuted"}>{label}</span>
+        <span className="flex-1" />
+        {value.length > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange([]);
+            }}
+            className="text-hub-textMuted hover:text-hub-rose text-[13px] leading-none"
+          >
+            ×
+          </span>
+        )}
+        <span className="text-hub-textFaint text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-[15rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
+          <input
+            autoFocus
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="搜索姓名 / 工号"
+            className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
+          />
+          <div className="max-h-[220px] overflow-y-auto">
+            {q.isLoading && <div className="text-[11px] text-hub-textFaint px-2 py-1">加载中…</div>}
+            {!q.isLoading && opts.length === 0 && (
+              <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
+            )}
+            {opts.map((u: UserOpt) => (
+              <label
+                key={u.id}
+                className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(u.id)}
+                  onChange={() => toggle(u.id)}
+                  className="rounded"
+                />
+                <span className="truncate">{labelForUser(u)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
