@@ -5608,6 +5608,11 @@
             ],
             "title": "Cached Reply Version"
           },
+          "children_count": {
+            "default": 1,
+            "title": "Children Count",
+            "type": "integer"
+          },
           "children_ticket_ids": {
             "anyOf": [
               {
@@ -5765,6 +5770,17 @@
             ],
             "title": "Product Line Code"
           },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
           "received_at": {
             "anyOf": [
               {
@@ -5776,6 +5792,11 @@
               }
             ],
             "title": "Received At"
+          },
+          "reject_count": {
+            "default": 0,
+            "title": "Reject Count",
+            "type": "integer"
           },
           "reporter": {
             "anyOf": [
@@ -5962,6 +5983,11 @@
             ],
             "title": "Assigned User Name"
           },
+          "children_count": {
+            "default": 1,
+            "title": "Children Count",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6060,6 +6086,17 @@
             ],
             "title": "Product Line Code"
           },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
           "received_at": {
             "anyOf": [
               {
@@ -6071,6 +6108,11 @@
               }
             ],
             "title": "Received At"
+          },
+          "reject_count": {
+            "default": 0,
+            "title": "Reject Count",
+            "type": "integer"
           },
           "short_code": {
             "title": "Short Code",
@@ -11147,6 +11189,44 @@
                 }
               ],
               "title": "Assigned User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assigned_user_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assigned User Ids"
+            }
+          },
+          {
+            "in": "query",
+            "name": "predicted_types",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Predicted Types"
             }
           },
           {

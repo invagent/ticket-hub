@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
 from app.db import get_session
-from app.models import Customer, CustomerIdentity, HubIssue, User
+from app.models import Customer, CustomerIdentity, HubIssue, ProductLine, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -44,7 +44,12 @@ class TicketSummary(BaseModel):
     assigned_user_name: str | None = None
     predicted_type: str | None = None
     hub_issue_id: int | None
-    op_status: str | None = None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）
+    op_status: str | None = (
+        None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）
+    )
+    product_name: str | None = None  # 主产品名称（product_line_code → product_lines.name）
+    reject_count: int = 0  # 客户驳回次数（所挂 hub_issue 的 reject_count；研发类/无 hub 为 0）
+    children_count: int = 1  # 关联任务数（拆分子单数；单问题=1，Parent=children_ticket_ids 长度）
     received_at: datetime | None
     customer_replied_at: datetime | None
     created_at: datetime
@@ -88,6 +93,8 @@ def list_tickets(
     type: str | None = Query(None, alias="type"),
     status: str | None = Query(None),
     assigned_user_id: int | None = Query(None),
+    assigned_user_ids: list[int] | None = Query(None),  # 处理人多选筛选（1.1）
+    predicted_types: list[str] | None = Query(None),  # AI 分类类型多选筛选（1.2）
     unassigned_only: bool = Query(False),
     customer_identity_id: int | None = Query(None),
     hub_issue_id: int | None = Query(None),
@@ -99,6 +106,8 @@ def list_tickets(
         type_=type,
         status=status,
         assigned_user_id=assigned_user_id,
+        assigned_user_ids=assigned_user_ids,
+        predicted_types=predicted_types,
         unassigned_only=unassigned_only,
         customer_identity_id=customer_identity_id,
         hub_issue_id=hub_issue_id,
@@ -112,14 +121,27 @@ def list_tickets(
         rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
         user_name_map = {r.id: r.name for r in rows}
 
-    # batch-load 所挂 hub_issue 的 op_status（仅 Operation 有值），避免 N+1
+    # batch-load 所挂 hub_issue 的 op_status（仅 Operation 有值）+ reject_count，避免 N+1
     hub_ids = {t.hub_issue_id for t in p.items if t.hub_issue_id is not None}
     hub_op_map: dict[int, str | None] = {}
+    hub_reject_map: dict[int, int] = {}
     if hub_ids:
         hrows = db.execute(
-            select(HubIssue.id, HubIssue.op_status).where(HubIssue.id.in_(hub_ids))
+            select(HubIssue.id, HubIssue.op_status, HubIssue.reject_count).where(
+                HubIssue.id.in_(hub_ids)
+            )
         ).all()
         hub_op_map = {r.id: r.op_status for r in hrows}
+        hub_reject_map = {r.id: r.reject_count for r in hrows}
+
+    # batch-load 主产品名称（product_line_code → product_lines.name），避免 N+1
+    pl_codes = {t.product_line_code for t in p.items if t.product_line_code}
+    product_name_map: dict[str, str] = {}
+    if pl_codes:
+        prows = db.execute(
+            select(ProductLine.code, ProductLine.name).where(ProductLine.code.in_(pl_codes))
+        ).all()
+        product_name_map = {r.code: r.name for r in prows}
 
     def _to_summary(t: Any) -> TicketSummary:
         s = TicketSummary.model_validate(t)
@@ -127,6 +149,11 @@ def list_tickets(
             s.assigned_user_name = user_name_map.get(t.assigned_user_id)
         if t.hub_issue_id is not None:
             s.op_status = hub_op_map.get(t.hub_issue_id)
+            s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
+        if t.product_line_code:
+            s.product_name = product_name_map.get(t.product_line_code)
+        # 关联任务数：拆分子单数（Parent 持有 children_ticket_ids）；单问题工单=1
+        s.children_count = len(t.children_ticket_ids or []) or 1
         return s
 
     return TicketListResponse(
