@@ -568,10 +568,10 @@ export function TicketsListPage() {
 
       {tickets.data && (
         <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-w-full">
             <table
               className="border-collapse"
-              style={{ width: table.getTotalSize(), minWidth: "100%" }}
+              style={{ width: table.getTotalSize(), tableLayout: "fixed" }}
             >
               <thead>
                 {table.getHeaderGroups().map((hg) => (
