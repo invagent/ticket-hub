@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { TabsProvider } from "./tabs/TabsContext";
+import { resolveTitle } from "./tabs/tabTitle";
 import "./index.css";
 
 // ---- Feishu SSO bootstrap ----
@@ -54,18 +56,18 @@ consumeSsoFragment();
 
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/login/LoginPage";
-import { WorkbenchPage } from "./pages/workbench/WorkbenchPage";
-import { TicketsListPage } from "./pages/tickets/TicketsListPage";
-import { TicketDetailPage } from "./pages/tickets/TicketDetailPage";
-import { HubIssuesListPage } from "./pages/hub-issues/HubIssuesListPage";
-import { HubIssueDetailPage } from "./pages/hub-issues/HubIssueDetailPage";
-import { CustomersSearchPage } from "./pages/customers/CustomersSearchPage";
-import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
-import { PeopleScopesPage } from "./pages/admin/users/PeopleScopesPage";
-import { CatalogPage } from "./pages/admin/catalog/CatalogPage";
-import { SkillsPage } from "./pages/admin/skills/SkillsPage";
-import { ReflectWorkbenchPage } from "./pages/reflect/ReflectWorkbenchPage";
-import { AnalyticsPage } from "./pages/analytics/AnalyticsPage";
+
+// 当前浏览器 URL 去掉 SPA basename 后的应用内路径（含 search），供 tabs 初始化。
+function currentAppPath(): string {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  let p = window.location.pathname;
+  if (base && p.startsWith(base)) p = p.slice(base.length);
+  if (!p.startsWith("/")) p = "/" + p;
+  const search = window.location.search;
+  // 登录页不作为 tab 初始路径
+  if (p === "/login") return "/";
+  return p + search;
+}
 
 function isTokenExpired(token: string): boolean {
   try {
@@ -98,36 +100,18 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* 认证区：Layout 内部用多标签 keep-alive 渲染具体页面（见 Layout + appRoutes）。
+              catch-all 让所有子路径都进 Layout，由 TabsContext + 每 tab 的 <Routes> 分发。 */}
           <Route
+            path="/*"
             element={
               <RequireAuth>
-                <Layout />
+                <TabsProvider initialPath={currentAppPath()} resolveTitle={resolveTitle}>
+                  <Layout />
+                </TabsProvider>
               </RequireAuth>
             }
-          >
-            <Route path="/" element={<WorkbenchPage />} />
-            {/* 旧主管工作台/Dashboard 已合并进工作台，老书签重定向 */}
-            <Route path="/supervisor" element={<Navigate to="/" replace />} />
-            <Route path="/reflect" element={<ReflectWorkbenchPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/tickets" element={<TicketsListPage />} />
-            <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
-            <Route path="/hub-issues" element={<HubIssuesListPage />} />
-            <Route
-              path="/hub-issues/:hubIssueId"
-              element={<HubIssueDetailPage />}
-            />
-            <Route path="/customers" element={<CustomersSearchPage />} />
-            <Route
-              path="/customers/:customerId"
-              element={<CustomerDetailPage />}
-            />
-            <Route path="/admin/users" element={<PeopleScopesPage />} />
-            {/* 旧分工管理已并入人员与分工，老书签重定向 */}
-            <Route path="/admin/scopes" element={<Navigate to="/admin/users" replace />} />
-            <Route path="/admin/catalog" element={<CatalogPage />} />
-            <Route path="/admin/skills" element={<SkillsPage />} />
-          </Route>
+          />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

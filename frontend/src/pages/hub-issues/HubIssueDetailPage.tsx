@@ -6,6 +6,7 @@ import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/ap
 import { currentRole, isSupervisor } from "@/api/auth";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { HubCollabActions } from "@/components/hubActions";
+import { useTabTitle } from "@/tabs/useTabTitle";
 import type { paths } from "@/api/types";
 
 /** supervisor / admin / knowledge_op 可用（人工重答等知识运营权限，同后端 require_knowledge_op）。 */
@@ -36,6 +37,8 @@ export function HubIssueDetailPage() {
     enabled: !Number.isNaN(id),
     retry: false,
   });
+
+  useTabTitle(detail.data?.short_code);
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
