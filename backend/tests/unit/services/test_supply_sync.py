@@ -6,7 +6,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import HubIssue, Source, StatusHistory, SyncOutbox, Ticket
-from app.services.cascade.supply_sync import SupplySyncError, request_supply
+from app.services.cascade.supply_sync import (
+    SupplySyncError,
+    batch_request_supply,
+    request_supply,
+)
 
 
 @pytest.fixture
@@ -91,3 +95,98 @@ def test_empty_note_rejected(world: Session) -> None:
 def test_hub_not_found(world: Session) -> None:
     with pytest.raises(SupplySyncError):
         request_supply(world, 9999, note="补料", requested_by="user:carol")
+
+
+# ---- 工单级批量补料（列表勾选，工单不必已毕业 hub）----
+
+
+def test_batch_supply_enqueues_for_unlinked_tickets(world: Session) -> None:
+    """未毕业 hub 的工单也能入队，outbox.hub_issue_id 留空。"""
+    t1 = Ticket(
+        short_code="TKT-B1",
+        source_code="ksm",
+        source_ticket_id="b-1",
+        type="Raw",
+        status="received",
+        title="单1",
+    )
+    t2 = Ticket(
+        short_code="TKT-B2",
+        source_code="zhichi",
+        source_ticket_id="b-2",
+        type="Raw",
+        status="received",
+        title="单2",
+    )
+    world.add_all([t1, t2])
+    world.commit()
+
+    res = batch_request_supply(world, [t1.id, t2.id], note="请补充截图", requested_by="user:dave")
+    assert res.enqueued_count == 2
+    assert res.skipped_count == 0
+    rows = world.query(SyncOutbox).filter_by(kind="supply").all()
+    assert len(rows) == 2
+    assert all(r.hub_issue_id is None for r in rows)  # 未毕业 → 空
+    assert all(r.status == "pending" for r in rows)
+    assert {r.target_source_code for r in rows} == {"ksm", "zhichi"}
+
+
+def test_batch_supply_carries_hub_id_when_linked(world: Session) -> None:
+    """已毕业工单入队时带上 hub_issue_id。"""
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    res = batch_request_supply(world, [t.id], note="补料", requested_by="user:dave")
+    assert res.enqueued_count == 1
+    row = world.query(SyncOutbox).filter_by(kind="supply").one()
+    assert row.hub_issue_id == hub.id
+
+
+def test_batch_supply_skips_sourceless_and_missing(world: Session) -> None:
+    """无源工单（Child）+ 不存在的 id 跳过并给出原因。"""
+    sourced = Ticket(
+        short_code="TKT-S",
+        source_code="ksm",
+        source_ticket_id="s-1",
+        type="Raw",
+        status="received",
+        title="有源",
+    )
+    world.add(sourced)
+    world.commit()
+    child = Ticket(
+        short_code="TKT-C",
+        type="Child",
+        status="received",
+        internal_split_id="TKT-S-C1",
+        parent_ticket_id=sourced.id,
+        title="子单",
+    )
+    world.add(child)
+    world.commit()
+
+    res = batch_request_supply(
+        world, [sourced.id, child.id, 99999], note="补料", requested_by="user:dave"
+    )
+    assert res.enqueued_count == 1
+    assert res.skipped_count == 2
+    by_id = {r.ticket_id: r for r in res.results}
+    assert by_id[sourced.id].success is True
+    assert by_id[child.id].success is False
+    assert "无源" in by_id[child.id].message
+    assert by_id[99999].success is False
+    assert "不存在" in by_id[99999].message
+
+
+def test_batch_supply_empty_note_rejected(world: Session) -> None:
+    t = Ticket(
+        short_code="TKT-E",
+        source_code="ksm",
+        source_ticket_id="e-1",
+        type="Raw",
+        status="received",
+        title="单",
+    )
+    world.add(t)
+    world.commit()
+    with pytest.raises(SupplySyncError):
+        batch_request_supply(world, [t.id], note="  ", requested_by="user:dave")

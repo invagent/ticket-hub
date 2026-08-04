@@ -185,7 +185,7 @@ describe("TicketsListPage", () => {
     const rowCheckbox = screen.getAllByRole("checkbox")[1]; // [0] = header select-all
     await user.click(rowCheckbox);
 
-    expect(await screen.findByText(/已选/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "重新触发分配" })).toBeInTheDocument();
     const assignBtn = screen.getByRole("button", { name: "批量指派" });
     expect(assignBtn).toBeDisabled();
 

@@ -1,6 +1,6 @@
 /**
  * 工单列表（2026-08 优化：react-table 可定制表格）。
- * - 筛选：来源 / 状态 / 处理人多选(MultiUserSelect) / AI 分类多选 / 仅未分配
+ * - 筛选：来源 / 状态 / 处理人多选(MultiUserSelect) / 工单类型多选 / 仅未分配
  * - 列：新增 主产品名称 / 客户驳回次数 / 关联任务数；工单号+标题冻结(sticky)
  * - 交互：列宽拖拽、列顺序拖拽、横向滚动；列偏好(顺序+宽度)持久化 localStorage
  * - 保留：主管多选行 + 重新触发分配 / 批量指派、分页、URL 筛选驱动
@@ -21,6 +21,7 @@ import { MultiUserSelect, UserSelect } from "@/components/selectors";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
+import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
@@ -73,7 +74,7 @@ function fmtTime(v: string | null | undefined): string {
   });
 }
 
-// AI 分类多选可选项（研发/运营三类，对应后端 predicted_type）
+// 工单类型多选可选项（研发/运营三类，对应后端 predicted_type）
 const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "Demand", label: "需求" },
   { value: "Bug_fix", label: "Bug 修复" },
@@ -108,6 +109,7 @@ export function TicketsListPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showReroute, setShowReroute] = useState(false);
+  const [showSupply, setShowSupply] = useState(false);
   const [bulkAssignTo, setBulkAssignTo] = useState<number | undefined>(undefined);
   const [showAssign, setShowAssign] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
@@ -270,7 +272,7 @@ export function TicketsListPage() {
       },
       {
         id: "predicted_type",
-        header: "AI 分类",
+        header: "工单类型",
         accessorKey: "predicted_type",
         size: 90,
         cell: ({ row }) =>
@@ -560,7 +562,7 @@ export function TicketsListPage() {
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
       <div className="flex items-center gap-2.5 mb-3">
-        <h1 className="m-0 text-[17px] font-bold">工单</h1>
+        <h1 className="m-0 text-[17px] font-bold">全部工单</h1>
         {tickets.data && (
           <span className="text-[11.5px] text-hub-textFaint">
             共 {tickets.data.total.toLocaleString()} 单
@@ -618,7 +620,7 @@ export function TicketsListPage() {
             className="w-full"
           />
 
-          {/* AI 分类多选 */}
+          {/* 工单类型多选 */}
           <div ref={typeBoxRef} className="relative">
             <button
               type="button"
@@ -627,7 +629,7 @@ export function TicketsListPage() {
             >
             <span className={predictedTypes.length ? "text-hub-text" : "text-hub-textMuted"}>
               {predictedTypes.length === 0
-                ? "AI 分类"
+                ? "工单类型"
                 : `已选 ${predictedTypes.length} 类`}
             </span>
             <span className="flex-1" />
@@ -680,6 +682,27 @@ export function TicketsListPage() {
           </label>
         </div>
       </div>
+
+      {/* 列表操作栏（左上方）：批量补充资料 */}
+      {isSupervisor && (
+        <div className="flex items-center gap-2.5 mb-2.5">
+          <button
+            onClick={() => setShowSupply(true)}
+            disabled={selectedIds.size === 0}
+            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            批量补充资料
+          </button>
+          {selectedIds.size > 0 && (
+            <span className="text-[11.5px] text-hub-textMuted">
+              已选 {selectedIds.size} 条
+            </span>
+          )}
+          {selectedIds.size === 0 && (
+            <span className="text-[11.5px] text-hub-textFaint">勾选工单后可批量退回提单人补料</span>
+          )}
+        </div>
+      )}
 
       {tickets.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
       {tickets.error && <p className="text-xs text-hub-rose">{String(tickets.error)}</p>}
@@ -823,6 +846,16 @@ export function TicketsListPage() {
           onClose={() => {
             setShowAssign(false);
             setBulkAssignTo(undefined);
+            setSelectedIds(new Set());
+          }}
+        />
+      )}
+
+      {showSupply && (
+        <BatchSupplyDialog
+          ticketIds={Array.from(selectedIds)}
+          onClose={() => {
+            setShowSupply(false);
             setSelectedIds(new Set());
           }}
         />

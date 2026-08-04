@@ -64,7 +64,7 @@ describe("TicketsListPage", () => {
     for (const label of [
       "工单号",
       "标题",
-      "AI 分类",
+      "工单类型",
       "主产品",
       "模块",
       "驳回次数",

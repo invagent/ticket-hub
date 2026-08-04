@@ -242,6 +242,85 @@
         "title": "AuthorReplyResponse",
         "type": "object"
       },
+      "BatchSupplyBody": {
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "ticket_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Ticket Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ticket_ids",
+          "note"
+        ],
+        "title": "BatchSupplyBody",
+        "type": "object"
+      },
+      "BatchSupplyItemOut": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "short_code",
+          "success",
+          "message"
+        ],
+        "title": "BatchSupplyItemOut",
+        "type": "object"
+      },
+      "BatchSupplyResponse": {
+        "properties": {
+          "enqueued_count": {
+            "title": "Enqueued Count",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BatchSupplyItemOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "results",
+          "enqueued_count",
+          "skipped_count"
+        ],
+        "title": "BatchSupplyResponse",
+        "type": "object"
+      },
       "CheckOut": {
         "properties": {
           "error": {
@@ -10276,6 +10355,48 @@
           }
         },
         "summary": "Assign Tickets",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/batch-supply": {
+      "post": {
+        "description": "批量补充资料：对勾选工单退回提单人补充资料（入 supply outbox，\nKSM/智齿 sender 消费成 supplyKsmOrder）。工单不必已毕业成 hub_issue。",
+        "operationId": "batch_supply_tickets_api_supervisor_batch_supply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchSupplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchSupplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Supply Tickets",
         "tags": [
           "supervisor"
         ]

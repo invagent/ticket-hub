@@ -1129,6 +1129,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/batch-supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Supply Tickets
+         * @description 批量补充资料：对勾选工单退回提单人补充资料（入 supply outbox，
+         *     KSM/智齿 sender 消费成 supplyKsmOrder）。工单不必已毕业成 hub_issue。
+         */
+        post: operations["batch_supply_tickets_api_supervisor_batch_supply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/close-complaint": {
         parameters: {
             query?: never;
@@ -1940,6 +1961,33 @@ export interface components {
             outbox_count: number;
             /** Version */
             version: number;
+        };
+        /** BatchSupplyBody */
+        BatchSupplyBody: {
+            /** Note */
+            note: string;
+            /** Ticket Ids */
+            ticket_ids: number[];
+        };
+        /** BatchSupplyItemOut */
+        BatchSupplyItemOut: {
+            /** Message */
+            message: string;
+            /** Short Code */
+            short_code: string;
+            /** Success */
+            success: boolean;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** BatchSupplyResponse */
+        BatchSupplyResponse: {
+            /** Enqueued Count */
+            enqueued_count: number;
+            /** Results */
+            results: components["schemas"]["BatchSupplyItemOut"][];
+            /** Skipped Count */
+            skipped_count: number;
         };
         /** CheckOut */
         CheckOut: {
@@ -6267,6 +6315,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_supply_tickets_api_supervisor_batch_supply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchSupplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchSupplyResponse"];
                 };
             };
             /** @description Validation Error */

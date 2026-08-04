@@ -1069,7 +1069,10 @@ class SyncOutbox(Base):
     ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), nullable=False)
     # denormalized so the D5 sender never needs a join
     source_ticket_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    hub_issue_id: Mapped[int] = mapped_column(Integer, ForeignKey("hub_issues.id"), nullable=False)
+    # nullable：工单级批量补料（未毕业 hub 的工单）入队时无 hub_issue_id
+    hub_issue_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("hub_issues.id"), nullable=True
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

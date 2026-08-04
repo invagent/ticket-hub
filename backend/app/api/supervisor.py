@@ -65,6 +65,10 @@ from app.services.agents.split import (
     list_pending_split_proposals,
     revert_split,
 )
+from app.services.cascade.supply_sync import (
+    SupplySyncError,
+    batch_request_supply,
+)
 from app.services.hub_issues.creator import (
     HubIssueCreateError,
     ensure_hub_issue_for_ticket,
@@ -156,6 +160,24 @@ class RerouteResponse(BaseModel):
     results: list[RerouteItemOut]
     assigned_count: int
     no_match_count: int
+
+
+class BatchSupplyBody(BaseModel):
+    ticket_ids: list[int] = Field(..., min_length=1, max_length=50)
+    note: str = Field(..., min_length=1, max_length=1000)
+
+
+class BatchSupplyItemOut(BaseModel):
+    ticket_id: int
+    short_code: str
+    success: bool
+    message: str
+
+
+class BatchSupplyResponse(BaseModel):
+    results: list[BatchSupplyItemOut]
+    enqueued_count: int
+    skipped_count: int
 
 
 class AssignBody(BaseModel):
@@ -321,6 +343,45 @@ def reroute_tickets(
         ],
         assigned_count=result.assigned_count,
         no_match_count=result.no_match_count,
+    )
+
+
+@router.post("/batch-supply", response_model=BatchSupplyResponse)
+def batch_supply_tickets(
+    body: BatchSupplyBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> BatchSupplyResponse:
+    """批量补充资料：对勾选工单退回提单人补充资料（入 supply outbox，
+    KSM/智齿 sender 消费成 supplyKsmOrder）。工单不必已毕业成 hub_issue。"""
+    try:
+        result = batch_request_supply(
+            db,
+            body.ticket_ids,
+            note=body.note,
+            requested_by=f"user:{user.name}",
+        )
+    except SupplySyncError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    logger.info(
+        "supervisor_batch_supply",
+        ticket_ids=body.ticket_ids,
+        enqueued_count=result.enqueued_count,
+        skipped_count=result.skipped_count,
+        operator_user_id=user.user_id,
+    )
+    return BatchSupplyResponse(
+        results=[
+            BatchSupplyItemOut(
+                ticket_id=r.ticket_id,
+                short_code=r.short_code,
+                success=r.success,
+                message=r.message,
+            )
+            for r in result.results
+        ],
+        enqueued_count=result.enqueued_count,
+        skipped_count=result.skipped_count,
     )
 
 

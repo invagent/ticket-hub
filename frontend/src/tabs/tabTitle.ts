@@ -6,7 +6,7 @@
 // 静态路由精确匹配（与侧边栏 navItems label 对齐）
 const STATIC: Record<string, string> = {
   "/": "工作台",
-  "/tickets": "工单",
+  "/tickets": "全部工单",
   "/hub-issues": "研发协同",
   "/reflect": "反思诊断",
   "/analytics": "统计看板",
