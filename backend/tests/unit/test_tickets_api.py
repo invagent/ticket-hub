@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -275,6 +276,10 @@ def world2(db_session: Session) -> Session:
                 hub_issue_id=50,
                 assigned_user_id=1,
                 received_at=base,
+                reporter={"name": "张三", "mobile": "13800000000", "email": "z@x.com"},
+                reporter_company="某某公司",
+                service_level="重要",
+                sla_standard_hours=Decimal("24.00"),
             ),
             # Bug_fix
             Ticket(
@@ -345,6 +350,42 @@ def test_summary_children_count(app_client: TestClient, world2: Session) -> None
     by = {it["short_code"]: it for it in r.json()["items"]}
     assert by["TKT-P"]["children_count"] == 3
     assert by["TKT-B"]["children_count"] == 1
+
+
+def test_summary_reporter_fields(app_client: TestClient, world2: Session) -> None:
+    """提单人姓名/手机/邮箱从 reporter JSON 解析；无 reporter → None。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-A"]["reporter_name"] == "张三"
+    assert by["TKT-A"]["reporter_mobile"] == "13800000000"
+    assert by["TKT-A"]["reporter_email"] == "z@x.com"
+    assert by["TKT-A"]["reporter_company"] == "某某公司"
+    assert by["TKT-B"]["reporter_name"] is None  # 无 reporter
+
+
+def test_summary_service_level_default(app_client: TestClient, world2: Session) -> None:
+    """服务等级：有值直显；空 → 默认标准服务。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-A"]["service_level"] == "重要"
+    assert by["TKT-B"]["service_level"] == "标准服务"  # 未设 → 默认
+
+
+def test_summary_remaining_hours(app_client: TestClient, world2: Session) -> None:
+    """剩余处理时间：received_at + sla_standard_hours - now。TKT-A 用 2026-05 基准 → 已超时(负)。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-A"]["remaining_hours"] is not None
+    assert by["TKT-A"]["remaining_hours"] < 0  # 历史工单已超时
+    # TKT-B 无 sla_standard_hours 且产品线无 → None
+    assert by["TKT-B"]["remaining_hours"] is None
+
+
+def test_summary_updated_at_exposed(app_client: TestClient, world2: Session) -> None:
+    """工单最后更新时间在 schema 暴露。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    it = r.json()["items"][0]
+    assert "updated_at" in it
 
 
 # ============================================================================

@@ -10,7 +10,7 @@ All authenticated users can read (any role). D2 may add row-level visibility
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -50,6 +50,16 @@ class TicketSummary(BaseModel):
     product_name: str | None = None  # 主产品名称（product_line_code → product_lines.name）
     reject_count: int = 0  # 客户驳回次数（所挂 hub_issue 的 reject_count；研发类/无 hub 为 0）
     children_count: int = 1  # 关联任务数（拆分子单数；单问题=1，Parent=children_ticket_ids 长度）
+    # 提单快照 + SLA（2026-08-04）
+    reporter_name: str | None = None  # 提单人姓名（reporter.name）
+    reporter_mobile: str | None = None  # 提单人手机（reporter.mobile）
+    reporter_email: str | None = None  # 提单人邮箱（reporter.email）
+    reporter_company: str | None = None  # 提单公司名称
+    reporter_tax_no: str | None = None  # 提单公司税号（上游 payload 暂不带，多为空）
+    reporter_tenant: str | None = None  # 归属租户（上游 payload 暂不带，多为空）
+    service_level: str | None = "标准服务"  # 服务等级（空→标准服务，_to_summary 填默认）
+    remaining_hours: float | None = None  # 剩余处理时间（h，负=已超时；无 received_at/时限时 None）
+    updated_at: datetime | None = None  # 工单最后更新时间
     received_at: datetime | None
     customer_replied_at: datetime | None
     created_at: datetime
@@ -134,14 +144,39 @@ def list_tickets(
         hub_op_map = {r.id: r.op_status for r in hrows}
         hub_reject_map = {r.id: r.reject_count for r in hrows}
 
-    # batch-load 主产品名称（product_line_code → product_lines.name），避免 N+1
+    # batch-load 主产品名称 + SLA 解决时限（product_line_code → name / sla_resolve_hours）
     pl_codes = {t.product_line_code for t in p.items if t.product_line_code}
     product_name_map: dict[str, str] = {}
+    pl_resolve_hours_map: dict[str, int | None] = {}
     if pl_codes:
         prows = db.execute(
-            select(ProductLine.code, ProductLine.name).where(ProductLine.code.in_(pl_codes))
+            select(ProductLine.code, ProductLine.name, ProductLine.sla_resolve_hours).where(
+                ProductLine.code.in_(pl_codes)
+            )
         ).all()
         product_name_map = {r.code: r.name for r in prows}
+        pl_resolve_hours_map = {r.code: r.sla_resolve_hours for r in prows}
+
+    now = datetime.now(UTC)
+
+    def _remaining_hours(t: Any) -> float | None:
+        """剩余处理时间(h)：received_at + 时限 - now。负=已超时。无 received_at/时限→None。
+        时限优先 ticket.sla_standard_hours（飞书回填），否则产品线 sla_resolve_hours。"""
+        if t.received_at is None:
+            return None
+        limit_h: float | None = None
+        if t.sla_standard_hours is not None:
+            limit_h = float(t.sla_standard_hours)
+        elif t.product_line_code:
+            rh = pl_resolve_hours_map.get(t.product_line_code)
+            limit_h = float(rh) if rh is not None else None
+        if limit_h is None:
+            return None
+        received = t.received_at
+        if received.tzinfo is None:
+            received = received.replace(tzinfo=UTC)
+        deadline = received + timedelta(hours=limit_h)
+        return float(round((deadline - now).total_seconds() / 3600.0, 1))
 
     def _to_summary(t: Any) -> TicketSummary:
         s = TicketSummary.model_validate(t)
@@ -154,6 +189,14 @@ def list_tickets(
             s.product_name = product_name_map.get(t.product_line_code)
         # 关联任务数：拆分子单数（Parent 持有 children_ticket_ids）；单问题工单=1
         s.children_count = len(t.children_ticket_ids or []) or 1
+        # 提单人信息从 reporter JSON 解析（入库写的是 name/mobile/email）
+        rep = t.reporter or {}
+        s.reporter_name = rep.get("name") or None
+        s.reporter_mobile = rep.get("mobile") or None
+        s.reporter_email = rep.get("email") or None
+        # 服务等级空 → 标准服务
+        s.service_level = t.service_level or "标准服务"
+        s.remaining_hours = _remaining_hours(t)
         return s
 
     return TicketListResponse(

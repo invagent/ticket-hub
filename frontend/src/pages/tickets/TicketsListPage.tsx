@@ -63,6 +63,16 @@ function StatusBadge({ status }: { status: string }) {
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
 
+function fmtTime(v: string | null | undefined): string {
+  if (!v) return "—";
+  return new Date(v).toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // AI 分类多选可选项（研发/运营三类，对应后端 predicted_type）
 const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "Demand", label: "需求" },
@@ -374,14 +384,114 @@ export function TicketsListPage() {
         size: 120,
         cell: ({ row }) => (
           <span className="text-[11px] text-hub-textFaint font-mono">
-            {row.original.received_at
-              ? new Date(row.original.received_at).toLocaleString("zh-CN", {
-                  month: "numeric",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "—"}
+            {fmtTime(row.original.received_at)}
+          </span>
+        ),
+      },
+      {
+        id: "service_level",
+        header: "服务等级",
+        accessorKey: "service_level",
+        size: 80,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary">
+            {row.original.service_level ?? "标准服务"}
+          </span>
+        ),
+      },
+      {
+        id: "remaining_hours",
+        header: "剩余处理时间",
+        accessorKey: "remaining_hours",
+        size: 96,
+        cell: ({ row }) => {
+          const h = row.original.remaining_hours;
+          if (h == null) return <span className="text-hub-textFaint text-[11.5px]">—</span>;
+          if (h < 0)
+            return <span className="text-[11.5px] font-bold text-hub-rose">已超时</span>;
+          return <span className="text-[11.5px] text-hub-textSecondary">{h}h</span>;
+        },
+      },
+      {
+        id: "reporter_company",
+        header: "提单公司",
+        accessorKey: "reporter_company",
+        size: 140,
+        cell: ({ row }) => (
+          <span
+            className="text-[11.5px] text-hub-textSecondary truncate block"
+            title={row.original.reporter_company ?? ""}
+          >
+            {row.original.reporter_company ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reporter_tax_no",
+        header: "公司税号",
+        accessorKey: "reporter_tax_no",
+        size: 130,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary font-mono truncate block">
+            {row.original.reporter_tax_no ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reporter_name",
+        header: "提单人",
+        accessorKey: "reporter_name",
+        size: 80,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary">
+            {row.original.reporter_name ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reporter_mobile",
+        header: "提单人手机",
+        accessorKey: "reporter_mobile",
+        size: 110,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary font-mono">
+            {row.original.reporter_mobile ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reporter_email",
+        header: "提单人邮箱",
+        accessorKey: "reporter_email",
+        size: 150,
+        cell: ({ row }) => (
+          <span
+            className="text-[11.5px] text-hub-textSecondary truncate block"
+            title={row.original.reporter_email ?? ""}
+          >
+            {row.original.reporter_email ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "reporter_tenant",
+        header: "归属租户",
+        accessorKey: "reporter_tenant",
+        size: 120,
+        cell: ({ row }) => (
+          <span className="text-[11.5px] text-hub-textSecondary truncate block">
+            {row.original.reporter_tenant ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "updated_at",
+        header: "最后更新时间",
+        accessorKey: "updated_at",
+        size: 120,
+        cell: ({ row }) => (
+          <span className="text-[11px] text-hub-textFaint font-mono">
+            {fmtTime(row.original.updated_at)}
           </span>
         ),
       },

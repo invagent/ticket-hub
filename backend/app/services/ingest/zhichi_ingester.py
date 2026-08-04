@@ -240,6 +240,9 @@ class ZhichiIngester:
                 "source_user_id": payload.get("customerid")
                 or _customer_field(payload, "customerid"),
             },
+            # 提单快照：智齿 payload 有公司名 + 工单等级；税号/租户上游不带，留空。
+            reporter_company=payload.get("company"),
+            service_level=_zhichi_service_level(payload.get("_envelope") or {}),
         )
         self._tickets.add(ticket)
 
@@ -318,6 +321,17 @@ class ZhichiIngester:
 
         ident = self._db.get(CustomerIdentity, ticket.customer_identity_id)
         return ident.customer_id if ident else 0
+
+
+# 智齿 ticket_level(工单等级)→ 服务等级中文档位。未知/缺失返回 None（API 层默认"标准服务"）。
+_ZHICHI_LEVEL_LABELS = {"0": "普通", "1": "标准", "2": "重要", "3": "紧急"}
+
+
+def _zhichi_service_level(envelope: dict[str, Any]) -> str | None:
+    lv = envelope.get("ticket_level")
+    if lv is None or str(lv).strip() == "":
+        return None
+    return _ZHICHI_LEVEL_LABELS.get(str(lv).strip(), str(lv).strip())
 
 
 def _customer_field(payload: dict[str, Any], key: str) -> Any:
