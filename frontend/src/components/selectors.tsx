@@ -143,9 +143,9 @@ export function MultiUserSelect({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white min-w-[9rem] text-left flex items-center gap-1"
+        className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"
       >
-        <span className={value.length ? "text-hub-text" : "text-hub-textMuted"}>{label}</span>
+        <span className={`truncate ${value.length ? "text-hub-text" : "text-hub-textMuted"}`}>{label}</span>
         <span className="flex-1" />
         {value.length > 0 && (
           <span

@@ -422,7 +422,11 @@ export function TicketsListPage() {
   }, [table, columnOrder, columnSizing, PINNED, items]);
 
   function onHeaderDrop(targetId: string) {
-    if (!dragCol || dragCol === targetId) return;
+    // 冻结列(工单号/标题/选择框)不参与重排：既不能被拖动，也不能作为落点
+    if (!dragCol || dragCol === targetId || PINNED.has(dragCol) || PINNED.has(targetId)) {
+      setDragCol(null);
+      return;
+    }
     const order = table.getVisibleLeafColumns().map((c) => c.id);
     const from = order.indexOf(dragCol);
     const to = order.indexOf(targetId);
@@ -454,48 +458,63 @@ export function TicketsListPage() {
         )}
       </div>
 
-      {/* 筛选条 */}
-      <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-2.5 flex items-center gap-2 mb-3 flex-wrap">
-        <select
-          value={sourceCode}
-          onChange={(e) => setFilter("source_code", e.target.value)}
-          className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
-        >
-          <option value="">全部来源</option>
-          <option value="ksm">KSM</option>
-          <option value="zhichi">智齿</option>
-          <option value="zammad">Zammad</option>
-          <option value="ai_cs">AI客服</option>
-        </select>
-        <select
-          value={status}
-          onChange={(e) => setFilter("status", e.target.value)}
-          className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
-        >
-          <option value="">全部状态</option>
-          <option value="received">received</option>
-          <option value="linked">linked</option>
-          <option value="waiting_reply">waiting_reply</option>
-          <option value="in_progress">in_progress</option>
-          <option value="replied">replied</option>
-          <option value="done">done</option>
-        </select>
-
-        {/* 处理人多选 */}
-        <MultiUserSelect
-          value={assignedUserIds}
-          onChange={(ids) => setMultiFilter("assigned_user_ids", ids)}
-          placeholder="处理人"
-          roles={["assignee", "supervisor", "admin"]}
-        />
-
-        {/* AI 分类多选 */}
-        <div ref={typeBoxRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setTypeMenuOpen((v) => !v)}
-            className="text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white min-w-[7rem] text-left flex items-center gap-1"
+      {/* 筛选条：每行 5 个、自适应等宽、左右对齐 */}
+      <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-3 mb-3">
+        {hasFilters && (
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={() => {
+                setParams(new URLSearchParams());
+                setSelectedIds(new Set());
+              }}
+              className="text-[11.5px] text-hub-textMuted hover:text-hub-rose"
+            >
+              重置筛选
+            </button>
+          </div>
+        )}
+        <div className="grid grid-cols-5 gap-2.5 items-center">
+          <select
+            value={sourceCode}
+            onChange={(e) => setFilter("source_code", e.target.value)}
+            className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           >
+            <option value="">全部来源</option>
+            <option value="ksm">KSM</option>
+            <option value="zhichi">智齿</option>
+            <option value="zammad">Zammad</option>
+            <option value="ai_cs">AI客服</option>
+          </select>
+          <select
+            value={status}
+            onChange={(e) => setFilter("status", e.target.value)}
+            className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
+          >
+            <option value="">全部状态</option>
+            <option value="received">received</option>
+            <option value="linked">linked</option>
+            <option value="waiting_reply">waiting_reply</option>
+            <option value="in_progress">in_progress</option>
+            <option value="replied">replied</option>
+            <option value="done">done</option>
+          </select>
+
+          {/* 处理人多选 */}
+          <MultiUserSelect
+            value={assignedUserIds}
+            onChange={(ids) => setMultiFilter("assigned_user_ids", ids)}
+            placeholder="处理人"
+            roles={["assignee", "supervisor", "admin"]}
+            className="w-full"
+          />
+
+          {/* AI 分类多选 */}
+          <div ref={typeBoxRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setTypeMenuOpen((v) => !v)}
+              className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"
+            >
             <span className={predictedTypes.length ? "text-hub-text" : "text-hub-textMuted"}>
               {predictedTypes.length === 0
                 ? "AI 分类"
@@ -543,24 +562,13 @@ export function TicketsListPage() {
               })}
             </div>
           )}
-        </div>
+          </div>
 
-        <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-hub-textSecondary">
-          <input type="checkbox" checked={unassigned} onChange={toggleUnassigned} className="rounded" />
-          仅未分配
-        </label>
-        <div className="flex-1" />
-        {hasFilters && (
-          <button
-            onClick={() => {
-              setParams(new URLSearchParams());
-              setSelectedIds(new Set());
-            }}
-            className="text-[11.5px] text-hub-textMuted hover:text-hub-rose"
-          >
-            重置筛选
-          </button>
-        )}
+          <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-hub-textSecondary px-1">
+            <input type="checkbox" checked={unassigned} onChange={toggleUnassigned} className="rounded" />
+            仅未分配
+          </label>
+        </div>
       </div>
 
       {tickets.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
@@ -570,7 +578,7 @@ export function TicketsListPage() {
         <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
           <div className="overflow-x-auto max-w-full">
             <table
-              className="border-collapse"
+              className="border-collapse min-w-full"
               style={{ width: table.getTotalSize(), tableLayout: "fixed" }}
             >
               <thead>
@@ -581,11 +589,12 @@ export function TicketsListPage() {
                       return (
                         <th
                           key={header.id}
-                          draggable={header.column.id !== "select"}
-                          onDragStart={() => setDragCol(header.column.id)}
+                          draggable={!pinned}
+                          onDragStart={() => !pinned && setDragCol(header.column.id)}
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={() => onHeaderDrop(header.column.id)}
-                          className={`relative px-3.5 py-2 text-left text-[10.5px] font-bold text-hub-textMuted tracking-[.4px] whitespace-nowrap ${pinned ? "bg-hub-panel" : ""}`}
+                          title={pinned ? "固定列" : "拖动可调整列顺序"}
+                          className={`relative px-3.5 py-2 text-left text-[10.5px] font-bold text-hub-textMuted tracking-[.4px] whitespace-nowrap ${pinned ? "bg-hub-panel" : "cursor-move"} ${dragCol === header.column.id ? "opacity-50" : ""}`}
                           style={stickyStyle(header.column.id, header.getSize())}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -594,7 +603,8 @@ export function TicketsListPage() {
                               onMouseDown={header.getResizeHandler()}
                               onTouchStart={header.getResizeHandler()}
                               onDragStart={(e) => e.preventDefault()}
-                              className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none hover:bg-hub-teal/30"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`absolute top-0 right-0 h-full w-2.5 cursor-col-resize select-none touch-none border-r-2 border-transparent hover:border-hub-teal ${header.column.getIsResizing() ? "border-hub-teal" : ""}`}
                             />
                           )}
                         </th>
