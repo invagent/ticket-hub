@@ -3745,12 +3745,29 @@ export interface components {
              * @default 0
              */
             reject_count: number;
+            /** Remaining Hours */
+            remaining_hours?: number | null;
             /** Reporter */
             reporter: {
                 [key: string]: unknown;
             } | null;
+            /** Reporter Company */
+            reporter_company?: string | null;
+            /** Reporter Email */
+            reporter_email?: string | null;
+            /** Reporter Mobile */
+            reporter_mobile?: string | null;
             /** Reporter Name */
             reporter_name?: string | null;
+            /** Reporter Tax No */
+            reporter_tax_no?: string | null;
+            /** Reporter Tenant */
+            reporter_tenant?: string | null;
+            /**
+             * Service Level
+             * @default 标准服务
+             */
+            service_level: string | null;
             /** Short Code */
             short_code: string;
             /** Source Code */
@@ -3769,6 +3786,8 @@ export interface components {
             title: string | null;
             /** Type */
             type: string;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** TicketListResponse */
         TicketListResponse: {
@@ -3826,6 +3845,25 @@ export interface components {
              * @default 0
              */
             reject_count: number;
+            /** Remaining Hours */
+            remaining_hours?: number | null;
+            /** Reporter Company */
+            reporter_company?: string | null;
+            /** Reporter Email */
+            reporter_email?: string | null;
+            /** Reporter Mobile */
+            reporter_mobile?: string | null;
+            /** Reporter Name */
+            reporter_name?: string | null;
+            /** Reporter Tax No */
+            reporter_tax_no?: string | null;
+            /** Reporter Tenant */
+            reporter_tenant?: string | null;
+            /**
+             * Service Level
+             * @default 标准服务
+             */
+            service_level: string | null;
             /** Short Code */
             short_code: string;
             /** Source Code */
@@ -3838,6 +3876,8 @@ export interface components {
             title: string | null;
             /** Type */
             type: string;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** UpsertBody */
         UpsertBody: {

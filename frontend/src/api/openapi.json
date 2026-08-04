@@ -5798,6 +5798,17 @@
             "title": "Reject Count",
             "type": "integer"
           },
+          "remaining_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Hours"
+          },
           "reporter": {
             "anyOf": [
               {
@@ -5810,6 +5821,39 @@
             ],
             "title": "Reporter"
           },
+          "reporter_company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Company"
+          },
+          "reporter_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Email"
+          },
+          "reporter_mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Mobile"
+          },
           "reporter_name": {
             "anyOf": [
               {
@@ -5820,6 +5864,40 @@
               }
             ],
             "title": "Reporter Name"
+          },
+          "reporter_tax_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Tax No"
+          },
+          "reporter_tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Tenant"
+          },
+          "service_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "标准服务",
+            "title": "Service Level"
           },
           "short_code": {
             "title": "Short Code",
@@ -5888,6 +5966,18 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [
@@ -6114,6 +6204,95 @@
             "title": "Reject Count",
             "type": "integer"
           },
+          "remaining_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Hours"
+          },
+          "reporter_company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Company"
+          },
+          "reporter_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Email"
+          },
+          "reporter_mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Mobile"
+          },
+          "reporter_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Name"
+          },
+          "reporter_tax_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Tax No"
+          },
+          "reporter_tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporter Tenant"
+          },
+          "service_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "标准服务",
+            "title": "Service Level"
+          },
           "short_code": {
             "title": "Short Code",
             "type": "string"
@@ -6158,6 +6337,18 @@
           "type": {
             "title": "Type",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "required": [

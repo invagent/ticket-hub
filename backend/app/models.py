@@ -388,6 +388,14 @@ class Ticket(Base):
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     reporter: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
+    # 提单快照（跟单不跟客户，随工单存；来源 payload 有则填，无则空）
+    reporter_company: Mapped[str | None] = mapped_column(String(256), nullable=True)  # 提单公司名称
+    reporter_tax_no: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 提单公司税号
+    reporter_tenant: Mapped[str | None] = mapped_column(String(256), nullable=True)  # 归属租户
+    service_level: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # 服务等级(空→标准服务)
+
     # Status (CHECK omitted for SQLite test-friendliness; status whitelist enforced
     # in ticket repository; full PG CHECK added in §future Alembic migration if needed)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
