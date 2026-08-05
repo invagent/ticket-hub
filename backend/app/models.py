@@ -499,7 +499,7 @@ class HubIssue(Base):
         ),
         CheckConstraint(
             "op_status IS NULL OR op_status IN "
-            "('processing','answered','closed','supplementing','resupplied','exception')",
+            "('processing','answered','closed','supplementing','exception')",
             name="ck_hub_issues_op_status",
         ),
         Index("ix_hub_issues_type_status", "type", "status"),
