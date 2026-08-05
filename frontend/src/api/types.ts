@@ -1597,6 +1597,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/reviewing-answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reviewing Answers
+         * @description Operation hubs awaiting human review of a low-accuracy auto-reply draft.
+         */
+        get: operations["list_reviewing_answers_api_supervisor_reviewing_answers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/split-proposals": {
         parameters: {
             query?: never;
@@ -1783,6 +1803,27 @@ export interface paths {
          *     （vision → 黄金三元组二次分类 → dedup/conflict）。
          */
         post: operations["cs_escalation_webhook_webhook_cs_escalation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhook/feishu_ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Feishu Ai Webhook
+         * @description 飞书AI 工单入库：复用 ai_cs 载荷契约，但入库后走标准 triage 链
+         *     （run_post_ingest_agents，与 KSM/智齿一致），而非 escalation 二次分类。
+         */
+        post: operations["feishu_ai_webhook_webhook_feishu_ai_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3400,6 +3441,28 @@ export interface components {
             deleted_child_ids: number[];
             /** Parent Ticket Id */
             parent_ticket_id: number;
+        };
+        /** ReviewingAnswerItem */
+        ReviewingAnswerItem: {
+            /** Accuracy */
+            accuracy: number | null;
+            /** Accuracy Reason */
+            accuracy_reason: string | null;
+            /** Draft Reply */
+            draft_reply: string | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Question */
+            question: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Title */
+            title: string;
+        };
+        /** ReviewingAnswersResponse */
+        ReviewingAnswersResponse: {
+            /** Items */
+            items: components["schemas"]["ReviewingAnswerItem"][];
         };
         /** RollbackBody */
         RollbackBody: {
@@ -7010,6 +7073,37 @@ export interface operations {
             };
         };
     };
+    list_reviewing_answers_api_supervisor_reviewing_answers_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewingAnswersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_split_proposals_api_supervisor_split_proposals_get: {
         parameters: {
             query?: {
@@ -7284,6 +7378,37 @@ export interface operations {
         };
     };
     cs_escalation_webhook_webhook_cs_escalation_post: {
+        parameters: {
+            query: {
+                access_token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feishu_ai_webhook_webhook_feishu_ai_post: {
         parameters: {
             query: {
                 access_token: string;

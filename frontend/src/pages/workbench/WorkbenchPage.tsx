@@ -255,6 +255,164 @@ export function WorkbenchPage() {
           需人工介入队列仅主管/管理员可见。
         </div>
       )}
+
+      {/* ③ 待审核答复队列（D_review 低置信自动答复草稿，仅主管） */}
+      {isSupervisor && <ReviewingQueue />}
+    </div>
+  );
+}
+
+/* ═══════════ 待审核答复队列（hub-blue，区别于紫/青/琥珀/黄） ═══════════ */
+
+function ReviewingQueue() {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const reviewing = useQuery({
+    queryKey: ["supervisor", "reviewing-answers"],
+    queryFn: () => api.get("/api/supervisor/reviewing-answers"),
+  });
+
+  const invalidate = () => {
+    setError(null);
+    void qc.invalidateQueries({ queryKey: ["supervisor", "reviewing-answers"] });
+  };
+  const onErr = (e: unknown) => setError(errMsg(e));
+
+  const send = useMutation({
+    mutationFn: (v: { hubIssueId: number; content: string }) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/reply",
+        { hub_issue_id: v.hubIssueId },
+        { content: v.content },
+      ),
+    onSuccess: () => {
+      setFlash("已发送");
+      invalidate();
+    },
+    onError: onErr,
+  });
+
+  const items = reviewing.data?.items ?? [];
+
+  return (
+    <>
+      <SectionHeader
+        n={3}
+        title="待审核答复"
+        note="低置信自动答复草稿，编辑后发送"
+        right={
+          <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
+            {items.length} 项待审核
+          </div>
+        }
+      />
+
+      {flash && (
+        <div className="mb-2 text-xs text-hub-green font-semibold">
+          {flash}{" "}
+          <button className="text-hub-textFaint" onClick={() => setFlash(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="mb-2 text-xs text-hub-rose">
+          {error}{" "}
+          <button className="text-hub-textFaint" onClick={() => setError(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {reviewing.isLoading ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          队列加载中…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          暂无待审核答复。
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {items.map((item) => (
+            <ReviewingCard
+              key={item.hub_issue_id}
+              item={item}
+              onSend={(content) => send.mutate({ hubIssueId: item.hub_issue_id, content })}
+              sending={send.isPending}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReviewingCard({
+  item,
+  onSend,
+  sending,
+}: {
+  item: {
+    hub_issue_id: number;
+    short_code: string;
+    title: string;
+    question: string | null;
+    draft_reply: string | null;
+    accuracy: number | null;
+    accuracy_reason: string | null;
+  };
+  onSend: (content: string) => void;
+  sending: boolean;
+}) {
+  const [content, setContent] = useState(item.draft_reply ?? "");
+
+  return (
+    <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-xs text-hub-textSecondary">{item.short_code}</span>
+        <span className="text-[13px] font-semibold truncate">{item.title}</span>
+        <div className="flex-1" />
+        {item.accuracy != null && (
+          <span
+            className="text-[10.5px] font-bold px-2 py-0.5 rounded-full flex-none"
+            style={{
+              background: item.accuracy < 60 ? "#fbf1ef" : "#faf3e3",
+              color: item.accuracy < 60 ? "#b04a4a" : "#9a6c1c",
+            }}
+          >
+            准确率 {item.accuracy}%
+          </span>
+        )}
+      </div>
+      {item.question && (
+        <div className="text-[11.5px] text-hub-textMuted line-clamp-2">
+          客户问题：{item.question}
+        </div>
+      )}
+      {item.accuracy_reason && (
+        <div className="text-[11px] text-hub-blue-deep bg-hub-blue-light rounded-md px-2 py-1">
+          {item.accuracy_reason}
+        </div>
+      )}
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        rows={4}
+        className="text-[12.5px] rounded-md border border-hub-border bg-white px-2.5 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-hub-teal"
+        placeholder="编辑答复内容…"
+      />
+      <div className="flex justify-end">
+        <button
+          onClick={() => onSend(content)}
+          disabled={sending || content.trim().length === 0}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          发送
+        </button>
+      </div>
     </div>
   );
 }
