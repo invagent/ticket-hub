@@ -68,6 +68,8 @@ def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     hub = reply_world.get(HubIssue, 90)
     reply_world.refresh(hub)
     assert hub.reply_content == "请在发票云-红字确认单中操作"
+    assert hub.op_status == "answered"  # 人工答复推进状态机
+    assert hub.op_handler == "user:carol"  # _bearer 默认 name=carol
     t = reply_world.get(Ticket, 300)
     reply_world.refresh(t)
     assert t.cached_reply_version == 1
