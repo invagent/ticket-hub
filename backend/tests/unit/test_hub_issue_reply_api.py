@@ -81,6 +81,25 @@ def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     assert detail["reply_content_version"] == 1
 
 
+def test_reply_on_closed_operation_409(app_client: TestClient, reply_world: Session) -> None:
+    hub = reply_world.get(HubIssue, 90)
+    assert hub is not None
+    hub.op_status = "closed"
+    reply_world.commit()
+
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "回复"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 409
+    assert "closed" in r.json()["detail"] or "已关单" in r.json()["detail"]
+
+    reply_world.refresh(hub)
+    assert hub.reply_content is None
+    assert hub.op_status == "closed"
+
+
 def test_reply_on_bugfix_409(app_client: TestClient, reply_world: Session) -> None:
     r = app_client.post("/api/hub-issues/91/reply", json={"content": "x"}, headers=_bearer(2))
     assert r.status_code == 409
