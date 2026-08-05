@@ -1,7 +1,7 @@
 """drop resupplied from op_status check constraint
 
 Revision ID: 0026_op_status_drop_resupplied
-Revises: 0025_outbox_hub_issue_nullable
+Revises: 0025_outbox_hub_nullable
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from alembic import op
 
 revision: str = "0026_op_status_drop_resupplied"
-down_revision: str | None = "0025_outbox_hub_issue_nullable"
+down_revision: str | None = "0025_outbox_hub_nullable"
 branch_labels: str | None = None
 depends_on: str | None = None
 
