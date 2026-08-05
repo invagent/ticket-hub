@@ -41,6 +41,8 @@ from app.services.agents.vision_extract import extract_ticket_attachments
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
 from app.services.ingest.escalation_ingester import EscalationIngester
 from app.services.ingest.escalation_ingester import IngestError as EscalationIngestError
+from app.services.ingest.feishu_ai_ingester import FeishuAiIngester
+from app.services.ingest.feishu_ai_ingester import IngestError as FeishuAiIngestError
 from app.services.ingest.ksm_ingester import IngestError as KSMIngestError
 from app.services.ingest.ksm_ingester import KSMIngester
 from app.services.ingest.ksm_payload import from_subscribe_callback
@@ -415,6 +417,47 @@ async def cs_escalation_webhook(
     )
     if not result.deduped:
         background_tasks.add_task(run_escalation_agents, result.ticket_id)
+    return IngestResponse(
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+        routing_decision=result.routing_decision,
+        assigned_user_ids=result.assigned_user_ids,
+        trace_id=get_trace_id(),
+    )
+
+
+# ---- 飞书AI (feishu_ai) ----------------------------------------------------
+
+
+@router.post("/feishu_ai", response_model=IngestResponse)
+async def feishu_ai_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    access_token: str = Query(...),
+    db: Session = Depends(get_session),
+) -> IngestResponse:
+    """飞书AI 工单入库：复用 ai_cs 载荷契约，但入库后走标准 triage 链
+    （run_post_ingest_agents，与 KSM/智齿一致），而非 escalation 二次分类。"""
+    _verify_webhook_token(access_token)
+    payload = await _read_object(request)
+    try:
+        result = FeishuAiIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+            payload
+        )
+    except FeishuAiIngestError as e:
+        raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
+    db.commit()
+    logger.info(
+        "feishu_ai_webhook_committed",
+        ticket_id=result.ticket_id,
+        short_code=result.short_code,
+        deduped=result.deduped,
+        attachments=len(result.attachment_ids),
+    )
+    # 关键差异：走标准 triage 链（非 escalation）。
+    if not result.deduped:
+        background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
         short_code=result.short_code,
