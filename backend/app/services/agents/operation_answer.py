@@ -14,15 +14,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError, AiCsNetworkError
+from adapters.ai_cs.types import ReplayResult
 from app.config import Settings, get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, Ticket
+from app.services.agents.answer_accuracy import score_answer_accuracy
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_EXCEPTION,
     OP_PROCESSING,
+    OP_REVIEWING,
     OP_SUPPLEMENTING,
     apply_op_status,
     resolve_supervisor_name,
@@ -102,29 +105,47 @@ def _record_decision(
     question: str,
     answer: str,
     supply_note: str,
+    extra: dict[str, object] | None = None,
 ) -> None:
     """写 agent_decisions 审计（auto_reply）。内部 commit。"""
+    proposal: dict[str, object] = {
+        "branch": branch,
+        "question": question,
+        "answer": answer,
+        "supply_note": supply_note,
+    }
+    if extra:
+        proposal.update(extra)
     db.add(
         AgentDecision(
             decision_type="auto_reply",
             subject_type="hub_issue",
             subject_id=hub_id,
-            proposal={
-                "branch": branch,
-                "question": question,
-                "answer": answer,
-                "supply_note": supply_note,
-            },
+            proposal=proposal,
         )
     )
     db.commit()
 
 
-def _replay_with_retry(client: object, *, question: str, skill: str | None, hub_id: int) -> str:
+def _save_draft_reply(db: Session, hub: HubIssue, *, content: str) -> None:
+    """存 agent 草稿到 hub.reply_content 但标记未发（不级联、不入 outbox）。
+
+    主管后续 POST /reply 发送时 author_reply 会清 reply_is_draft。不 commit
+    （调用方负责事务边界）。
+    """
+    hub.reply_content = content
+    hub.reply_is_draft = True
+    hub.reply_authored_by = "agent:ai_cs:draft"
+
+
+def _replay_with_retry(
+    client: object, *, question: str, skill: str | None, hub_id: int
+) -> ReplayResult:
     """调 ai_cs.replay 生成答复；网络/超时错误最多重试 _REPLAY_MAX_ATTEMPTS 次。
 
     业务错误（skill 非法等）不重试直接抛——重试无意义。全部失败/业务错误抛
-    AiCsError 由调用方兜底留主管。
+    AiCsError 由调用方兜底留主管。返回完整 ReplayResult（带 cited_knowledge
+    供准确率打分器用）。
     """
     last_err: AiCsError | None = None
     for attempt in range(1, _REPLAY_MAX_ATTEMPTS + 1):
@@ -132,7 +153,7 @@ def _replay_with_retry(client: object, *, question: str, skill: str | None, hub_
             result = client.replay(  # type: ignore[attr-defined]
                 question=question, skill=skill, use_latest_knowledge=True
             )
-            return str(result.answer)
+            return result  # type: ignore[no-any-return]
         except AiCsNetworkError as e:
             last_err = e
             logger.warning(
@@ -200,7 +221,7 @@ def auto_answer_operation(
     # AI 客服服务端要求 skill 必须在受管理列表内，取第一个受管理 skill 作默认
     skill = next((s.strip() for s in settings.ai_cs_managed_skills.split(",") if s.strip()), None)
     try:
-        answer = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
+        replay_result = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
     except AiCsError:
         # 系统故障（replay 全部失败/业务错误）→ 落 exception 转人工，不再无限重扫。
         apply_op_status(
@@ -214,6 +235,8 @@ def auto_answer_operation(
         return False  # 已在 _replay_with_retry 内记日志
     finally:
         client.close()
+    answer = replay_result.answer
+    cited_knowledge = replay_result.cited_knowledge
 
     # answer-router LLM 判 C/D/transfer
     route = _route_answer(question, answer)
@@ -238,13 +261,64 @@ def auto_answer_operation(
         # 一律不发客户，降级留主管（防 LLM 误判 D 把劣质答复发出去）。
         if not _is_answer_sendable(answer, settings):
             return _transfer("agent 答复未过确定性 floor（空/过短/含转人工词），降级留主管")
+
+        # 答复准确率三态闸门：off 不打分同现状；observe/enforce 打分。
+        # observe 无论分数高低都照常直发（纯采集分布，不影响客户）；
+        # enforce 低于阈值才转主管审核（唯一不直发的分支）。
+        mode = settings.operation_answer_accuracy_mode
+        accuracy_extra: dict[str, object] | None = None
+        if mode in ("observe", "enforce"):
+            score = score_answer_accuracy(question, answer, cited_knowledge)
+            if mode == "enforce" and score.accuracy < settings.operation_answer_accuracy_threshold:
+                _save_draft_reply(db, hub, content=answer)
+                apply_op_status(
+                    db,
+                    hub,
+                    to_status=OP_REVIEWING,
+                    handler=resolve_supervisor_name(db, settings),
+                    reason=(
+                        f"准确率 {score.accuracy}% < "
+                        f"{settings.operation_answer_accuracy_threshold}%，待主管审核"
+                    ),
+                )
+                _record_decision(
+                    db,
+                    hub.id,
+                    branch="D_review",
+                    question=question,
+                    answer=answer,
+                    supply_note="",
+                    extra={"accuracy": score.accuracy, "reason": score.reason},
+                )
+                logger.info(
+                    "operation_answer_low_accuracy_review",
+                    hub_issue_id=hub.id,
+                    accuracy=score.accuracy,
+                )
+                return True
+            logger.info(
+                "operation_answer_accuracy_scored",
+                hub_issue_id=hub.id,
+                mode=mode,
+                accuracy=score.accuracy,
+            )
+            accuracy_extra = {"accuracy": score.accuracy, "reason": score.reason, "mode": mode}
+
         try:
             author_reply(db, hub.id, content=answer, authored_by="agent:ai_cs")
         except ReplySyncError as e:
             logger.warning("operation_auto_reply_author_failed", hub_issue_id=hub.id, error=str(e))
             return False
         apply_op_status(db, hub, to_status=OP_ANSWERED, handler="agent", reason="agent 答复成功")
-        _record_decision(db, hub.id, branch="D", question=question, answer=answer, supply_note="")
+        _record_decision(
+            db,
+            hub.id,
+            branch="D",
+            question=question,
+            answer=answer,
+            supply_note="",
+            extra=accuracy_extra,
+        )
         logger.info("operation_auto_reply_sent", hub_issue_id=hub.id)
         return True
 

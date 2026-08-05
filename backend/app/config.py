@@ -1,6 +1,7 @@
 """Runtime settings loaded from env / .env."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -105,6 +106,12 @@ class Settings(BaseSettings):
     # ---- Operation T+N 自动关闭（answered 停留超 N 天未被驳回 → 自动 closed）----
     operation_auto_close_enabled: bool = False
     operation_auto_close_days: int = 7  # 自然日；驳回会转回 processing 并刷新 op_status_changed_at
+
+    # ---- Operation 答复准确率闸门 ----
+    # 答复准确率闸门：off=不打分同现状 / observe=打分记审计但照常直发（采集分布）
+    # / enforce=低置信存草稿转主管审核
+    operation_answer_accuracy_mode: Literal["off", "observe", "enforce"] = "off"
+    operation_answer_accuracy_threshold: int = 90  # 0-100，仅 enforce 生效
 
     # ---- LLM Providers (D3 onwards) ----
     openai_api_key: str = ""

@@ -4592,6 +4592,93 @@
         "title": "RevertSplitResponse",
         "type": "object"
       },
+      "ReviewingAnswerItem": {
+        "properties": {
+          "accuracy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy"
+          },
+          "accuracy_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Reason"
+          },
+          "draft_reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Reply"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code",
+          "title",
+          "question",
+          "draft_reply",
+          "accuracy",
+          "accuracy_reason"
+        ],
+        "title": "ReviewingAnswerItem",
+        "type": "object"
+      },
+      "ReviewingAnswersResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewingAnswerItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReviewingAnswersResponse",
+        "type": "object"
+      },
       "RollbackBody": {
         "properties": {
           "version": {
@@ -11252,6 +11339,50 @@
         ]
       }
     },
+    "/api/supervisor/reviewing-answers": {
+      "get": {
+        "description": "Operation hubs awaiting human review of a low-accuracy auto-reply draft.",
+        "operationId": "list_reviewing_answers_api_supervisor_reviewing_answers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewingAnswersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reviewing Answers",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/split-proposals": {
       "get": {
         "description": "Pending split_ticket proposals awaiting supervisor action (execute or\ndismiss). Materialized and reverted proposals are excluded.",
@@ -11803,6 +11934,49 @@
           }
         },
         "summary": "Cs Escalation Webhook",
+        "tags": [
+          "webhook"
+        ]
+      }
+    },
+    "/webhook/feishu_ai": {
+      "post": {
+        "description": "飞书AI 工单入库：复用 ai_cs 载荷契约，但入库后走标准 triage 链\n（run_post_ingest_agents，与 KSM/智齿一致），而非 escalation 二次分类。",
+        "operationId": "feishu_ai_webhook_webhook_feishu_ai_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "title": "Access Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Feishu Ai Webhook",
         "tags": [
           "webhook"
         ]

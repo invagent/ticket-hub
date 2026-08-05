@@ -1,6 +1,9 @@
 """Tests for settings loading."""
 
-from app.config import get_settings
+import pytest
+from pydantic import ValidationError
+
+from app.config import Settings, get_settings
 
 
 def test_settings_uses_test_overrides() -> None:
@@ -30,3 +33,18 @@ def test_operation_auto_reply_defaults() -> None:
     s = get_settings()
     assert s.operation_auto_reply_enabled is False
     assert s.operation_auto_reply_min_length == 10
+
+
+def test_operation_answer_accuracy_mode_default_off() -> None:
+    s = get_settings()
+    assert s.operation_answer_accuracy_mode == "off"
+
+
+def test_operation_answer_accuracy_mode_accepts_valid_value() -> None:
+    s = Settings(operation_answer_accuracy_mode="enforce")
+    assert s.operation_answer_accuracy_mode == "enforce"
+
+
+def test_operation_answer_accuracy_mode_rejects_typo() -> None:
+    with pytest.raises(ValidationError):
+        Settings(operation_answer_accuracy_mode="enforc")

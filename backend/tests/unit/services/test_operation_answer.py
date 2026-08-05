@@ -24,6 +24,8 @@ class _S:
     ai_cs_base_url: str = "http://localhost:9090"
     ai_cs_managed_skills: str = "customer-service"
     default_pool_user_id: int | None = None
+    operation_answer_accuracy_mode: str = "off"
+    operation_answer_accuracy_threshold: int = 90
 
 
 class _FakeClient:
@@ -253,6 +255,111 @@ def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
     assert ok is False
 
 
+# ---- 答复准确率三态闸门（off/observe/enforce）----
+
+
+def test_d_observe_mode_scores_but_sends(db_session: Session) -> None:
+    """observe：打分记审计但照常直发客户 + answered。"""
+    from app.services.agents.answer_accuracy import AccuracyScore
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    s = _S()
+    s.operation_answer_accuracy_mode = "observe"
+    fake = _FakeClient(answer="您好，请在发票管理页重新发起开票。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D", supply_note=""),
+        ),
+        patch(
+            "app.services.agents.operation_answer.score_answer_accuracy",
+            return_value=AccuracyScore(accuracy=40, reason="低分也直发"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=s)
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.op_status == "answered"  # observe 低分仍直发
+    assert hub.reply_content_version >= 1  # 真的发了（走 author_reply）
+    assert hub.reply_is_draft is False
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None and d.proposal.get("accuracy") == 40
+
+
+def test_d_enforce_low_accuracy_saves_draft_reviewing(db_session: Session) -> None:
+    """enforce + <阈值：存草稿(不发) + reviewing + 转主管 + 无 outbox。"""
+    from app.models import SyncOutbox
+    from app.services.agents.answer_accuracy import AccuracyScore
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    s = _S()
+    s.operation_answer_accuracy_mode = "enforce"
+    s.operation_answer_accuracy_threshold = 90
+    fake = _FakeClient(answer="可能是网络问题，建议稍后再试。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D", supply_note=""),
+        ),
+        patch(
+            "app.services.agents.operation_answer.score_answer_accuracy",
+            return_value=AccuracyScore(accuracy=60, reason="依据不足"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=s)
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.op_status == "reviewing"
+    assert hub.op_handler != "agent"  # 转兜底主管
+    assert hub.reply_content == "可能是网络问题，建议稍后再试。"
+    assert hub.reply_is_draft is True  # 草稿标记
+    assert hub.reply_content_version == 0  # 未经 author_reply（未级联）
+    # 不发客户 → 无 outbox
+    assert db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id).count() == 0
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None and d.proposal["branch"] == "D_review"
+    assert d.proposal.get("accuracy") == 60
+
+
+def test_d_enforce_high_accuracy_sends(db_session: Session) -> None:
+    """enforce + ≥阈值：直发 + answered。"""
+    from app.services.agents.answer_accuracy import AccuracyScore
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    s = _S()
+    s.operation_answer_accuracy_mode = "enforce"
+    fake = _FakeClient(answer="您好，请在【发票管理】页重新发起开票并保存。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D", supply_note=""),
+        ),
+        patch(
+            "app.services.agents.operation_answer.score_answer_accuracy",
+            return_value=AccuracyScore(accuracy=95, reason="准确"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=s)
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.op_status == "answered"
+    assert hub.reply_is_draft is False
+
+
 # ---- drain_operation_auto_reply（异步扫描 + 补偿重试）----
 
 from app.services.agents.operation_answer import (  # noqa: E402
@@ -433,9 +540,17 @@ class _SeqClient:
 def test_replay_retry_succeeds_after_timeout() -> None:
     """前两次超时，第三次成功 → 返回答复，共调用 3 次。"""
     c = _SeqClient([AiCsNetworkError("timed out"), AiCsNetworkError("timed out"), "答复内容"])
-    ans = _replay_with_retry(c, question="q", skill="customer-service", hub_id=1)
-    assert ans == "答复内容"
+    result = _replay_with_retry(c, question="q", skill="customer-service", hub_id=1)
+    assert result.answer == "答复内容"
     assert c.calls == 3
+
+
+def test_replay_with_retry_returns_cited_knowledge(db_session: Session) -> None:
+    """_replay_with_retry 返回完整 ReplayResult（带 cited_knowledge）供打分器用。"""
+    fake = _FakeClient(answer="答复内容")
+    result = _replay_with_retry(fake, question="q", skill=None, hub_id=1)
+    assert result.answer == "答复内容"
+    assert hasattr(result, "cited_knowledge")
 
 
 def test_replay_retry_exhausts_and_raises() -> None:

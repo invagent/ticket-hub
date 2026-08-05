@@ -410,6 +410,18 @@ def test_status_released_default_note_when_no_reply(world: Session) -> None:
     assert "已处理完成" in client.handles[0].deal_opinion
 
 
+def test_status_released_ignores_draft_reply(world: Session) -> None:
+    """草稿态 reply_content（未审核）不能被当 released 关单话术发出，应回落默认话术。"""
+    hub = _hub(world, reply_content="未审核草稿", reply_is_draft=True)
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="status", payload={"to_status": "released"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    drain_ksm_outbox(world, client=client, settings=_settings())
+    assert len(client.handles) == 1
+    assert "已处理完成" in client.handles[0].deal_opinion
+    assert client.handles[0].deal_opinion != "未审核草稿"
+
+
 # ---- already-locked tolerated -----------------------------------------------
 
 

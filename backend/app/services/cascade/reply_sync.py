@@ -66,6 +66,7 @@ def author_reply(
     hub.reply_content_version = version
     hub.reply_authored_by = authored_by
     hub.reply_updated_at = now
+    hub.reply_is_draft = False  # 正式发送，清草稿标记
     db.add(
         HubIssueReplyHistory(
             hub_issue_id=hub.id,
@@ -126,10 +127,15 @@ def backfill_reply_to_ticket(db: Session, hub: HubIssue, ticket: Ticket) -> bool
     早已跑完、只覆盖了当时在库的 ticket——新挂进来的会漏掉答复，第二个客户收
     不到回复。合并路径调本函数补上。
 
-    仅在 hub 已有答复（reply_content_version>=1）时生效。有源 ticket 才入 outbox
-    （Child 无源系统，只回填缓存）。不 commit（随调用方事务）。返回 True=已补发。
+    仅在 hub 已有正式答复（reply_content_version>=1 且非草稿）时生效。有源 ticket
+    才入 outbox（Child 无源系统，只回填缓存）。不 commit（随调用方事务）。返回
+    True=已补发。
+
+    草稿态守卫：reviewing 态 hub 持有未审核草稿（reply_content 有值但 reply_is_draft
+    =True），且 hub_dedup 候选查询不按 op_status 过滤——这种 hub 是合法合并目标。
+    绝不把草稿经 outbox 扇给第二个客户（"草稿绝不入 outbox"）。
     """
-    if hub.reply_content_version < 1 or not hub.reply_content:
+    if hub.reply_content_version < 1 or not hub.reply_content or hub.reply_is_draft:
         return False
 
     ticket.cached_reply_content = hub.reply_content

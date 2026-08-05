@@ -81,6 +81,25 @@ def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     assert detail["reply_content_version"] == 1
 
 
+def test_reply_clears_draft_flag(app_client: TestClient, reply_world: Session) -> None:
+    """主管发送答复后 reply_is_draft 清零（草稿转正式已发）。"""
+    hub = reply_world.get(HubIssue, 90)
+    hub.reply_is_draft = True
+    hub.op_status = "reviewing"
+    reply_world.commit()
+
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "主管审核后的答复"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    reply_world.refresh(hub)
+    assert hub.reply_is_draft is False
+    assert hub.op_status == "answered"
+    assert hub.reply_content == "主管审核后的答复"
+
+
 def test_reply_on_closed_operation_409(app_client: TestClient, reply_world: Session) -> None:
     hub = reply_world.get(HubIssue, 90)
     assert hub is not None

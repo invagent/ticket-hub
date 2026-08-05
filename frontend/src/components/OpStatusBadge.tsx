@@ -10,6 +10,7 @@ export const OP_STATUS_LABEL: Record<string, { label: string; bg: string; fg: st
   closed: { label: "已关闭", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   supplementing: { label: "补料中", bg: "#fbe9d4", fg: "#a05a10", bd: "#eec99a" },
   exception: { label: "处理异常", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+  reviewing: { label: "待审核", bg: "#e0e7ff", fg: "#3730a3", bd: "#c7d2fe" },
 };
 
 export function OpStatusBadge({ status }: { status: string | null | undefined }) {

@@ -13,7 +13,11 @@ from app.models import (
     SyncOutbox,
     Ticket,
 )
-from app.services.cascade.reply_sync import ReplySyncError, author_reply
+from app.services.cascade.reply_sync import (
+    ReplySyncError,
+    author_reply,
+    backfill_reply_to_ticket,
+)
 from app.services.cascade.status_cascade import apply_hub_status
 
 
@@ -120,6 +124,49 @@ def test_author_reply_child_ticket_cached_but_no_outbox(world: Session) -> None:
     assert child.cached_reply_content == "回复"
     # outbox 只有 sourced parent 一条
     assert world.query(SyncOutbox).count() == 1
+
+
+def test_backfill_reply_skips_draft_hub(world: Session) -> None:
+    """草稿态 hub（reply_content 有值 + reply_is_draft=True）合并进新 ticket 时，
+    backfill 绝不把未审核草稿扇进 outbox（防 hub_dedup 合并把草稿发给第二个客户）。
+    version 特意置 1，证明守卫是看 reply_is_draft 而非仅 version==0。"""
+    hub = _hub(
+        world,
+        20,
+        reply_content="未审核草稿",
+        reply_content_version=1,
+        reply_is_draft=True,
+    )
+    ticket = _ticket(world, 20, hub)
+
+    result = backfill_reply_to_ticket(world, hub, ticket)
+    world.commit()
+
+    assert result is False
+    assert world.query(SyncOutbox).count() == 0
+    world.refresh(ticket)
+    assert ticket.cached_reply_content is None
+
+
+def test_backfill_reply_pushes_when_not_draft(world: Session) -> None:
+    """正式答复（非草稿）的 hub 合并新 ticket 时，backfill 回填缓存 + 入 outbox。"""
+    hub = _hub(
+        world,
+        21,
+        reply_content="正式答复",
+        reply_content_version=1,
+        reply_authored_by="user:carol",
+        reply_is_draft=False,
+    )
+    ticket = _ticket(world, 21, hub)
+
+    result = backfill_reply_to_ticket(world, hub, ticket)
+    world.commit()
+
+    assert result is True
+    world.refresh(ticket)
+    assert ticket.cached_reply_content == "正式答复"
+    assert world.query(SyncOutbox).filter_by(kind="reply").count() == 1
 
 
 def test_author_reply_non_operation_rejected(world: Session) -> None:
