@@ -66,6 +66,7 @@ def author_reply(
     hub.reply_content_version = version
     hub.reply_authored_by = authored_by
     hub.reply_updated_at = now
+    hub.reply_is_draft = False  # 正式发送，清草稿标记
     db.add(
         HubIssueReplyHistory(
             hub_issue_id=hub.id,

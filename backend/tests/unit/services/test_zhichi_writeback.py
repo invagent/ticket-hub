@@ -43,7 +43,14 @@ class _Settings:
     zhichi_base_url: str = "https://www.soboten.com"
 
 
-def _seed(db: Session, *, deal_agent_name: str = "莉莉", kind: str = "reply", payload=None):  # type: ignore[no-untyped-def]
+def _seed(  # type: ignore[no-untyped-def]
+    db: Session,
+    *,
+    deal_agent_name: str = "莉莉",
+    kind: str = "reply",
+    payload=None,
+    reply_is_draft: bool = False,
+):
     if db.query(Source).filter_by(code="zhichi").first() is None:
         db.add(Source(code="zhichi", name="智齿"))
     t = Ticket(
@@ -69,6 +76,7 @@ def _seed(db: Session, *, deal_agent_name: str = "莉莉", kind: str = "reply", 
         title="标题",
         status="created",
         reply_content="hub级答复",
+        reply_is_draft=reply_is_draft,
     )
     db.add(hub)
     db.flush()
@@ -201,6 +209,17 @@ def test_drain_status_released_uses_hub_reply(db_session: Session) -> None:
     assert report.sent == 1
     assert fake.replies[0].ticket_status == "3"
     assert fake.replies[0].reply_content == "hub级答复"
+
+
+def test_drain_status_released_ignores_draft_reply(db_session: Session) -> None:
+    """草稿态 hub 答复不能被当 released 关单话术回写智齿。"""
+    _seed(db_session, kind="status", payload={"to_status": "released"}, reply_is_draft=True)
+    db_session.commit()
+    fake = _FakeClient()
+    report = drain_zhichi_outbox(db_session, client=fake, settings=_Settings())
+    assert report.sent == 1
+    assert fake.replies[0].ticket_status == "3"
+    assert fake.replies[0].reply_content != "hub级答复"
 
 
 def test_drain_status_in_progress_skips(db_session: Session) -> None:

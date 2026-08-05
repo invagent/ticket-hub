@@ -244,7 +244,7 @@ class ZhichiWritebackSender:
             return _s(p.get("note")).strip()
         if row.kind == "status":
             hub = self._db.get(HubIssue, row.hub_issue_id)
-            if hub is not None and hub.reply_content:
+            if hub is not None and hub.reply_content and not hub.reply_is_draft:
                 return str(hub.reply_content).strip()
             return _DEFAULT_RELEASED_NOTE
         return ""
