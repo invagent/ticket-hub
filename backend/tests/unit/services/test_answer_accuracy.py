@@ -49,3 +49,9 @@ def test_score_out_of_range_clamped() -> None:
         "x", "y", [], router=_FakeRouter('{"accuracy": 150, "reason": "r"}')
     )
     assert 0 <= r.accuracy <= 100
+
+
+def test_score_non_object_json_defaults_zero() -> None:
+    # valid JSON but not an object (bare number) → must degrade to 0, not throw
+    r = score_answer_accuracy("x", "y", [], router=_FakeRouter("42"))
+    assert r.accuracy == 0

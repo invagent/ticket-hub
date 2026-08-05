@@ -48,6 +48,8 @@ def score_answer_accuracy(
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.content)
+        if not isinstance(data, dict):
+            return AccuracyScore(accuracy=0, reason="打分返回非对象JSON，兜底转主管")
         raw = int(data.get("accuracy"))
         accuracy = max(0, min(100, raw))  # clamp
         return AccuracyScore(accuracy=accuracy, reason=str(data.get("reason") or ""))
