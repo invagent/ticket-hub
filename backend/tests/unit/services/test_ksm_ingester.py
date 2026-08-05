@@ -292,18 +292,19 @@ def _seed_existing_with_hub(db_session, *, op_status, bill_id, short_code, hub_s
     return existing, hub
 
 
-def test_ingest_resupply_on_supplementing(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """已存在 ticket 且 hub.op_status=supplementing → 补料重提：content_refresh + op_status→resupplied/agent。"""
-    from app.services.hub_issues.op_status import OP_RESUPPLIED, OP_SUPPLEMENTING
+def test_ingest_supplement_refresh_keeps_status(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 hub.op_status=supplementing → 客户主动重推：只 content_refresh，op_status 保持 supplementing。"""
+    from app.services.hub_issues.op_status import OP_SUPPLEMENTING
     from app.services.ingest import ksm_ingester as mod
 
     existing, hub = _seed_existing_with_hub(
         db_session,
         op_status=OP_SUPPLEMENTING,
-        bill_id="bill-resupply-1",
-        short_code="TKT-SR-1",
-        hub_short_code="HUB-SR-1",
+        bill_id="bill-supp-1",
+        short_code="TKT-SP-1",
+        hub_short_code="HUB-SP-1",
     )
+    prev_handler = hub.op_handler
 
     called: dict = {}
 
@@ -314,7 +315,7 @@ def test_ingest_resupply_on_supplementing(db_session, monkeypatch) -> None:  # t
 
     monkeypatch.setattr(mod, "apply_content_refresh", fake_refresh)
     ing = mod.KSMIngester(db_session, default_pool_user_id=None)
-    result = ing.ingest({"billId": "bill-resupply-1", "content": "新补料"})
+    result = ing.ingest({"billId": "bill-supp-1", "content": "新补料"})
     db_session.commit()
 
     assert called["ticket_id"] == existing.id
@@ -323,8 +324,8 @@ def test_ingest_resupply_on_supplementing(db_session, monkeypatch) -> None:  # t
     assert result.ticket_id == existing.id
 
     db_session.refresh(hub)
-    assert hub.op_status == OP_RESUPPLIED
-    assert hub.op_handler == "agent"
+    assert hub.op_status == OP_SUPPLEMENTING  # 状态不变
+    assert hub.op_handler == prev_handler  # 处理人不变
 
 
 def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
