@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
@@ -25,7 +26,7 @@ class AccuracyScore:
 def score_answer_accuracy(
     question: str,
     answer: str,
-    cited_knowledge: list[dict],
+    cited_knowledge: list[dict[str, Any]],
     *,
     router: LLMRouter | None = None,
 ) -> AccuracyScore:
@@ -50,7 +51,7 @@ def score_answer_accuracy(
         data = json.loads(resp.content)
         if not isinstance(data, dict):
             return AccuracyScore(accuracy=0, reason="打分返回非对象JSON，兜底转主管")
-        raw = int(data.get("accuracy"))
+        raw = int(data.get("accuracy") or 0)
         accuracy = max(0, min(100, raw))  # clamp
         return AccuracyScore(accuracy=accuracy, reason=str(data.get("reason") or ""))
     except (LLMRouterError, json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
