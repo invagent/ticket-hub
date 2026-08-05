@@ -67,14 +67,23 @@ replay 生成答复 → answer_router 判 D(可发)/C(需补料)/transfer(留主
 
 **打分数据源说明**：`ReplayResult`（`adapters/ai_cs/types.py`）已返回 `cited_knowledge: list[dict]` 和 `skills_used`，但**无现成置信度分**。打分器消费 `cited_knowledge` 作为依据，`replay` 调用处需把它透传给打分器（当前 `_replay_with_retry` 只返回 `answer` 字符串，需改为返回完整 `ReplayResult` 或额外带出 `cited_knowledge`）。
 
-### 2. 配置项
+### 2. 配置项（三态模式）
 
 **`app/config.py`** 新增：
-- `operation_answer_accuracy_gate_enabled: bool = False`（总开关，默认关，灰度）
+- `operation_answer_accuracy_mode: str = "off"`（三态模式，默认 off）
 - `operation_answer_accuracy_threshold: int = 90`（阈值，0-100）
 
-阈值判定：`accuracy >= operation_answer_accuracy_threshold` → 直发；否则 → reviewing。
-开关关闭时：D 分支行为**完全同现状**（不打分、直发），保证灰度可回退。
+`operation_answer_accuracy_mode` 三个取值（用 CheckConstraint 或代码校验限定）：
+
+| 模式 | 打分 | <阈值行为 | 用途 |
+|---|---|---|---|
+| `off`（默认） | 不打分 | 直发（完全同现状） | 未启用，灰度可回退 |
+| `observe`（观察期） | **打分** | **仍直发客户**，只记审计/日志 | 上线前采集真实分数分布，校准阈值，不影响客户体验 |
+| `enforce`（启闸） | 打分 | 存草稿 + reviewing + 转主管 | 正式启用闸门 |
+
+设计意图：`observe` 让我们先"只打分记日志、不启闸"跑一段真实流量，看 accuracy 分布落在哪，再决定 90 这个阈值合不合适、要不要调，然后才切 `enforce`。observe 期对客户零影响（照常直发），纯采集。
+
+阈值判定（仅 enforce 生效）：`accuracy >= operation_answer_accuracy_threshold` → 直发；否则 → reviewing。
 
 ### 3. D 分支改造（`operation_answer.py:236-249`）
 
@@ -85,11 +94,13 @@ replay 生成答复 → answer_router 判 D(可发)/C(需补料)/transfer(留主
 if route.branch == "D":
     if not _is_answer_sendable(answer, settings):
         return _transfer("...确定性 floor...")
-    # 新增：准确率闸门（开关开时）
-    if settings.operation_answer_accuracy_gate_enabled:
+
+    mode = settings.operation_answer_accuracy_mode  # off | observe | enforce
+    # off 以外都打分
+    if mode in ("observe", "enforce"):
         score = score_answer_accuracy(question, answer, cited_knowledge)
-        if score.accuracy < settings.operation_answer_accuracy_threshold:
-            # 低置信：存草稿（不发客户）+ reviewing + 转兜底主管
+        # enforce 且低置信 → 存草稿转审核（唯一不直发的分支）
+        if mode == "enforce" and score.accuracy < settings.operation_answer_accuracy_threshold:
             _save_draft_reply(db, hub, content=answer)
             apply_op_status(db, hub, to_status=OP_REVIEWING,
                             handler=resolve_supervisor_name(db, settings),
@@ -99,12 +110,22 @@ if route.branch == "D":
                              extra={"accuracy": score.accuracy, "reason": score.reason})
             logger.info("operation_answer_low_accuracy_review", hub_issue_id=hub.id, accuracy=score.accuracy)
             return True
-    # ≥阈值 或 开关关：现有逻辑直发
+        # observe（任何分数）或 enforce 且 ≥阈值：直发，但把分数记进审计/日志
+        logger.info("operation_answer_accuracy_scored", hub_issue_id=hub.id,
+                    mode=mode, accuracy=score.accuracy)
+        _accuracy_extra = {"accuracy": score.accuracy, "reason": score.reason, "mode": mode}
+    else:
+        _accuracy_extra = None
+
+    # off / observe / enforce-达标：现有逻辑直发
     author_reply(db, hub.id, content=answer, authored_by="agent:ai_cs")
     apply_op_status(db, hub, to_status=OP_ANSWERED, handler="agent", reason="agent 答复成功")
-    _record_decision(db, hub.id, branch="D", ...)
+    _record_decision(db, hub.id, branch="D", question=question, answer=answer,
+                     supply_note="", extra=_accuracy_extra)
     return True
 ```
+
+关键点：`observe` 模式下打分照跑、分数进审计（`branch="D"` 的 decision 带 accuracy），但**答复照常直发客户**——纯采集，零客户影响。只有 `enforce` + 低置信才走存草稿/reviewing 分支。
 
 `_record_decision` 需扩一个可选 `extra: dict | None = None` 参数，把 accuracy/reason 存进 `proposal`（审计）。
 
@@ -144,7 +165,7 @@ if route.branch == "D":
 |---|---|
 | `app/services/agents/answer_accuracy.py` | 新建：打分器 + AccuracyScore |
 | `prompts/answer_accuracy.md` | 新建：打分 prompt |
-| `app/config.py` | +2 配置（gate_enabled / accuracy_threshold）|
+| `app/config.py` | +2 配置（accuracy_mode: off/observe/enforce、accuracy_threshold）|
 | `app/services/hub_issues/op_status.py` | +OP_REVIEWING 常量 + _VALID |
 | `app/models.py` | op_status CheckConstraint 加 reviewing；+reply_is_draft 列 |
 | `migrations/versions/0028_*.py` | 新迁移：约束加 reviewing + reply_is_draft 列（down_revision=0027_feishu_ai_source；注意 0027 是已存在的 feishu_ai 迁移，本迁移接在其后）|
@@ -160,9 +181,10 @@ if route.branch == "D":
 
 - **打分器单测**：mock LLM 返回 → 解析 accuracy/reason；异常/非法 JSON → accuracy=0 兜底。
 - **D 分支闸门单测**：
-  - 开关关 → 行为同现状（直发，不打分）。
-  - 开关开 + accuracy≥阈值 → author_reply 发 + answered。
-  - 开关开 + accuracy<阈值 → 存草稿(reply_content 有值 + reply_is_draft=True) + op_status=reviewing + **无 outbox 行**（不发客户）+ 审计带 accuracy。
+  - mode=off → 行为同现状（直发，不打分）。
+  - mode=observe（任意分数）→ 打分 + author_reply 发 + answered + 审计带 accuracy（**低分也直发**，纯采集）。
+  - mode=enforce + accuracy≥阈值 → author_reply 发 + answered + 审计带 accuracy。
+  - mode=enforce + accuracy<阈值 → 存草稿(reply_content 有值 + reply_is_draft=True) + op_status=reviewing + **无 outbox 行**（不发客户）+ 审计带 accuracy。
 - **草稿安全单测**：reviewing 态 hub 若走 released 级联，`_released_text` 回落默认话术（不发草稿）。
 - **主管发送单测**：reviewing 态 POST /reply → author_reply 级联 + outbox + reply_is_draft 清零 + op_status=answered。
 - **队列单测**：GET /reviewing-answers 返回 reviewing 单 + accuracy/理由。
@@ -172,11 +194,11 @@ if route.branch == "D":
 
 1. `git pull` + `alembic upgrade head`（0028：约束加 reviewing + reply_is_draft 列）。
 2. 重启后端 + 前端 rebuild。
-3. **灰度**：先 `operation_answer_accuracy_gate_enabled=false`（行为同现状）→ 观察打分器日志分布（可先只打分记日志不启闸，实现时可加一个 dry 观察期，非必须）→ 再开 gate。阈值先 90，据实际分布调。
+3. **三阶段灰度**：`off`（同现状）→ `observe`（打分记审计、照常直发，跑真实流量采集 accuracy 分布，校准阈值）→ `enforce`（正式启闸，<阈值转审核）。阈值先 90，据 observe 期实际分布调。
 4. 无数据回填（reply_is_draft 存量全 False，op_status 无 reviewing 存量）。
 
 ## 待确认的实现细节（非阻塞）
 
 - reviewing 徽章文案最终用词（实现时定）。
-- 是否需要一个"只打分记日志、不启闸"的观察期开关（便于上线前看分数分布校准阈值）——建议加，但可作为实现时的小优化，不阻塞主设计。
+- （已纳入正式设计）观察期开关 = `accuracy_mode` 的 `observe` 态。
 - `_replay_with_retry` 改为返回 `ReplayResult`（带 cited_knowledge）还是额外参数带出——实现时按最小改动定。
