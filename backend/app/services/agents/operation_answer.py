@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError, AiCsNetworkError
@@ -19,12 +19,10 @@ from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, Ticket
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
-from app.services.cascade.supply_sync import SupplySyncError, request_supply
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_EXCEPTION,
     OP_PROCESSING,
-    OP_RESUPPLIED,
     OP_SUPPLEMENTING,
     apply_op_status,
     resolve_supervisor_name,
@@ -251,19 +249,20 @@ def auto_answer_operation(
         return True
 
     if route.branch == "C":
-        # supply_note 为空绝不拿 answer 当补料话术（answer 可能是"无法处理"之类，
-        # 发给客户是错的）——降级留主管。
+        # 需补料：不再打回客户。转兜底主管线下联系客户收集资料，主管拿到后
+        # 人工 POST /reply 答复。supply_note 写审计供主管参考「缺什么」。
         note = (route.supply_note or "").strip()
         if not note:
             return _transfer("需补料但 supply_note 为空，降级留主管")
-        try:
-            request_supply(db, hub.id, note=note, requested_by="agent:ai_cs")
-        except SupplySyncError as e:
-            logger.warning("operation_auto_supply_failed", hub_issue_id=hub.id, error=str(e))
-            return False
-        apply_op_status(db, hub, to_status=OP_SUPPLEMENTING, handler="agent", reason="需补料")
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_SUPPLEMENTING,
+            handler=resolve_supervisor_name(db, settings),
+            reason="需补料，转主管线下收集",
+        )
         _record_decision(db, hub.id, branch="C", question=question, answer=answer, supply_note=note)
-        logger.info("operation_auto_supply_sent", hub_issue_id=hub.id)
+        logger.info("operation_auto_supply_transfer", hub_issue_id=hub.id)
         return True
 
     # transfer → 留主管。仍记 auto_reply 审计（branch=transfer），标记「已自动处理过」，
@@ -286,10 +285,10 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
     既解耦入库链路，又兼作偶发 replay 失败的补偿重试。
 
     扫描口径：type='Operation' + 未删除 + 非 ai_cs 来源（ai_cs 走 reflect 反思
-    队列，auto_answer 内部也会拒，此处提前排除免得每轮空扫）+ op_status 驱动——
-    (op_status=processing 且 op_handler='agent'，即刚毕业尚未处理过) 或
-    op_status=resupplied（客户补料后需要重答）。op_handler≠agent 代表已转人工
-    介入中，排除在外（不抢主管正在处理的工单）。
+    队列，auto_answer 内部也会拒，此处提前排除免得每轮空扫）+ op_status=processing
+    且 op_handler='agent'（即刚毕业尚未处理过）。op_handler≠agent 代表已转人工
+    介入中（含 supplementing 主管线下收集资料），排除在外（不抢主管正在处理的
+    工单）。
     """
     settings = settings or get_settings()
     if not settings.operation_auto_reply_enabled:
@@ -310,10 +309,8 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
             HubIssue.type == "Operation",
             HubIssue.deleted_at.is_(None),
             ~ai_cs_ticket,
-            or_(
-                and_(HubIssue.op_status == OP_PROCESSING, HubIssue.op_handler == "agent"),
-                HubIssue.op_status == OP_RESUPPLIED,
-            ),
+            HubIssue.op_status == OP_PROCESSING,
+            HubIssue.op_handler == "agent",
         )
         .order_by(HubIssue.id)
         .limit(settings.operation_auto_reply_batch)

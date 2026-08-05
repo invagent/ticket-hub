@@ -118,7 +118,8 @@ def test_auto_answer_passes_managed_skill_to_replay(db_session: Session) -> None
     assert fake.replay_kwargs.get("skill") == "customer-service"
 
 
-def test_auto_answer_c_requests_supply(db_session: Session) -> None:
+def test_auto_answer_c_transfers_to_supervisor(db_session: Session) -> None:
+    """route 判 C（需补料）→ 转兜底主管线下收集，不打回客户（无 supply outbox）。"""
     from app.models import SyncOutbox
 
     hub, _t = _seed_op_hub(db_session)
@@ -134,11 +135,12 @@ def test_auto_answer_c_requests_supply(db_session: Session) -> None:
         ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is True
     db_session.refresh(hub)
-    assert hub.reply_content_version == 0  # 没答复，走补料
+    assert hub.reply_content_version == 0  # 没答复
     assert hub.op_status == "supplementing"
+    assert hub.op_handler != "agent"  # 已转主管
+    # 不再打回客户 → 无 supply outbox
     ob = db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id, kind="supply").first()
-    assert ob is not None
-    assert ob.payload.get("supply_note") == "请提供开票报错截图"
+    assert ob is None
 
 
 def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
@@ -302,20 +304,22 @@ def test_drain_skips_transfer_recorded(db_session: Session) -> None:
     assert report.scanned == 0
 
 
-def test_drain_scans_processing_agent_and_resupplied(db_session: Session) -> None:
-    """drain 扫 op_status=processing(handler=agent) 和 resupplied；排除人工介入。"""
+def test_drain_scans_only_unprocessed_processing_agent(db_session: Session) -> None:
+    """drain 只捞 op_status=processing 且 op_handler=agent（刚毕业未处理）；
+    supplementing（主管收集中）不被捞。"""
     _hub_agent, _ = _seed_op_hub(db_session, source="ksm")
     hub_human, _ = _seed_op_hub(db_session, source="zhichi")
     hub_human.op_handler = "主管"
-    hub_resupplied, _ = _seed_op_hub(db_session, source="zammad")
-    hub_resupplied.op_status = "resupplied"
+    hub_supplementing, _ = _seed_op_hub(db_session, source="zammad")
+    hub_supplementing.op_status = "supplementing"
+    hub_supplementing.op_handler = "主管"
     db_session.commit()
 
     fake = _FakeClient(raise_err=True)
     with patch("app.services.agents.operation_answer.build_client", return_value=fake):
         report = drain_operation_auto_reply(db_session, settings=_S())
 
-    assert report.scanned == 2
+    assert report.scanned == 1  # 只有 _hub_agent
 
 
 def test_drain_excludes_ai_cs_source(db_session: Session) -> None:
