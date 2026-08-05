@@ -52,3 +52,29 @@ def test_resupplied_rejected_by_constraint(db_session: Session) -> None:
     db_session.add(hub)
     with pytest.raises(IntegrityError):
         db_session.flush()
+
+
+def test_reviewing_accepted_by_constraint(db_session) -> None:
+    """迁移后 op_status='reviewing' 应被接受。"""
+    from app.models import HubIssue
+
+    hub = HubIssue(
+        short_code="HUB-RVW-1",
+        type="Operation",
+        title="t",
+        status="created",
+        op_status="reviewing",
+        op_handler="主管",
+    )
+    db_session.add(hub)
+    db_session.flush()  # 不抛 = 通过
+    assert hub.op_status == "reviewing"
+
+
+def test_reply_is_draft_defaults_false(db_session) -> None:
+    from app.models import HubIssue
+
+    hub = HubIssue(short_code="HUB-DFT-1", type="Operation", title="t", status="created")
+    db_session.add(hub)
+    db_session.flush()
+    assert hub.reply_is_draft is False

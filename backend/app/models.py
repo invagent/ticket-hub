@@ -499,7 +499,7 @@ class HubIssue(Base):
         ),
         CheckConstraint(
             "op_status IS NULL OR op_status IN "
-            "('processing','answered','closed','supplementing','exception')",
+            "('processing','answered','closed','supplementing','reviewing','exception')",
             name="ck_hub_issues_op_status",
         ),
         Index("ix_hub_issues_type_status", "type", "status"),
@@ -528,6 +528,7 @@ class HubIssue(Base):
     reply_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    reply_is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Operation 状态机（op_status 专属层，仅 Operation 非空；研发类恒 NULL）
     op_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
