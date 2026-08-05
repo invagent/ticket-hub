@@ -15,6 +15,7 @@
   POST /api/supervisor/dismiss-dedup               — decline a dedup proposal
   GET  /api/supervisor/pending-hub-issues          — Linear push blocked, awaiting human
   POST /api/supervisor/repush-linear               — retry a blocked Linear push
+  GET  /api/supervisor/reviewing-answers           — low-accuracy auto-reply drafts awaiting review
   GET  /api/supervisor/complaint-tickets           — Complaint queue awaiting human
   POST /api/supervisor/close-complaint             — human-confirmed complaint close
   GET  /api/supervisor/ai-cs/status                — knowledge-feedback feature on/configured
@@ -48,7 +49,7 @@ from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervis
 from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import HubIssue, StatusHistory, Ticket
+from app.models import AgentDecision, HubIssue, StatusHistory, Ticket
 from app.repositories.notification_log import NotificationLogRepository
 from app.services import knowledge_feedback as kf
 from app.services.agents.classify import classify_ticket
@@ -814,6 +815,64 @@ def list_pending_hub_issues(
             )
         )
     return PendingHubIssuesResponse(items=items)
+
+
+# ---- reviewing-answers 主管审核队列 (D_review 低置信答复) ----------------------
+
+
+class ReviewingAnswerItem(BaseModel):
+    hub_issue_id: int
+    short_code: str
+    title: str
+    question: str | None
+    draft_reply: str | None
+    accuracy: int | None
+    accuracy_reason: str | None
+
+
+class ReviewingAnswersResponse(BaseModel):
+    items: list[ReviewingAnswerItem]
+
+
+@router.get("/reviewing-answers", response_model=ReviewingAnswersResponse)
+def list_reviewing_answers(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> ReviewingAnswersResponse:
+    """Operation hubs awaiting human review of a low-accuracy auto-reply draft."""
+    hubs = (
+        db.query(HubIssue)
+        .filter(
+            HubIssue.deleted_at.is_(None),
+            HubIssue.type == "Operation",
+            HubIssue.op_status == "reviewing",
+        )
+        .order_by(HubIssue.op_status_changed_at.desc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    items = []
+    for h in hubs:
+        dec = (
+            db.query(AgentDecision)
+            .filter_by(subject_type="hub_issue", subject_id=h.id, decision_type="auto_reply")
+            .order_by(AgentDecision.id.desc())
+            .first()
+        )
+        prop: dict[str, Any] = (dec.proposal if dec else {}) or {}
+        items.append(
+            ReviewingAnswerItem(
+                hub_issue_id=h.id,
+                short_code=h.short_code,
+                title=h.title,
+                question=prop.get("question"),
+                draft_reply=h.reply_content,
+                accuracy=prop.get("accuracy"),
+                accuracy_reason=prop.get("reason"),
+            )
+        )
+    return ReviewingAnswersResponse(items=items)
 
 
 class EscalationPendingItem(BaseModel):
