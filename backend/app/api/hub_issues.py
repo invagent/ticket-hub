@@ -23,7 +23,13 @@ from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
-from app.services.hub_issues.op_status import OP_EXCEPTION, OP_PROCESSING
+from app.services.hub_issues.op_status import (
+    OP_ANSWERED,
+    OP_CLOSED,
+    OP_EXCEPTION,
+    OP_PROCESSING,
+    apply_op_status,
+)
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -205,12 +211,29 @@ def author_reply_endpoint(
 ) -> AuthorReplyResponse:
     """Author/replace the Operation reply. Cascades to linked tickets'
     cached_reply and enqueues sync_outbox rows for source write-back."""
+    hub_before = db.get(HubIssue, hub_issue_id)
+    if hub_before is not None and hub_before.type == "Operation" and hub_before.op_status == OP_CLOSED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"hub_issue {hub_before.short_code} 已关单（op_status=closed），不允许再写答复",
+        )
+
     try:
         result = author_reply(
             db, hub_issue_id, content=body.content, authored_by=f"user:{user.name}"
         )
     except ReplySyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+    # 人工答复推进 op_status → answered（补齐与 agent 答复的对称性）。
+    # author_reply 已 commit；apply_op_status 不 commit，故此处单独 commit。
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is not None and hub.type == "Operation":
+        apply_op_status(
+            db, hub, to_status=OP_ANSWERED, handler=f"user:{user.name}", reason="主管人工答复"
+        )
+        db.commit()
+
     logger.info(
         "hub_issue_reply_authored",
         hub_issue_id=hub_issue_id,

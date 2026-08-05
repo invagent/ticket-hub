@@ -68,6 +68,8 @@ def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     hub = reply_world.get(HubIssue, 90)
     reply_world.refresh(hub)
     assert hub.reply_content == "请在发票云-红字确认单中操作"
+    assert hub.op_status == "answered"  # 人工答复推进状态机
+    assert hub.op_handler == "user:carol"  # _bearer 默认 name=carol
     t = reply_world.get(Ticket, 300)
     reply_world.refresh(t)
     assert t.cached_reply_version == 1
@@ -77,6 +79,25 @@ def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     detail = app_client.get("/api/hub-issues/90", headers=_bearer(2)).json()
     assert detail["reply_content"] == "请在发票云-红字确认单中操作"
     assert detail["reply_content_version"] == 1
+
+
+def test_reply_on_closed_operation_409(app_client: TestClient, reply_world: Session) -> None:
+    hub = reply_world.get(HubIssue, 90)
+    assert hub is not None
+    hub.op_status = "closed"
+    reply_world.commit()
+
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "回复"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 409
+    assert "closed" in r.json()["detail"] or "已关单" in r.json()["detail"]
+
+    reply_world.refresh(hub)
+    assert hub.reply_content is None
+    assert hub.op_status == "closed"
 
 
 def test_reply_on_bugfix_409(app_client: TestClient, reply_world: Session) -> None:

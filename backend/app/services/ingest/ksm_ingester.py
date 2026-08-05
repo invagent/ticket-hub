@@ -31,7 +31,6 @@ from app.repositories.ticket import TicketRepository
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_PROCESSING,
-    OP_RESUPPLIED,
     OP_SUPPLEMENTING,
     apply_op_status,
     resolve_supervisor_name,
@@ -85,15 +84,13 @@ class KSMIngester:
             hub = self._db.get(HubIssue, existing.hub_issue_id) if existing.hub_issue_id else None
             op = hub.op_status if hub is not None and hub.deleted_at is None else None
             if op == OP_SUPPLEMENTING:
-                # 补料重提：客户补料后 KSM 重推同 billId。更新内容 → op_status 转
-                # resupplied，交给 drain_operation_auto_reply 重扫重答。仍
-                # deduped=True（不走 post-ingest，不重跑 triage/分类）。
+                # 主管收集补料期间客户主动重推同 billId：只刷新内容供主管参考，
+                # op_status 保持 supplementing 不变（不再转 resupplied，该状态已删）。
                 assert hub is not None
                 apply_content_refresh(self._db, existing, payload)
-                apply_op_status(
-                    self._db, hub, to_status=OP_RESUPPLIED, handler="agent", reason="客户补料重提"
+                logger.info(
+                    "ksm_ingest_supplement_refresh", bill_id=bill_id, existing_ticket_id=existing.id
                 )
-                logger.info("ksm_ingest_resupply", bill_id=bill_id, existing_ticket_id=existing.id)
                 return self._dedup_result(existing)
             if op == OP_ANSWERED:
                 # 驳回：已答复但客户不满意重提同一单。更新内容 + reject_count+1，

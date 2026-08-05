@@ -44,3 +44,11 @@ def test_op_status_invalid_value_rejected(db_session: Session) -> None:
     db_session.add(hub)
     with pytest.raises(IntegrityError):
         db_session.commit()
+
+
+def test_resupplied_rejected_by_constraint(db_session: Session) -> None:
+    """迁移后 op_status='resupplied' 应被 CheckConstraint 拒绝。"""
+    hub = _op_hub(op_status="resupplied", op_handler="agent")
+    db_session.add(hub)
+    with pytest.raises(IntegrityError):
+        db_session.flush()

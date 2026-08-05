@@ -237,8 +237,7 @@ class KSMWritebackSender:
         row.sent_at = datetime.now(UTC)
         row.attempts += 1
         # 关单类 action 真发成功后，本地工单/hub 推终态，与 KSM 侧一致。
-        # 补料/接管/进度通知不关单，不动状态（补料识别已改走 hub.op_status==
-        # supplementing，由 auto_answer request_supply 入队时置，与此处无关）。
+        # 补料/接管/进度通知不关单，不动状态（supplementing 由主管线下收集补料时置，与此处无关）。
         if action in _CLOSING_ACTIONS:
             self._close_local(row, ticket)
         self._db.commit()
