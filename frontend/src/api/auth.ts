@@ -15,3 +15,8 @@ export function isSupervisor(): boolean {
   const r = currentRole();
   return r === "supervisor" || r === "admin";
 }
+
+/** 仅 admin：系统级配置（目录 / Skill / 节假日等 require_admin 端点）。 */
+export function isAdmin(): boolean {
+  return currentRole() === "admin";
+}
