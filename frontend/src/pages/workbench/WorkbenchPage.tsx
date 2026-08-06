@@ -558,6 +558,9 @@ function HumanQueue() {
   const [active, setActive] = useState<QueueType[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [revertable, setRevertable] = useState<{ decisionId: number; childCount: number } | null>(
+    null,
+  );
 
   const splits = useQuery({
     queryKey: ["supervisor", "split-proposals"],
@@ -599,6 +602,8 @@ function HumanQueue() {
       api.post("/api/supervisor/execute-split", { decision_id: decisionId }),
     onSuccess: (d) => {
       setFlash(`已拆分为 ${d.child_ticket_ids.length} 条子工单`);
+      // 记住刚执行的拆分，供「撤销拆分」用（后端在任一子单已推进时会拒绝）。
+      setRevertable({ decisionId: d.decision_id, childCount: d.child_ticket_ids.length });
       invalidate("split-proposals")();
     },
     onError: onErr,
@@ -607,6 +612,16 @@ function HumanQueue() {
     mutationFn: (decisionId: number) =>
       api.post("/api/supervisor/dismiss-split", { decision_id: decisionId }),
     onSuccess: invalidate("split-proposals"),
+    onError: onErr,
+  });
+  const revertSplit = useMutation({
+    mutationFn: (decisionId: number) =>
+      api.post("/api/supervisor/revert-split", { decision_id: decisionId }),
+    onSuccess: (d) => {
+      setFlash(`已撤销拆分，删除 ${d.deleted_child_ids.length} 条子工单，父单还原`);
+      setRevertable(null);
+      invalidate("split-proposals")();
+    },
     onError: onErr,
   });
   const executeDedup = useMutation({
@@ -845,6 +860,22 @@ function HumanQueue() {
         <div className="mb-2 text-xs text-hub-rose">
           {error}{" "}
           <button className="text-hub-textFaint" onClick={() => setError(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+      {revertable && (
+        <div className="mb-2 text-xs text-hub-purple font-semibold">
+          刚拆分为 {revertable.childCount} 条子工单，如误操作可{" "}
+          <button
+            className="ml-0.5 hover:underline disabled:opacity-50"
+            disabled={revertSplit.isPending}
+            onClick={() => revertSplit.mutate(revertable.decisionId)}
+            title="删除刚拆出的子工单、父单还原（任一子单已推进则拒绝）"
+          >
+            {revertSplit.isPending ? "撤销中…" : "撤销拆分"}
+          </button>{" "}
+          <button className="text-hub-textFaint" onClick={() => setRevertable(null)}>
             ✕
           </button>
         </div>
