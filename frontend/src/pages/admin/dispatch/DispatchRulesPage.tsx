@@ -233,6 +233,9 @@ function RuleEditorDialog({
   const [error, setError] = useState<string | null>(null);
 
   const savedRuleId = rule?.id;
+  // 新建态：分派人先暂存本地，随规则一起保存（避免"先存规则→重开弹窗才能加人"的两步流程）。
+  // 编辑态：分派人走 AssigneesSection 即时增删，不用这份 draft。
+  const [draftAssignees, setDraftAssignees] = useState<DraftAssignee[]>([]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -248,7 +251,19 @@ function RuleEditorDialog({
         priority,
         is_active: rule?.is_active ?? true,
       };
-      return isNew ? dispatchApi.createRule(body) : dispatchApi.updateRule(rule.id, body);
+      if (!isNew) return dispatchApi.updateRule(rule.id, body);
+      // 新建：先建规则拿 id，再逐条把暂存的分派人写进去（一次"保存"完成，无需重开弹窗）。
+      const created = (await dispatchApi.createRule(body)) as RuleOut;
+      for (const a of draftAssignees) {
+        await dispatchApi.addAssignee(created.id, {
+          user_id: a.user_id,
+          alloc_value: mode === "ratio" ? a.alloc_value : 1,
+          daily_cap: mode === "count" ? a.daily_cap : null,
+          tier: a.tier,
+          is_active: true,
+        });
+      }
+      return created;
     },
     onSuccess: onSaved,
     onError: (e) => setError(errMsg(e)),
@@ -353,9 +368,10 @@ function RuleEditorDialog({
           </button>
         </div>
 
-        {savedRuleId !== undefined && <AssigneesSection ruleId={savedRuleId} mode={mode} />}
-        {isNew && (
-          <p className="text-[11px] text-hub-textFaint">保存后可在编辑弹窗内添加分派人。</p>
+        {savedRuleId !== undefined ? (
+          <AssigneesSection ruleId={savedRuleId} mode={mode} />
+        ) : (
+          <DraftAssigneesSection mode={mode} draft={draftAssignees} onChange={setDraftAssignees} />
         )}
       </div>
     </div>
@@ -364,12 +380,158 @@ function RuleEditorDialog({
 
 /* ===== 分派人子表 ===== */
 
-function AssigneesSection({ ruleId, mode }: { ruleId: number; mode: "count" | "ratio" }) {
-  const qc = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
+// 新建态本地暂存的分派人（还没有 assignee id / rule_id）。
+interface DraftAssignee {
+  user_id: number;
+  alloc_value: number;
+  daily_cap: number | null;
+  tier: "main" | "overflow";
+}
+
+// 一行已添加的分派人展示（新建/编辑态共用）。onRemove 为空则不显示删除按钮。
+function AssigneeRow({
+  userId,
+  tier,
+  dailyCap,
+  allocValue,
+  mode,
+  onRemove,
+  removing,
+}: {
+  userId: number;
+  tier: string;
+  dailyCap: number | null | undefined;
+  allocValue: number;
+  mode: "count" | "ratio";
+  onRemove: () => void;
+  removing?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 px-1 py-1.5 border-b border-hub-borderLight text-[12.5px]">
+      <span className="font-semibold">#{userId}</span>
+      <span
+        className={`text-[9.5px] font-bold px-[7px] py-px rounded-full border ${
+          tier === "overflow"
+            ? "bg-hub-amber-light text-hub-amber-deep border-hub-amber-border"
+            : "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border"
+        }`}
+      >
+        {TIER_LABELS[tier] ?? tier}
+      </span>
+      <span className="text-hub-textFaint">
+        {mode === "count" ? `上限 ${dailyCap ?? "不限"}/天` : `权重 ${allocValue}`}
+      </span>
+      <div className="flex-1" />
+      <button
+        onClick={onRemove}
+        disabled={removing}
+        className="text-xs text-hub-textFaint px-1.5 py-0.5 rounded hover:text-hub-rose hover:bg-hub-rose-light"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+// 添加分派人的输入行（运营 + daily_cap/alloc_value + tier + 添加按钮），新建/编辑态共用。
+function AssigneeAddForm({
+  mode,
+  onAdd,
+  adding,
+}: {
+  mode: "count" | "ratio";
+  onAdd: (a: DraftAssignee) => void;
+  adding?: boolean;
+}) {
   const [userId, setUserId] = useState<number | undefined>(undefined);
   const [value, setValue] = useState<string>(mode === "count" ? "" : "1");
   const [tier, setTier] = useState<"main" | "overflow">("main");
+
+  const submit = () => {
+    if (!userId) return;
+    onAdd({
+      user_id: userId,
+      alloc_value: mode === "ratio" ? Number(value || 1) : 1,
+      daily_cap: mode === "count" ? (value ? Number(value) : null) : null,
+      tier,
+    });
+    setUserId(undefined);
+    setValue(mode === "count" ? "" : "1");
+    setTier("main");
+  };
+
+  return (
+    <div className="flex items-end gap-2 flex-wrap p-2.5 bg-hub-panel border border-hub-borderLight rounded-lg">
+      <div className="flex flex-col gap-1">
+        <span className="text-[10.5px] text-hub-textMuted">运营</span>
+        <UserSelect value={userId} onChange={setUserId} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-[10.5px] text-hub-textMuted">
+          {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
+        </span>
+        <input
+          type="number"
+          min={mode === "ratio" ? 0.01 : 0}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className={`${INPUT_CLS} w-28`}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-[10.5px] text-hub-textMuted">层级</span>
+        <select value={tier} onChange={(e) => setTier(e.target.value as "main" | "overflow")} className={INPUT_CLS}>
+          <option value="main">主力</option>
+          <option value="overflow">溢出</option>
+        </select>
+      </div>
+      <button onClick={submit} disabled={!userId || adding} className={PRIMARY_BTN}>
+        {adding ? "添加中…" : "添加"}
+      </button>
+    </div>
+  );
+}
+
+// 新建态：分派人暂存本地数组，随规则一起保存（不调后端）。
+function DraftAssigneesSection({
+  mode,
+  draft,
+  onChange,
+}: {
+  mode: "count" | "ratio";
+  draft: DraftAssignee[];
+  onChange: (next: DraftAssignee[]) => void;
+}) {
+  return (
+    <div className="border-t border-hub-borderLight pt-3">
+      <div className="text-[12.5px] font-bold mb-2">分派人</div>
+      {draft.length === 0 && (
+        <p className="text-xs text-hub-textFaint mb-2">尚未添加分派人 —— 保存后该规则命中将无人可派（回落兜底/主管）。</p>
+      )}
+      {draft.length > 0 && (
+        <div className="flex flex-col mb-2">
+          {draft.map((a, i) => (
+            <AssigneeRow
+              key={i}
+              userId={a.user_id}
+              tier={a.tier}
+              dailyCap={a.daily_cap}
+              allocValue={a.alloc_value}
+              mode={mode}
+              onRemove={() => onChange(draft.filter((_, j) => j !== i))}
+            />
+          ))}
+        </div>
+      )}
+      <AssigneeAddForm mode={mode} onAdd={(a) => onChange([...draft, a])} />
+    </div>
+  );
+}
+
+// 编辑态：分派人即时增删（点即调后端），复用 AssigneeRow / AssigneeAddForm 展示。
+function AssigneesSection({ ruleId, mode }: { ruleId: number; mode: "count" | "ratio" }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
 
   const qk = ["admin", "dispatch", "assignees", ruleId] as const;
   const assignees = useQuery({
@@ -383,22 +545,15 @@ function AssigneesSection({ ruleId, mode }: { ruleId: number; mode: "count" | "r
   };
 
   const add = useMutation({
-    mutationFn: () => {
-      if (!userId) throw new Error("请选择运营");
-      return dispatchApi.addAssignee(ruleId, {
-        user_id: userId,
-        alloc_value: mode === "ratio" ? Number(value || 1) : 1,
-        daily_cap: mode === "count" ? (value ? Number(value) : null) : null,
-        tier,
+    mutationFn: (a: DraftAssignee) =>
+      dispatchApi.addAssignee(ruleId, {
+        user_id: a.user_id,
+        alloc_value: mode === "ratio" ? a.alloc_value : 1,
+        daily_cap: mode === "count" ? a.daily_cap : null,
+        tier: a.tier,
         is_active: true,
-      });
-    },
-    onSuccess: () => {
-      setUserId(undefined);
-      setValue(mode === "count" ? "" : "1");
-      setTier("main");
-      invalidate();
-    },
+      }),
+    onSuccess: invalidate,
     onError: (e) => setError(errMsg(e)),
   });
 
@@ -420,61 +575,20 @@ function AssigneesSection({ ruleId, mode }: { ruleId: number; mode: "count" | "r
       {list.length > 0 && (
         <div className="flex flex-col mb-2">
           {list.map((a) => (
-            <div key={a.id} className="flex items-center gap-2.5 px-1 py-1.5 border-b border-hub-borderLight text-[12.5px]">
-              <span className="font-semibold">#{a.user_id}</span>
-              <span
-                className={`text-[9.5px] font-bold px-[7px] py-px rounded-full border ${
-                  a.tier === "overflow"
-                    ? "bg-hub-amber-light text-hub-amber-deep border-hub-amber-border"
-                    : "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border"
-                }`}
-              >
-                {TIER_LABELS[a.tier] ?? a.tier}
-              </span>
-              <span className="text-hub-textFaint">
-                {mode === "count" ? `上限 ${a.daily_cap ?? "不限"}/天` : `权重 ${a.alloc_value}`}
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={() => remove.mutate(a.id)}
-                disabled={remove.isPending}
-                className="text-xs text-hub-textFaint px-1.5 py-0.5 rounded hover:text-hub-rose hover:bg-hub-rose-light"
-              >
-                ✕
-              </button>
-            </div>
+            <AssigneeRow
+              key={a.id}
+              userId={a.user_id}
+              tier={a.tier}
+              dailyCap={a.daily_cap}
+              allocValue={Number(a.alloc_value)}
+              mode={mode}
+              onRemove={() => remove.mutate(a.id)}
+              removing={remove.isPending}
+            />
           ))}
         </div>
       )}
-
-      <div className="flex items-end gap-2 flex-wrap p-2.5 bg-hub-panel border border-hub-borderLight rounded-lg">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">运营</span>
-          <UserSelect value={userId} onChange={setUserId} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">
-            {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
-          </span>
-          <input
-            type="number"
-            min={mode === "ratio" ? 0.01 : 0}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className={`${INPUT_CLS} w-28`}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">层级</span>
-          <select value={tier} onChange={(e) => setTier(e.target.value as "main" | "overflow")} className={INPUT_CLS}>
-            <option value="main">主力</option>
-            <option value="overflow">溢出</option>
-          </select>
-        </div>
-        <button onClick={() => add.mutate()} disabled={!userId || add.isPending} className={PRIMARY_BTN}>
-          {add.isPending ? "添加中…" : "添加"}
-        </button>
-      </div>
+      <AssigneeAddForm mode={mode} onAdd={(a) => add.mutate(a)} adding={add.isPending} />
       {error && <div className="text-xs text-hub-rose mt-2">{error}</div>}
     </div>
   );
