@@ -1,0 +1,100 @@
+"""Tests for 分类三动作端点 confirm / reclassify / dismiss."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.api.auth import issue_jwt
+from app.models import HubIssue, User
+
+
+def _bearer(uid: int, *, name: str = "carol", role: str = "supervisor") -> dict[str, str]:
+    token, _ = issue_jwt(sub=str(uid), name=name, role=role)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def act_world(db_session: Session) -> Session:
+    db_session.add(User(id=2, feishu_uid="ou_c", name="carol", role="supervisor"))
+    for hid, sc in [(70, "HUB-000070"), (71, "HUB-000071"), (72, "HUB-000072")]:
+        db_session.add(
+            HubIssue(
+                id=hid,
+                short_code=sc,
+                type="Bug_fix",
+                title="t",
+                canonical_body="b",
+                status="pending_review",
+            )
+        )
+    db_session.commit()
+    return db_session
+
+
+def test_confirm_pushes_linear(app_client: TestClient, act_world: Session) -> None:
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 70},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = act_world.get(HubIssue, 70)
+    act_world.refresh(hub)
+    assert hub.status == "created"
+    push.assert_called_once_with(70)
+
+
+def test_reclassify_to_operation_enters_answer_chain(
+    app_client: TestClient, act_world: Session
+) -> None:
+    r = app_client.post(
+        "/api/supervisor/reclassify",
+        json={"hub_issue_id": 71, "new_type": "Operation", "reason": "配置问题"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    hub = act_world.get(HubIssue, 71)
+    act_world.refresh(hub)
+    assert hub.type == "Operation"
+    assert hub.status == "created"
+    assert hub.op_status == "processing"
+    assert hub.op_handler == "agent"  # 下轮 drain 会扫到
+
+
+def test_dismiss_closes(app_client: TestClient, act_world: Session) -> None:
+    r = app_client.post(
+        "/api/supervisor/dismiss-classification",
+        json={"hub_issue_id": 72, "reason": "误报"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    hub = act_world.get(HubIssue, 72)
+    act_world.refresh(hub)
+    assert hub.status == "closed"
+
+
+def test_actions_require_supervisor(app_client: TestClient, act_world: Session) -> None:
+    r = app_client.post(
+        "/api/supervisor/confirm-classification",
+        json={"hub_issue_id": 70},
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert r.status_code == 403
+
+
+def test_action_rejects_non_pending_review(app_client: TestClient, act_world: Session) -> None:
+    """已 created 的 hub 不可再走确认（防重复推）。"""
+    hub = act_world.get(HubIssue, 70)
+    hub.status = "created"
+    act_world.commit()
+    r = app_client.post(
+        "/api/supervisor/confirm-classification",
+        json={"hub_issue_id": 70},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 409

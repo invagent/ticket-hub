@@ -268,7 +268,10 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
   });
 
   const canReAnswer =
-    isKnowledgeOp() && data.op_status === "processing" && data.op_handler != null && data.op_handler !== "agent";
+    isKnowledgeOp() &&
+    (data.op_status === "processing" || data.op_status === "exception") &&
+    data.op_handler != null &&
+    data.op_handler !== "agent";
 
   return (
     <section className="space-y-2">
@@ -294,7 +297,7 @@ function OperationReplySection({ data }: { data: HubIssueDetail }) {
             }}
             disabled={reAnswer.isPending}
             className="text-[11.5px] text-hub-amber-deep hover:underline disabled:opacity-50"
-            title="改完 KB/skill 后同步重答一次（人工介入中才可用）"
+            title="改完 KB/skill 后同步重答一次（人工介入中或处理异常时可用）"
           >
             {reAnswer.isPending ? "重答中…" : "重答"}
           </button>

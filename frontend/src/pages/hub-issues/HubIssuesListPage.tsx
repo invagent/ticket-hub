@@ -273,7 +273,14 @@ export function HubIssuesListPage() {
                 </div>
                 {/* 状态 */}
                 <div className="w-[150px] flex-none">
-                  {dev ? (
+                  {dev && h.status === "pending_review" ? (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                      style={{ background: "#eef1fb", color: "#4b4fb3", borderColor: "#d4d8f2" }}
+                    >
+                      待确认分类
+                    </span>
+                  ) : dev ? (
                     <>
                       <span
                         className="text-[10px] font-bold px-2 py-0.5 rounded-full border"

@@ -150,6 +150,21 @@ def ensure_hub_issue_for_ticket(
             )
 
     ticket.hub_issue_id = hub.id
+    db.flush()  # autoflush=False：_hub_source_code 的裸查询看不到未 flush 的挂载
+
+    # Operation 毕业：按规则预分配运营处理人（写 op_handler_user_id）。
+    # op_handler 名字仍保持 'agent'，不打断 drain 自动答复；转人工时才切成运营名。
+    # 放在 hub_dedup 查重之后 + ticket.hub_issue_id 挂上之后：dedup 命中已在上面
+    # return，走到这里说明 hub 未被 supersede；ticket 已挂 hub 才能让
+    # dispatch_operation_handler 里的 _hub_source_code 反查到 source_code
+    # （否则来源维度非空的 match_sources 规则永远匹配不中）。
+    if issue_type == "Operation":
+        from app.services.dispatch import dispatch_operation_handler
+
+        dr = dispatch_operation_handler(db, hub)
+        if dr.user_id is not None:
+            hub.op_handler_user_id = dr.user_id
+
     db.add(
         TicketHubIssueHistory(
             ticket_id=ticket.id,
@@ -206,5 +221,31 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         db.close()
 
     if result.created and result.type in ("Bug_fix", "Demand"):
-        push_hub_issue_to_linear(result.hub_issue_id)
+        if get_settings().require_review_before_linear:
+            # agent 自动毕业的研发类 → 进 pending_review 待主管确认，不自动推 Linear
+            _mark_pending_review(result.hub_issue_id)
+        else:
+            push_hub_issue_to_linear(result.hub_issue_id)
     return result
+
+
+def _mark_pending_review(hub_issue_id: int) -> None:
+    """研发类自动毕业 → pending_review 待主管确认（不推 Linear）。自开 session。"""
+    db = make_session()
+    try:
+        hub = db.get(HubIssue, hub_issue_id)
+        if hub is None:
+            return
+        prev = hub.status
+        hub.status = "pending_review"
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status=prev,
+            to_status="pending_review",
+            changed_by="agent:hub_issue_auto",
+            reason="研发类待主管确认分类后推 Linear",
+        )
+        db.commit()
+    finally:
+        db.close()

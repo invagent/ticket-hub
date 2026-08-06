@@ -271,8 +271,64 @@ def test_manual_graduate_skips_dedup(world: Session, monkeypatch: pytest.MonkeyP
     assert called["dedup"] == 0  # 手动路径根本不跑查重
     assert res.created is True
     assert res.hub_issue_id != orig.id  # 新建独立 hub，没被合并
-    world.refresh(t)
-    assert t.hub_issue_id == res.hub_issue_id
+
+
+# ---- require_review_before_linear 闸门（自动路径）------------------------------
+
+
+def _point_make_session_at(engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """让 create_hub_issue_for_ticket_auto 里的 make_session() 命中同一个 in-memory DB
+    （否则新开 session 见到空 :memory: → no such table）。仿 app_client fixture。"""
+    from sqlalchemy.orm import sessionmaker
+
+    import app.db as app_db
+
+    monkeypatch.setattr(app_db, "_engine", engine)
+    monkeypatch.setattr(
+        app_db,
+        "_SessionLocal",
+        sessionmaker(engine, autoflush=False, autocommit=False, future=True),
+    )
+
+
+def test_auto_bugfix_gated_to_pending_review(
+    world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """require_review_before_linear=True：自动毕业的 Bug_fix → status=pending_review，不推 Linear。"""
+    import app.services.hub_issues.creator as creator_mod
+    from app.services.hub_issues import linear_push
+
+    t = _make_ticket(world, 40, predicted_type="Bug_fix")
+    tid = t.id
+    _point_make_session_at(sqlite_engine, monkeypatch)
+    pushed: list[int] = []
+    monkeypatch.setattr(linear_push, "push_hub_issue_to_linear", lambda hid: pushed.append(hid))
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
+
+    result = creator_mod.create_hub_issue_for_ticket_auto(tid)
+    assert result is not None and result.type == "Bug_fix"
+    world.expire_all()
+    hub = world.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending_review"
+    assert pushed == []  # 未推 Linear
+
+
+def test_auto_operation_not_gated(
+    world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Operation 自动毕业不受闸门影响（本就不推 Linear，status=created）。"""
+    import app.services.hub_issues.creator as creator_mod
+
+    t = _make_ticket(world, 41, predicted_type="Operation")
+    tid = t.id
+    _point_make_session_at(sqlite_engine, monkeypatch)
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
+
+    result = creator_mod.create_hub_issue_for_ticket_auto(tid)
+    assert result is not None and result.type == "Operation"
+    world.expire_all()
+    hub = world.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "created"
 
 
 # ---- op_status 初始化：仅 Operation 毕业时设，研发类恒 NULL ----

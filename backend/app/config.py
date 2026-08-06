@@ -169,6 +169,10 @@ class Settings(BaseSettings):
     hub_issue_auto_confidence: float = 0.80
     # hub_issue (Bug_fix/Demand) 创建后异步推 Linear。默认关，配好 key 后开
     linear_push_enabled: bool = False
+    # 研发类(Bug_fix/Demand)自动毕业后，推 Linear 前是否需主管确认分类。
+    # 默认开：agent 自动毕业的研发类进 pending_review 待确认队列，不自动推 Linear。
+    # 主管手动毕业(create-hub-issue)不受此闸门影响，视为已确认直推。
+    require_review_before_linear: bool = True
     # D4 优化 v2: 建 Linear 前 hub 级语义去重（命中则 supersede 到已有 hub，不重复推）
     hub_dedup_enabled: bool = True
     hub_dedup_threshold: float = 0.85  # 余弦下限

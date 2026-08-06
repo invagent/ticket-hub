@@ -25,9 +25,15 @@
    你们加」）才直接判 Demand。**拿不准是「问能不能」还是「要求你们做」→ 归 Operation。**
 3. **「配置了 X，但明确没有生效 / 报错 / 数据不对」→ Bug_fix**；但「配置了 X，
    不知道下一步怎么操作 / 从哪查看」→ Operation（是操作困惑，不是故障）。
-4. **报错提示区分性质**：明确业务原因（权限不足、资质限制、「不支持在 X 模式下
-   开具」）→ Operation；程序级异常（堆栈、500、plugin not found、「服务器异常」）、
-   数据错乱 → Bug_fix。
+4. **报错性质三分**：
+   (a) 明确业务原因（权限不足、资质限制、「不支持在 X 模式下开具」）→ Operation；
+   (b) **基础平台鉴权/连接/部署类报错**——`app_token/token 异常`、`密钥/appid/secret 错误`、
+       `鉴权失败`、`初始化失败`、`XX 无法调用 YY`、`连接/对接失败`、`参数配置错误`、
+       `证书过期`、`plugin not found`（多为包未部署）——**优先 Operation**（大概率客户侧
+       配置/凭证/部署问题，由 AI 客服/主管先核查配置）；
+   (c) **仅明确的程序级异常**——空指针（NullPointerException）、数组越界、堆栈报错、500、
+       「服务器异常」且无配置嫌疑——才判 Bug_fix。
+   **例外升级回 Bug_fix**：客户明确说明「配置已核对无误仍报错」，或伴随 (c) 类程序异常证据。
 5. **判 Bug_fix 需有明确故障证据**：客户描述里要有具体报错文案（「提示系统异常」
    「网络错误」）、程序异常、或功能明确失效（「导不出来」「点了没反应」）才判
    Bug_fix。**若客户只是描述某现象/状态（「一直在勾选中」「找不到入口」「收不到
@@ -76,10 +82,26 @@
 
 输入：
 title="发票云接口报 mservice plugin not found"
-body="调用 /imc/api 时报 mservice not find，影响生产"
+body="调用 /imc/api 时报 mservice not find"
 product_line="cloud-fapiao", module="接口集成"
 
-输出：`{"type":"Bug_fix","confidence":0.95,"reason":"明显接口异常报错","is_mixed":false,"sub_problems":[]}`
+输出：`{"type":"Operation","confidence":0.82,"reason":"plugin not found 多为包未部署，先核查部署","is_mixed":false,"sub_problems":[]}`
+
+（要点：plugin not found / mservice not find 通常是补丁包未部署或配置未生效，属基础部署问题，
+先归 Operation 让主管/AI 客服核查部署。只有伴随明确堆栈/空指针等程序异常才判 Bug_fix。）
+
+---
+
+输入：
+title="移动云初始化失败，获取发票云平台app_token异常"
+body="移动云无法调用发票云：获取发票云平台app_token异常"
+product_line="cloud-fapiao", module="云应用参数配置"
+
+输出：`{"type":"Operation","confidence":0.85,"reason":"app_token/初始化报错，优先排查配置凭证","is_mixed":false,"sub_problems":[]}`
+
+（要点：app_token 异常、初始化失败、XX 无法调用 YY 这类基础平台鉴权/连接报错，绝大多数是
+客户侧 appid/secret/参数配置填错——优先 Operation。基础平台若真为 bug 影响面极大早会爆发，
+单客户报错先验偏配置问题。除非客户说「配置已核对无误仍报错」或带程序级堆栈才升级 Bug_fix。）
 
 ---
 

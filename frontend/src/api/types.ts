@@ -4,6 +4,112 @@
  */
 
 export interface paths {
+    "/api/admin/dispatch/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_admin_dispatch_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_admin_dispatch_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Logs */
+        get: operations["list_logs_api_admin_dispatch_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rules */
+        get: operations["list_rules_api_admin_dispatch_rules_get"];
+        put?: never;
+        /** Create Rule */
+        post: operations["create_rule_api_admin_dispatch_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Rule */
+        put: operations["update_rule_api_admin_dispatch_rules__rule_id__put"];
+        post?: never;
+        /** Delete Rule */
+        delete: operations["delete_rule_api_admin_dispatch_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assignees */
+        get: operations["list_assignees_api_admin_dispatch_rules__rule_id__assignees_get"];
+        put?: never;
+        /** Add Assignee */
+        post: operations["add_assignee_api_admin_dispatch_rules__rule_id__assignees_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}/assignees/{assignee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Assignee */
+        delete: operations["delete_assignee_api_admin_dispatch_rules__rule_id__assignees__assignee_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/features": {
         parameters: {
             query?: never;
@@ -1211,6 +1317,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/confirm-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Classification
+         * @description 主管确认研发类分类无误 → status created + 推 Linear。
+         */
+        post: operations["confirm_classification_api_supervisor_confirm_classification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/create-hub-issue": {
         parameters: {
             query?: never;
@@ -1248,6 +1374,26 @@ export interface paths {
         get: operations["list_dedup_proposals_api_supervisor_dedup_proposals_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/dismiss-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Classification
+         * @description 主管判误报 → status closed（不推 Linear、不走答复）。
+         */
+        post: operations["dismiss_classification_api_supervisor_dismiss_classification_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1500,6 +1646,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/pending-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Classification
+         * @description 研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。
+         *
+         *     注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，
+         *     pending-hub-issues 端点消费）是不同队列、不同状态值。
+         */
+        get: operations["list_pending_classification_api_supervisor_pending_classification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/pending-hub-issues": {
         parameters: {
             query?: never;
@@ -1514,6 +1683,26 @@ export interface paths {
         get: operations["list_pending_hub_issues_api_supervisor_pending_hub_issues_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/reclassify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reclassify
+         * @description 主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。
+         */
+        post: operations["reclassify_api_supervisor_reclassify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1987,6 +2176,54 @@ export interface components {
             /** Results */
             results: components["schemas"]["AssignItemOut"][];
         };
+        /** AssigneeBody */
+        AssigneeBody: {
+            /**
+             * Alloc Value
+             * @default 1
+             */
+            alloc_value: number;
+            /** Daily Cap */
+            daily_cap?: number | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Tier
+             * @default main
+             */
+            tier: string;
+            /** User Id */
+            user_id: number;
+        };
+        /** AssigneeOut */
+        AssigneeOut: {
+            /**
+             * Alloc Value
+             * @default 1
+             */
+            alloc_value: number;
+            /** Daily Cap */
+            daily_cap?: number | null;
+            /** Id */
+            id: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Rule Id */
+            rule_id: number;
+            /**
+             * Tier
+             * @default main
+             */
+            tier: string;
+            /** User Id */
+            user_id: number;
+        };
         /** AuthorReplyBody */
         AuthorReplyBody: {
             /** Content */
@@ -2043,6 +2280,15 @@ export interface components {
             /** Required */
             required: boolean;
         };
+        /** ClassificationActionResponse */
+        ClassificationActionResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Status */
+            status: string;
+            /** Type */
+            type: string;
+        };
         /** CloseComplaintBody */
         CloseComplaintBody: {
             /** Reason */
@@ -2080,6 +2326,13 @@ export interface components {
             /** Items */
             items: components["schemas"]["ComplaintTicketItem"][];
         };
+        /** ConfigBody */
+        ConfigBody: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
+        };
         /** ConfigWarningItem */
         ConfigWarningItem: {
             /** Code */
@@ -2095,6 +2348,11 @@ export interface components {
         ConfigWarningsResponse: {
             /** Warnings */
             warnings: components["schemas"]["ConfigWarningItem"][];
+        };
+        /** ConfirmClassificationBody */
+        ConfirmClassificationBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
         };
         /** CountsOut */
         CountsOut: {
@@ -2266,6 +2524,16 @@ export interface components {
             } | null;
             /** Ticket Id */
             ticket_id: number;
+        };
+        /** DismissClassificationBody */
+        DismissClassificationBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** DismissDedupBody */
         DismissDedupBody: {
@@ -3076,6 +3344,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** LogOut */
+        LogOut: {
+            /** Assignee User Id */
+            assignee_user_id: number;
+            /** Created At */
+            created_at: string;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Id */
+            id: number;
+            /** Rule Id */
+            rule_id: number | null;
+            /** Tier Hit */
+            tier_hit: string;
+        };
         /** LoginUrlResponse */
         LoginUrlResponse: {
             /** Authorize Url */
@@ -3186,6 +3469,30 @@ export interface components {
             name: string;
             /** Role */
             role: string;
+        };
+        /** PendingClassificationItem */
+        PendingClassificationItem: {
+            /** Body */
+            body: string | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Predicted Type */
+            predicted_type: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
+        /** PendingClassificationResponse */
+        PendingClassificationResponse: {
+            /** Items */
+            items: components["schemas"]["PendingClassificationItem"][];
         };
         /** PendingHubIssueItem */
         PendingHubIssueItem: {
@@ -3301,6 +3608,18 @@ export interface components {
             status: "ready" | "degraded" | "unhealthy";
             /** Version */
             version: string;
+        };
+        /** ReclassifyBody */
+        ReclassifyBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** New Type */
+            new_type: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** ReflectResponse */
         ReflectResponse: {
@@ -3479,6 +3798,72 @@ export interface components {
             target: string;
             /** Tickets Total */
             tickets_total: number;
+        };
+        /** RuleBody */
+        RuleBody: {
+            /** Dispatch Mode */
+            dispatch_mode: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Match Modules */
+            match_modules?: string[];
+            /** Match Product Lines */
+            match_product_lines?: string[];
+            /** Match Sla */
+            match_sla?: string[];
+            /** Match Sources */
+            match_sources?: string[];
+            /** Name */
+            name: string;
+            /** Overflow Rule Id */
+            overflow_rule_id?: number | null;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Rule Type
+             * @default primary
+             */
+            rule_type: string;
+        };
+        /** RuleOut */
+        RuleOut: {
+            /** Dispatch Mode */
+            dispatch_mode: string;
+            /** Id */
+            id: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Match Modules */
+            match_modules?: string[];
+            /** Match Product Lines */
+            match_product_lines?: string[];
+            /** Match Sla */
+            match_sla?: string[];
+            /** Match Sources */
+            match_sources?: string[];
+            /** Name */
+            name: string;
+            /** Overflow Rule Id */
+            overflow_rule_id?: number | null;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Rule Type
+             * @default primary
+             */
+            rule_type: string;
         };
         /** SLAOut */
         SLAOut: {
@@ -4193,6 +4578,307 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_config_api_admin_dispatch_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    put_config_api_admin_dispatch_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_logs_api_admin_dispatch_logs_get: {
+        parameters: {
+            query?: {
+                rule_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rules_api_admin_dispatch_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"][];
+                };
+            };
+        };
+    };
+    create_rule_api_admin_dispatch_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rule_api_admin_dispatch_rules__rule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rule_api_admin_dispatch_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignees_api_admin_dispatch_rules__rule_id__assignees_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssigneeOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_assignee_api_admin_dispatch_rules__rule_id__assignees_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssigneeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssigneeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_assignee_api_admin_dispatch_rules__rule_id__assignees__assignee_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+                assignee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_features_api_admin_features_get: {
         parameters: {
             query?: {
@@ -6508,6 +7194,39 @@ export interface operations {
             };
         };
     };
+    confirm_classification_api_supervisor_confirm_classification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmClassificationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_hub_issue_endpoint_api_supervisor_create_hub_issue_post: {
         parameters: {
             query?: never;
@@ -6559,6 +7278,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DedupProposalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_classification_api_supervisor_dismiss_classification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissClassificationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6910,6 +7662,37 @@ export interface operations {
             };
         };
     };
+    list_pending_classification_api_supervisor_pending_classification_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingClassificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_pending_hub_issues_api_supervisor_pending_hub_issues_get: {
         parameters: {
             query?: {
@@ -6928,6 +7711,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingHubIssuesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reclassify_api_supervisor_reclassify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReclassifyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
                 };
             };
             /** @description Validation Error */

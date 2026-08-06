@@ -199,6 +199,98 @@
         "title": "AssignResponse",
         "type": "object"
       },
+      "AssigneeBody": {
+        "properties": {
+          "alloc_value": {
+            "default": 1,
+            "title": "Alloc Value",
+            "type": "number"
+          },
+          "daily_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Cap"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "tier": {
+            "default": "main",
+            "pattern": "^(main|overflow)$",
+            "title": "Tier",
+            "type": "string"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "AssigneeBody",
+        "type": "object"
+      },
+      "AssigneeOut": {
+        "properties": {
+          "alloc_value": {
+            "default": 1,
+            "title": "Alloc Value",
+            "type": "number"
+          },
+          "daily_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Cap"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "integer"
+          },
+          "tier": {
+            "default": "main",
+            "pattern": "^(main|overflow)$",
+            "title": "Tier",
+            "type": "string"
+          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "id",
+          "rule_id"
+        ],
+        "title": "AssigneeOut",
+        "type": "object"
+      },
       "AuthorReplyBody": {
         "properties": {
           "content": {
@@ -360,6 +452,29 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "ClassificationActionResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "status",
+          "type"
+        ],
+        "title": "ClassificationActionResponse",
+        "type": "object"
+      },
       "CloseComplaintBody": {
         "properties": {
           "reason": {
@@ -479,6 +594,27 @@
         "title": "ComplaintTicketsResponse",
         "type": "object"
       },
+      "ConfigBody": {
+        "properties": {
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 128,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "ConfigBody",
+        "type": "object"
+      },
       "ConfigWarningItem": {
         "properties": {
           "code": {
@@ -535,6 +671,19 @@
           "warnings"
         ],
         "title": "ConfigWarningsResponse",
+        "type": "object"
+      },
+      "ConfirmClassificationBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "ConfirmClassificationBody",
         "type": "object"
       },
       "CountsOut": {
@@ -1090,6 +1239,25 @@
           "diagnosis"
         ],
         "title": "DiagnosisResponse",
+        "type": "object"
+      },
+      "DismissClassificationBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "DismissClassificationBody",
         "type": "object"
       },
       "DismissDedupBody": {
@@ -3515,6 +3683,51 @@
         "title": "LinkedTicket",
         "type": "object"
       },
+      "LogOut": {
+        "properties": {
+          "assignee_user_id": {
+            "title": "Assignee User Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "tier_hit": {
+            "title": "Tier Hit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "hub_issue_id",
+          "rule_id",
+          "assignee_user_id",
+          "tier_hit",
+          "created_at"
+        ],
+        "title": "LogOut",
+        "type": "object"
+      },
       "LoginUrlResponse": {
         "properties": {
           "authorize_url": {
@@ -3821,6 +4034,98 @@
           "role"
         ],
         "title": "PartnerRowOut",
+        "type": "object"
+      },
+      "PendingClassificationItem": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "predicted_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Type"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code",
+          "type",
+          "title",
+          "body",
+          "predicted_type",
+          "confidence",
+          "reason"
+        ],
+        "title": "PendingClassificationItem",
+        "type": "object"
+      },
+      "PendingClassificationResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingClassificationItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingClassificationResponse",
         "type": "object"
       },
       "PendingHubIssueItem": {
@@ -4177,6 +4482,31 @@
           "checks"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "ReclassifyBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "new_type": {
+            "pattern": "^(Operation|Bug_fix|Demand|Internal_task|Complaint)$",
+            "title": "New Type",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "new_type"
+        ],
+        "title": "ReclassifyBody",
         "type": "object"
       },
       "ReflectResponse": {
@@ -4718,6 +5048,163 @@
           "target"
         ],
         "title": "RoutingOut",
+        "type": "object"
+      },
+      "RuleBody": {
+        "properties": {
+          "dispatch_mode": {
+            "pattern": "^(count|ratio)$",
+            "title": "Dispatch Mode",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "match_modules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Modules",
+            "type": "array"
+          },
+          "match_product_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Product Lines",
+            "type": "array"
+          },
+          "match_sla": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Sla",
+            "type": "array"
+          },
+          "match_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Sources",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "overflow_rule_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overflow Rule Id"
+          },
+          "priority": {
+            "default": 100,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "rule_type": {
+            "default": "primary",
+            "pattern": "^(primary|overflow)$",
+            "title": "Rule Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dispatch_mode"
+        ],
+        "title": "RuleBody",
+        "type": "object"
+      },
+      "RuleOut": {
+        "properties": {
+          "dispatch_mode": {
+            "pattern": "^(count|ratio)$",
+            "title": "Dispatch Mode",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "match_modules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Modules",
+            "type": "array"
+          },
+          "match_product_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Product Lines",
+            "type": "array"
+          },
+          "match_sla": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Sla",
+            "type": "array"
+          },
+          "match_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Match Sources",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "overflow_rule_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overflow Rule Id"
+          },
+          "priority": {
+            "default": 100,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "rule_type": {
+            "default": "primary",
+            "pattern": "^(primary|overflow)$",
+            "title": "Rule Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "dispatch_mode",
+          "id"
+        ],
+        "title": "RuleOut",
         "type": "object"
       },
       "SLAOut": {
@@ -7197,6 +7684,416 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/dispatch/config": {
+      "get": {
+        "operationId": "get_config_api_admin_dispatch_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Config Api Admin Dispatch Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "admin-dispatch"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_admin_dispatch_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Put Config Api Admin Dispatch Config Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/logs": {
+      "get": {
+        "operationId": "list_logs_api_admin_dispatch_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "rule_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LogOut"
+                  },
+                  "title": "Response List Logs Api Admin Dispatch Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Logs",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/rules": {
+      "get": {
+        "operationId": "list_rules_api_admin_dispatch_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RuleOut"
+                  },
+                  "title": "Response List Rules Api Admin Dispatch Rules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Rules",
+        "tags": [
+          "admin-dispatch"
+        ]
+      },
+      "post": {
+        "operationId": "create_rule_api_admin_dispatch_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rule",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_rule_api_admin_dispatch_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Rule",
+        "tags": [
+          "admin-dispatch"
+        ]
+      },
+      "put": {
+        "operationId": "update_rule_api_admin_dispatch_rules__rule_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Rule",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/rules/{rule_id}/assignees": {
+      "get": {
+        "operationId": "list_assignees_api_admin_dispatch_rules__rule_id__assignees_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssigneeOut"
+                  },
+                  "title": "Response List Assignees Api Admin Dispatch Rules  Rule Id  Assignees Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assignees",
+        "tags": [
+          "admin-dispatch"
+        ]
+      },
+      "post": {
+        "operationId": "add_assignee_api_admin_dispatch_rules__rule_id__assignees_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssigneeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssigneeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Assignee",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/rules/{rule_id}/assignees/{assignee_id}": {
+      "delete": {
+        "operationId": "delete_assignee_api_admin_dispatch_rules__rule_id__assignees__assignee_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "assignee_id",
+            "required": true,
+            "schema": {
+              "title": "Assignee Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Assignee",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
     "/api/admin/features": {
       "get": {
         "operationId": "list_features_api_admin_features_get",
@@ -10596,6 +11493,48 @@
         ]
       }
     },
+    "/api/supervisor/confirm-classification": {
+      "post": {
+        "description": "主管确认研发类分类无误 → status created + 推 Linear。",
+        "operationId": "confirm_classification_api_supervisor_confirm_classification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmClassificationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Classification",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/create-hub-issue": {
       "post": {
         "description": "Graduate a ticket to a hub_issue (manual path, no confidence gate).\n\nBug_fix/Demand issues are pushed to Linear asynchronously when\nLINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).",
@@ -10677,6 +11616,48 @@
           }
         },
         "summary": "List Dedup Proposals",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/dismiss-classification": {
+      "post": {
+        "description": "主管判误报 → status closed（不推 Linear、不走答复）。",
+        "operationId": "dismiss_classification_api_supervisor_dismiss_classification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissClassificationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Classification",
         "tags": [
           "supervisor"
         ]
@@ -11129,6 +12110,50 @@
         ]
       }
     },
+    "/api/supervisor/pending-classification": {
+      "get": {
+        "description": "研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。\n\n注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，\npending-hub-issues 端点消费）是不同队列、不同状态值。",
+        "operationId": "list_pending_classification_api_supervisor_pending_classification_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingClassificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pending Classification",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/pending-hub-issues": {
       "get": {
         "description": "hub_issues whose Linear push is blocked (status='pending') + why.",
@@ -11168,6 +12193,48 @@
           }
         },
         "summary": "List Pending Hub Issues",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/reclassify": {
+      "post": {
+        "description": "主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。",
+        "operationId": "reclassify_api_supervisor_reclassify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReclassifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reclassify",
         "tags": [
           "supervisor"
         ]
