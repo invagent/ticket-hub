@@ -4,6 +4,112 @@
  */
 
 export interface paths {
+    "/api/admin/dispatch/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_admin_dispatch_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_admin_dispatch_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Logs */
+        get: operations["list_logs_api_admin_dispatch_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rules */
+        get: operations["list_rules_api_admin_dispatch_rules_get"];
+        put?: never;
+        /** Create Rule */
+        post: operations["create_rule_api_admin_dispatch_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Rule */
+        put: operations["update_rule_api_admin_dispatch_rules__rule_id__put"];
+        post?: never;
+        /** Delete Rule */
+        delete: operations["delete_rule_api_admin_dispatch_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assignees */
+        get: operations["list_assignees_api_admin_dispatch_rules__rule_id__assignees_get"];
+        put?: never;
+        /** Add Assignee */
+        post: operations["add_assignee_api_admin_dispatch_rules__rule_id__assignees_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/dispatch/rules/{rule_id}/assignees/{assignee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Assignee */
+        delete: operations["delete_assignee_api_admin_dispatch_rules__rule_id__assignees__assignee_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/features": {
         parameters: {
             query?: never;
@@ -1987,6 +2093,54 @@ export interface components {
             /** Results */
             results: components["schemas"]["AssignItemOut"][];
         };
+        /** AssigneeBody */
+        AssigneeBody: {
+            /**
+             * Alloc Value
+             * @default 1
+             */
+            alloc_value: number;
+            /** Daily Cap */
+            daily_cap?: number | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Tier
+             * @default main
+             */
+            tier: string;
+            /** User Id */
+            user_id: number;
+        };
+        /** AssigneeOut */
+        AssigneeOut: {
+            /**
+             * Alloc Value
+             * @default 1
+             */
+            alloc_value: number;
+            /** Daily Cap */
+            daily_cap?: number | null;
+            /** Id */
+            id: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Rule Id */
+            rule_id: number;
+            /**
+             * Tier
+             * @default main
+             */
+            tier: string;
+            /** User Id */
+            user_id: number;
+        };
         /** AuthorReplyBody */
         AuthorReplyBody: {
             /** Content */
@@ -2079,6 +2233,13 @@ export interface components {
         ComplaintTicketsResponse: {
             /** Items */
             items: components["schemas"]["ComplaintTicketItem"][];
+        };
+        /** ConfigBody */
+        ConfigBody: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** ConfigWarningItem */
         ConfigWarningItem: {
@@ -3076,6 +3237,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** LogOut */
+        LogOut: {
+            /** Assignee User Id */
+            assignee_user_id: number;
+            /** Created At */
+            created_at: string;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Id */
+            id: number;
+            /** Rule Id */
+            rule_id: number | null;
+            /** Tier Hit */
+            tier_hit: string;
+        };
         /** LoginUrlResponse */
         LoginUrlResponse: {
             /** Authorize Url */
@@ -3479,6 +3655,72 @@ export interface components {
             target: string;
             /** Tickets Total */
             tickets_total: number;
+        };
+        /** RuleBody */
+        RuleBody: {
+            /** Dispatch Mode */
+            dispatch_mode: string;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Match Modules */
+            match_modules?: string[];
+            /** Match Product Lines */
+            match_product_lines?: string[];
+            /** Match Sla */
+            match_sla?: string[];
+            /** Match Sources */
+            match_sources?: string[];
+            /** Name */
+            name: string;
+            /** Overflow Rule Id */
+            overflow_rule_id?: number | null;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Rule Type
+             * @default primary
+             */
+            rule_type: string;
+        };
+        /** RuleOut */
+        RuleOut: {
+            /** Dispatch Mode */
+            dispatch_mode: string;
+            /** Id */
+            id: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /** Match Modules */
+            match_modules?: string[];
+            /** Match Product Lines */
+            match_product_lines?: string[];
+            /** Match Sla */
+            match_sla?: string[];
+            /** Match Sources */
+            match_sources?: string[];
+            /** Name */
+            name: string;
+            /** Overflow Rule Id */
+            overflow_rule_id?: number | null;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Rule Type
+             * @default primary
+             */
+            rule_type: string;
         };
         /** SLAOut */
         SLAOut: {
@@ -4193,6 +4435,307 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_config_api_admin_dispatch_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    put_config_api_admin_dispatch_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_logs_api_admin_dispatch_logs_get: {
+        parameters: {
+            query?: {
+                rule_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rules_api_admin_dispatch_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"][];
+                };
+            };
+        };
+    };
+    create_rule_api_admin_dispatch_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_rule_api_admin_dispatch_rules__rule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rule_api_admin_dispatch_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignees_api_admin_dispatch_rules__rule_id__assignees_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssigneeOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_assignee_api_admin_dispatch_rules__rule_id__assignees_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssigneeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssigneeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_assignee_api_admin_dispatch_rules__rule_id__assignees__assignee_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+                assignee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_features_api_admin_features_get: {
         parameters: {
             query?: {
