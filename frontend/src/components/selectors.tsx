@@ -397,3 +397,149 @@ export function FeatureSelect({
     </select>
   );
 }
+
+// ---- MultiCheckSelect（通用多选：值为 string[]）----------------------------
+// 下拉勾选多个值 + 关键词过滤 + 外部点击关闭。供分派规则的来源/产品线/模块多选复用。
+
+interface MultiOption {
+  value: string;
+  label: string;
+}
+
+export function MultiCheckSelect({
+  options,
+  value,
+  onChange,
+  placeholder = "全部（不限）",
+  loading,
+  disabled,
+  className,
+}: {
+  options: MultiOption[];
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  loading?: boolean;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const kwLower = kw.trim().toLowerCase();
+  const opts = kwLower
+    ? options.filter((o) => o.label.toLowerCase().includes(kwLower) || o.value.toLowerCase().includes(kwLower))
+    : options;
+  const selected = new Set(value);
+
+  function toggle(v: string) {
+    const next = new Set(selected);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
+    onChange(Array.from(next));
+  }
+
+  const label =
+    value.length === 0
+      ? placeholder
+      : value.length === 1
+        ? (options.find((o) => o.value === value[0])?.label ?? value[0])
+        : `已选 ${value.length} 项`;
+
+  return (
+    <div ref={boxRef} className={`relative ${className ?? ""}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-[12.5px] px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal hover:bg-hub-panel disabled:opacity-50 text-left flex items-center gap-1"
+      >
+        <span className={`truncate ${value.length ? "text-hub-text" : "text-hub-textMuted"}`}>{label}</span>
+        <span className="flex-1" />
+        {value.length > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange([]);
+            }}
+            className="text-hub-textMuted hover:text-hub-rose text-[13px] leading-none"
+          >
+            ×
+          </span>
+        )}
+        <span className="text-hub-textFaint text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full min-w-[13rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
+          <input
+            autoFocus
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="搜索"
+            className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
+          />
+          <div className="max-h-[220px] overflow-y-auto">
+            {loading && <div className="text-[11px] text-hub-textFaint px-2 py-1">加载中…</div>}
+            {!loading && opts.length === 0 && (
+              <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
+            )}
+            {opts.map((o) => (
+              <label
+                key={o.value}
+                className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
+              >
+                <input type="checkbox" checked={selected.has(o.value)} onChange={() => toggle(o.value)} className="rounded" />
+                <span className="truncate">{o.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 来源列表（sources 表）。值用 code。
+interface SourceOpt {
+  id: number;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
+export function useSourceOptions() {
+  return useQuery({
+    queryKey: ["admin", "sources"] as const,
+    queryFn: () => api.get("/api/admin/sources"),
+    staleTime: 60_000,
+  });
+}
+
+// 全部模块（不按产品线过滤——分派规则可跨产品线匹配）。值用 name。
+interface AllModuleOpt {
+  id: number;
+  product_line_code: string;
+  name: string;
+}
+
+export function useAllModuleOptions() {
+  return useQuery({
+    queryKey: ["admin", "modules", "_all"] as const,
+    queryFn: () => api.get("/api/admin/modules"),
+    staleTime: 60_000,
+  });
+}
+
+export type { SourceOpt, AllModuleOpt };

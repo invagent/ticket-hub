@@ -168,6 +168,113 @@ function CommonMeta({ data }: { data: HubIssueDetail }) {
   );
 }
 
+const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
+
+/** 待确认分类面板：pending_review 的研发类 hub 在详情页直接确认/改判/误报关闭。 */
+function ClassificationReviewPanel({ data }: { data: HubIssueDetail }) {
+  const qc = useQueryClient();
+  const [newType, setNewType] = useState<string>("Operation");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+  const onErr = (e: unknown) =>
+    setError(e instanceof ApiError ? e.message : String(e));
+
+  const confirm = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/confirm-classification", { hub_issue_id: data.id }),
+    onSuccess: () => {
+      setNotice("已确认并推送 Linear");
+      refresh();
+    },
+    onError: onErr,
+  });
+  const reclassify = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/reclassify", {
+        hub_issue_id: data.id,
+        new_type: newType,
+        reason: "详情页改判",
+      }),
+    onSuccess: () => {
+      setNotice(`已改判为 ${newType}`);
+      refresh();
+    },
+    onError: onErr,
+  });
+  const dismiss = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/dismiss-classification", {
+        hub_issue_id: data.id,
+        reason: "详情页误报关闭",
+      }),
+    onSuccess: () => {
+      setNotice("已关闭（误报）");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  if (!isSupervisor()) {
+    return (
+      <div className="mb-3 bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3 text-[11.5px] text-hub-blue-deep">
+        该工单待主管确认分类后才会推送研发（Linear）。
+      </div>
+    );
+  }
+
+  const busy = confirm.isPending || reclassify.isPending || dismiss.isPending;
+
+  return (
+    <div className="mb-3 bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="text-[12px] font-semibold text-hub-blue-deep">
+        待确认分类：AI 判为 {data.type}，确认后推送研发，或改判 / 关闭
+      </div>
+      {notice && <div className="text-xs text-hub-green font-semibold">{notice}</div>}
+      {error && <div className="text-xs text-hub-rose">{error}</div>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => confirm.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          确认推送
+        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            disabled={busy}
+            className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px]"
+          >
+            {_RECLASSIFY_TYPES.map((tp) => (
+              <option key={tp} value={tp}>
+                {tp}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => reclassify.mutate()}
+            disabled={busy}
+            className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+          >
+            改判
+          </button>
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={() => dismiss.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+        >
+          误报关闭
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TypeSpecificSection({ data }: { data: HubIssueDetail }) {
   if (data.type === "Operation") {
     return <OperationReplySection data={data} />;
@@ -176,6 +283,7 @@ function TypeSpecificSection({ data }: { data: HubIssueDetail }) {
   if (data.type === "Bug_fix" || data.type === "Demand") {
     return (
       <Section title={data.type === "Bug_fix" ? "Bug 修复进度" : "需求进度"}>
+        {data.status === "pending_review" && <ClassificationReviewPanel data={data} />}
         <div className="bg-white border border-hub-border rounded-[10px] p-4 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
           <Field label="Linear">
             {data.linear_identifier ? (

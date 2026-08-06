@@ -15,7 +15,15 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
-import { UserSelect } from "@/components/selectors";
+import {
+  MultiCheckSelect,
+  UserSelect,
+  useAllModuleOptions,
+  useProductLineOptions,
+  useSourceOptions,
+  type AllModuleOpt,
+  type SourceOpt,
+} from "@/components/selectors";
 import { AdminTabs } from "../AdminTabs";
 import { dispatchApi, type AssigneeOut, type RuleBody, type RuleOut } from "./dispatchApi";
 
@@ -203,13 +211,6 @@ function ruleBodyOf(r: RuleOut): RuleBody {
 
 /* ===== 规则编辑弹窗（匹配条件 + 模式 + 分派人子表） ===== */
 
-function csvToList(s: string): string[] {
-  return s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-}
-
 function RuleEditorDialog({
   rule,
   rules,
@@ -223,10 +224,11 @@ function RuleEditorDialog({
 }) {
   const isNew = rule === null;
   const [name, setName] = useState(rule?.name ?? "");
-  const [sources, setSources] = useState((rule?.match_sources ?? []).join(", "));
-  const [productLines, setProductLines] = useState((rule?.match_product_lines ?? []).join(", "));
-  const [modules, setModules] = useState((rule?.match_modules ?? []).join(", "));
-  const [sla, setSla] = useState((rule?.match_sla ?? []).join(", "));
+  // 匹配维度改多选：值为 code[]（来源/产品线）或 name[]（模块），从系统已有值里选避免手输错。
+  // SLA 未接线（engine 传 None）故不在 UI 暴露，编辑时原样保留已有值。
+  const [sources, setSources] = useState<string[]>(rule?.match_sources ?? []);
+  const [productLines, setProductLines] = useState<string[]>(rule?.match_product_lines ?? []);
+  const [modules, setModules] = useState<string[]>(rule?.match_modules ?? []);
   const [mode, setMode] = useState<"count" | "ratio">((rule?.dispatch_mode as "count" | "ratio") ?? "count");
   const [priority, setPriority] = useState(rule?.priority ?? 100);
   const [overflowRuleId, setOverflowRuleId] = useState<number | undefined>(rule?.overflow_rule_id ?? undefined);
@@ -241,10 +243,10 @@ function RuleEditorDialog({
     mutationFn: async () => {
       const body: RuleBody = {
         name: name.trim(),
-        match_sources: csvToList(sources),
-        match_product_lines: csvToList(productLines),
-        match_modules: csvToList(modules),
-        match_sla: csvToList(sla),
+        match_sources: sources,
+        match_product_lines: productLines,
+        match_modules: modules,
+        match_sla: rule?.match_sla ?? [],  // SLA 未接线，不在 UI 暴露；编辑时原样保留
         dispatch_mode: mode,
         rule_type: rule?.rule_type ?? "primary",
         overflow_rule_id: mode === "count" ? (overflowRuleId ?? null) : null,
@@ -270,6 +272,18 @@ function RuleEditorDialog({
   });
 
   const overflowCandidates = rules.filter((r) => r.rule_type === "overflow" && r.id !== rule?.id);
+
+  // 匹配维度的可选值（从系统已有数据拉，供多选）。
+  const sourceQ = useSourceOptions();
+  const plQ = useProductLineOptions();
+  const modQ = useAllModuleOptions();
+  const sourceOpts = ((sourceQ.data ?? []) as SourceOpt[])
+    .filter((s) => s.is_active)
+    .map((s) => ({ value: s.code, label: `${s.name} (${s.code})` }));
+  const plOpts = ((plQ.data ?? []) as { code: string; name: string; is_active: boolean }[])
+    .filter((p) => p.is_active)
+    .map((p) => ({ value: p.code, label: `${p.name} (${p.code})` }));
+  const modOpts = ((modQ.data ?? []) as AllModuleOpt[]).map((m) => ({ value: m.name, label: m.name }));
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
@@ -299,20 +313,31 @@ function RuleEditorDialog({
 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配来源（逗号分隔，空=不限）</span>
-            <input value={sources} onChange={(e) => setSources(e.target.value)} placeholder="ksm, zhichi" className={INPUT_CLS} />
+            <span className="text-[11px] text-hub-textMuted">匹配来源（多选，空=不限）</span>
+            <MultiCheckSelect
+              options={sourceOpts}
+              value={sources}
+              onChange={setSources}
+              loading={sourceQ.isLoading}
+            />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配产品线（逗号分隔，空=不限）</span>
-            <input value={productLines} onChange={(e) => setProductLines(e.target.value)} placeholder="INV" className={INPUT_CLS} />
+            <span className="text-[11px] text-hub-textMuted">匹配产品线（多选，空=不限）</span>
+            <MultiCheckSelect
+              options={plOpts}
+              value={productLines}
+              onChange={setProductLines}
+              loading={plQ.isLoading}
+            />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配模块（逗号分隔，空=不限）</span>
-            <input value={modules} onChange={(e) => setModules(e.target.value)} placeholder="开票管理" className={INPUT_CLS} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配 SLA（逗号分隔，空=不限）</span>
-            <input value={sla} onChange={(e) => setSla(e.target.value)} className={INPUT_CLS} />
+            <span className="text-[11px] text-hub-textMuted">匹配模块（多选，空=不限）</span>
+            <MultiCheckSelect
+              options={modOpts}
+              value={modules}
+              onChange={setModules}
+              loading={modQ.isLoading}
+            />
           </label>
         </div>
 
