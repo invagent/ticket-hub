@@ -16,6 +16,7 @@ import { PeopleScopesPage } from "@/pages/admin/users/PeopleScopesPage";
 import { CatalogPage } from "@/pages/admin/catalog/CatalogPage";
 import { SkillsPage } from "@/pages/admin/skills/SkillsPage";
 import { HolidaysPage } from "@/pages/admin/holidays/HolidaysPage";
+import { DispatchRulesPage } from "@/pages/admin/dispatch/DispatchRulesPage";
 import { ReflectWorkbenchPage } from "@/pages/reflect/ReflectWorkbenchPage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 
@@ -63,6 +64,14 @@ export const authedRoutes = (
       element={
         <RequireAdmin>
           <HolidaysPage />
+        </RequireAdmin>
+      }
+    />
+    <Route
+      path="/admin/dispatch"
+      element={
+        <RequireAdmin>
+          <DispatchRulesPage />
         </RequireAdmin>
       }
     />
