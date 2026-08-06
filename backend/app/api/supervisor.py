@@ -51,6 +51,7 @@ from app.core.logging import get_logger
 from app.db import get_session
 from app.models import AgentDecision, HubIssue, StatusHistory, Ticket
 from app.repositories.notification_log import NotificationLogRepository
+from app.repositories.status_history import StatusHistoryRepository
 from app.services import knowledge_feedback as kf
 from app.services.agents.classify import classify_ticket
 from app.services.agents.dedup_execute import (
@@ -75,6 +76,7 @@ from app.services.hub_issues.creator import (
     ensure_hub_issue_for_ticket,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
+from app.services.hub_issues.op_status import OP_PROCESSING, apply_op_status
 from app.services.ksm.notice_store import NoticeStore
 from app.services.ksm.writeback import drain_ksm_outbox
 from app.services.supervisor.config_warnings import get_config_warnings
@@ -1732,3 +1734,225 @@ def run_reflect_endpoint(
         operator_user_id=user.user_id,
     )
     return ReflectResponse(ticket_id=ticket_id, reflection=reflection)
+
+
+# ---- 待确认分类队列 + 三动作（研发类推 Linear 前人工确认闸门）------------------
+
+
+class PendingClassificationItem(BaseModel):
+    hub_issue_id: int
+    short_code: str
+    type: str
+    title: str
+    body: str | None
+    predicted_type: str | None
+    confidence: float | None
+    reason: str | None
+
+
+class PendingClassificationResponse(BaseModel):
+    items: list[PendingClassificationItem]
+
+
+@router.get("/pending-classification", response_model=PendingClassificationResponse)
+def list_pending_classification(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> PendingClassificationResponse:
+    """研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。
+
+    注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，
+    pending-hub-issues 端点消费）是不同队列、不同状态值。
+    """
+    hubs = (
+        db.query(HubIssue)
+        .filter(
+            HubIssue.deleted_at.is_(None),
+            HubIssue.status == "pending_review",
+            HubIssue.type.in_(("Bug_fix", "Demand")),
+        )
+        .order_by(HubIssue.updated_at.desc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    items: list[PendingClassificationItem] = []
+    for h in hubs:
+        reason: str | None = None
+        conf: float | None = None
+        tk = (
+            db.query(Ticket)
+            .filter(Ticket.hub_issue_id == h.id, Ticket.deleted_at.is_(None))
+            .first()
+        )
+        if tk is not None:
+            dec = (
+                db.query(AgentDecision)
+                .filter(
+                    AgentDecision.subject_type == "ticket",
+                    AgentDecision.subject_id == tk.id,
+                    AgentDecision.decision_type == "classify_type",
+                )
+                .order_by(AgentDecision.id.desc())
+                .first()
+            )
+            if dec and dec.proposal:
+                reason = dec.proposal.get("reason")
+                conf = dec.proposal.get("confidence")
+        items.append(
+            PendingClassificationItem(
+                hub_issue_id=h.id,
+                short_code=h.short_code,
+                type=h.type,
+                title=h.title,
+                body=h.canonical_body,
+                predicted_type=h.type,
+                confidence=conf,
+                reason=reason,
+            )
+        )
+    return PendingClassificationResponse(items=items)
+
+
+class ConfirmClassificationBody(BaseModel):
+    hub_issue_id: int
+
+
+class ReclassifyBody(BaseModel):
+    hub_issue_id: int
+    new_type: str = Field(..., pattern="^(Operation|Bug_fix|Demand|Internal_task|Complaint)$")
+    reason: str = Field("", max_length=500)
+
+
+class DismissClassificationBody(BaseModel):
+    hub_issue_id: int
+    reason: str = Field("", max_length=500)
+
+
+class ClassificationActionResponse(BaseModel):
+    hub_issue_id: int
+    status: str
+    type: str
+
+
+def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
+    if hub.status != "pending_review":
+        raise HTTPException(
+            status_code=409,
+            detail=f"hub {hub.short_code} status={hub.status!r} 非 pending_review，不可操作",
+        )
+    return hub
+
+
+@router.post("/confirm-classification", response_model=ClassificationActionResponse)
+def confirm_classification(
+    body: ConfirmClassificationBody,
+    background_tasks: BackgroundTasks,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ClassificationActionResponse:
+    """主管确认研发类分类无误 → status created + 推 Linear。"""
+    hub = _get_pending_review_hub(db, body.hub_issue_id)
+    prev = hub.status
+    hub.status = "created"
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=prev,
+        to_status="created",
+        changed_by=f"user:{user.name}",
+        reason="主管确认分类",
+    )
+    db.commit()
+    background_tasks.add_task(push_hub_issue_to_linear, hub.id)
+    logger.info("supervisor_confirm_classification", hub_issue_id=hub.id, operator=user.name)
+    return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)
+
+
+@router.post("/reclassify", response_model=ClassificationActionResponse)
+def reclassify(
+    body: ReclassifyBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ClassificationActionResponse:
+    """主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。"""
+    hub = _get_pending_review_hub(db, body.hub_issue_id)
+    old_type = hub.type
+    hub.type = body.new_type
+    # 分类修正审计（写在关联 ticket 上，human_confirmed）
+    tk = (
+        db.query(Ticket)
+        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+        .first()
+    )
+    if tk is not None:
+        db.add(
+            AgentDecision(
+                decision_type="classify_type",
+                subject_type="ticket",
+                subject_id=tk.id,
+                proposal={
+                    "predicted_type": body.new_type,
+                    "reason": body.reason or f"主管改判 {old_type}→{body.new_type}",
+                    "skill": "manual",
+                    "human_confirmed": True,
+                    "changed_by": f"user:{user.name}",
+                },
+            )
+        )
+    if body.new_type == "Operation":
+        hub.status = "created"
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_PROCESSING,
+            handler="agent",
+            reason=f"主管改判 {old_type}→Operation，回炉答复链",
+        )
+    elif body.new_type in ("Bug_fix", "Demand"):
+        hub.status = "pending_review"  # 改完仍待确认才推 Linear
+    else:  # Internal_task / Complaint：不推 Linear、不走答复
+        hub.status = "created"
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status="pending_review",
+        to_status=hub.status,
+        changed_by=f"user:{user.name}",
+        reason=f"改判 {old_type}→{body.new_type}: {body.reason}",
+    )
+    db.commit()
+    logger.info(
+        "supervisor_reclassify",
+        hub_issue_id=hub.id,
+        old_type=old_type,
+        new_type=body.new_type,
+        operator=user.name,
+    )
+    return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)
+
+
+@router.post("/dismiss-classification", response_model=ClassificationActionResponse)
+def dismiss_classification(
+    body: DismissClassificationBody,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ClassificationActionResponse:
+    """主管判误报 → status closed（不推 Linear、不走答复）。"""
+    hub = _get_pending_review_hub(db, body.hub_issue_id)
+    prev = hub.status
+    hub.status = "closed"
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=prev,
+        to_status="closed",
+        changed_by=f"user:{user.name}",
+        reason=f"主管判误报关闭: {body.reason}",
+    )
+    db.commit()
+    logger.info("supervisor_dismiss_classification", hub_issue_id=hub.id, operator=user.name)
+    return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)
