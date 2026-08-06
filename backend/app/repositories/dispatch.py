@@ -1,22 +1,28 @@
 """DispatchRepository — 运营分派引擎数据访问。
 
 匹配语义：match_* 之间 AND，列表内 OR，空列表=该维度不限。
-按天计数：dispatch_log.created_at >= 今日零点（本地自然日，用 UTC 存储）。
+按天计数：dispatch_log.created_at >= 今日零点（北京自然日，用 UTC 存储）。
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import DispatchAssignee, DispatchConfig, DispatchLog, DispatchRule
+from app.services.sla.workday import BEIJING
 
 
 def _today_start() -> datetime:
-    now = datetime.now(UTC)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    """北京自然日 00:00 换算成 UTC（与 metrics/workbench.py 的 BEIJING 口径一致）。
+
+    dispatch_log.created_at 存 UTC，故返回 tz-aware UTC datetime 供比较。
+    """
+    now_bj = datetime.now(UTC).astimezone(BEIJING)
+    midnight_bj = datetime.combine(now_bj.date(), time.min, tzinfo=BEIJING)
+    return midnight_bj.astimezone(UTC)
 
 
 def _match(rule_values: list[str], candidate: str | None) -> bool:
