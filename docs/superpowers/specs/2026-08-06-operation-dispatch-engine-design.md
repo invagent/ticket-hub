@@ -22,7 +22,7 @@
 3. **规则形态**：**多维规则引擎**（来源/SLA/产品线/模块多维匹配 + 多人负载均衡）。
 4. **完整对齐邻居 `t_dispatch_*`**：规则表 + 分派人表（配额权重 + main/overflow 两层）+ 溢出规则 + 兜底配置，**真正接线**。
 5. **计数状态**：独立 `dispatch_log` 派单留痕表，作为按数量/按比例的计数来源。
-6. **按天重置**：按比例/按数量都**按当天**计（查 `dispatch_log.created_at >= 今日零点`），跨天靠时间窗口天然重置，**无定时任务**。
+6. **按天重置**：按比例/按数量都**按当天**计（查 `dispatch_log.created_at >= 今日零点`，**今日零点 = 北京自然日 00:00 换算成 UTC**，与项目其他按天逻辑 `metrics/workbench.py` 的 BEIJING 时区口径一致），跨天靠时间窗口天然重置，**无定时任务**。
 7. **处理人存储**：新增 `op_handler_user_id`（int FK→users）记准确运营，`op_handler` 名字字段同步；不动 `assigned_user_id` 的研发语义。
 8. **与自动答复关系**：毕业时预分配运营写 `op_handler_user_id`，但 `op_handler` 名字**仍保持 `'agent'`**，让 drain 照常跑自动答复（agent 先试，运营兜底）。答复失败/转人工时才把 `op_handler` 名字切成该运营。
 

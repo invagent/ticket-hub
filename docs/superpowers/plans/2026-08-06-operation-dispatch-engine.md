@@ -412,17 +412,21 @@ Expected: FAIL（ModuleNotFoundError: app.repositories.dispatch）
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import DispatchAssignee, DispatchConfig, DispatchLog, DispatchRule
+from app.services.sla.workday import BEIJING
 
 
 def _today_start() -> datetime:
-    now = datetime.now(UTC)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    """北京自然日 00:00 换算成 UTC（与 metrics/workbench.py 的 BEIJING 口径一致）。
+    dispatch_log.created_at 存 UTC，故返回 tz-aware UTC datetime 供比较。"""
+    now_bj = datetime.now(UTC).astimezone(BEIJING)
+    midnight_bj = datetime.combine(now_bj.date(), time.min, tzinfo=BEIJING)
+    return midnight_bj.astimezone(UTC)
 
 
 def _match(rule_values: list, candidate: str | None) -> bool:
