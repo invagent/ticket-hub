@@ -258,6 +258,9 @@ export function WorkbenchPage() {
 
       {/* ③ 待审核答复队列（D_review 低置信自动答复草稿，仅主管） */}
       {isSupervisor && <ReviewingQueue />}
+
+      {/* ④ 待确认分类队列（研发类推 Linear 前人工确认，仅主管） */}
+      {isSupervisor && <PendingClassificationQueue />}
     </div>
   );
 }
@@ -411,6 +414,209 @@ function ReviewingCard({
           className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
         >
           发送
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ 待确认分类队列（研发类推 Linear 前人工确认闸门） ═══════════ */
+
+const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
+
+function PendingClassificationQueue() {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const pending = useQuery({
+    queryKey: ["supervisor", "pending-classification"],
+    queryFn: () => api.get("/api/supervisor/pending-classification"),
+  });
+
+  const invalidate = () => {
+    setError(null);
+    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
+  };
+  const onErr = (e: unknown) => setError(errMsg(e));
+
+  const confirm = useMutation({
+    mutationFn: (hubIssueId: number) =>
+      api.post("/api/supervisor/confirm-classification", { hub_issue_id: hubIssueId }),
+    onSuccess: () => {
+      setFlash("已确认并推送 Linear");
+      invalidate();
+    },
+    onError: onErr,
+  });
+
+  const reclassify = useMutation({
+    mutationFn: (v: { hubIssueId: number; newType: string }) =>
+      api.post("/api/supervisor/reclassify", {
+        hub_issue_id: v.hubIssueId,
+        new_type: v.newType,
+        reason: "主管改判",
+      }),
+    onSuccess: () => {
+      setFlash("已改判分类");
+      invalidate();
+    },
+    onError: onErr,
+  });
+
+  const dismiss = useMutation({
+    mutationFn: (hubIssueId: number) =>
+      api.post("/api/supervisor/dismiss-classification", {
+        hub_issue_id: hubIssueId,
+        reason: "误报关闭",
+      }),
+    onSuccess: () => {
+      setFlash("已关闭（误报）");
+      invalidate();
+    },
+    onError: onErr,
+  });
+
+  const items = pending.data?.items ?? [];
+  const busy = confirm.isPending || reclassify.isPending || dismiss.isPending;
+
+  return (
+    <>
+      <SectionHeader
+        n={4}
+        title="待确认分类"
+        note="研发类推 Linear 前人工确认，可改判/关闭"
+        right={
+          <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
+            {items.length} 项待确认
+          </div>
+        }
+      />
+
+      {flash && (
+        <div className="mb-2 text-xs text-hub-green font-semibold">
+          {flash}{" "}
+          <button className="text-hub-textFaint" onClick={() => setFlash(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="mb-2 text-xs text-hub-rose">
+          {error}{" "}
+          <button className="text-hub-textFaint" onClick={() => setError(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {pending.isLoading ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          队列加载中…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          暂无待确认分类。
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {items.map((item) => (
+            <PendingClassificationCard
+              key={item.hub_issue_id}
+              item={item}
+              busy={busy}
+              onConfirm={() => confirm.mutate(item.hub_issue_id)}
+              onReclassify={(newType) =>
+                reclassify.mutate({ hubIssueId: item.hub_issue_id, newType })
+              }
+              onDismiss={() => dismiss.mutate(item.hub_issue_id)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PendingClassificationCard({
+  item,
+  busy,
+  onConfirm,
+  onReclassify,
+  onDismiss,
+}: {
+  item: {
+    hub_issue_id: number;
+    short_code: string;
+    type: string;
+    title: string;
+    body: string | null;
+    predicted_type: string | null;
+    confidence: number | null;
+    reason: string | null;
+  };
+  busy: boolean;
+  onConfirm: () => void;
+  onReclassify: (newType: string) => void;
+  onDismiss: () => void;
+}) {
+  const [newType, setNewType] = useState<string>("Operation");
+
+  return (
+    <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-xs text-hub-textSecondary">{item.short_code}</span>
+        <span className="text-[13px] font-semibold truncate">{item.title}</span>
+        <div className="flex-1" />
+        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full flex-none bg-hub-blue-light text-hub-blue-deep">
+          {item.type}
+          {item.confidence != null && ` ${Math.round(item.confidence * 100)}%`}
+        </span>
+      </div>
+      {item.body && (
+        <div className="text-[11.5px] text-hub-textMuted line-clamp-2">{item.body}</div>
+      )}
+      {item.reason && (
+        <div className="text-[11px] text-hub-blue-deep bg-hub-blue-light rounded-md px-2 py-1">
+          AI 理由：{item.reason}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={onConfirm}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          确认推送
+        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            disabled={busy}
+            className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px]"
+          >
+            {_RECLASSIFY_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => onReclassify(newType)}
+            disabled={busy}
+            className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+          >
+            改判
+          </button>
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={onDismiss}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+        >
+          误报关闭
         </button>
       </div>
     </div>

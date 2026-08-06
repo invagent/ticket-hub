@@ -1317,6 +1317,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/confirm-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Classification
+         * @description 主管确认研发类分类无误 → status created + 推 Linear。
+         */
+        post: operations["confirm_classification_api_supervisor_confirm_classification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/create-hub-issue": {
         parameters: {
             query?: never;
@@ -1354,6 +1374,26 @@ export interface paths {
         get: operations["list_dedup_proposals_api_supervisor_dedup_proposals_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/dismiss-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Classification
+         * @description 主管判误报 → status closed（不推 Linear、不走答复）。
+         */
+        post: operations["dismiss_classification_api_supervisor_dismiss_classification_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1606,6 +1646,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/pending-classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Classification
+         * @description 研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。
+         *
+         *     注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，
+         *     pending-hub-issues 端点消费）是不同队列、不同状态值。
+         */
+        get: operations["list_pending_classification_api_supervisor_pending_classification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/pending-hub-issues": {
         parameters: {
             query?: never;
@@ -1620,6 +1683,26 @@ export interface paths {
         get: operations["list_pending_hub_issues_api_supervisor_pending_hub_issues_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/reclassify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reclassify
+         * @description 主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。
+         */
+        post: operations["reclassify_api_supervisor_reclassify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2197,6 +2280,15 @@ export interface components {
             /** Required */
             required: boolean;
         };
+        /** ClassificationActionResponse */
+        ClassificationActionResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Status */
+            status: string;
+            /** Type */
+            type: string;
+        };
         /** CloseComplaintBody */
         CloseComplaintBody: {
             /** Reason */
@@ -2256,6 +2348,11 @@ export interface components {
         ConfigWarningsResponse: {
             /** Warnings */
             warnings: components["schemas"]["ConfigWarningItem"][];
+        };
+        /** ConfirmClassificationBody */
+        ConfirmClassificationBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
         };
         /** CountsOut */
         CountsOut: {
@@ -2427,6 +2524,16 @@ export interface components {
             } | null;
             /** Ticket Id */
             ticket_id: number;
+        };
+        /** DismissClassificationBody */
+        DismissClassificationBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** DismissDedupBody */
         DismissDedupBody: {
@@ -3363,6 +3470,30 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** PendingClassificationItem */
+        PendingClassificationItem: {
+            /** Body */
+            body: string | null;
+            /** Confidence */
+            confidence: number | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Predicted Type */
+            predicted_type: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
+        /** PendingClassificationResponse */
+        PendingClassificationResponse: {
+            /** Items */
+            items: components["schemas"]["PendingClassificationItem"][];
+        };
         /** PendingHubIssueItem */
         PendingHubIssueItem: {
             /** Assigned User Id */
@@ -3477,6 +3608,18 @@ export interface components {
             status: "ready" | "degraded" | "unhealthy";
             /** Version */
             version: string;
+        };
+        /** ReclassifyBody */
+        ReclassifyBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** New Type */
+            new_type: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** ReflectResponse */
         ReflectResponse: {
@@ -7051,6 +7194,39 @@ export interface operations {
             };
         };
     };
+    confirm_classification_api_supervisor_confirm_classification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmClassificationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_hub_issue_endpoint_api_supervisor_create_hub_issue_post: {
         parameters: {
             query?: never;
@@ -7102,6 +7278,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DedupProposalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_classification_api_supervisor_dismiss_classification_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissClassificationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7453,6 +7662,37 @@ export interface operations {
             };
         };
     };
+    list_pending_classification_api_supervisor_pending_classification_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingClassificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_pending_hub_issues_api_supervisor_pending_hub_issues_get: {
         parameters: {
             query?: {
@@ -7471,6 +7711,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingHubIssuesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reclassify_api_supervisor_reclassify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReclassifyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
                 };
             };
             /** @description Validation Error */

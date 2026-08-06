@@ -452,6 +452,29 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "ClassificationActionResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "status",
+          "type"
+        ],
+        "title": "ClassificationActionResponse",
+        "type": "object"
+      },
       "CloseComplaintBody": {
         "properties": {
           "reason": {
@@ -648,6 +671,19 @@
           "warnings"
         ],
         "title": "ConfigWarningsResponse",
+        "type": "object"
+      },
+      "ConfirmClassificationBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "ConfirmClassificationBody",
         "type": "object"
       },
       "CountsOut": {
@@ -1203,6 +1239,25 @@
           "diagnosis"
         ],
         "title": "DiagnosisResponse",
+        "type": "object"
+      },
+      "DismissClassificationBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "DismissClassificationBody",
         "type": "object"
       },
       "DismissDedupBody": {
@@ -3981,6 +4036,98 @@
         "title": "PartnerRowOut",
         "type": "object"
       },
+      "PendingClassificationItem": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "predicted_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Type"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code",
+          "type",
+          "title",
+          "body",
+          "predicted_type",
+          "confidence",
+          "reason"
+        ],
+        "title": "PendingClassificationItem",
+        "type": "object"
+      },
+      "PendingClassificationResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingClassificationItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingClassificationResponse",
+        "type": "object"
+      },
       "PendingHubIssueItem": {
         "properties": {
           "assigned_user_id": {
@@ -4335,6 +4482,31 @@
           "checks"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "ReclassifyBody": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "new_type": {
+            "pattern": "^(Operation|Bug_fix|Demand|Internal_task|Complaint)$",
+            "title": "New Type",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "new_type"
+        ],
+        "title": "ReclassifyBody",
         "type": "object"
       },
       "ReflectResponse": {
@@ -11321,6 +11493,48 @@
         ]
       }
     },
+    "/api/supervisor/confirm-classification": {
+      "post": {
+        "description": "主管确认研发类分类无误 → status created + 推 Linear。",
+        "operationId": "confirm_classification_api_supervisor_confirm_classification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmClassificationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Classification",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/create-hub-issue": {
       "post": {
         "description": "Graduate a ticket to a hub_issue (manual path, no confidence gate).\n\nBug_fix/Demand issues are pushed to Linear asynchronously when\nLINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).",
@@ -11402,6 +11616,48 @@
           }
         },
         "summary": "List Dedup Proposals",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/dismiss-classification": {
+      "post": {
+        "description": "主管判误报 → status closed（不推 Linear、不走答复）。",
+        "operationId": "dismiss_classification_api_supervisor_dismiss_classification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissClassificationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Classification",
         "tags": [
           "supervisor"
         ]
@@ -11854,6 +12110,50 @@
         ]
       }
     },
+    "/api/supervisor/pending-classification": {
+      "get": {
+        "description": "研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。\n\n注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，\npending-hub-issues 端点消费）是不同队列、不同状态值。",
+        "operationId": "list_pending_classification_api_supervisor_pending_classification_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingClassificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pending Classification",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/pending-hub-issues": {
       "get": {
         "description": "hub_issues whose Linear push is blocked (status='pending') + why.",
@@ -11893,6 +12193,48 @@
           }
         },
         "summary": "List Pending Hub Issues",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/reclassify": {
+      "post": {
+        "description": "主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。",
+        "operationId": "reclassify_api_supervisor_reclassify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReclassifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reclassify",
         "tags": [
           "supervisor"
         ]
