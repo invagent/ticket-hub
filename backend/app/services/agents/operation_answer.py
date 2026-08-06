@@ -28,7 +28,7 @@ from app.services.hub_issues.op_status import (
     OP_REVIEWING,
     OP_SUPPLEMENTING,
     apply_op_status,
-    resolve_supervisor_name,
+    resolve_op_handler,
 )
 from app.services.knowledge_feedback.service import (
     KnowledgeFeedbackDisabledError,
@@ -228,7 +228,7 @@ def auto_answer_operation(
             db,
             hub,
             to_status=OP_EXCEPTION,
-            handler=resolve_supervisor_name(db, settings),
+            handler=resolve_op_handler(db, hub, settings),
             reason="replay 系统故障",
         )
         db.commit()
@@ -247,7 +247,7 @@ def auto_answer_operation(
             db,
             hub,
             to_status=OP_PROCESSING,
-            handler=resolve_supervisor_name(db, settings),
+            handler=resolve_op_handler(db, hub, settings),
             reason=reason,
         )
         _record_decision(
@@ -275,7 +275,7 @@ def auto_answer_operation(
                     db,
                     hub,
                     to_status=OP_REVIEWING,
-                    handler=resolve_supervisor_name(db, settings),
+                    handler=resolve_op_handler(db, hub, settings),
                     reason=(
                         f"准确率 {score.accuracy}% < "
                         f"{settings.operation_answer_accuracy_threshold}%，待主管审核"
@@ -332,7 +332,7 @@ def auto_answer_operation(
             db,
             hub,
             to_status=OP_SUPPLEMENTING,
-            handler=resolve_supervisor_name(db, settings),
+            handler=resolve_op_handler(db, hub, settings),
             reason="需补料，转主管线下收集",
         )
         _record_decision(db, hub.id, branch="C", question=question, answer=answer, supply_note=note)

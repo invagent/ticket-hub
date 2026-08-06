@@ -116,6 +116,15 @@ def ensure_hub_issue_for_ticket(
     db.add(hub)
     db.flush()  # need hub.id for the link
 
+    # Operation 毕业：按规则预分配运营处理人（写 op_handler_user_id）。
+    # op_handler 名字仍保持 'agent'，不打断 drain 自动答复；转人工时才切成运营名。
+    if issue_type == "Operation":
+        from app.services.dispatch import dispatch_operation_handler
+
+        dr = dispatch_operation_handler(db, hub)
+        if dr.user_id is not None:
+            hub.op_handler_user_id = dr.user_id
+
     # ADR-0016 §2.1：自动毕业时 hub_dedup 查重（不只 Bug/Demand 推 Linear 前）。
     # 命中则当前 hub supersede 到原 hub，ticket 挂原 hub，占用复用不重复毕业。
     # 主管手动毕业（created_by=user:*）跳过查重——人已显式判断要单独建，

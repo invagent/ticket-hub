@@ -83,6 +83,20 @@ def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> st
     return "主管"
 
 
+def resolve_op_handler(db: Session, hub: HubIssue, settings: Settings | None = None) -> str:
+    """转人工处理人名：优先预分配运营（op_handler_user_id 且 user 有效），
+    否则回落 resolve_supervisor_name（default_pool 或 '主管'）。"""
+    settings = settings or get_settings()
+    uid = hub.op_handler_user_id
+    if uid is not None:
+        from app.models import User
+
+        u = db.get(User, uid)
+        if u is not None and u.deleted_at is None and u.is_active and u.name:
+            return str(u.name)
+    return resolve_supervisor_name(db, settings)
+
+
 def close_overdue_answered(db: Session, *, settings: Settings | None = None) -> int:
     """answered 停留超 `operation_auto_close_days` 自然日未被驳回 → 自动 closed。
 

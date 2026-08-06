@@ -33,7 +33,7 @@ from app.services.hub_issues.op_status import (
     OP_PROCESSING,
     OP_SUPPLEMENTING,
     apply_op_status,
-    resolve_supervisor_name,
+    resolve_op_handler,
 )
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.ingest.catalog_upsert import upsert_catalog
@@ -102,7 +102,7 @@ class KSMIngester:
                     self._db,
                     hub,
                     to_status=OP_PROCESSING,
-                    handler=resolve_supervisor_name(self._db, get_settings()),
+                    handler=resolve_op_handler(self._db, hub, get_settings()),
                     reason=f"客户驳回（第{hub.reject_count}次）",
                 )
                 logger.info(
