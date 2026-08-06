@@ -537,6 +537,9 @@ class HubIssue(Base):
     op_status_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    op_handler_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True, index=True
+    )
 
     # Bug_fix / Demand only
     linear_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -1167,3 +1170,85 @@ class AgentDecision(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# ---- Operation 运营分派引擎（dispatch）------------------------------------
+
+
+class DispatchRule(Base):
+    """运营处理人分派规则（多维匹配 + count/ratio）。与 routing 研发责任田正交。"""
+
+    __tablename__ = "dispatch_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    match_sources: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    match_product_lines: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    match_modules: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    match_sla: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    dispatch_mode: Mapped[str] = mapped_column(String(16), nullable=False)  # count|ratio
+    rule_type: Mapped[str] = mapped_column(String(16), default="primary", nullable=False)
+    overflow_rule_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("dispatch_rules.id"), nullable=True
+    )
+    priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint("dispatch_mode IN ('count','ratio')", name="ck_dispatch_rules_mode"),
+        CheckConstraint("rule_type IN ('primary','overflow')", name="ck_dispatch_rules_type"),
+        Index("ix_dispatch_rules_active_priority", "is_active", "priority"),
+    )
+
+
+class DispatchAssignee(Base):
+    """规则下的运营处理人。count 模式用 daily_cap，ratio 模式用 alloc_value。"""
+
+    __tablename__ = "dispatch_assignees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("dispatch_rules.id"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    alloc_value: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1, nullable=False)
+    daily_cap: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tier: Mapped[str] = mapped_column(String(8), default="main", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    __table_args__ = (
+        CheckConstraint("tier IN ('main','overflow')", name="ck_dispatch_assignees_tier"),
+    )
+
+
+class DispatchConfig(Base):
+    """key-value 全局兜底配置（如 default_operation_assignee）。"""
+
+    __tablename__ = "dispatch_config"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class DispatchLog(Base):
+    """派单留痕 + 按天计数来源（count/ratio 查 created_at >= 今日零点）。"""
+
+    __tablename__ = "dispatch_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    hub_issue_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("hub_issues.id"), nullable=False, index=True
+    )
+    rule_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("dispatch_rules.id"), nullable=True
+    )
+    assignee_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    tier_hit: Mapped[str] = mapped_column(String(16), nullable=False)  # main|overflow|default
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    __table_args__ = (Index("ix_dispatch_log_rule_created", "rule_id", "created_at"),)
