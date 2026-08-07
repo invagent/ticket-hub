@@ -265,15 +265,6 @@ export function TicketDetailPage() {
             </dl>
           </Card>
 
-          {/* 回复内容（Operation 答复缓存，存在时展示） */}
-          {d.cached_reply_content && (
-            <Card title={`回复内容 v${d.cached_reply_version ?? 0}`}>
-              <pre className="whitespace-pre-wrap font-hub text-[12.5px] leading-relaxed m-0 text-hub-teal-deep">
-                {d.cached_reply_content}
-              </pre>
-            </Card>
-          )}
-
 
           {/* 5. 工单处理容器：左=处理节点时间轴，右=节点处理详情 */}
           <Card title="工单处理">
@@ -333,16 +324,20 @@ export function TicketDetailPage() {
 
                 <div>
                   <div className="text-[11px] text-hub-textMuted mb-1">处理说明</div>
-                  {/* 无字段/无保存接口 → 骨架 + disabled，最大 2000 字符 */}
+                  {/* 默认展示回复内容（cached_reply_content，原「回复内容」容器合并到此）；
+                      编辑保存待后端。最大 2000 字符 */}
                   <textarea
-                    disabled
+                    readOnly
                     maxLength={2000}
+                    value={d.cached_reply_content ?? ""}
                     placeholder="默认等于子任务处理结果；最新节点可编辑（待后端支持）"
-                    className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-hub-panel opacity-70 cursor-not-allowed resize-y"
+                    className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-hub-panel resize-y outline-none"
                   />
                   <div className="mt-1 flex items-center justify-between">
                     <span className="text-[10.5px] text-hub-textFaint">
-                      历史节点只读；最大 2000 字符
+                      {d.cached_reply_version != null
+                        ? `回复 v${d.cached_reply_version} · 历史节点只读；最大 2000 字符`
+                        : "历史节点只读；最大 2000 字符"}
                     </span>
                     <button
                       type="button"
