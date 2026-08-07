@@ -7,7 +7,7 @@
 const STATIC: Record<string, string> = {
   "/": "工作台",
   "/tickets": "全部工单",
-  "/hub-issues": "研发协同",
+  "/hub-issues": "工单任务表",
   "/reflect": "反思诊断",
   "/analytics": "统计看板",
   "/customers": "客户",
@@ -19,7 +19,7 @@ const STATIC: Record<string, string> = {
 // 详情路由前缀 → 占位标题（拿到数据前）
 const DETAIL_PREFIX: { prefix: string; placeholder: string }[] = [
   { prefix: "/tickets/", placeholder: "工单…" },
-  { prefix: "/hub-issues/", placeholder: "研发单…" },
+  { prefix: "/hub-issues/", placeholder: "任务…" },
   { prefix: "/customers/", placeholder: "客户…" },
 ];
 

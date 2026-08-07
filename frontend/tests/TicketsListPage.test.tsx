@@ -7,11 +7,11 @@ import { http, HttpResponse } from "msw";
 import { server } from "./msw-server";
 import { TicketsListPage } from "@/pages/tickets/TicketsListPage";
 
-function renderPage() {
+function renderPage(entry = "/tickets") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/tickets"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <TicketsListPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -108,10 +108,32 @@ describe("TicketsListPage", () => {
 
     await waitFor(() => expect(lastQuery).not.toBeNull());
 
-    const select = screen.getByDisplayValue("全部来源");
+    const select = screen.getByDisplayValue("全部来源系统");
     await user.selectOptions(select, "zhichi");
 
     await waitFor(() => expect(lastQuery!.get("source_code")).toBe("zhichi"));
+  });
+
+  it("forwards hub_issue_id from URL to the API + shows filter banner", async () => {
+    let lastQuery: URLSearchParams | null = null;
+    server.use(
+      http.get("*/api/tickets", ({ request }) => {
+        lastQuery = new URL(request.url).searchParams;
+        return HttpResponse.json({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 50,
+          has_more: false,
+        });
+      }),
+    );
+
+    renderPage("/tickets?hub_issue_id=42");
+    await waitFor(() => expect(lastQuery).not.toBeNull());
+    expect(lastQuery!.get("hub_issue_id")).toBe("42");
+    // 关联过滤提示
+    expect(await screen.findByText(/正在查看 HUB-42 的关联工单/)).toBeInTheDocument();
   });
 
   it("ticket short_code is rendered as a link to detail", async () => {

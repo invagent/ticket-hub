@@ -61,22 +61,46 @@ describe("TicketsListPage", () => {
     const headers = await screen.findByRole("table");
     const ths = headers.querySelectorAll("thead th");
     const texts = Array.from(ths).map((th) => th.textContent ?? "");
+    // 工单调整 V1.0：模块→产品分类、收到时间→创建时间、来源→工单来源系统、
+    // 新增 来源工单号 / 工单处理说明；状态列隐藏（前端不展示）
     for (const label of [
       "工单号",
       "标题",
+      "来源工单号",
       "工单类型",
       "主产品",
-      "模块",
+      "产品分类",
       "驳回次数",
       "关联任务",
-      "来源",
+      "工单来源系统",
       "处理人",
-      "状态",
       "处理状态",
-      "收到时间",
+      "工单处理说明",
+      "创建时间",
+      "最后更新时间",
     ]) {
       expect(texts.some((t) => t.includes(label))).toBe(true);
     }
+    // 状态列已隐藏
+    expect(texts.some((t) => t === "状态")).toBe(false);
+  });
+
+  it("typing in 来源工单号 clears row selection (no batch action on hidden rows)", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(sample)));
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("TKT-1")).toBeInTheDocument();
+    // 勾选行（[0]=表头全选，[1]=首行）
+    const rowCb = screen.getAllByRole("checkbox")[1];
+    await user.click(rowCb);
+    expect(screen.getByText(/已选 1 条/)).toBeInTheDocument();
+    // 输入来源工单号 → 选择应被清空
+    await user.type(screen.getByPlaceholderText("来源工单号"), "x");
+    expect(screen.queryByText(/已选 \d+ 条/)).not.toBeInTheDocument();
+    localStorage.clear();
   });
 
   it("renders new-field cell values", async () => {

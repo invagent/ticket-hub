@@ -42,6 +42,7 @@ export function HubIssueDetailPage() {
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
+      {/* 返回列表：左上 */}
       <Link to="/hub-issues" className="text-xs text-hub-teal hover:underline">
         ← 返回列表
       </Link>
@@ -50,14 +51,30 @@ export function HubIssueDetailPage() {
       {detail.data && (
         <div className="mt-3 space-y-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
+            {/* 标题风格保持：任务编号 + 任务说明 */}
             <Header data={detail.data} />
             <HubCollabActions
               hub={detail.data as unknown as HubIssueSummary}
               onChange={() => qc.invalidateQueries({ queryKey: ["hub-issue-detail", id] })}
             />
           </div>
-          <CommonMeta data={detail.data} />
-          <TypeSpecificSection data={detail.data} />
+
+          {/* pending_review 研发类：待确认分类面板 */}
+          {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") &&
+            detail.data.status === "pending_review" && (
+              <ClassificationReviewPanel data={detail.data} />
+            )}
+
+          {/* 任务信息容器（替换原「基本信息」两容器之一） */}
+          <TaskInfoCard data={detail.data} />
+
+          {/* 任务进度容器（横向时间轴，替换原类型专属日期网格容器） */}
+          <TaskProgressCard data={detail.data} />
+
+          {/* Operation 回复编辑（功能区，保留） */}
+          {detail.data.type === "Operation" && <OperationReplySection data={detail.data} />}
+
+          {/* 子任务里程碑 + 按责任人拆分（研发类，保留） */}
           {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") && (
             <SubIssuesSection data={detail.data} />
           )}
@@ -147,24 +164,86 @@ function Header({ data }: { data: HubIssueDetail }) {
   );
 }
 
-function CommonMeta({ data }: { data: HubIssueDetail }) {
+const TYPE_LABEL: Record<string, string> = {
+  Operation: "运营",
+  Bug_fix: "Bug修复",
+  Demand: "需求",
+  Internal_task: "内部任务",
+};
+
+function fmtDateTime(v: string | null | undefined): string {
+  if (!v) return "—";
+  return new Date(v).toLocaleString("zh-CN");
+}
+
+// 累计耗时（小时）：已完成 = 完成时刻 - 创建；进行中 = now - 创建。
+// 完成时刻与进度时间轴口径一致：closed_at → actual_released_at 兜底。
+function cumulativeHoursDetail(data: HubIssueDetail): string {
+  const start = data.first_seen_at ? new Date(data.first_seen_at).getTime() : null;
+  if (start == null) return "—";
+  const endIso = data.closed_at ?? data.actual_released_at ?? null;
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  return `${Math.max(0, Math.round(((end - start) / 3600_000) * 10) / 10)}h`;
+}
+
+/**
+ * 任务信息容器（工单调整 V1.0 §4.3）：任务类型/状态/产品分类/研发工程状态/处理人/
+ * 创建时间/关闭时间/关联工单，每行 3~4 字段平均分布铺满容器，字段名/值上下结构。
+ */
+function TaskInfoCard({ data }: { data: HubIssueDetail }) {
+  // 处理人 id→name（hub 详情不返回名，join /api/admin/users）
+  const users = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+    enabled: data.assigned_user_id != null,
+  });
+  const userName =
+    data.assigned_user_id != null
+      ? (((users.data ?? []) as { id: number; name: string }[]).find(
+          (u) => u.id === data.assigned_user_id,
+        )?.name ?? `用户 #${data.assigned_user_id}`)
+      : "—";
+  const assignee =
+    data.type === "Operation" && data.op_handler
+      ? data.op_handler === "agent"
+        ? "AI 处理"
+        : data.op_handler
+      : userName;
   return (
-    <section className="bg-white border border-hub-border rounded-[10px] p-4 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
-      <Field label="产品">
-        {[data.product_line_code, data.product, data.module].filter(Boolean).join(" / ") || "—"}
-      </Field>
-      <Field label="首次出现">{new Date(data.first_seen_at).toLocaleString()}</Field>
-      <Field label="最近活跃">{new Date(data.last_seen_at).toLocaleString()}</Field>
-      <Field label="预期解决">
-        {data.expected_resolved_at ? new Date(data.expected_resolved_at).toLocaleString() : "—"}
-      </Field>
-      <Field label="实际解决">
-        {data.actual_resolved_at ? new Date(data.actual_resolved_at).toLocaleString() : "—"}
-      </Field>
-      <Field label="关闭时间">
-        {data.closed_at ? new Date(data.closed_at).toLocaleString() : "—"}
-      </Field>
-    </section>
+    <Card title="任务信息">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
+        <Field label="任务类型">{TYPE_LABEL[data.type] ?? data.type}</Field>
+        <Field label="任务状态">{data.status}</Field>
+        <Field label="产品分类">
+          {[data.product_line_code, data.product, data.module].filter(Boolean).join(" / ") || "—"}
+        </Field>
+        <Field label="研发工程状态">{data.linear_status ?? "—"}</Field>
+        <Field label="任务处理人">{assignee}</Field>
+        <Field label="任务创建时间">{fmtDateTime(data.first_seen_at)}</Field>
+        <Field label="任务关闭时间">{fmtDateTime(data.closed_at)}</Field>
+        <Field label="关联工单">
+          <Link to={`/tickets?hub_issue_id=${data.id}`} className="text-hub-teal hover:underline">
+            {data.occurrence_count} 单
+          </Link>
+        </Field>
+        {data.linear_identifier && (
+          <Field label="Linear">
+            <span className="font-mono">{data.linear_identifier}</span>
+          </Field>
+        )}
+        <Field label="累计耗时">{cumulativeHoursDetail(data)}</Field>
+        {data.type === "Internal_task" && (
+          <Field label="飞书任务">
+            {data.feishu_task_id ? (
+              <span className="font-mono text-xs">{data.feishu_task_id}</span>
+            ) : (
+              "—"
+            )}
+          </Field>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -275,62 +354,143 @@ function ClassificationReviewPanel({ data }: { data: HubIssueDetail }) {
   );
 }
 
-function TypeSpecificSection({ data }: { data: HubIssueDetail }) {
-  if (data.type === "Operation") {
-    return <OperationReplySection data={data} />;
-  }
+/* ---- 任务进度容器：横向时间轴（工单调整 V1.0 §4.3） ---- */
 
-  if (data.type === "Bug_fix" || data.type === "Demand") {
-    return (
-      <Section title={data.type === "Bug_fix" ? "Bug 修复进度" : "需求进度"}>
-        {data.status === "pending_review" && <ClassificationReviewPanel data={data} />}
-        <div className="bg-white border border-hub-border rounded-[10px] p-4 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
-          <Field label="Linear">
-            {data.linear_identifier ? (
-              <span className="font-mono">{data.linear_identifier}</span>
-            ) : (
-              "未关联"
-            )}
-          </Field>
-          <Field label="Linear 状态">{data.linear_status ?? "—"}</Field>
-          <Field label="迭代">{data.scheduled_iteration ?? "—"}</Field>
-          <Field label="预计上线">
-            {data.expected_released_at
-              ? new Date(data.expected_released_at).toLocaleString()
-              : "—"}
-          </Field>
-          <Field label="实际上线">
-            {data.actual_released_at ? new Date(data.actual_released_at).toLocaleString() : "—"}
-          </Field>
-          <Field label="客户验收">
-            {data.customer_verified_at
-              ? new Date(data.customer_verified_at).toLocaleString()
-              : "—"}
-          </Field>
-        </div>
-      </Section>
-    );
-  }
+type ProgressNode = {
+  label: string;
+  start: string | null | undefined;
+  end: string | null | undefined;
+  reached: boolean; // 是否已完成（打√）
+  current: boolean; // 是否当前进行节点（橙黄闪烁）
+};
 
-  // Internal_task
+// 节点集：非 bug/需求类 = 创建-处理-完成；bug/需求类 = 创建-待处理-计划-开发-测试-发版
+function buildNodes(data: HubIssueDetail): ProgressNode[] {
+  const isDev = data.type === "Bug_fix" || data.type === "Demand";
+  const closed = data.closed_at ?? data.actual_resolved_at ?? null;
+  if (!isDev) {
+    // 创建 - 处理 - 完成。创建节点在 hub 存在时即已完成，故未完成时当前节点=处理(idx 1)。
+    const doneStages = ["released", "done", "closed"].includes(data.status);
+    const stageIdx = doneStages ? 2 : 1;
+    const raw: { label: string; start: string | null | undefined; end: string | null | undefined }[] =
+      [
+        { label: "创建", start: data.first_seen_at, end: data.first_seen_at },
+        { label: "处理", start: data.first_seen_at, end: closed },
+        { label: "完成", start: closed, end: closed },
+      ];
+    return raw.map((n, i) => ({
+      ...n,
+      reached: i < stageIdx || (i === stageIdx && doneStages),
+      current: i === stageIdx && !doneStages,
+    }));
+  }
+  // 研发类：创建-待处理-计划-开发-测试-发版，用 linear_status 对齐当前阶段
+  const stages = ["创建", "待处理", "计划", "开发", "测试", "发版"];
+  const lin = (data.linear_status ?? "").toLowerCase();
+  const linToIdx: Record<string, number> = {
+    backlog: 1,
+    unstarted: 2,
+    started: 3,
+    "in progress": 3,
+    "in review": 4,
+    done: 5,
+    completed: 5,
+    released: 5,
+  };
+  const released = ["done", "completed", "released"].includes(lin) || !!data.actual_released_at;
+  const curIdx = released ? 5 : (linToIdx[lin] ?? 1);
+  const ends: (string | null | undefined)[] = [
+    data.first_seen_at,
+    undefined,
+    data.scheduled_iteration ? data.expected_released_at : undefined,
+    undefined,
+    undefined,
+    data.actual_released_at ?? closed,
+  ];
+  return stages.map((label, i) => ({
+    label,
+    start: i === 0 ? data.first_seen_at : undefined,
+    end: ends[i],
+    reached: i < curIdx || (i === curIdx && released),
+    current: i === curIdx && !released,
+  }));
+}
+
+function TaskProgressCard({ data }: { data: HubIssueDetail }) {
+  const nodes = buildNodes(data);
   return (
-    <Section title="飞书任务进度">
-      <div className="bg-white border border-hub-border rounded-[10px] p-4 grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
-        <Field label="飞书任务 ID">
-          {data.feishu_task_id ? (
-            <span className="font-mono text-xs">{data.feishu_task_id}</span>
-          ) : (
-            "—"
-          )}
-        </Field>
-        <Field label="飞书任务状态">{data.feishu_task_status ?? "—"}</Field>
-        <Field label="同步时间">
-          {data.feishu_task_synced_at
-            ? new Date(data.feishu_task_synced_at).toLocaleString()
-            : "—"}
-        </Field>
+    <Card title="任务进度">
+      {/* 横向平铺（最多 3 节点可视）+ 左右滚动查看历史节点 */}
+      <div className="overflow-x-auto pb-1">
+        <ol className="flex items-stretch gap-0 min-w-max py-2">
+          {nodes.map((n, i) => (
+            <li key={i} className="flex items-center">
+              <div className="flex flex-col items-center w-[150px] px-2">
+                <span
+                  className={
+                    "w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border " +
+                    (n.current
+                      ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
+                      : n.reached
+                        ? "bg-hub-green text-white border-hub-green"
+                        : "bg-white text-hub-textFaint border-hub-border")
+                  }
+                >
+                  {n.reached && !n.current ? "✓" : i + 1}
+                </span>
+                <div
+                  className={
+                    "mt-1.5 text-[12px] font-semibold " +
+                    (n.current ? "text-hub-amber-deep" : n.reached ? "text-hub-text" : "text-hub-textMuted")
+                  }
+                >
+                  {n.label}
+                </div>
+                <div className="mt-1 text-[10px] text-hub-textFaint text-center leading-tight space-y-0.5">
+                  <div>开始 {fmtDateShort(n.start)}</div>
+                  <div>结束 {fmtDateShort(n.end)}</div>
+                  <div>耗时 {nodeHours(n)}</div>
+                </div>
+              </div>
+              {i < nodes.length - 1 && (
+                <span
+                  className={
+                    "h-0.5 w-8 flex-none " + (n.reached ? "bg-hub-green" : "bg-hub-border")
+                  }
+                />
+              )}
+            </li>
+          ))}
+        </ol>
       </div>
-    </Section>
+      <p className="text-[10.5px] text-hub-textFaint mt-1">
+        节点开始/结束/耗时依赖逐节点时间戳，后端暂无精确记录时以里程碑日期近似（待后端支持）。
+      </p>
+    </Card>
+  );
+}
+
+function fmtDateShort(v: string | null | undefined): string {
+  if (!v) return "—";
+  return new Date(v).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+function nodeHours(n: ProgressNode): string {
+  if (!n.start || !n.end) return "—";
+  const h = Math.max(0, Math.round(((new Date(n.end).getTime() - new Date(n.start).getTime()) / 3600_000) * 10) / 10);
+  return `${h}h`;
+}
+
+// 容器：灰色边框 + 阴影 + 容器标题
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="bg-white border border-hub-border rounded-[10px] shadow-sm">
+      <div className="px-4 py-2.5 border-b border-hub-borderLight">
+        <h2 className="m-0 text-[12px] font-bold text-hub-textSecondary tracking-[.3px]">
+          {title}
+        </h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
   );
 }
 

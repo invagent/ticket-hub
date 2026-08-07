@@ -1,36 +1,36 @@
 /**
- * 研发协同（2026-07 后台重构 屏幕3）— Hub 工单升级出口。
+ * 工单任务表（原「研发协同」，2026-08 工单调整 V1.0 重排）— Hub 工单升级出口。
  *
- * 4 出口类型 tab 保留；研发类（Bug修复/需求）强化：
- *   Linear 状态徽标 · 停留时长（超 7 天琥珀 / 14 天红）· 催办（24h 频率限制）·
- *   发版通知（done 后 → 弹窗 → 每客户渠道入 outbox）· 回访记录（resolved/stillbad）·
- *   自查登记（standalone Bug_fix，「自查」灰徽标）
- * Operation / Internal_task 列沿用原逻辑，换新皮。
+ * 变更：菜单/标题改「工单任务表」；删除类型切换 tab，改为筛选条件区（全建控件，
+ *   后端已支持的 type/status 真正生效，其余占位）；列表改为规则表格列
+ *   （编号/说明/类型/状态/产品分类/研发工程状态/处理人/创建时间/关闭时间/关联工单/累计耗时）；
+ *   增加多选 + 批量催单（复用 /urge 端点逐条调用）。
+ * 保留：单条催办/发版通知/记录回访动作、登记自修复 bug（SelfBugModal）。
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type HubIssueSummary } from "@/api/client";
+import { api, postByPath, type HubIssueSummary } from "@/api/client";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import {
   Modal,
   ModalHeader,
   ModalFooter,
   isDone,
-  dwellDays,
   hubErrMsg,
+  urgedRecently,
   UrgeButton,
   NotifyReleaseModal,
   FeedbackModal,
 } from "@/components/hubActions";
 
-const TABS: { key: string; label: string }[] = [
-  { key: "", label: "全部" },
-  { key: "Operation", label: "运营" },
-  { key: "Bug_fix", label: "Bug修复" },
-  { key: "Demand", label: "需求" },
-  { key: "Internal_task", label: "内部任务" },
-];
+// 任务类型 code → 中文（现有后端出口类型）
+const TYPE_LABEL: Record<string, string> = {
+  Operation: "运营",
+  Bug_fix: "Bug修复",
+  Demand: "需求",
+  Internal_task: "内部任务",
+};
 
 const TYPE_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
   Operation: { bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
@@ -50,11 +50,72 @@ const LINEAR_ST: Record<string, { bg: string; fg: string; bd: string }> = {
   canceled: { bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
 };
 
-const FB_BADGE: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
-  pending: { label: "待回访", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
-  resolved: { label: "已确认解决", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  stillbad: { label: "客户仍报错", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+// ---- 筛选枚举（工单调整 V1.0，文档口径；后端暂无对应参数的均为占位） ----
+// 产品分类（文档 15 项）— 后端 /api/hub-issues 无该多选参数 → 占位不生效
+const PRODUCT_CATEGORIES = [
+  "星瀚-开票",
+  "星瀚-收票",
+  "星瀚-档案",
+  "星瀚-影像",
+  "星空旗舰版-开票",
+  "星空旗舰版-收票",
+  "标准版-档案",
+  "标准版-收票",
+  "标准版-开票",
+  "标准版-影像",
+  "标准版(星空企业版)-开票",
+  "标准版(星空企业版)-收票",
+  "EOP运营",
+  "基础研发",
+  "ISV接口-开票",
+];
+// 任务类型（文档新分类法）— 与现有 type 不一致 → 占位不生效
+const TASK_TYPE_OPTIONS = ["需求", "bug", "应用咨询", "数据问题", "环境运维"];
+// 任务类型（文档新分类法，替换现有 4 类）— 后端字段替换后按此值过滤；当前对当前结果集尽力匹配。
+// 说明：8=用新分类法替换现有分类。后端替换 type 字段前，现有数据仍是旧值，故列表列渲染沿用 TYPE_LABEL，
+// 该筛选按「新分类中文值」对当前结果集过滤，命中即生效、后端替换后自然贯通。
+
+// 研发工程状态（中文档位）→ 匹配 linear_status 的取值集合（客户端对当前结果集过滤，真实生效）
+const DEV_STAGE_OPTIONS = ["待处理", "计划", "开发中", "测试中", "已发版"];
+const DEV_STAGE_MATCH: Record<string, string[]> = {
+  待处理: ["backlog", "unstarted", "todo"],
+  计划: ["planned", "计划"],
+  开发中: ["started", "in progress", "in_progress", "in review"],
+  测试中: ["testing", "qa", "in test"],
+  已发版: ["done", "completed", "released"],
 };
+// 时间区间预设
+const TIME_PRESETS = ["全部", "今天", "3天内", "7天内", "10天以上", "自定义"];
+// 预设 → [最早天数下界, 最晚天数上界]（距今天数）。null 表示无界。自定义走日期区间。
+const TIME_PRESET_DAYS: Record<string, [number | null, number | null]> = {
+  今天: [0, 1],
+  "3天内": [0, 3],
+  "7天内": [0, 7],
+  "10天以上": [10, null],
+};
+// 判断某时间戳是否落在预设/自定义区间内
+function inTimeRange(
+  iso: string | null | undefined,
+  preset: string,
+  from: string,
+  to: string,
+): boolean {
+  if (!preset || preset === "全部") return true;
+  if (!iso) return false; // 有筛选但该项无时间 → 排除
+  const t = new Date(iso).getTime();
+  if (preset === "自定义") {
+    if (from && t < new Date(from).getTime()) return false;
+    if (to && t > new Date(to).getTime() + 86400_000 - 1) return false; // 含当日
+    return true;
+  }
+  const range = TIME_PRESET_DAYS[preset];
+  if (!range) return true;
+  const days = (Date.now() - t) / 86400_000;
+  const [lo, hi] = range;
+  if (lo != null && days < lo) return false;
+  if (hi != null && days > hi) return false;
+  return true;
+}
 
 function currentRole(): string {
   try {
@@ -66,10 +127,40 @@ function currentRole(): string {
 
 const DEV_TYPES = new Set(["Bug_fix", "Demand"]);
 
+function fmtDate(v: string | null | undefined): string {
+  if (!v) return "—";
+  return new Date(v).toLocaleDateString("zh-CN");
+}
+
+// 累计耗时（小时）：进行中 = now - 创建；已完成 = 关闭 - 创建
+function cumulativeHours(h: HubIssueSummary): number | null {
+  const start = h.first_seen_at ? new Date(h.first_seen_at).getTime() : null;
+  if (start == null) return null;
+  const end = isDone(h) && h.closed_at ? new Date(h.closed_at).getTime() : Date.now();
+  return Math.max(0, Math.round(((end - start) / 3600_000) * 10) / 10);
+}
+
+// 「进行中 / 已完成」→ 现有 status 的近似映射（任务状态筛选：尽量生效）
+const STATUS_GROUP: Record<string, string[]> = {
+  in_progress: ["created", "pending", "pending_review", "in_progress"],
+  done: ["released", "done", "closed"],
+};
+
 export function HubIssuesListPage() {
   const [params, setParams] = useSearchParams();
-  const type = params.get("type") ?? "";
+  const type = params.get("type") ?? ""; // 现有后端参数（占位控件之外，仍保留 URL 驱动）
   const status = params.get("status") ?? "";
+  // 任务状态筛选（进行中/已完成）— 前端对当前结果集做分组过滤
+  const taskState = params.get("task_state") ?? "";
+  // 任务类型新分类法（8：替换现有分类）；研发工程状态（9）；创建/关闭时间区间（10）
+  const taskType = params.get("task_type") ?? "";
+  const devStage = params.get("dev_stage") ?? "";
+  const createTime = params.get("create_time") ?? "";
+  const createFrom = params.get("create_from") ?? "";
+  const createTo = params.get("create_to") ?? "";
+  const closeTime = params.get("close_time") ?? "";
+  const closeFrom = params.get("close_from") ?? "";
+  const closeTo = params.get("close_to") ?? "";
   const page = Number(params.get("page") ?? "1");
   const isSupervisor = ["supervisor", "admin"].includes(currentRole());
 
@@ -81,14 +172,40 @@ export function HubIssuesListPage() {
   >(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 多选（批量催单）
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const qc = useQueryClient();
 
+  // 后端 /api/hub-issues 真实支持的 query 参数（本次接上）：assigned_user_id / product / search
+  const assignedUserId = params.get("assigned_user_id") ?? "";
+  const product = params.get("product") ?? "";
+  const search = params.get("search") ?? "";
+
+  // 处理人 id→name：hub-issues 列表不返回处理人名，join /api/admin/users（supervisor 可读）
+  const users = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+  });
+  const userMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const u of (users.data ?? []) as { id: number; name: string }[]) m.set(u.id, u.name);
+    return m;
+  }, [users.data]);
+  const userList = useMemo(
+    () => ((users.data ?? []) as { id: number; name: string }[]).slice().sort((a, b) => a.id - b.id),
+    [users.data],
+  );
+
   const list = useQuery({
-    queryKey: ["hub-issues", { type, status, page }],
+    queryKey: ["hub-issues", { type, status, page, assignedUserId, product, search }],
     queryFn: () =>
       api.get("/api/hub-issues", {
         type: type || undefined,
         status: status || undefined,
+        assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
+        product: product || undefined,
+        search: search || undefined,
         page,
         page_size: 50,
       }),
@@ -100,27 +217,124 @@ export function HubIssuesListPage() {
     else next.delete(key);
     next.set("page", "1");
     setParams(next);
+    setSelectedIds(new Set());
+  }
+  // 一次设置多个筛选参数（用于时间预设/自定义区间：预设与 from/to 联动清理）
+  function setFilters(entries: Record<string, string>) {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(entries)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    next.set("page", "1");
+    setParams(next);
+    setSelectedIds(new Set());
   }
   function setPage(p: number) {
     const next = new URLSearchParams(params);
     next.set("page", String(p));
     setParams(next);
+    setSelectedIds(new Set());
   }
 
-  const items = list.data?.items ?? [];
-  const devItems = items.filter((h) => DEV_TYPES.has(h.type));
-  const stats = {
-    inProgress: devItems.filter((h) => !isDone(h)).length,
-    toNotify: devItems.filter((h) => isDone(h) && !h.release_notified_at).length,
-    awaitFb: devItems.filter((h) => h.feedback_status === "pending").length,
-    stale: devItems.filter((h) => !isDone(h) && dwellDays(h) >= 14).length,
+  const rawItems = useMemo(() => list.data?.items ?? [], [list.data]);
+
+  // 客户端筛选（对当前结果集，真实生效；后端补参数后可平滑改为服务端）：
+  //   任务状态分组 / 任务类型新分类法(8) / 研发工程状态(9) / 创建·关闭时间区间(10)。
+  // 处理人 / 产品 / 关键字已在服务端过滤。
+  const matchDevStage = (h: HubIssueSummary) => {
+    if (!devStage) return true;
+    const vals = DEV_STAGE_MATCH[devStage] ?? [];
+    return vals.includes((h.linear_status ?? "").toLowerCase());
   };
-  const showDevCols = type === "" || DEV_TYPES.has(type as string);
+  const matchTaskType = (h: HubIssueSummary) => {
+    if (!taskType) return true;
+    // 后端替换 type 字段前，现有数据是旧英文值；按新中文分类对当前结果集匹配（命中即生效）。
+    return (h.type ?? "") === taskType || TYPE_LABEL[h.type] === taskType;
+  };
+  const items = useMemo(() => {
+    return rawItems.filter(
+      (h) =>
+        (!taskState || !STATUS_GROUP[taskState] || STATUS_GROUP[taskState].includes(h.status)) &&
+        matchTaskType(h) &&
+        matchDevStage(h) &&
+        inTimeRange(h.first_seen_at, createTime, createFrom, createTo) &&
+        inTimeRange(h.closed_at, closeTime, closeFrom, closeTo),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawItems, taskState, taskType, devStage, createTime, createFrom, createTo, closeTime, closeFrom, closeTo]);
+
+  // (11) 计数只按「当前筛选条件查询出来的数据」聚合 → 全部基于已过滤的 items。
+  const typeCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const h of items) m[h.type] = (m[h.type] ?? 0) + 1;
+    return m;
+  }, [items]);
+  const stateCounts = useMemo(() => {
+    let ip = 0;
+    let dn = 0;
+    for (const h of items) {
+      if (STATUS_GROUP.in_progress.includes(h.status)) ip++;
+      else if (STATUS_GROUP.done.includes(h.status)) dn++;
+    }
+    return { in_progress: ip, done: dn, all: items.length };
+  }, [items]);
+
+  // 批量催单：对选中的、可催办的研发类任务逐条调用 /urge
+  const urgeTargets = useMemo(
+    () =>
+      items.filter(
+        (h) =>
+          selectedIds.has(h.id) &&
+          DEV_TYPES.has(h.type) &&
+          !isDone(h) &&
+          h.linear_identifier &&
+          !urgedRecently(h),
+      ),
+    [items, selectedIds],
+  );
+  const batchUrge = useMutation({
+    mutationFn: async () => {
+      let ok = 0;
+      for (const h of urgeTargets) {
+        try {
+          await postByPath("/api/hub-issues/{hub_issue_id}/urge", { hub_issue_id: h.id });
+          ok++;
+        } catch {
+          // 单条失败不阻塞其余
+        }
+      }
+      return ok;
+    },
+    onSuccess: (ok) => {
+      setError(null);
+      setFlash(`已批量催单 ${ok}/${urgeTargets.length} 个任务`);
+      setSelectedIds(new Set());
+      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+    },
+    onError: (e) => setError(hubErrMsg(e)),
+  });
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const allSelected = items.length > 0 && items.every((h) => selectedIds.has(h.id));
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(items.map((h) => h.id)));
+  }
+
+  const selectCls =
+    "w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white";
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
       <div className="flex items-center gap-2.5 mb-1">
-        <h1 className="m-0 text-[17px] font-bold">研发协同</h1>
+        <h1 className="m-0 text-[17px] font-bold">工单任务表</h1>
         {isSupervisor && (
           <button
             onClick={() => setModal({ kind: "selfbug" })}
@@ -151,63 +365,60 @@ export function HubIssuesListPage() {
         </div>
       )}
 
-      {/* 出口类型 tabs */}
-      <div className="flex gap-[22px] border-b border-hub-border mb-3.5">
-        {TABS.map((t) => {
-          const on = type === t.key;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setFilter("type", t.key)}
-              className={`pt-[7px] pb-[9px] px-0.5 text-[13px] -mb-px ${
-                on
-                  ? "font-bold text-hub-teal-deep border-b-2 border-hub-teal"
-                  : "text-hub-textMuted hover:text-hub-textSecondary"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-        <div className="flex-1" />
-        <select
-          value={status}
-          onChange={(e) => setFilter("status", e.target.value)}
-          className="text-xs mb-1.5 px-2 py-1 border border-hub-border rounded-md bg-hub-panel outline-none self-center"
-        >
-          <option value="">全部状态</option>
-          <option value="created">created</option>
-          <option value="pending">pending（待人工）</option>
-          <option value="in_progress">in_progress</option>
-          <option value="released">released</option>
-          <option value="done">done</option>
-        </select>
-      </div>
+      {/* 筛选条件区（工单调整 V1.0：删 tab 改筛选） */}
+      <FilterPanel
+        typeCounts={typeCounts}
+        stateCounts={stateCounts}
+        taskState={taskState}
+        onTaskState={(v) => setFilter("task_state", v)}
+        status={status}
+        onStatus={(v) => setFilter("status", v)}
+        product={product}
+        onProduct={(v) => setFilter("product", v)}
+        search={search}
+        onSearch={(v) => setFilter("search", v)}
+        assignedUserId={assignedUserId}
+        onAssignedUser={(v) => setFilter("assigned_user_id", v)}
+        userList={userList}
+        taskType={taskType}
+        onTaskType={(v) => setFilter("task_type", v)}
+        devStage={devStage}
+        onDevStage={(v) => setFilter("dev_stage", v)}
+        createTime={createTime}
+        createFrom={createFrom}
+        createTo={createTo}
+        onCreateTime={(preset, from, to) =>
+          setFilters({ create_time: preset, create_from: from ?? "", create_to: to ?? "" })
+        }
+        closeTime={closeTime}
+        closeFrom={closeFrom}
+        closeTo={closeTo}
+        onCloseTime={(preset, from, to) =>
+          setFilters({ close_time: preset, close_from: from ?? "", close_to: to ?? "" })
+        }
+        selectCls={selectCls}
+      />
 
-      {/* 小统计行（本页研发类） */}
-      {showDevCols && devItems.length > 0 && (
-        <div className="flex gap-2 mb-3 items-center">
-          {(
-            [
-              ["进行中", stats.inProgress, "#2383a0", "#2b2a26"],
-              ["待发版通知", stats.toNotify, "#2f7d4f", "#2b2a26"],
-              ["待反馈", stats.awaitFb, "#c98a1e", "#9a6c1c"],
-              ["超期未动", stats.stale, "#b04a4a", "#b04a4a"],
-            ] as const
-          ).map(([label, n, dot, numColor]) => (
-            <div
-              key={label}
-              className="flex items-center gap-[7px] bg-white border border-hub-border rounded-lg px-3 py-1.5"
-            >
-              <span className="w-[7px] h-[7px] rounded-full" style={{ background: dot }} />
-              <span className="text-[11.5px] text-hub-textSecondary">{label}</span>
-              <span className="text-[13px] font-bold font-mono" style={{ color: numColor }}>
-                {n}
-              </span>
-            </div>
-          ))}
-          <div className="flex-1" />
-          <div className="text-[11px] text-hub-textFaint">Linear 状态每 5 分钟镜像同步</div>
+      {/* 批量催单操作栏 */}
+      {isSupervisor && (
+        <div className="flex items-center gap-2.5 mb-2.5">
+          <button
+            onClick={() => batchUrge.mutate()}
+            disabled={urgeTargets.length === 0 || batchUrge.isPending}
+            title="向选中任务的 Linear issue 逐条发催办评论（跳过已催办/非研发类）"
+            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {batchUrge.isPending ? "催单中…" : "批量催单"}
+          </button>
+          {selectedIds.size > 0 ? (
+            <span className="text-[11.5px] text-hub-textMuted">
+              已选 {selectedIds.size} 条 · 可催 {urgeTargets.length} 条
+            </span>
+          ) : (
+            <span className="text-[11.5px] text-hub-textFaint">
+              勾选研发类任务后可批量向处理人催单
+            </span>
+          )}
         </div>
       )}
 
@@ -216,169 +427,196 @@ export function HubIssuesListPage() {
 
       {list.data && (
         <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-2 bg-hub-panel border-b border-hub-border text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
-            <div className="w-[340px] flex-none">工单</div>
-            <div className="w-[150px] flex-none">{showDevCols ? "Linear 状态" : "状态"}</div>
-            <div className="w-[100px] flex-none">停留时长</div>
-            <div className="flex-1 min-w-0">催办 / 客户反馈</div>
-            <div className="w-[190px] flex-none text-right">动作</div>
-          </div>
-
-          {items.length === 0 && (
-            <div className="p-6 text-center text-xs text-hub-textFaint">暂无 hub 工单</div>
-          )}
-
-          {items.map((h) => {
-            const dev = DEV_TYPES.has(h.type);
-            const lin = LINEAR_ST[(h.linear_status ?? "").toLowerCase()] ?? LINEAR_ST.backlog;
-            const days = dwellDays(h);
-            const dwellColor = days >= 14 ? "#b04a4a" : days >= 7 ? "#9a6c1c" : "#57524a";
-            const fb = h.feedback_status ? FB_BADGE[h.feedback_status] : null;
-            const done = isDone(h);
-            return (
-              <div
-                key={h.id}
-                className="flex items-center gap-3 px-4 py-2.5 border-b border-hub-borderLight hover:bg-hub-panel"
-              >
-                {/* 工单 */}
-                <div className="w-[340px] flex-none min-w-0">
-                  <div className="flex items-center gap-[7px]">
-                    <Link
-                      to={`/hub-issues/${h.id}`}
-                      className="font-mono text-xs text-hub-teal hover:underline"
+          <div className="overflow-x-auto max-w-full">
+            <table className="min-w-full border-collapse text-[12px]">
+              <thead>
+                <tr className="bg-hub-panel border-b border-hub-border text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
+                  <th className="px-3 py-2 text-left w-9">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded"
+                    />
+                  </th>
+                  {[
+                    "任务编号",
+                    "任务说明",
+                    "任务类型",
+                    "任务状态",
+                    "产品分类",
+                    "研发工程状态",
+                    "任务处理人",
+                    "任务创建时间",
+                    "任务关闭时间",
+                    "任务关联工单",
+                    "累计耗时(小时)",
+                  ].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                  <th className="px-3 py-2 text-right whitespace-nowrap">动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={13} className="p-6 text-center text-xs text-hub-textFaint">
+                      暂无任务
+                    </td>
+                  </tr>
+                )}
+                {items.map((h) => {
+                  const dev = DEV_TYPES.has(h.type);
+                  const lin =
+                    LINEAR_ST[(h.linear_status ?? "").toLowerCase()] ?? LINEAR_ST.backlog;
+                  const done = isDone(h);
+                  const hrs = cumulativeHours(h);
+                  return (
+                    <tr
+                      key={h.id}
+                      className="border-b border-hub-borderLight hover:bg-hub-panel align-top"
                     >
-                      {h.short_code}
-                    </Link>
-                    <span
-                      className="text-[9.5px] font-bold px-[7px] py-px rounded-full border"
-                      style={{
-                        background: TYPE_BADGE[h.type]?.bg,
-                        color: TYPE_BADGE[h.type]?.fg,
-                        borderColor: TYPE_BADGE[h.type]?.bd,
-                      }}
-                    >
-                      {TABS.find((t) => t.key === h.type)?.label ?? h.type}
-                    </span>
-                    {h.self_found && (
-                      <span className="text-[9.5px] font-bold px-[7px] py-px rounded-full bg-hub-neutral-light text-hub-textMuted border border-hub-border">
-                        自查
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[13px] font-semibold mt-0.5 truncate">{h.title}</div>
-                  <div className="text-[10.5px] text-hub-textFaint mt-0.5 truncate">
-                    {h.module ?? "—"} · 关联 {h.occurrence_count} 单
-                    {h.fix_version ? ` · 修复 ${h.fix_version}` : ""}
-                  </div>
-                </div>
-                {/* 状态 */}
-                <div className="w-[150px] flex-none">
-                  {dev && h.status === "pending_review" ? (
-                    <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                      style={{ background: "#eef1fb", color: "#4b4fb3", borderColor: "#d4d8f2" }}
-                    >
-                      待确认分类
-                    </span>
-                  ) : dev ? (
-                    <>
-                      <span
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                        style={{ background: lin.bg, color: lin.fg, borderColor: lin.bd }}
-                      >
-                        {h.linear_status ?? h.status}
-                      </span>
-                      <div className="text-[10.5px] text-hub-textFaint mt-1 font-mono">
-                        {h.linear_identifier ?? "未推送"}
-                      </div>
-                    </>
-                  ) : h.type === "Operation" ? (
-                    <>
-                      <OpStatusBadge status={h.op_status} />
-                      <div className="text-[10.5px] text-hub-textFaint mt-1">
-                        {h.op_handler === "agent" ? "AI 处理" : h.op_handler ? `处理人 ${h.op_handler}` : "—"}
-                        {h.reject_count > 0 && (
-                          <span className="ml-1 text-[9.5px] font-bold px-[6px] py-px rounded-full bg-hub-rose-light text-hub-rose border border-hub-rose-border">
-                            驳回 {h.reject_count} 次
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(h.id)}
+                          onChange={() => toggleSelect(h.id)}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <Link
+                          to={`/hub-issues/${h.id}`}
+                          className="font-mono text-xs text-hub-teal hover:underline"
+                        >
+                          {h.short_code}
+                        </Link>
+                        {h.self_found && (
+                          <span className="ml-1.5 text-[9.5px] font-bold px-[6px] py-px rounded-full bg-hub-neutral-light text-hub-textMuted border border-hub-border">
+                            自查
                           </span>
                         )}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="text-[10.5px] text-hub-textMuted">
-                      {h.feishu_task_status ?? h.status}
-                    </span>
-                  )}
-                </div>
-                {/* 停留 */}
-                <div className="w-[100px] flex-none">
-                  <span className="text-xs font-bold font-mono" style={{ color: dwellColor }}>
-                    {days} 天
-                  </span>
-                  <div className="text-[10px] text-hub-textFaint mt-0.5">当前状态停留</div>
-                </div>
-                {/* 催办/反馈 */}
-                <div className="flex-1 min-w-0 flex items-center gap-[7px] flex-wrap">
-                  {h.urge_count > 0 && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-hub-amber-light text-hub-amber-deep border border-hub-amber-border">
-                      已催 {h.urge_count} 次
-                      {h.last_urged_at
-                        ? ` · ${Math.max(1, Math.round((Date.now() - new Date(h.last_urged_at).getTime()) / 3600_000))}h 前`
-                        : ""}
-                    </span>
-                  )}
-                  {fb && (
-                    <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                      style={{ background: fb.bg, color: fb.fg, borderColor: fb.bd }}
-                    >
-                      {fb.label}
-                    </span>
-                  )}
-                  {h.feedback_note && (
-                    <span className="text-[10.5px] text-hub-textFaint truncate">{h.feedback_note}</span>
-                  )}
-                  {!h.urge_count && !fb && <span className="text-[10.5px] text-hub-controlBorder">—</span>}
-                </div>
-                {/* 动作 */}
-                <div className="w-[190px] flex-none flex gap-1.5 justify-end">
-                  {isSupervisor && dev && !done && h.linear_identifier && (
-                    <UrgeButton
-                      hub={h}
-                      onDone={(r) => {
-                        setError(null);
-                        setFlash(`已催办 ${r.linear_identifier}（第 ${r.urge_count} 次）`);
-                      }}
-                    />
-                  )}
-                  {isSupervisor && dev && done && !h.release_notified_at && !h.self_found && (
-                    <button
-                      onClick={() => setModal({ kind: "notify", hub: h })}
-                      className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-green text-white hover:brightness-95"
-                    >
-                      发版通知
-                    </button>
-                  )}
-                  {isSupervisor && h.feedback_status === "pending" && (
-                    <button
-                      onClick={() => setModal({ kind: "feedback", hub: h })}
-                      className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                    >
-                      记录回访
-                    </button>
-                  )}
-                  {h.feedback_status === "resolved" && (
-                    <Link
-                      to={`/hub-issues/${h.id}`}
-                      className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                    >
-                      查看闭环
-                    </Link>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                      </td>
+                      <td className="px-3 py-2.5 max-w-[280px]">
+                        <span className="font-semibold truncate block" title={h.title}>
+                          {h.title}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span
+                          className="text-[9.5px] font-bold px-[7px] py-px rounded-full border"
+                          style={{
+                            background: TYPE_BADGE[h.type]?.bg,
+                            color: TYPE_BADGE[h.type]?.fg,
+                            borderColor: TYPE_BADGE[h.type]?.bd,
+                          }}
+                        >
+                          {TYPE_LABEL[h.type] ?? h.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {h.type === "Operation" ? (
+                          <OpStatusBadge status={h.op_status} />
+                        ) : h.status === "pending_review" ? (
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                            style={{
+                              background: "#eef1fb",
+                              color: "#4b4fb3",
+                              borderColor: "#d4d8f2",
+                            }}
+                          >
+                            待确认分类
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-hub-textSecondary">
+                            {done ? "已完成" : "进行中"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textSecondary">
+                        {h.product ?? h.product_line_code ?? h.module ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {dev ? (
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                            style={{ background: lin.bg, color: lin.fg, borderColor: lin.bd }}
+                          >
+                            {h.linear_status ?? "未推送"}
+                          </span>
+                        ) : (
+                          <span className="text-hub-textFaint">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textSecondary">
+                        {h.type === "Operation" && h.op_handler
+                          ? h.op_handler === "agent"
+                            ? "AI 处理"
+                            : h.op_handler
+                          : h.assigned_user_id
+                            ? (userMap.get(h.assigned_user_id) ?? `#${h.assigned_user_id}`)
+                            : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textFaint font-mono text-[11px]">
+                        {fmtDate(h.first_seen_at)}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textFaint font-mono text-[11px]">
+                        {fmtDate(h.closed_at)}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <Link
+                          to={`/tickets?hub_issue_id=${h.id}`}
+                          className="text-hub-teal hover:underline"
+                          title="打开关联工单列表"
+                        >
+                          {h.occurrence_count} 单
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textSecondary">
+                        {hrs == null ? "—" : `${hrs}h`}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                        <div className="flex gap-1.5 justify-end">
+                          {isSupervisor && dev && !done && h.linear_identifier && (
+                            <UrgeButton
+                              hub={h}
+                              onDone={(r) => {
+                                setError(null);
+                                setFlash(`已催办 ${r.linear_identifier}（第 ${r.urge_count} 次）`);
+                              }}
+                            />
+                          )}
+                          {isSupervisor &&
+                            dev &&
+                            done &&
+                            !h.release_notified_at &&
+                            !h.self_found && (
+                              <button
+                                onClick={() => setModal({ kind: "notify", hub: h })}
+                                className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-green text-white hover:brightness-95"
+                              >
+                                发版通知
+                              </button>
+                            )}
+                          {isSupervisor && h.feedback_status === "pending" && (
+                            <button
+                              onClick={() => setModal({ kind: "feedback", hub: h })}
+                              className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                            >
+                              记录回访
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           <div className="flex items-center gap-2 px-4 py-2 bg-hub-panel">
             <div className="text-[11px] text-hub-textFaint">
@@ -437,6 +675,300 @@ export function HubIssuesListPage() {
         />
       )}
     </div>
+  );
+}
+
+/* ===== 筛选条件区（工单调整 V1.0） ===== */
+// 服务端真实过滤：产品分类(product)、任务处理人(assigned_user_id)、关键字(search)、hub 状态(status)。
+// 客户端对当前结果集过滤（后端补参数后可平滑转服务端）：任务状态、任务类型新分类法(8)、
+//   研发工程状态(9)、创建/关闭时间区间(10)。(数量) 均按当前筛选结果聚合(11)。
+// 说明：任务类型(8) 用新 5 类替换旧分类；后端 type 字段替换前，对当前数据尽力匹配。
+
+function FilterPanel({
+  typeCounts,
+  stateCounts,
+  taskState,
+  onTaskState,
+  status,
+  onStatus,
+  product,
+  onProduct,
+  search,
+  onSearch,
+  assignedUserId,
+  onAssignedUser,
+  userList,
+  taskType,
+  onTaskType,
+  devStage,
+  onDevStage,
+  createTime,
+  createFrom,
+  createTo,
+  onCreateTime,
+  closeTime,
+  closeFrom,
+  closeTo,
+  onCloseTime,
+  selectCls,
+}: {
+  typeCounts: Record<string, number>;
+  stateCounts: { in_progress: number; done: number; all: number };
+  taskState: string;
+  onTaskState: (v: string) => void;
+  status: string;
+  onStatus: (v: string) => void;
+  product: string;
+  onProduct: (v: string) => void;
+  search: string;
+  onSearch: (v: string) => void;
+  assignedUserId: string;
+  onAssignedUser: (v: string) => void;
+  userList: { id: number; name: string }[];
+  taskType: string;
+  onTaskType: (v: string) => void;
+  devStage: string;
+  onDevStage: (v: string) => void;
+  createTime: string;
+  createFrom: string;
+  createTo: string;
+  onCreateTime: (preset: string, from?: string, to?: string) => void;
+  closeTime: string;
+  closeFrom: string;
+  closeTo: string;
+  onCloseTime: (preset: string, from?: string, to?: string) => void;
+  selectCls: string;
+}) {
+  const [searchDraft, setSearchDraft] = useState(search);
+  // 外部（URL / 浏览器前进后退 / 重置）改变 search 时，同步回输入框，避免草稿态残留
+  useEffect(() => setSearchDraft(search), [search]);
+  return (
+    <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-3 mb-3 space-y-2.5">
+      {/* 产品分类（真实生效：→ 服务端 product 过滤） */}
+      <FilterRow label="产品分类">
+        <Chip active={!product} label="全部" onClick={() => onProduct("")} />
+        {PRODUCT_CATEGORIES.map((c) => (
+          <Chip
+            key={c}
+            active={product === c}
+            label={c}
+            onClick={() => onProduct(product === c ? "" : c)}
+          />
+        ))}
+      </FilterRow>
+
+      {/* 任务类型（新 5 类分类法，替换旧分类；对当前结果集过滤，后端替换 type 后贯通） */}
+      <FilterRow label="任务类型">
+        <Chip active={!taskType} label="全部" onClick={() => onTaskType("")} />
+        {TASK_TYPE_OPTIONS.map((c) => (
+          <Chip
+            key={c}
+            active={taskType === c}
+            label={`${c}(${typeCounts[c] ?? 0})`}
+            onClick={() => onTaskType(taskType === c ? "" : c)}
+          />
+        ))}
+      </FilterRow>
+
+      {/* 任务状态（当前结果集过滤，真实生效） */}
+      <FilterRow label="任务状态">
+        <Chip active={!taskState} label={`全部(${stateCounts.all})`} onClick={() => onTaskState("")} />
+        <Chip
+          active={taskState === "in_progress"}
+          label={`进行中(${stateCounts.in_progress})`}
+          onClick={() => onTaskState(taskState === "in_progress" ? "" : "in_progress")}
+        />
+        <Chip
+          active={taskState === "done"}
+          label={`已完成(${stateCounts.done})`}
+          onClick={() => onTaskState(taskState === "done" ? "" : "done")}
+        />
+      </FilterRow>
+
+      {/* 研发工程状态（对当前结果集按 linear_status 过滤，真实生效） */}
+      <FilterRow label="研发工程状态">
+        <Chip active={!devStage} label="全部" onClick={() => onDevStage("")} />
+        {DEV_STAGE_OPTIONS.map((c) => (
+          <Chip
+            key={c}
+            active={devStage === c}
+            label={c}
+            onClick={() => onDevStage(devStage === c ? "" : c)}
+          />
+        ))}
+      </FilterRow>
+
+      {/* 任务创建时间 / 关闭时间（预设 + 自定义区间，对当前结果集过滤，真实生效） */}
+      <TimeRangeRow
+        label="任务创建时间"
+        preset={createTime}
+        from={createFrom}
+        to={createTo}
+        onChange={onCreateTime}
+      />
+      <TimeRangeRow
+        label="任务关闭时间"
+        preset={closeTime}
+        from={closeFrom}
+        to={closeTo}
+        onChange={onCloseTime}
+      />
+
+      {/* 处理人下拉（→assigned_user_id）+ 关键字搜索(→search) + hub 状态(→status)，均真实生效 */}
+      <div className="flex items-center gap-3 flex-wrap pt-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px]">
+            任务处理人
+          </span>
+          <select
+            value={assignedUserId}
+            onChange={(e) => onAssignedUser(e.target.value)}
+            className={`${selectCls} !w-[180px]`}
+          >
+            <option value="">全部处理人</option>
+            {userList.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">关键字</span>
+          <input
+            type="text"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onSearch(searchDraft.trim())}
+            onBlur={() => searchDraft.trim() !== search && onSearch(searchDraft.trim())}
+            placeholder="任务编号 / 说明（回车搜索）"
+            className={`${selectCls} !w-[200px]`}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">hub 状态</span>
+          <select
+            value={status}
+            onChange={(e) => onStatus(e.target.value)}
+            className={`${selectCls} !w-[160px]`}
+          >
+            <option value="">全部状态</option>
+            <option value="created">created</option>
+            <option value="pending">pending（待人工）</option>
+            <option value="in_progress">in_progress</option>
+            <option value="released">released</option>
+            <option value="done">done</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 时间区间行：预设 chip（今天/3天内/…/10天以上）+ 自定义日期区间；对当前结果集过滤。
+function TimeRangeRow({
+  label,
+  preset,
+  from,
+  to,
+  onChange,
+}: {
+  label: string;
+  preset: string;
+  from: string;
+  to: string;
+  onChange: (preset: string, from?: string, to?: string) => void;
+}) {
+  const isCustom = preset === "自定义";
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px] flex-none pt-1">
+        {label}
+      </span>
+      <div className="flex-1 flex flex-wrap items-center gap-1.5">
+        {TIME_PRESETS.map((c) => (
+          <Chip
+            key={c}
+            active={c === "全部" ? !preset : preset === c}
+            label={c}
+            onClick={() =>
+              c === "全部"
+                ? onChange("")
+                : c === "自定义"
+                  ? onChange("自定义", from, to)
+                  : onChange(c)
+            }
+          />
+        ))}
+        {isCustom && (
+          <span className="inline-flex items-center gap-1.5 ml-1">
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => onChange("自定义", e.target.value, to)}
+              className="text-[11.5px] border border-hub-border rounded px-2 py-1 bg-hub-panel"
+            />
+            <span className="text-hub-textFaint">~</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => onChange("自定义", from, e.target.value)}
+              className="text-[11.5px] border border-hub-border rounded px-2 py-1 bg-hub-panel"
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilterRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px] flex-none pt-1">
+        {label}
+      </span>
+      <div className="flex-1 flex flex-wrap items-center gap-1.5">{children}</div>
+      {hint && <span className="text-[10px] text-hub-textFaint flex-none pt-1">{hint}</span>}
+    </div>
+  );
+}
+
+function Chip({
+  label,
+  active,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        "text-[11.5px] px-2.5 py-1 rounded-full border transition-colors " +
+        (active
+          ? "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border font-semibold"
+          : disabled
+            ? "bg-hub-panel text-hub-textFaint border-hub-borderLight cursor-not-allowed"
+            : "bg-white text-hub-textSecondary border-hub-border hover:border-hub-teal-border")
+      }
+    >
+      {label}
+    </button>
   );
 }
 

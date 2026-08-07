@@ -109,27 +109,23 @@ describe("TicketDetailPage", () => {
 
     renderPage(100);
 
-    // Detail header
+    // Detail header（标题同时作为主标题与「工单描述」容器的「主题」值，故 getAllByText）
     expect(await screen.findByText("TKT-100")).toBeInTheDocument();
-    expect(screen.getByText("应付审核报错")).toBeInTheDocument();
+    expect(screen.getAllByText("应付审核报错").length).toBeGreaterThanOrEqual(1);
 
-    // Timeline section header
-    await screen.findByText("变更时间线");
+    // 处理节点时间轴（工单调整 V1.0 重排）
+    await screen.findByText("处理节点");
 
-    // The most recent event renders first; we check all 3 are present.
-    const statusBadges = await screen.findAllByText("status");
-    expect(statusBadges).toHaveLength(2);
-    expect(screen.getByText("link 建立")).toBeInTheDocument();
-    // Verifies status transitions are rendered (received appears in both
-    // the initial → received row and as the from_status of the next row)
-    expect(screen.getAllByText("received").length).toBeGreaterThanOrEqual(1);
-    // 'linked' appears in the header status AND the timeline transition
-    expect(screen.getAllByText("linked").length).toBeGreaterThanOrEqual(2);
-    // Relink reason rendered
-    expect(screen.getByText(/initial dedup/)).toBeInTheDocument();
+    // 倒序：3 个历史事件全部渲染为节点行
+    // status 事件渲染 "from → to" 文案
+    expect(await screen.findByText(/received → linked/)).toBeInTheDocument();
+    // hub_issue_link 事件渲染 "关联建立 HUB-10"
+    expect(screen.getByText(/关联建立 HUB-10/)).toBeInTheDocument();
+    // 处理人（changed_by）渲染
+    expect(screen.getAllByText(/处理人：/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows 暂无变更记录 when history is empty", async () => {
+  it("shows 暂无处理节点 when history is empty", async () => {
     server.use(
       http.get("*/api/tickets/200", () =>
         HttpResponse.json({
@@ -152,7 +148,7 @@ describe("TicketDetailPage", () => {
     );
 
     renderPage(200);
-    expect(await screen.findByText("暂无变更记录")).toBeInTheDocument();
+    expect(await screen.findByText("暂无处理节点")).toBeInTheDocument();
   });
 
   it("falls through gracefully when ticket fetch 404s (no timeline)", async () => {
@@ -166,6 +162,77 @@ describe("TicketDetailPage", () => {
     expect(await screen.findByText(/404/)).toBeInTheDocument();
     // history query is gated on detail.isSuccess; should not have requested it
     expect(screen.queryByText("变更时间线")).not.toBeInTheDocument();
+  });
+
+  it("renders attachments extracted from source_payload (KSM attachment_urls)", async () => {
+    server.use(
+      http.get("*/api/tickets/500", () =>
+        HttpResponse.json({
+          id: 500,
+          short_code: "TKT-500",
+          source_code: "ksm",
+          source_ticket_id: "ksm-500",
+          type: "Raw",
+          status: "received",
+          title: "带附件工单",
+          module: null,
+          assigned_user_id: null,
+          ...baseTicket,
+          hub_issue_id: null,
+          source_payload: {
+            attachment_urls: ["https://cdn.example.com/errshot.png"],
+            ai_cs: { attachments: [{ url: "https://cdn.example.com/step.jpg", filename: "步骤.jpg" }] },
+          },
+        }),
+      ),
+      http.get("*/api/tickets/500/history", () =>
+        HttpResponse.json({ ticket_id: 500, items: [] }),
+      ),
+    );
+
+    renderPage(500);
+    expect(await screen.findByText("TKT-500")).toBeInTheDocument();
+    // 文件名从 url 推断 + ai_cs filename
+    const link1 = await screen.findByRole("link", { name: /errshot\.png/ });
+    expect(link1).toHaveAttribute("href", "https://cdn.example.com/errshot.png");
+    expect(link1).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: /步骤\.jpg/ })).toBeInTheDocument();
+  });
+
+  it("terminal ticket → newest timeline node is NOT rendered as in-progress (no blink)", async () => {
+    server.use(
+      http.get("*/api/tickets/600", () =>
+        HttpResponse.json({
+          id: 600,
+          short_code: "TKT-600",
+          source_code: "ksm",
+          source_ticket_id: "ksm-600",
+          type: "Raw",
+          status: "done", // 终态
+          title: "已完成工单",
+          module: null,
+          assigned_user_id: null,
+          ...baseTicket,
+          hub_issue_id: null,
+          source_payload: null,
+        }),
+      ),
+      http.get("*/api/tickets/600/history", () =>
+        HttpResponse.json({
+          ticket_id: 600,
+          items: [
+            { kind: "status", occurred_at: "2026-08-01T10:00:00Z", from_status: null, to_status: "received", changed_by: "system", reason: null, metadata_: null, hub_issue_id: null, effective_to: null, change_reason: null, human_confirmed: null },
+            { kind: "status", occurred_at: "2026-08-05T10:00:00Z", from_status: "in_progress", to_status: "done", changed_by: "张三", reason: null, metadata_: null, hub_issue_id: null, effective_to: null, change_reason: null, human_confirmed: null },
+          ],
+        }),
+      ),
+    );
+
+    const { container } = renderPage(600);
+    expect(await screen.findByText("TKT-600")).toBeInTheDocument();
+    await screen.findByText(/in_progress → done/);
+    // 终态工单：时间轴无「进行中」闪烁节点
+    expect(container.querySelectorAll(".hub-node-blink").length).toBe(0);
   });
 
   // #3 工单手动毕业按钮
@@ -270,13 +337,18 @@ describe("TicketDetailPage", () => {
     expect(await screen.findByText("TKT-306")).toBeInTheDocument();
     const assignBtn = screen.getByRole("button", { name: "指派" });
     await userEvent.click(assignBtn);
-    expect(screen.getByRole("button", { name: "确认" })).toBeInTheDocument();
+    // 左上角常驻「确认」按钮现已可点（按状态推进，逻辑待后端）；指派内联「确认」在选人前禁用。
+    const confirmBtns = screen.getAllByRole("button", { name: "确认" });
+    expect(confirmBtns).toHaveLength(2);
+    // 恰有一个禁用（指派内联，未选人）
+    expect(confirmBtns.filter((b) => (b as HTMLButtonElement).disabled)).toHaveLength(1);
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
     // roles filter: assignee 出现，member 不出现
     expect(await screen.findByText(/张三/)).toBeInTheDocument();
     expect(screen.queryByText(/李四/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
+    // 取消后指派内联确认消失，仅剩左上角常驻确认
+    expect(screen.getAllByRole("button", { name: "确认" })).toHaveLength(1);
     localStorage.clear();
   });
 

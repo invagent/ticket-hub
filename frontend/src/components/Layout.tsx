@@ -93,7 +93,7 @@ const navItems: {
 }[] = [
   { to: "/", label: "工作台", icon: GridIcon },
   { to: "/tickets", label: "全部工单列表", icon: TicketIcon },
-  { to: "/hub-issues", label: "研发协同", icon: LinkIcon },
+  { to: "/hub-issues", label: "工单任务表", icon: LinkIcon },
   {
     to: "/reflect",
     label: "反思诊断",

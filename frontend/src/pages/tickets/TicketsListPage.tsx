@@ -74,6 +74,19 @@ function fmtTime(v: string | null | undefined): string {
   });
 }
 
+// 工单来源系统：code → 中文展示名（文档口径：KSM / 智齿 / 内部提单 / 外部提单）
+const SOURCE_LABEL: Record<string, string> = {
+  ksm: "KSM",
+  zhichi: "智齿",
+  zammad: "外部提单",
+  ai_cs: "内部提单",
+  feishu_ai: "内部提单",
+};
+function sourceLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return SOURCE_LABEL[code] ?? code;
+}
+
 // 工单类型多选可选项（研发/运营三类，对应后端 predicted_type）
 const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "Demand", label: "需求" },
@@ -81,8 +94,38 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "Operation", label: "运营" },
 ];
 
-const PREFS_KEY = "tickets_table_prefs_v1";
+// v2：默认列顺序调整（来源工单号紧跟标题；来源系统/创建时间/最后更新时间放最后；状态列隐藏）
+const PREFS_KEY = "tickets_table_prefs_v2";
 type TablePrefs = { order?: ColumnOrderState; sizing?: ColumnSizingState };
+
+// 默认列顺序（工单调整 V1.0）：来源工单号在标题后；工单处理说明 + 来源系统 靠后；
+// 创建时间(received_at) 移到最后更新时间(updated_at) 前面，二者为最后两列。
+// 不含 status（默认隐藏，前端不展示）。react-table 会忽略数据中不存在的 id（如非主管时的 select）。
+const DEFAULT_ORDER: string[] = [
+  "select",
+  "short_code",
+  "title",
+  "source_ticket_id",
+  "predicted_type",
+  "product_name",
+  "module",
+  "reject_count",
+  "children_count",
+  "assigned_user",
+  "op_status",
+  "service_level",
+  "remaining_hours",
+  "reporter_company",
+  "reporter_tax_no",
+  "reporter_name",
+  "reporter_mobile",
+  "reporter_email",
+  "reporter_tenant",
+  "closing_note",
+  "source_code",
+  "received_at",
+  "updated_at",
+];
 
 function loadPrefs(): TablePrefs {
   try {
@@ -103,9 +146,14 @@ export function TicketsListPage() {
     .map(Number)
     .filter((n) => !Number.isNaN(n));
   const predictedTypes = params.getAll("predicted_types");
+  // 关联工单：工单任务表「关联工单」链接过来带 ?hub_issue_id=，后端 /api/tickets 支持该参数
+  const hubIssueId = params.get("hub_issue_id");
 
   const authUser = getAuthUser();
   const isSupervisor = authUser?.role === "supervisor" || authUser?.role === "admin";
+
+  // 来源工单号搜索：后端 /api/tickets 暂无该 query 参数 → 前端对当前页做过滤（仅当前页有效）
+  const [sourceTicketQuery, setSourceTicketQuery] = useState("");
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showReroute, setShowReroute] = useState(false);
@@ -118,7 +166,9 @@ export function TicketsListPage() {
 
   // 列偏好（顺序 + 宽度）持久化
   const initialPrefs = useMemo(loadPrefs, []);
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(initialPrefs.order ?? []);
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(
+    initialPrefs.order ?? DEFAULT_ORDER,
+  );
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(initialPrefs.sizing ?? {});
   const [dragCol, setDragCol] = useState<string | null>(null);
 
@@ -139,7 +189,7 @@ export function TicketsListPage() {
   const tickets = useQuery({
     queryKey: [
       "tickets",
-      { sourceCode, status, unassigned, page, assignedUserIds, predictedTypes },
+      { sourceCode, status, unassigned, page, assignedUserIds, predictedTypes, hubIssueId },
     ],
     queryFn: () =>
       api.get("/api/tickets", {
@@ -148,12 +198,18 @@ export function TicketsListPage() {
         unassigned_only: unassigned || undefined,
         assigned_user_ids: assignedUserIds.length ? assignedUserIds : undefined,
         predicted_types: predictedTypes.length ? predictedTypes : undefined,
+        hub_issue_id: hubIssueId ? Number(hubIssueId) : undefined,
         page,
         page_size: 50,
       }),
   });
 
-  const items = useMemo(() => tickets.data?.items ?? [], [tickets.data]);
+  const items = useMemo(() => {
+    const all = tickets.data?.items ?? [];
+    const q = sourceTicketQuery.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((t) => (t.source_ticket_id ?? "").toLowerCase().includes(q));
+  }, [tickets.data, sourceTicketQuery]);
   const allSelected = items.length > 0 && items.every((t) => selectedIds.has(t.id));
   const someSelected = items.some((t) => selectedIds.has(t.id)) && !allSelected;
 
@@ -209,7 +265,12 @@ export function TicketsListPage() {
   }
 
   const hasFilters =
-    sourceCode || status || unassigned || assignedUserIds.length || predictedTypes.length;
+    sourceCode ||
+    status ||
+    unassigned ||
+    assignedUserIds.length ||
+    predictedTypes.length ||
+    sourceTicketQuery.trim();
 
   // ---- 列定义 --------------------------------------------------------------
   const columns = useMemo<ColumnDef<TicketSummary>[]>(() => {
@@ -271,6 +332,20 @@ export function TicketsListPage() {
         },
       },
       {
+        id: "source_ticket_id",
+        header: "来源工单号",
+        accessorKey: "source_ticket_id",
+        size: 130,
+        cell: ({ row }) => (
+          <span
+            className="text-[11.5px] text-hub-textSecondary font-mono truncate block"
+            title={row.original.source_ticket_id ?? ""}
+          >
+            {row.original.source_ticket_id ?? "—"}
+          </span>
+        ),
+      },
+      {
         id: "predicted_type",
         header: "工单类型",
         accessorKey: "predicted_type",
@@ -295,7 +370,7 @@ export function TicketsListPage() {
       },
       {
         id: "module",
-        header: "模块",
+        header: "产品分类",
         accessorKey: "module",
         size: 100,
         cell: ({ row }) => (
@@ -334,11 +409,13 @@ export function TicketsListPage() {
       },
       {
         id: "source_code",
-        header: "来源",
+        header: "工单来源系统",
         accessorKey: "source_code",
-        size: 64,
+        size: 96,
         cell: ({ row }) => (
-          <span className="text-[11.5px] text-hub-textMuted">{row.original.source_code ?? "—"}</span>
+          <span className="text-[11.5px] text-hub-textMuted">
+            {sourceLabel(row.original.source_code)}
+          </span>
         ),
       },
       {
@@ -381,7 +458,7 @@ export function TicketsListPage() {
       },
       {
         id: "received_at",
-        header: "收到时间",
+        header: "创建时间",
         accessorKey: "received_at",
         size: 120,
         cell: ({ row }) => (
@@ -487,6 +564,14 @@ export function TicketsListPage() {
         ),
       },
       {
+        // 工单处理说明（关单处理说明）：后端 TicketSummary 暂无此字段 → 占位列，待后端支持
+        id: "closing_note",
+        header: "工单处理说明",
+        size: 160,
+        enableSorting: false,
+        cell: () => <span className="text-hub-textFaint text-[11px]">—</span>,
+      },
+      {
         id: "updated_at",
         header: "最后更新时间",
         accessorKey: "updated_at",
@@ -511,7 +596,8 @@ export function TicketsListPage() {
   const table = useReactTable({
     data: items,
     columns,
-    state: { columnOrder, columnSizing },
+    // 状态列前端不展示（工单调整 V1.0）；StatusBadge 仍用于标题灰置逻辑，故保留列定义只隐藏
+    state: { columnOrder, columnSizing, columnVisibility: { status: false } },
     onColumnOrderChange: setColumnOrder,
     onColumnSizingChange: setColumnSizing,
     columnResizeMode: "onChange",
@@ -570,6 +656,24 @@ export function TicketsListPage() {
         )}
       </div>
 
+      {/* 关联工单过滤提示（从工单任务表「关联工单」链接进入） */}
+      {hubIssueId && (
+        <div className="mb-3 flex items-center gap-2 bg-hub-teal-light border border-hub-teal-border rounded-lg px-3 py-2 text-[11.5px] text-hub-teal-deep">
+          正在查看 HUB-{hubIssueId} 的关联工单
+          <button
+            onClick={() => {
+              const next = new URLSearchParams(params);
+              next.delete("hub_issue_id");
+              next.set("page", "1");
+              setParams(next);
+            }}
+            className="ml-auto text-hub-teal hover:underline"
+          >
+            清除关联过滤
+          </button>
+        </div>
+      )}
+
       {/* 筛选条：每行 5 个、自适应等宽、左右对齐 */}
       <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-3 mb-3">
         {hasFilters && (
@@ -578,6 +682,7 @@ export function TicketsListPage() {
               onClick={() => {
                 setParams(new URLSearchParams());
                 setSelectedIds(new Set());
+                setSourceTicketQuery("");
               }}
               className="text-[11.5px] text-hub-textMuted hover:text-hub-rose"
             >
@@ -585,17 +690,30 @@ export function TicketsListPage() {
             </button>
           </div>
         )}
-        <div className="grid grid-cols-5 gap-2.5 items-center">
+        <div className="grid grid-cols-6 gap-2.5 items-center">
+          {/* 来源工单号搜索（当前页过滤，后端参数待支持） */}
+          <input
+            type="text"
+            value={sourceTicketQuery}
+            onChange={(e) => {
+              setSourceTicketQuery(e.target.value);
+              // 清空选择：避免过滤后隐藏行仍在 selectedIds 中被批量操作误伤
+              setSelectedIds(new Set());
+            }}
+            placeholder="来源工单号"
+            title="按来源工单号搜索（当前页过滤，后端参数待支持）"
+            className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
+          />
           <select
             value={sourceCode}
             onChange={(e) => setFilter("source_code", e.target.value)}
             className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           >
-            <option value="">全部来源</option>
+            <option value="">全部来源系统</option>
             <option value="ksm">KSM</option>
             <option value="zhichi">智齿</option>
-            <option value="zammad">Zammad</option>
-            <option value="ai_cs">AI客服</option>
+            <option value="ai_cs">内部提单</option>
+            <option value="zammad">外部提单</option>
           </select>
           <select
             value={status}

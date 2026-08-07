@@ -1098,7 +1098,7 @@ function HumanQueue() {
           <div className="text-xs text-hub-textMuted">
             所有待人工事项均已处理，去{" "}
             <Link to="/hub-issues" className="text-hub-teal font-semibold">
-              研发协同
+              工单任务表
             </Link>{" "}
             看看推进中的工单吧。
           </div>

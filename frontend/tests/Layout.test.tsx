@@ -33,7 +33,7 @@ describe("Layout", () => {
     const n = nav();
     expect(n.getByText("ticket-hub")).toBeInTheDocument();
     expect(n.getByText("工作台")).toBeInTheDocument();
-    expect(n.getByText("研发协同")).toBeInTheDocument();
+    expect(n.getByText("工单任务表")).toBeInTheDocument();
     expect(n.getByText("反思诊断")).toBeInTheDocument();
     expect(n.getByText("管理")).toBeInTheDocument();
   });
