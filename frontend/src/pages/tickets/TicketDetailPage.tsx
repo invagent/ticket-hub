@@ -180,13 +180,17 @@ export function TicketDetailPage() {
           {/* 1. 标题区 + 操作按钮同一行、顶端对齐 */}
           <div className="flex items-start justify-between gap-3 flex-wrap px-1">
             <header>
-              <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">{d.short_code}</h1>
-              {d.source_ticket_id && (
-                <div className="mt-1 text-[12px] text-hub-textMuted font-mono">
-                  来源单号 {d.source_ticket_id}
-                </div>
-              )}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
+                  {d.short_code}
+                </h1>
+                {d.source_ticket_id && (
+                  <span className="text-[12px] text-hub-textMuted font-mono">
+                    来源编号：{d.source_ticket_id}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
                 <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
                 {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
@@ -241,17 +245,19 @@ export function TicketDetailPage() {
 
           {/* 2. 客户信息容器：两行、每行 3 字段、平铺左右对齐 */}
           <Card title="客户信息">
-            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-              <Field label="提单公司">{d.reporter_company ?? "—"}</Field>
-              <Field label="公司税号">
-                <span className="font-mono">{d.reporter_tax_no ?? "—"}</span>
-              </Field>
-              <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
-              <Field label="提单人">{d.reporter_name ?? "—"}</Field>
-              <Field label="提单人手机">
-                <span className="font-mono">{d.reporter_mobile ?? "—"}</span>
-              </Field>
-              <Field label="提单人邮箱">{d.reporter_email ?? "—"}</Field>
+            <div className="bg-hub-panel border border-hub-borderLight rounded-[8px] px-4 py-3.5">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3.5">
+                <Field label="提单公司">{d.reporter_company ?? "—"}</Field>
+                <Field label="公司税号">
+                  <span className="font-mono">{d.reporter_tax_no ?? "—"}</span>
+                </Field>
+                <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
+                <Field label="提单人">{d.reporter_name ?? "—"}</Field>
+                <Field label="提单人手机">
+                  <span className="font-mono">{d.reporter_mobile ?? "—"}</span>
+                </Field>
+                <Field label="提单人邮箱">{d.reporter_email ?? "—"}</Field>
+              </div>
             </div>
           </Card>
 
@@ -307,7 +313,7 @@ export function TicketDetailPage() {
               </div>
 
               {/* 5.2 右：节点处理详情 */}
-              <div className="space-y-4 lg:border-l lg:border-hub-borderLight lg:pl-4">
+              <div className="space-y-5 lg:border-l lg:border-hub-borderLight lg:pl-4">
                 <Field label="处理状态">
                   <span className="inline-flex items-center gap-2">
                     <StatusTag status={d.op_status ?? d.status} />
@@ -315,7 +321,9 @@ export function TicketDetailPage() {
                 </Field>
 
                 <div>
-                  <div className="text-[11px] text-hub-textMuted mb-1">处理建议</div>
+                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
+                    处理建议
+                  </div>
                   {/* 可选，前端记录选择；第一版本默认「正常跟进」；提交动作待后端接口 */}
                   <select
                     value={suggestion}
@@ -336,7 +344,7 @@ export function TicketDetailPage() {
                 </div>
 
                 <div>
-                  <div className="text-[11px] text-hub-textMuted mb-1">
+                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                     处理说明
                     <span className="ml-2 font-normal text-hub-textFaint">
                       {nodeIdx === 0 ? "（当前节点）" : "（历史节点 · 只读）"}
@@ -378,16 +386,25 @@ export function TicketDetailPage() {
                 </div>
 
                 <div>
-                  <div className="text-[11px] text-hub-textMuted mb-1">处理附件</div>
+                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
+                    处理附件 / 补充凭证
+                  </div>
                   {/* 上传/删除/查看待后端支持；只展示附件名，点击新开窗口 */}
-                  <div className="text-[12px] text-hub-textFaint border border-dashed border-hub-border rounded-[7px] px-3 py-4 text-center bg-hub-panel">
-                    暂无处理附件（上传 / 删除 / 查看待后端支持）
+                  <div className="border border-dashed border-hub-border rounded-[8px] px-3 py-4 text-center bg-hub-panel">
+                    <span className="inline-flex items-center gap-1.5 text-[12px] text-hub-textFaint">
+                      <span className="inline-flex items-center gap-1 bg-white border border-hub-border rounded-full px-2.5 py-1 text-hub-textSecondary">
+                        📎 上传附件
+                      </span>
+                      支持上传诊断包 / SQL / 现场日志（上传 · 删除 · 查看待后端支持）
+                    </span>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="text-[11px] text-hub-textMuted">子任务列表</div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="text-[11px] font-bold text-hub-textMuted tracking-wide">
+                      子任务列表
+                    </div>
                     <div className="flex-1" />
                     {isSupervisor() && (
                       <>
@@ -485,7 +502,9 @@ export function TicketDetailPage() {
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="bg-white border border-hub-border rounded-[10px] shadow-sm">
-      <div className="px-4 py-2.5 border-b border-hub-borderLight">
+      <div className="px-4 py-2.5 border-b border-hub-borderLight flex items-center gap-2">
+        {/* 左侧高亮竖条 accent（对齐参考图控制台风格） */}
+        <span className="w-1 h-3.5 rounded-full bg-hub-teal flex-none" aria-hidden />
         <h2 className="m-0 text-[13px] font-extrabold text-hub-text tracking-[.3px]">
           {title}
         </h2>
@@ -510,17 +529,8 @@ function VerticalTimeline({
   onSelect: (idx: number) => void;
 }) {
   return (
-    // 固定高度=约 4 个节点，节点纵向均分填满容器；超过 4 个滚动查看
-    <ol
-      className="relative overflow-y-auto pr-1 flex flex-col justify-between h-full"
-      style={{ minHeight: 360 }}
-    >
-      {/* 贯穿粗竖线：left 对齐圆点中心(圆点 w-4=16px，中心 8px；li 左内边距对齐) */}
-      <span
-        className="absolute top-3 bottom-3 w-[3px] bg-hub-border rounded"
-        style={{ left: 7 }}
-        aria-hidden
-      />
+    // 卡片式节点，纵向排列；每张卡之间以居中 ▾ 连接（对齐参考图控制台风格）。超高滚动查看。
+    <ol className="overflow-y-auto pr-1 m-0 list-none p-0" style={{ maxHeight: 420 }}>
       {events.map((ev, idx) => {
         const isCurrent = idx === 0 && !terminal; // 倒序后最上=当前节点（终态则无进行中节点）
         const isSel = idx === selectedIdx;
@@ -536,41 +546,59 @@ function VerticalTimeline({
               ? `关联关闭 HUB-${ev.hub_issue_id}`
               : `关联建立 HUB-${ev.hub_issue_id}`;
         return (
-          <li
-            key={idx}
-            onClick={() => onSelect(idx)}
-            className={
-              "relative flex-1 min-h-[76px] flex items-start gap-2.5 cursor-pointer rounded-md py-2 pr-1 pl-0.5 " +
-              (isSel ? "bg-hub-teal-light" : "hover:bg-hub-panel")
-            }
-          >
-            <span
+          <li key={idx}>
+            <div
+              onClick={() => onSelect(idx)}
               className={
-                "relative z-10 mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
+                "relative flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors " +
                 (isCurrent
-                  ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
-                  : "bg-hub-green text-white border-hub-green")
+                  ? "border-hub-teal-border bg-hub-teal-light"
+                  : isSel
+                    ? "border-hub-teal-border bg-white"
+                    : "border-hub-border bg-white hover:bg-hub-panel")
               }
             >
-              {isCurrent ? "" : "✓"}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div
+              {/* 选中/当前节点左侧 teal 竖条 */}
+              {(isCurrent || isSel) && (
+                <span
+                  className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-hub-teal"
+                  aria-hidden
+                />
+              )}
+              <span
                 className={
-                  "text-[11.5px] truncate " +
+                  "mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
                   (isCurrent
-                    ? "font-bold text-hub-amber-deep"
-                    : isSel
-                      ? "font-semibold text-hub-teal-deep"
-                      : "text-hub-text")
+                    ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
+                    : "bg-hub-green text-white border-hub-green")
                 }
-                title={label}
               >
-                {label}
+                {isCurrent ? "" : "✓"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={
+                    "text-[11.5px] truncate " +
+                    (isCurrent
+                      ? "font-bold text-hub-amber-deep"
+                      : isSel
+                        ? "font-semibold text-hub-teal-deep"
+                        : "text-hub-text font-medium")
+                  }
+                  title={label}
+                >
+                  {label}
+                </div>
+                <div className="text-[10.5px] text-hub-textMuted font-mono truncate">{ts}</div>
+                <div className="text-[10.5px] text-hub-textFaint truncate">处理人：{actor}</div>
               </div>
-              <div className="text-[10.5px] text-hub-textMuted font-mono truncate">{ts}</div>
-              <div className="text-[10.5px] text-hub-textFaint truncate">处理人：{actor}</div>
             </div>
+            {/* 连接符：非末节点显示居中 ▾ */}
+            {idx < events.length - 1 && (
+              <div className="text-center text-hub-textFaint text-[11px] leading-none py-1" aria-hidden>
+                ▾
+              </div>
+            )}
           </li>
         );
       })}
@@ -670,7 +698,7 @@ function SubTicketList({
           {results.map((r, i) => {
             const c = r.data;
             return (
-              <tr key={childIds[i]} className="border-t border-hub-borderLight">
+              <tr key={childIds[i]} className="border-t border-hub-borderLight hover:bg-hub-panel">
                 <td className="px-2.5 py-1.5 whitespace-nowrap">
                   <Link
                     to={`/tickets/${childIds[i]}`}
@@ -931,18 +959,18 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
     return <span className="text-hub-textFaint">暂无附件</span>;
   }
   return (
-    <ul className="space-y-1 m-0 list-none p-0">
+    <ul className="flex flex-wrap gap-2 m-0 list-none p-0">
       {attachments.map((a, i) => (
         <li key={i}>
           <a
             href={a.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-hub-teal hover:underline inline-flex items-center gap-1 break-all"
-            title={a.url}
+            className="inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]"
+            title={a.name}
           >
-            <span className="text-hub-textFaint">📎</span>
-            {a.name}
+            <span className="text-hub-textFaint flex-none">📎</span>
+            <span className="truncate">{a.name}</span>
           </a>
         </li>
       ))}
