@@ -90,8 +90,9 @@ describe("HubIssueDetailPage", () => {
     expect(await screen.findByText("HUB-OP")).toBeInTheDocument();
     expect(screen.getByText("客户找不到入口")).toBeInTheDocument();
     expect(screen.getByText("Operation")).toBeInTheDocument();
-    // Operation type-specific
-    expect(screen.getByText("回复 v2")).toBeInTheDocument();
+    // 回复内容并入「任务进度 → 解决方案」（独立「回复」模块已移除）
+    expect(screen.queryByText(/^回复 v/)).not.toBeInTheDocument();
+    expect(screen.getByText(/解决方案 ·/)).toBeInTheDocument();
     expect(screen.getByText(/请进入「设置/)).toBeInTheDocument();
     // linked tickets
     expect(screen.getByText("关联 ticket (2)")).toBeInTheDocument();
@@ -184,22 +185,23 @@ describe("HubIssueDetailPage", () => {
     );
   }
 
-  it("#5 supervisor 看到修改回复按钮", async () => {
+  it("#5 supervisor 看到解决方案「修改」按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationHub(40);
     renderPage(40);
     expect(await screen.findByText("HUB-GATE")).toBeInTheDocument();
-    expect(screen.getByText("修改回复")).toBeInTheDocument();
+    // 任务进度→解决方案区的编辑入口（已有方案时按钮为「修改」）
+    expect(screen.getByRole("button", { name: "修改" })).toBeInTheDocument();
     localStorage.clear();
   });
 
-  it("#5 member 看不到修改回复按钮（只读回复正文）", async () => {
+  it("#5 member 看不到解决方案编辑按钮（只读方案正文）", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubOperationHub(41);
     renderPage(41);
     expect(await screen.findByText("HUB-GATE")).toBeInTheDocument();
-    expect(screen.getByText("已有回复")).toBeInTheDocument(); // 正文可读
-    expect(screen.queryByText("修改回复")).not.toBeInTheDocument(); // 编辑入口隐藏
+    expect(screen.getByText("已有回复")).toBeInTheDocument(); // 方案正文可读
+    expect(screen.queryByRole("button", { name: "修改" })).not.toBeInTheDocument(); // 编辑入口隐藏
     localStorage.clear();
   });
 });

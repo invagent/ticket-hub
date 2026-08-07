@@ -235,6 +235,48 @@ describe("TicketDetailPage", () => {
     expect(container.querySelectorAll(".hub-node-blink").length).toBe(0);
   });
 
+  it("处理说明：当前节点可编辑，点历史节点转只读；无独立保存按钮", async () => {
+    server.use(
+      http.get("*/api/tickets/610", () =>
+        HttpResponse.json({
+          id: 610,
+          short_code: "TKT-610",
+          source_code: "ksm",
+          source_ticket_id: "ksm-610",
+          type: "Raw",
+          status: "in_progress", // 非终态 → 当前节点可编辑
+          title: "进行中工单",
+          module: null,
+          assigned_user_id: null,
+          ...baseTicket,
+          hub_issue_id: null,
+          source_payload: null,
+        }),
+      ),
+      http.get("*/api/tickets/610/history", () =>
+        HttpResponse.json({
+          ticket_id: 610,
+          items: [
+            { kind: "status", occurred_at: "2026-08-01T10:00:00Z", from_status: null, to_status: "received", changed_by: "system", reason: null, metadata_: null, hub_issue_id: null, effective_to: null, change_reason: null, human_confirmed: null },
+            { kind: "status", occurred_at: "2026-08-03T10:00:00Z", from_status: "received", to_status: "in_progress", changed_by: "张三", reason: null, metadata_: null, hub_issue_id: null, effective_to: null, change_reason: null, human_confirmed: null },
+          ],
+        }),
+      ),
+    );
+
+    renderPage(610);
+    expect(await screen.findByText("TKT-610")).toBeInTheDocument();
+    await screen.findByText(/received → in_progress/);
+    const ta = () => document.querySelector("textarea") as HTMLTextAreaElement;
+    // 默认选中当前节点(idx0) → 可编辑
+    expect(ta().readOnly).toBe(false);
+    // 无独立「保存」按钮（入库随页面「确认」）
+    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+    // 点历史节点(∅→received) → 只读
+    await userEvent.click(screen.getByText(/∅ → received/));
+    expect(ta().readOnly).toBe(true);
+  });
+
   // #3 工单手动毕业按钮
   function stubTicket(id: number, hubIssueId: number | null) {
     server.use(

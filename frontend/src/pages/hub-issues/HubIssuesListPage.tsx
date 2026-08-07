@@ -451,6 +451,7 @@ export function HubIssuesListPage() {
                     "任务关闭时间",
                     "任务关联工单",
                     "累计耗时(小时)",
+                    "解决方案",
                   ].map((h) => (
                     <th key={h} className="px-3 py-2 text-left whitespace-nowrap">
                       {h}
@@ -462,7 +463,7 @@ export function HubIssuesListPage() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="p-6 text-center text-xs text-hub-textFaint">
+                    <td colSpan={14} className="p-6 text-center text-xs text-hub-textFaint">
                       暂无任务
                     </td>
                   </tr>
@@ -577,6 +578,19 @@ export function HubIssuesListPage() {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-hub-textSecondary">
                         {hrs == null ? "—" : `${hrs}h`}
+                      </td>
+                      {/* 解决方案=任务处理说明：默认最多 100 字、超出…、悬浮看全文。
+                          HubIssueSummary 暂无 reply_content 文本 → 用 feedback_note 兜底，待后端在 summary 暴露。 */}
+                      <td className="px-3 py-2.5 max-w-[240px]">
+                        {h.feedback_note ? (
+                          <span className="block truncate" title={h.feedback_note}>
+                            {h.feedback_note.length > 100
+                              ? `${h.feedback_note.slice(0, 100)}...`
+                              : h.feedback_note}
+                          </span>
+                        ) : (
+                          <span className="text-hub-textFaint">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-right">
                         <div className="flex gap-1.5 justify-end">

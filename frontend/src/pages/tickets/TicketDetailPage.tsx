@@ -143,6 +143,9 @@ export function TicketDetailPage() {
   const [addSubOpen, setAddSubOpen] = useState(false);
   // 添加子任务：本地草稿行（后端"查工单任务列表→无则建/有则关联"接口待补，草稿仅前端可见）
   const [subDrafts, setSubDrafts] = useState<{ title: string; type: string }[]>([]);
+  // 处理节点：选中节点 idx（0=最新/当前）+ 逐节点处理说明草稿（后端逐节点字段待补）
+  const [nodeIdx, setNodeIdx] = useState(0);
+  const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const assign = useMutation({
     mutationFn: (uid: number) =>
       api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
@@ -181,8 +184,13 @@ export function TicketDetailPage() {
         )}
         <button
           type="button"
-          onClick={() => setConfirmNotice(nextStepHint(d?.status))}
-          title="按工单状态判断下一步操作（如处理中→关闭工单）"
+          onClick={() => {
+            const hasNote = (noteDrafts[0] ?? "").trim().length > 0;
+            setConfirmNotice(
+              (hasNote ? "已记录当前节点处理说明；" : "") + nextStepHint(d?.status),
+            );
+          }}
+          title="按工单状态判断下一步操作（如处理中→关闭工单）；提交当前节点处理说明"
           className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95"
         >
           确认
@@ -289,6 +297,8 @@ export function TicketDetailPage() {
                   <VerticalTimeline
                     events={[...history.data.items].reverse()}
                     terminal={DONE_STATUSES.includes(d.status)}
+                    selectedIdx={nodeIdx}
+                    onSelect={setNodeIdx}
                   />
                 )}
               </div>
@@ -323,29 +333,44 @@ export function TicketDetailPage() {
                 </div>
 
                 <div>
-                  <div className="text-[11px] text-hub-textMuted mb-1">处理说明</div>
-                  {/* 默认展示回复内容（cached_reply_content，原「回复内容」容器合并到此）；
-                      编辑保存待后端。最大 2000 字符 */}
-                  <textarea
-                    readOnly
-                    maxLength={2000}
-                    value={d.cached_reply_content ?? ""}
-                    placeholder="默认等于子任务处理结果；最新节点可编辑（待后端支持）"
-                    className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-hub-panel resize-y outline-none"
-                  />
-                  <div className="mt-1 flex items-center justify-between">
-                    <span className="text-[10.5px] text-hub-textFaint">
-                      {d.cached_reply_version != null
-                        ? `回复 v${d.cached_reply_version} · 历史节点只读；最大 2000 字符`
-                        : "历史节点只读；最大 2000 字符"}
+                  <div className="text-[11px] text-hub-textMuted mb-1">
+                    处理说明
+                    <span className="ml-2 font-normal text-hub-textFaint">
+                      {nodeIdx === 0 ? "（当前节点）" : "（历史节点 · 只读）"}
                     </span>
-                    <button
-                      type="button"
-                      disabled
-                      className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-hub-teal text-white opacity-40 cursor-not-allowed"
-                    >
-                      保存
-                    </button>
+                  </div>
+                  {/* 选中节点=当前节点(idx0)且工单非终态 → 可编辑；否则只读。
+                      逐节点处理说明后端无字段 → 本地草稿 noteDrafts；当前节点默认取 cached_reply_content。
+                      无独立保存按钮，入库随页面顶部「确认」按钮（落库待后端）。 */}
+                  {(() => {
+                    const editable = nodeIdx === 0 && !DONE_STATUSES.includes(d.status);
+                    const fallback = nodeIdx === 0 ? (d.cached_reply_content ?? "") : "";
+                    const val = noteDrafts[nodeIdx] ?? fallback;
+                    return (
+                      <textarea
+                        readOnly={!editable}
+                        maxLength={2000}
+                        value={val}
+                        onChange={(e) =>
+                          setNoteDrafts((prev) => ({ ...prev, [nodeIdx]: e.target.value }))
+                        }
+                        placeholder={
+                          editable
+                            ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
+                            : "历史节点只读"
+                        }
+                        className={
+                          "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
+                          (editable
+                            ? "bg-white focus:border-hub-teal"
+                            : "bg-hub-panel cursor-not-allowed")
+                        }
+                      />
+                    );
+                  })()}
+                  <div className="mt-1 text-[10.5px] text-hub-textFaint">
+                    {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
+                    最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
                   </div>
                 </div>
 
@@ -468,15 +493,30 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 // ---- 竖向处理时间轴（当前节点=最上，橙黄灯管闪烁；已完成节点圆圈打√） --------
+// A1：一条贯穿的粗竖线把节点串起来。A2：节点可点选，selectedIdx 高亮，onSelect 回调。
 // terminal=true（工单已终态 done/closed/…）时，最新节点也算「已完成」打√，不再闪烁在处理中。
-function VerticalTimeline({ events, terminal }: { events: HistoryEvent[]; terminal: boolean }) {
+function VerticalTimeline({
+  events,
+  terminal,
+  selectedIdx,
+  onSelect,
+}: {
+  events: HistoryEvent[];
+  terminal: boolean;
+  selectedIdx: number;
+  onSelect: (idx: number) => void;
+}) {
   return (
-    <ol
-      className="relative space-y-3 overflow-y-auto pr-1"
-      style={{ maxHeight: 264 }} // 约 4 个节点高度，超出滚动
-    >
+    <ol className="relative overflow-y-auto pr-1" style={{ maxHeight: 288 }}>
+      {/* 贯穿粗竖线：left 对齐圆点中心(圆点 w-4=16px，中心 8px；li 左内边距对齐) */}
+      <span
+        className="absolute top-2 bottom-2 w-[3px] bg-hub-border rounded"
+        style={{ left: 7 }}
+        aria-hidden
+      />
       {events.map((ev, idx) => {
         const isCurrent = idx === 0 && !terminal; // 倒序后最上=当前节点（终态则无进行中节点）
+        const isSel = idx === selectedIdx;
         const actor =
           ev.kind === "status"
             ? (ev.changed_by ?? "—")
@@ -489,10 +529,17 @@ function VerticalTimeline({ events, terminal }: { events: HistoryEvent[]; termin
               ? `关联关闭 HUB-${ev.hub_issue_id}`
               : `关联建立 HUB-${ev.hub_issue_id}`;
         return (
-          <li key={idx} className="flex items-start gap-2.5">
+          <li
+            key={idx}
+            onClick={() => onSelect(idx)}
+            className={
+              "relative flex items-start gap-2.5 cursor-pointer rounded-md py-1.5 pr-1 pl-0.5 " +
+              (isSel ? "bg-hub-teal-light" : "hover:bg-hub-panel")
+            }
+          >
             <span
               className={
-                "mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
+                "relative z-10 mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
                 (isCurrent
                   ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
                   : "bg-hub-green text-white border-hub-green")
@@ -504,7 +551,11 @@ function VerticalTimeline({ events, terminal }: { events: HistoryEvent[]; termin
               <div
                 className={
                   "text-[11.5px] truncate " +
-                  (isCurrent ? "font-bold text-hub-amber-deep" : "text-hub-text")
+                  (isCurrent
+                    ? "font-bold text-hub-amber-deep"
+                    : isSel
+                      ? "font-semibold text-hub-teal-deep"
+                      : "text-hub-text")
                 }
                 title={label}
               >
@@ -586,7 +637,8 @@ function SubTicketList({
       staleTime: 30_000,
     })),
   });
-  const cols = ["子任务编号", "子任务描述", "类型", "状态", "处理人", "解决方案"];
+  // 列名对齐工单任务表字段（子任务=关联的工单任务表数据）
+  const cols = ["任务编号", "任务说明", "任务类型", "任务状态", "任务处理人", "任务解决方案"];
   const empty = childIds.length === 0 && drafts.length === 0;
   return (
     <div className="overflow-x-auto border border-hub-border rounded-[7px]">

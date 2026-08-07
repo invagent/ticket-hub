@@ -3,17 +3,11 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/api/client";
-import { currentRole, isSupervisor } from "@/api/auth";
+import { isSupervisor } from "@/api/auth";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { HubCollabActions } from "@/components/hubActions";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import type { paths } from "@/api/types";
-
-/** supervisor / admin / knowledge_op 可用（人工重答等知识运营权限，同后端 require_knowledge_op）。 */
-function isKnowledgeOp(): boolean {
-  const r = currentRole();
-  return r === "knowledge_op" || r === "supervisor" || r === "admin";
-}
 
 type HubIssueDetail =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
@@ -68,11 +62,8 @@ export function HubIssueDetailPage() {
           {/* 任务信息容器（替换原「基本信息」两容器之一） */}
           <TaskInfoCard data={detail.data} />
 
-          {/* 任务进度容器（横向时间轴，替换原类型专属日期网格容器） */}
+          {/* 任务进度容器（横向时间轴 + 节点解决方案编辑，已并入原「回复」模块能力） */}
           <TaskProgressCard data={detail.data} />
-
-          {/* Operation 回复编辑（功能区，保留） */}
-          {detail.data.type === "Operation" && <OperationReplySection data={detail.data} />}
 
           {/* 子任务里程碑 + 按责任人拆分（研发类，保留） */}
           {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") && (
@@ -418,53 +409,154 @@ function buildNodes(data: HubIssueDetail): ProgressNode[] {
 
 function TaskProgressCard({ data }: { data: HubIssueDetail }) {
   const nodes = buildNodes(data);
+  const qc = useQueryClient();
+  // C2：选中节点 + 逐节点解决方案草稿（后端逐节点方案字段待补；默认取 hub reply_content）
+  const [sel, setSel] = useState(() => {
+    const cur = nodes.findIndex((n) => n.current);
+    return cur >= 0 ? cur : Math.max(0, nodes.length - 1);
+  });
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // 保存：并入原「回复」能力——Operation 类型把方案存为 hub reply（真实生效）；
+  // 其它类型逐节点方案后端无字段 → 暂存本地草稿并提示待后端。
+  const save = useMutation({
+    mutationFn: (content: string) =>
+      postByPath("/api/hub-issues/{hub_issue_id}/reply", { hub_issue_id: data.id }, { content }),
+    onSuccess: (r) => {
+      setError(null);
+      setEditing(false);
+      setNotice(`已保存 v${r.version}，级联 ${r.cascaded_ticket_count} 条工单缓存`);
+      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
+  const canEdit = isSupervisor();
+  const isOperation = data.type === "Operation";
+  const nodeSolution = (i: number) =>
+    drafts[i] ?? (i === sel && isOperation ? (data.reply_content ?? "") : (drafts[i] ?? ""));
+  const selVal = drafts[sel] ?? (isOperation ? (data.reply_content ?? "") : "");
+
   return (
     <Card title="任务进度">
-      {/* 横向平铺（最多 3 节点可视）+ 左右滚动查看历史节点 */}
-      <div className="overflow-x-auto pb-1">
-        <ol className="flex items-stretch gap-0 min-w-max py-2">
-          {nodes.map((n, i) => (
-            <li key={i} className="flex items-center">
-              <div className="flex flex-col items-center w-[150px] px-2">
-                <span
-                  className={
-                    "w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border " +
-                    (n.current
-                      ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
-                      : n.reached
-                        ? "bg-hub-green text-white border-hub-green"
-                        : "bg-white text-hub-textFaint border-hub-border")
-                  }
-                >
-                  {n.reached && !n.current ? "✓" : i + 1}
-                </span>
-                <div
-                  className={
-                    "mt-1.5 text-[12px] font-semibold " +
-                    (n.current ? "text-hub-amber-deep" : n.reached ? "text-hub-text" : "text-hub-textMuted")
-                  }
-                >
-                  {n.label}
-                </div>
-                <div className="mt-1 text-[10px] text-hub-textFaint text-center leading-tight space-y-0.5">
-                  <div>开始 {fmtDateShort(n.start)}</div>
-                  <div>结束 {fmtDateShort(n.end)}</div>
-                  <div>耗时 {nodeHours(n)}</div>
-                </div>
-              </div>
-              {i < nodes.length - 1 && (
-                <span
-                  className={
-                    "h-0.5 w-8 flex-none " + (n.reached ? "bg-hub-green" : "bg-hub-border")
-                  }
-                />
-              )}
-            </li>
-          ))}
-        </ol>
+      {/* C1：节点等分铺满容器宽度（每节点 flex-1，连接线在节点之间等分居中） */}
+      <ol className="flex items-start py-2">
+        {nodes.map((n, i) => (
+          <li key={i} className="flex-1 flex flex-col items-center relative min-w-0">
+            {/* 左右连接线（粗），首/尾各半段不画外侧 */}
+            {i > 0 && (
+              <span
+                className={
+                  "absolute top-3 right-1/2 w-full h-[3px] -translate-y-1/2 " +
+                  (n.reached ? "bg-hub-green" : "bg-hub-border")
+                }
+                aria-hidden
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setSel(i)}
+              className={
+                "relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold border " +
+                (n.current
+                  ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
+                  : n.reached
+                    ? "bg-hub-green text-white border-hub-green"
+                    : "bg-white text-hub-textFaint border-hub-border") +
+                (i === sel ? " ring-2 ring-hub-teal ring-offset-1" : "")
+              }
+            >
+              {n.reached && !n.current ? "✓" : i + 1}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSel(i)}
+              className={
+                "mt-1.5 text-[12px] font-semibold " +
+                (i === sel
+                  ? "text-hub-teal-deep"
+                  : n.current
+                    ? "text-hub-amber-deep"
+                    : n.reached
+                      ? "text-hub-text"
+                      : "text-hub-textMuted")
+              }
+            >
+              {n.label}
+            </button>
+            <div className="mt-1 text-[10px] text-hub-textFaint text-center leading-tight space-y-0.5">
+              <div>开始 {fmtDateShort(n.start)}</div>
+              <div>结束 {fmtDateShort(n.end)}</div>
+              <div>耗时 {nodeHours(n)}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      {/* C2：选中节点的解决方案（点节点切换）+ 可改/保存 */}
+      <div className="mt-3 pt-3 border-t border-hub-borderLight">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">
+            解决方案 · {nodes[sel]?.label ?? ""}
+          </span>
+          {canEdit && !editing && (
+            <button
+              onClick={() => {
+                setNotice(null);
+                setEditing(true);
+              }}
+              className="text-[11.5px] text-hub-teal hover:underline"
+            >
+              {selVal ? "修改" : "填写"}
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <div className="space-y-2">
+            <textarea
+              value={selVal}
+              onChange={(e) => setDrafts((prev) => ({ ...prev, [sel]: e.target.value }))}
+              rows={5}
+              placeholder="输入该节点的处理方案…"
+              className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => save.mutate(selVal)}
+                disabled={save.isPending || !selVal.trim()}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95"
+              >
+                {save.isPending ? "保存中…" : "保存"}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="px-3.5 py-1.5 text-xs font-semibold border border-hub-border rounded-md text-hub-textSecondary"
+              >
+                取消
+              </button>
+            </div>
+            {!isOperation && (
+              <p className="text-[10.5px] text-hub-textFaint">
+                逐节点方案落库待后端；非运营类当前保存走 hub 回复接口。
+              </p>
+            )}
+          </div>
+        ) : nodeSolution(sel) ? (
+          <pre className="text-xs whitespace-pre-wrap p-3 bg-hub-teal-light rounded-[10px] border border-hub-teal-border text-hub-teal-deep m-0">
+            {nodeSolution(sel)}
+          </pre>
+        ) : (
+          <p className="text-xs text-hub-textFaint">该节点暂无处理方案</p>
+        )}
+        {notice && <p className="text-[11px] text-hub-green mt-1">{notice}</p>}
+        {error && <p className="text-[11px] text-hub-rose mt-1">{error}</p>}
       </div>
-      <p className="text-[10.5px] text-hub-textFaint mt-1">
-        节点开始/结束/耗时依赖逐节点时间戳，后端暂无精确记录时以里程碑日期近似（待后端支持）。
+
+      <p className="text-[10.5px] text-hub-textFaint mt-2">
+        节点开始/结束/耗时依赖逐节点时间戳；逐节点处理方案后端暂无字段，以里程碑/hub 回复近似（待后端支持）。
       </p>
     </Card>
   );
@@ -490,131 +582,6 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
         </h2>
       </div>
       <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
-function OperationReplySection({ data }: { data: HubIssueDetail }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const save = useMutation({
-    mutationFn: () =>
-      postByPath(
-        "/api/hub-issues/{hub_issue_id}/reply",
-        { hub_issue_id: data.id },
-        { content: draft },
-      ),
-    onSuccess: (r) => {
-      setError(null);
-      setEditing(false);
-      setNotice(
-        `已保存 v${r.version}，级联 ${r.cascaded_ticket_count} 条工单缓存` +
-          (r.outbox_count > 0 ? `，${r.outbox_count} 条待回写源系统` : ""),
-      );
-      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
-  });
-
-  const reAnswer = useMutation({
-    mutationFn: () =>
-      postByPath("/api/hub-issues/{hub_issue_id}/re-answer", { hub_issue_id: data.id }),
-    onSuccess: (r) => {
-      setError(null);
-      setNotice(
-        r.answered
-          ? `已重答，op_status=${r.op_status}`
-          : `重答未产生新答复（op_status=${r.op_status}），可能未命中 skill 或答案未变`,
-      );
-      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
-  });
-
-  const canReAnswer =
-    isKnowledgeOp() &&
-    (data.op_status === "processing" || data.op_status === "exception") &&
-    data.op_handler != null &&
-    data.op_handler !== "agent";
-
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-3">
-        <SectionTitle>回复 v{data.reply_content_version}</SectionTitle>
-        {isSupervisor() && !editing && (
-          <button
-            onClick={() => {
-              setDraft(data.reply_content ?? "");
-              setNotice(null);
-              setEditing(true);
-            }}
-            className="text-[11.5px] text-hub-teal hover:underline"
-          >
-            {data.reply_content ? "修改回复" : "撰写回复"}
-          </button>
-        )}
-        {canReAnswer && (
-          <button
-            onClick={() => {
-              setNotice(null);
-              reAnswer.mutate();
-            }}
-            disabled={reAnswer.isPending}
-            className="text-[11.5px] text-hub-amber-deep hover:underline disabled:opacity-50"
-            title="改完 KB/skill 后同步重答一次（人工介入中或处理异常时可用）"
-          >
-            {reAnswer.isPending ? "重答中…" : "重答"}
-          </button>
-        )}
-      </div>
-      {editing ? (
-        <div className="space-y-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={5}
-            placeholder="输入面向客户的回复内容…"
-            className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => save.mutate()}
-              disabled={save.isPending || !draft.trim()}
-              className="px-3.5 py-1.5 text-xs font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95"
-            >
-              {save.isPending ? "保存中…" : "保存并级联"}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="px-3.5 py-1.5 text-xs font-semibold border border-hub-border rounded-md text-hub-textSecondary"
-            >
-              取消
-            </button>
-          </div>
-          <p className="text-[11px] text-hub-textMuted">
-            保存后回复会版本化存档，并级联到全部关联工单的缓存 + 入队 sync_outbox；KSM
-            回写 sender 开关开启后自动回写（答复关单）。
-          </p>
-        </div>
-      ) : data.reply_content ? (
-        <>
-          <pre className="text-xs whitespace-pre-wrap p-3 bg-hub-teal-light rounded-[10px] border border-hub-teal-border text-hub-teal-deep">
-            {data.reply_content}
-          </pre>
-          <p className="text-[11px] text-hub-textMuted">
-            by <code className="font-mono">{data.reply_authored_by ?? "—"}</code>
-            {data.reply_updated_at && <> · {new Date(data.reply_updated_at).toLocaleString()}</>}
-          </p>
-        </>
-      ) : (
-        <p className="text-xs text-hub-textFaint">尚无回复</p>
-      )}
-      {notice && <p className="text-[11px] text-hub-green">{notice}</p>}
-      {error && <p className="text-[11px] text-hub-rose">{error}</p>}
     </section>
   );
 }
