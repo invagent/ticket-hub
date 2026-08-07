@@ -1882,13 +1882,16 @@ def reclassify(
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     old_type = hub.type
     hub.type = body.new_type
-    # 分类修正审计（写在关联 ticket 上，human_confirmed）
-    tk = (
+    # 同步改判所有关联 ticket 的 predicted_type + 写修正审计（human_confirmed）。
+    # 一个 hub 可能挂多条 ticket（dedup 合并），全部更新——否则工单列表「AI 分类」
+    # 列（读 ticket.predicted_type）仍显示旧类型，与 hub.type 不一致。
+    linked = (
         db.query(Ticket)
         .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
-        .first()
+        .all()
     )
-    if tk is not None:
+    for tk in linked:
+        tk.predicted_type = body.new_type
         db.add(
             AgentDecision(
                 decision_type="classify_type",
