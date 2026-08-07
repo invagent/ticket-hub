@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.auth import issue_jwt
-from app.models import HubIssue, User
+from app.models import HubIssue, Ticket, User
 
 
 def _bearer(uid: int, *, name: str = "carol", role: str = "supervisor") -> dict[str, str]:
@@ -31,6 +31,21 @@ def act_world(db_session: Session) -> Session:
                 status="pending_review",
             )
         )
+    db_session.flush()
+    # hub 71 挂一条 ticket（predicted_type=Bug_fix）——验证改判会同步 ticket.predicted_type
+    db_session.add(
+        Ticket(
+            id=710,
+            short_code="TKT-000710",
+            source_code="ksm",
+            source_ticket_id="k-710",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=71,
+            predicted_type="Bug_fix",
+        )
+    )
     db_session.commit()
     return db_session
 
@@ -64,6 +79,10 @@ def test_reclassify_to_operation_enters_answer_chain(
     assert hub.status == "created"
     assert hub.op_status == "processing"
     assert hub.op_handler == "agent"  # 下轮 drain 会扫到
+    # 关联 ticket 的 predicted_type 也同步改判（否则工单列表 AI 分类列仍显示旧类型）
+    tk = act_world.get(Ticket, 710)
+    act_world.refresh(tk)
+    assert tk.predicted_type == "Operation"
 
 
 def test_dismiss_closes(app_client: TestClient, act_world: Session) -> None:
