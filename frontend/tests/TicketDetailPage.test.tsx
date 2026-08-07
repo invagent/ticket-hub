@@ -260,104 +260,92 @@ describe("TicketDetailPage", () => {
     );
   }
 
-  it("#3 supervisor + 未毕业 → 显示毕业按钮", async () => {
+  // 标题=工单编号（不再展示工单主题溢出）
+  it("title shows 工单编号(short_code), not 工单主题", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(310, null);
+    renderPage(310);
+    const h1 = await screen.findByRole("heading", { level: 1 });
+    expect(h1).toHaveTextContent("TKT-310");
+    expect(h1).not.toHaveTextContent("毕业测试"); // 主题不再作为标题
+    localStorage.clear();
+  });
+
+  // 确认子任务按钮（原「毕业为 hub_issue」，移到子任务列表右上角）
+  it("supervisor + 未毕业 → 显示「确认子任务」按钮，可点击", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(300, null);
     renderPage(300);
     expect(await screen.findByText("TKT-300")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "毕业为 hub_issue" })).toBeInTheDocument();
+    const btn = screen.getByRole("button", { name: "确认子任务" });
+    expect(btn).toBeEnabled();
     localStorage.clear();
   });
 
-  it("#3 已毕业（hub_issue_id 非空）→ 不显示毕业按钮", async () => {
+  it("已毕业（hub_issue_id 非空）→「确认子任务」禁用", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(301, 55);
     renderPage(301);
     expect(await screen.findByText("TKT-301")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "毕业为 hub_issue" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认子任务" })).toBeDisabled();
     localStorage.clear();
   });
 
-  it("#3 member → 不显示毕业按钮", async () => {
+  it("member → 不显示确认子任务/添加子任务按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubTicket(302, null);
     renderPage(302);
     expect(await screen.findByText("TKT-302")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "毕业为 hub_issue" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认子任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加子任务" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 
-  // #5 重新关联弹窗
-  it("#5 supervisor + 已毕业 → 显示重新关联按钮，点击打开弹窗", async () => {
+  // 添加子任务弹窗 → 追加本地草稿行
+  it("添加子任务 → 弹窗录入 → 子任务列表出现草稿行", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubTicket(303, 55);
-    renderPage(303);
-    expect(await screen.findByText("TKT-303")).toBeInTheDocument();
-    const relinkBtn = screen.getByRole("button", { name: "重新关联" });
-    expect(relinkBtn).toBeInTheDocument();
-    await userEvent.click(relinkBtn);
-    expect(await screen.findByText("重新关联到其他 hub")).toBeInTheDocument();
-    expect(
-      screen.getByPlaceholderText("搜索 short_code 或标题（≥2 字）"),
-    ).toBeInTheDocument();
+    stubTicket(308, null);
+    renderPage(308);
+    expect(await screen.findByText("TKT-308")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "添加子任务" }));
+    const ta = await screen.findByPlaceholderText("描述子任务内容");
+    await userEvent.type(ta, "导出接口报错");
+    // 弹窗内确认
+    const dialogConfirm = screen.getAllByRole("button", { name: "确认" });
+    await userEvent.click(dialogConfirm[dialogConfirm.length - 1]);
+    // 草稿行出现：说明 + 待生成/待创建
+    expect(await screen.findByText("导出接口报错")).toBeInTheDocument();
+    expect(screen.getByText("待生成")).toBeInTheDocument();
     localStorage.clear();
   });
 
-  it("#5 未毕业（hub_issue_id 为空）→ 不显示重新关联按钮", async () => {
-    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubTicket(304, null);
-    renderPage(304);
-    expect(await screen.findByText("TKT-304")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "重新关联" })).not.toBeInTheDocument();
-    localStorage.clear();
-  });
-
-  it("#5 member → 不显示重新关联按钮", async () => {
-    localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
-    stubTicket(305, 55);
-    renderPage(305);
-    expect(await screen.findByText("TKT-305")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "重新关联" })).not.toBeInTheDocument();
-    localStorage.clear();
-  });
-
-  // Task 6: 手动指派单条
-  it("#6 supervisor → 显示指派按钮，点击后展示用户下拉 + 确认/取消", async () => {
+  // 转派：顶部转派按钮 → 弹窗（当前处理人 + 转派人搜索 + 原因）
+  it("supervisor → 顶部显示转派按钮，点击开弹窗含当前处理人/转派人/转派原因", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(306, 55);
     server.use(
       http.get("*/api/admin/users", () =>
         HttpResponse.json([
-          { id: 1, name: "张三", feishu_uid: "u1", employee_no: null, email: null, role: "assignee" },
-          { id: 2, name: "李四", feishu_uid: "u2", employee_no: null, email: null, role: "member" },
+          { id: 1, name: "张三", feishu_uid: "u1", employee_no: null, email: null, mobile: null, ksm_account: null, zhichi_agent_id: null, linear_user_id: null, linear_team_id: null, role: "assignee", is_active: true },
         ]),
       ),
     );
     renderPage(306);
     expect(await screen.findByText("TKT-306")).toBeInTheDocument();
-    const assignBtn = screen.getByRole("button", { name: "指派" });
-    await userEvent.click(assignBtn);
-    // 左上角常驻「确认」按钮现已可点（按状态推进，逻辑待后端）；指派内联「确认」在选人前禁用。
-    const confirmBtns = screen.getAllByRole("button", { name: "确认" });
-    expect(confirmBtns).toHaveLength(2);
-    // 恰有一个禁用（指派内联，未选人）
-    expect(confirmBtns.filter((b) => (b as HTMLButtonElement).disabled)).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
-    // roles filter: assignee 出现，member 不出现
-    expect(await screen.findByText(/张三/)).toBeInTheDocument();
-    expect(screen.queryByText(/李四/)).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "取消" }));
-    // 取消后指派内联确认消失，仅剩左上角常驻确认
-    expect(screen.getAllByRole("button", { name: "确认" })).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "转派" }));
+    expect(await screen.findByText("转派处理人")).toBeInTheDocument();
+    expect(screen.getByText(/当前处理人/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("填写转派原因（原因记录待后端支持）")).toBeInTheDocument();
+    // 右侧「工单处理」面板不再独立展示当前处理人字段
     localStorage.clear();
   });
 
-  it("#6 member → 不显示指派按钮", async () => {
+  it("member → 不显示转派按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubTicket(307, 55);
     renderPage(307);
     expect(await screen.findByText("TKT-307")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "指派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 });

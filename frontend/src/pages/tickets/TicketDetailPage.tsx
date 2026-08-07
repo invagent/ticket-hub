@@ -6,17 +6,16 @@
  * 后端暂无数据源 → 搭 UI 骨架 + 占位「待后端支持」，结构就位后续接后端只补数据。
  */
 import type { ReactNode } from "react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath } from "@/api/client";
 import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
-import { UserSelect } from "@/components/selectors";
+import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
-import { RelinkModal } from "./RelinkModal";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -135,32 +134,29 @@ export function TicketDetailPage() {
   useTabTitle(detail.data?.short_code);
 
   const qc = useQueryClient();
-  const [gradType, setGradType] = useState<string>("");
+  const navigate = useNavigate();
   const [gradErr, setGradErr] = useState<string | null>(null);
   // 处理建议（前端态，默认正常跟进）+ 确认按钮提示（逻辑待后端）
   const [suggestion, setSuggestion] = useState<string>("normal");
   const [confirmNotice, setConfirmNotice] = useState<string | null>(null);
-  const [relinkOpen, setRelinkOpen] = useState(false);
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignTo, setAssignTo] = useState<number | undefined>(undefined);
-  const [assignErr, setAssignErr] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [addSubOpen, setAddSubOpen] = useState(false);
+  // 添加子任务：本地草稿行（后端"查工单任务列表→无则建/有则关联"接口待补，草稿仅前端可见）
+  const [subDrafts, setSubDrafts] = useState<{ title: string; type: string }[]>([]);
   const assign = useMutation({
     mutationFn: (uid: number) =>
       api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
     onSuccess: () => {
-      setAssignErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
-      setAssignOpen(false);
-      setAssignTo(undefined);
+      setTransferOpen(false);
     },
-    onError: (e) => setAssignErr(e instanceof ApiError ? e.message : String(e)),
   });
   const graduate = useMutation({
     mutationFn: () =>
       api.post("/api/supervisor/create-hub-issue", {
         ticket_id: id,
-        type: gradType || (detail.data?.predicted_type ?? "Operation"),
+        type: detail.data?.predicted_type ?? "Operation",
       }),
     onSuccess: () => {
       setGradErr(null);
@@ -173,8 +169,16 @@ export function TicketDetailPage() {
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-2.5 pt-5 pb-10">
-      {/* 顶部操作条（左上）：确认 + 返回列表。确认按钮已可点，按工单状态推断下一步；执行逻辑待后端。 */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* 顶部操作条（右侧）：确认 | 转派 | 返回列表，三色区分 */}
+      <div className="flex items-center gap-2.5 flex-wrap justify-end">
+        {confirmNotice && (
+          <span className="mr-auto text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
+            {confirmNotice}
+            <button className="ml-2 text-hub-textFaint" onClick={() => setConfirmNotice(null)}>
+              ✕
+            </button>
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setConfirmNotice(nextStepHint(d?.status))}
@@ -183,19 +187,23 @@ export function TicketDetailPage() {
         >
           确认
         </button>
-        <Link to="/tickets" className="text-xs text-hub-teal hover:underline">
-          ← 返回列表
-        </Link>
-        {confirmNotice ? (
-          <span className="text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
-            {confirmNotice}
-            <button className="ml-2 text-hub-textFaint" onClick={() => setConfirmNotice(null)}>
-              ✕
-            </button>
-          </span>
-        ) : (
-          <span className="text-[10.5px] text-hub-textFaint">确认后按状态推进（执行逻辑待后端）</span>
+        {isSupervisor() && (
+          <button
+            type="button"
+            onClick={() => setTransferOpen(true)}
+            title="转派处理人"
+            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95"
+          >
+            转派
+          </button>
         )}
+        <button
+          type="button"
+          onClick={() => navigate("/tickets")}
+          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+        >
+          返回列表
+        </button>
       </div>
 
       {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
@@ -203,18 +211,14 @@ export function TicketDetailPage() {
 
       {d && (
         <div className="mt-4 space-y-3">
-          {/* 1. 页面标题区（无边框）：主标题 + 副标题(来源工单号) + 标签行 + 剩余处理时间 */}
+          {/* 1. 页面标题区（无边框）：主标题=工单编号 + 副标题(来源工单号) + 标签行 */}
           <header className="px-1">
-            <h1 className="m-0 text-[19px] font-bold leading-tight">{d.title ?? "(无标题)"}</h1>
-            <div className="mt-1 text-[12px] text-hub-textMuted font-mono flex items-center gap-2">
-              <span>{d.short_code}</span>
-              {d.source_ticket_id && (
-                <>
-                  <span className="text-hub-textFaint">·</span>
-                  <span>来源单号 {d.source_ticket_id}</span>
-                </>
-              )}
-            </div>
+            <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">{d.short_code}</h1>
+            {d.source_ticket_id && (
+              <div className="mt-1 text-[12px] text-hub-textMuted font-mono">
+                来源单号 {d.source_ticket_id}
+              </div>
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
               <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
@@ -270,135 +274,6 @@ export function TicketDetailPage() {
             </Card>
           )}
 
-          {/* 4. 工单信息 / 管理容器（保留既有主管操作：指派 / 毕业 / 重新关联） */}
-          <Card title="工单信息">
-            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-              <Field label="产品分类">{d.module ?? "—"}</Field>
-              <Field label="特性">{d.feature ?? "—"}</Field>
-              <Field label="产品线">{d.product_line_code ?? "—"}</Field>
-              <Field label="负责人">
-                <span className="inline-flex items-center gap-2 flex-wrap">
-                  {d.assigned_user_id
-                    ? (d.assigned_user_name ?? `用户 #${d.assigned_user_id}`)
-                    : "—"}
-                  {isSupervisor() && !assignOpen && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAssignErr(null);
-                        setAssignOpen(true);
-                      }}
-                      className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                    >
-                      指派
-                    </button>
-                  )}
-                  {isSupervisor() && assignOpen && (
-                    <span className="inline-flex items-center gap-2 flex-wrap">
-                      <UserSelect
-                        value={assignTo}
-                        onChange={setAssignTo}
-                        roles={["assignee", "supervisor", "admin"]}
-                        placeholder="选择处理人"
-                      />
-                      <button
-                        type="button"
-                        disabled={assignTo == null || assign.isPending}
-                        onClick={() => assignTo != null && assign.mutate(assignTo)}
-                        className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
-                      >
-                        {assign.isPending ? "指派中…" : "确认"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAssignOpen(false);
-                          setAssignTo(undefined);
-                          setAssignErr(null);
-                        }}
-                        className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border"
-                      >
-                        取消
-                      </button>
-                      {assignErr && (
-                        <span className="text-[11.5px] text-hub-rose">{assignErr}</span>
-                      )}
-                    </span>
-                  )}
-                </span>
-              </Field>
-              <Field label="hub_issue">
-                {d.hub_issue_id ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Link
-                      to={`/hub-issues/${d.hub_issue_id}`}
-                      className="text-hub-teal hover:underline"
-                    >
-                      HUB-{d.hub_issue_id}
-                    </Link>
-                    {isSupervisor() && (
-                      <button
-                        type="button"
-                        onClick={() => setRelinkOpen(true)}
-                        className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                      >
-                        重新关联
-                      </button>
-                    )}
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </Field>
-              <Field label="客户">
-                {d.customer_identity_id ? (
-                  d.customer_id ? (
-                    <Link
-                      to={`/customers/${d.customer_id}`}
-                      className="text-hub-teal hover:underline"
-                    >
-                      {d.customer_display_name ?? `客户 #${d.customer_id}`}
-                    </Link>
-                  ) : (
-                    (d.customer_display_name ?? `身份 #${d.customer_identity_id}`)
-                  )
-                ) : (
-                  "—"
-                )}
-              </Field>
-              <Field label="创建时间">{fmtDateTime(d.received_at)}</Field>
-              <Field label="客户回复时间">{fmtDateTime(d.customer_replied_at)}</Field>
-            </div>
-
-            {/* 手动毕业为 hub_issue（仅主管，未毕业时显示） */}
-            {isSupervisor() && d.hub_issue_id == null && (
-              <div className="mt-4 pt-3 border-t border-hub-borderLight flex items-center gap-3 flex-wrap">
-                <span className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">
-                  毕业为 hub_issue
-                </span>
-                <select
-                  value={gradType || (d.predicted_type ?? "Operation")}
-                  onChange={(e) => setGradType(e.target.value)}
-                  className="text-[12px] border border-hub-border rounded-md px-2 py-1"
-                >
-                  {HUB_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {HUB_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => graduate.mutate()}
-                  disabled={graduate.isPending}
-                  className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
-                >
-                  {graduate.isPending ? "毕业中…" : "毕业为 hub_issue"}
-                </button>
-                {gradErr && <span className="text-[11.5px] text-hub-rose">{gradErr}</span>}
-              </div>
-            )}
-          </Card>
 
           {/* 5. 工单处理容器：左=处理节点时间轴，右=节点处理详情 */}
           <Card title="工单处理">
@@ -488,10 +363,38 @@ export function TicketDetailPage() {
                 </div>
 
                 <div>
-                  <div className="text-[11px] text-hub-textMuted mb-1">子任务列表</div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-[11px] text-hub-textMuted">子任务列表</div>
+                    <div className="flex-1" />
+                    {isSupervisor() && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setAddSubOpen(true)}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                        >
+                          添加子任务
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => graduate.mutate()}
+                          disabled={graduate.isPending || d.hub_issue_id != null}
+                          title={
+                            d.hub_issue_id != null
+                              ? `已关联 HUB-${d.hub_issue_id}`
+                              : "确认并创建工单任务（hub_issue）"
+                          }
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {graduate.isPending ? "确认中…" : "确认子任务"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {gradErr && <div className="text-[11px] text-hub-rose mb-1">{gradErr}</div>}
                   {/* 拆分关联子任务：逐个拉取 children_ticket_ids 的工单详情（无批量端点，N+1）。
-                      编号/说明/类型/状态/处理人真实；解决方案暂无字段 → 占位。 */}
-                  <SubTicketList childIds={d.children_ticket_ids ?? []} />
+                      编号/说明/类型/状态/处理人真实；解决方案=处理方案。draft 为「添加子任务」本地草稿。 */}
+                  <SubTicketList childIds={d.children_ticket_ids ?? []} drafts={subDrafts} />
                 </div>
               </div>
             </div>
@@ -524,11 +427,29 @@ export function TicketDetailPage() {
             </div>
           </Card>
 
-          {relinkOpen && d.hub_issue_id != null && (
-            <RelinkModal
-              ticketId={id}
-              currentHubId={d.hub_issue_id}
-              onClose={() => setRelinkOpen(false)}
+          {/* 转派弹窗：查看当前处理人 + 录入转派人/转派原因 → 改处理人 */}
+          {transferOpen && (
+            <TransferModal
+              currentName={
+                d.assigned_user_id
+                  ? (d.assigned_user_name ?? `用户 #${d.assigned_user_id}`)
+                  : "未分配"
+              }
+              pending={assign.isPending}
+              error={assign.error instanceof ApiError ? assign.error.message : null}
+              onSubmit={(uid) => assign.mutate(uid)}
+              onClose={() => setTransferOpen(false)}
+            />
+          )}
+
+          {/* 添加子任务弹窗：录入说明 + 类型 → 追加本地草稿行（落库待后端接口） */}
+          {addSubOpen && (
+            <AddSubTaskModal
+              onSubmit={(title, type) => {
+                setSubDrafts((prev) => [...prev, { title, type }]);
+                setAddSubOpen(false);
+              }}
+              onClose={() => setAddSubOpen(false)}
             />
           )}
         </div>
@@ -655,7 +576,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 // 子任务列表：逐个拉取子工单详情（children_ticket_ids，无批量端点）。
 // 编号/说明/类型/状态/处理人/解决方案(=工单任务处理方案 cached_reply_content) 均来自子工单任务数据。
-function SubTicketList({ childIds }: { childIds: number[] }) {
+// drafts：「添加子任务」录入的本地草稿行（尚未落库，落库待后端接口）。
+function SubTicketList({
+  childIds,
+  drafts,
+}: {
+  childIds: number[];
+  drafts: { title: string; type: string }[];
+}) {
   const results = useQueries({
     queries: childIds.map((cid) => ({
       queryKey: ["ticket-detail", cid],
@@ -664,6 +592,7 @@ function SubTicketList({ childIds }: { childIds: number[] }) {
     })),
   });
   const cols = ["子任务编号", "子任务描述", "类型", "状态", "处理人", "解决方案"];
+  const empty = childIds.length === 0 && drafts.length === 0;
   return (
     <div className="overflow-x-auto border border-hub-border rounded-[7px]">
       <table className="min-w-full text-[11.5px]">
@@ -677,7 +606,7 @@ function SubTicketList({ childIds }: { childIds: number[] }) {
           </tr>
         </thead>
         <tbody>
-          {childIds.length === 0 && (
+          {empty && (
             <tr>
               <td colSpan={6} className="px-2.5 py-3 text-center text-hub-textFaint">
                 无子任务
@@ -716,9 +645,229 @@ function SubTicketList({ childIds }: { childIds: number[] }) {
               </tr>
             );
           })}
+          {/* 本地草稿行（添加子任务，尚未落库） */}
+          {drafts.map((dft, i) => (
+            <tr key={`draft-${i}`} className="border-t border-hub-borderLight bg-hub-amber-light/40">
+              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">待生成</td>
+              <td className="px-2.5 py-1.5 max-w-[220px] truncate" title={dft.title}>
+                {dft.title}
+              </td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap">
+                <PredictedTypeBadge type={dft.type} />
+              </td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-amber-deep">待创建</td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
+              <td className="px-2.5 py-1.5 text-hub-textFaint">—</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ---- 可搜索单选处理人（自包含，复用 /api/admin/users + MultiUserSelect 搜索弹层视觉） ----
+function SearchableUserSelect({
+  value,
+  onChange,
+  placeholder = "选择处理人",
+}: {
+  value: number | undefined;
+  onChange: (id: number | undefined) => void;
+  placeholder?: string;
+}) {
+  const q = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+  });
+  const users = useMemo(
+    () =>
+      ((q.data ?? []) as { id: number; name: string; role: string; is_active: boolean }[]).filter(
+        (u) => ["assignee", "supervisor", "admin"].includes(u.role),
+      ),
+    [q.data],
+  );
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const kwLower = kw.trim().toLowerCase();
+  const opts = kwLower ? users.filter((u) => u.name.toLowerCase().includes(kwLower)) : users;
+  const curName = value != null ? (users.find((u) => u.id === value)?.name ?? `#${value}`) : "";
+  return (
+    <div ref={boxRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"
+      >
+        <span className={curName ? "text-hub-text" : "text-hub-textMuted"}>
+          {curName || placeholder}
+        </span>
+        <span className="flex-1" />
+        <span className="text-hub-textFaint text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-[15rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
+          <input
+            autoFocus
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="搜索姓名"
+            className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
+          />
+          <div className="max-h-[220px] overflow-y-auto">
+            {q.isLoading && <div className="text-[11px] text-hub-textFaint px-2 py-1">加载中…</div>}
+            {!q.isLoading && opts.length === 0 && (
+              <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
+            )}
+            {opts.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => {
+                  onChange(u.id);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-2 py-1 rounded-[5px] hover:bg-hub-panel text-[12px] ${
+                  u.id === value ? "text-hub-teal font-semibold" : ""
+                }`}
+              >
+                {u.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- 转派弹窗：查看当前处理人 + 录入转派人/转派原因 → 改处理人 ----
+function TransferModal({
+  currentName,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  currentName: string;
+  pending: boolean;
+  error: string | null;
+  onSubmit: (uid: number) => void;
+  onClose: () => void;
+}) {
+  const [to, setTo] = useState<number | undefined>(undefined);
+  const [reason, setReason] = useState("");
+  return (
+    <Modal onClose={onClose}>
+      <ModalHeader title="转派处理人" onClose={onClose} />
+      <div className="px-5 py-4 flex flex-col gap-3">
+        <div className="text-[12px]">
+          当前处理人：<b>{currentName}</b>
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">转派人</div>
+          <SearchableUserSelect value={to} onChange={setTo} placeholder="搜索并选择转派人" />
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">转派原因</div>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            placeholder="填写转派原因（原因记录待后端支持）"
+            className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal resize-y"
+          />
+        </div>
+        {error && <div className="text-[11.5px] text-hub-rose">{error}</div>}
+      </div>
+      <ModalFooter>
+        <button
+          onClick={onClose}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-white text-hub-textSecondary border border-hub-border"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => to != null && onSubmit(to)}
+          disabled={to == null || pending}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-hub-teal text-white disabled:opacity-50 hover:brightness-95"
+        >
+          {pending ? "转派中…" : "确认"}
+        </button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+// ---- 添加子任务弹窗：录入说明 + 类型 ----
+function AddSubTaskModal({
+  onSubmit,
+  onClose,
+}: {
+  onSubmit: (title: string, type: string) => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState<string>(HUB_TYPES[0]);
+  return (
+    <Modal onClose={onClose}>
+      <ModalHeader title="添加子任务" onClose={onClose} />
+      <div className="px-5 py-4 flex flex-col gap-3">
+        <div>
+          <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">子任务说明</div>
+          <textarea
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            rows={3}
+            placeholder="描述子任务内容"
+            className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal resize-y"
+          />
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">子任务类型</div>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-white outline-none focus:border-hub-teal"
+          >
+            {HUB_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {HUB_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="text-[11px] text-hub-textMuted">
+          确认后在工单任务列表查重：无记录则新增、有则关联，并在下方子任务列表加一行。
+          （落库逻辑待后端接口；当前先加入本地草稿行）
+        </p>
+      </div>
+      <ModalFooter>
+        <button
+          onClick={onClose}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-white text-hub-textSecondary border border-hub-border"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => title.trim() && onSubmit(title.trim(), type)}
+          disabled={!title.trim()}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-hub-teal text-white disabled:opacity-50 hover:brightness-95"
+        >
+          确认
+        </button>
+      </ModalFooter>
+    </Modal>
   );
 }
 
