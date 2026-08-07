@@ -61,11 +61,15 @@ async function request<T>(
       window.location.href = "/login";
       throw new ApiError(401, "session expired");
     }
+    // 只读一次 body（读两次会抛 "body stream already read"）：先取文本，再尝试解析 JSON
     let body: unknown = undefined;
-    try {
-      body = await resp.json();
-    } catch {
-      body = await resp.text();
+    const raw = await resp.text().catch(() => "");
+    if (raw) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = raw;
+      }
     }
     throw new ApiError(resp.status, `${resp.status} ${resp.statusText}`, body);
   }
