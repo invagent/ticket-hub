@@ -279,6 +279,24 @@ export function HubIssuesListPage() {
     }
     return { in_progress: ip, done: dn, all: items.length };
   }, [items]);
+  // 研发工程状态：每档按 linear_status 对当前结果集计数
+  const devStageCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of DEV_STAGE_OPTIONS) {
+      const vals = DEV_STAGE_MATCH[c] ?? [];
+      m[c] = items.filter((h) => vals.includes((h.linear_status ?? "").toLowerCase())).length;
+    }
+    return m;
+  }, [items]);
+  // 任务创建时间：每档预设对当前结果集计数（"全部"=总数；"自定义"不计数）
+  const createTimeCounts = useMemo(() => {
+    const m: Record<string, number> = { 全部: items.length };
+    for (const c of TIME_PRESETS) {
+      if (c === "全部" || c === "自定义") continue;
+      m[c] = items.filter((h) => inTimeRange(h.first_seen_at, c, "", "")).length;
+    }
+    return m;
+  }, [items]);
 
   // 批量催单：对选中的、可催办的研发类任务逐条调用 /urge
   const urgeTargets = useMemo(
@@ -369,6 +387,8 @@ export function HubIssuesListPage() {
       <FilterPanel
         typeCounts={typeCounts}
         stateCounts={stateCounts}
+        devStageCounts={devStageCounts}
+        createTimeCounts={createTimeCounts}
         taskState={taskState}
         onTaskState={(v) => setFilter("task_state", v)}
         status={status}
@@ -415,10 +435,16 @@ export function HubIssuesListPage() {
               已选 {selectedIds.size} 条 · 可催 {urgeTargets.length} 条
             </span>
           ) : (
-            <span className="text-[11.5px] text-hub-textFaint">
-              勾选研发类任务后可批量向处理人催单
+            <span className="text-[11.5px] text-hub-textSecondary">
+              筛选查询出 <b className="text-hub-text">{items.length}</b> 个任务
             </span>
           )}
+        </div>
+      )}
+      {/* 非主管也显示筛选查询数量 */}
+      {!isSupervisor && list.data && (
+        <div className="mb-2.5 text-[11.5px] text-hub-textSecondary">
+          筛选查询出 <b className="text-hub-text">{items.length}</b> 个任务
         </div>
       )}
 
@@ -701,6 +727,8 @@ export function HubIssuesListPage() {
 function FilterPanel({
   typeCounts,
   stateCounts,
+  devStageCounts,
+  createTimeCounts,
   taskState,
   onTaskState,
   status,
@@ -728,6 +756,8 @@ function FilterPanel({
 }: {
   typeCounts: Record<string, number>;
   stateCounts: { in_progress: number; done: number; all: number };
+  devStageCounts: Record<string, number>;
+  createTimeCounts: Record<string, number>;
   taskState: string;
   onTaskState: (v: string) => void;
   status: string;
@@ -799,14 +829,14 @@ function FilterPanel({
         />
       </FilterRow>
 
-      {/* 研发工程状态（对当前结果集按 linear_status 过滤，真实生效） */}
+      {/* 研发工程状态（对当前结果集按 linear_status 过滤，真实生效；每档带 (数量)） */}
       <FilterRow label="研发工程状态">
         <Chip active={!devStage} label="全部" onClick={() => onDevStage("")} />
         {DEV_STAGE_OPTIONS.map((c) => (
           <Chip
             key={c}
             active={devStage === c}
-            label={c}
+            label={`${c}(${devStageCounts[c] ?? 0})`}
             onClick={() => onDevStage(devStage === c ? "" : c)}
           />
         ))}
@@ -818,6 +848,7 @@ function FilterPanel({
         preset={createTime}
         from={createFrom}
         to={createTo}
+        counts={createTimeCounts}
         onChange={onCreateTime}
       />
       <TimeRangeRow
@@ -885,26 +916,28 @@ function TimeRangeRow({
   preset,
   from,
   to,
+  counts,
   onChange,
 }: {
   label: string;
   preset: string;
   from: string;
   to: string;
+  counts?: Record<string, number>;
   onChange: (preset: string, from?: string, to?: string) => void;
 }) {
   const isCustom = preset === "自定义";
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px] flex-none pt-1">
+      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[70px] flex-none pt-1">
         {label}
       </span>
-      <div className="flex-1 flex flex-wrap items-center gap-1.5">
+      <div className="flex-1 flex flex-wrap items-center gap-2.5">
         {TIME_PRESETS.map((c) => (
           <Chip
             key={c}
             active={c === "全部" ? !preset : preset === c}
-            label={c}
+            label={counts && c !== "自定义" ? `${c}(${counts[c] ?? 0})` : c}
             onClick={() =>
               c === "全部"
                 ? onChange("")
@@ -947,10 +980,10 @@ function FilterRow({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px] flex-none pt-1">
+      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[70px] flex-none pt-1">
         {label}
       </span>
-      <div className="flex-1 flex flex-wrap items-center gap-1.5">{children}</div>
+      <div className="flex-1 flex flex-wrap items-center gap-2.5">{children}</div>
       {hint && <span className="text-[10px] text-hub-textFaint flex-none pt-1">{hint}</span>}
     </div>
   );
@@ -973,7 +1006,7 @@ function Chip({
       disabled={disabled}
       onClick={onClick}
       className={
-        "text-[11.5px] px-2.5 py-1 rounded-full border transition-colors " +
+        "text-[11px] px-2.5 py-1 rounded-full border transition-colors " +
         (active
           ? "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border font-semibold"
           : disabled

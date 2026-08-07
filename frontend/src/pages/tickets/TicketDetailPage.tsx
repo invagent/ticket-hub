@@ -172,69 +172,72 @@ export function TicketDetailPage() {
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-2.5 pt-5 pb-10">
-      {/* 顶部操作条（右侧）：确认 | 转派 | 返回列表，三色区分 */}
-      <div className="flex items-center gap-2.5 flex-wrap justify-end">
-        {confirmNotice && (
-          <span className="mr-auto text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
-            {confirmNotice}
-            <button className="ml-2 text-hub-textFaint" onClick={() => setConfirmNotice(null)}>
-              ✕
-            </button>
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            const hasNote = (noteDrafts[0] ?? "").trim().length > 0;
-            setConfirmNotice(
-              (hasNote ? "已记录当前节点处理说明；" : "") + nextStepHint(d?.status),
-            );
-          }}
-          title="按工单状态判断下一步操作（如处理中→关闭工单）；提交当前节点处理说明"
-          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95"
-        >
-          确认
-        </button>
-        {isSupervisor() && (
-          <button
-            type="button"
-            onClick={() => setTransferOpen(true)}
-            title="转派处理人"
-            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95"
-          >
-            转派
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => navigate("/tickets")}
-          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-        >
-          返回列表
-        </button>
-      </div>
-
       {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
       {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
 
       {d && (
-        <div className="mt-4 space-y-3">
-          {/* 1. 页面标题区（无边框）：主标题=工单编号 + 副标题(来源工单号) + 标签行 */}
-          <header className="px-1">
-            <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">{d.short_code}</h1>
-            {d.source_ticket_id && (
-              <div className="mt-1 text-[12px] text-hub-textMuted font-mono">
-                来源单号 {d.source_ticket_id}
+        <div className="space-y-3">
+          {/* 1. 标题区 + 操作按钮同一行、顶端对齐 */}
+          <div className="flex items-start justify-between gap-3 flex-wrap px-1">
+            <header>
+              <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">{d.short_code}</h1>
+              {d.source_ticket_id && (
+                <div className="mt-1 text-[12px] text-hub-textMuted font-mono">
+                  来源单号 {d.source_ticket_id}
+                </div>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
+                <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
+                {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
+                <StatusTag status={d.status} />
+                <RemainingTag hours={d.remaining_hours} />
               </div>
-            )}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
-              <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
-              {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
-              <StatusTag status={d.status} />
-              <RemainingTag hours={d.remaining_hours} />
+            </header>
+            {/* 确认 | 转派 | 返回列表，与标题顶端对齐 */}
+            <div className="flex items-center gap-2.5 flex-wrap justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  const hasNote = (noteDrafts[0] ?? "").trim().length > 0;
+                  setConfirmNotice(
+                    (hasNote ? "已记录当前节点处理说明；" : "") + nextStepHint(d?.status),
+                  );
+                }}
+                title="按工单状态判断下一步操作（如处理中→关闭工单）；提交当前节点处理说明"
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95"
+              >
+                确认
+              </button>
+              {isSupervisor() && (
+                <button
+                  type="button"
+                  onClick={() => setTransferOpen(true)}
+                  title="转派处理人"
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95"
+                >
+                  转派
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => navigate("/tickets")}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+              >
+                返回列表
+              </button>
             </div>
-          </header>
+          </div>
+          {confirmNotice && (
+            <div className="px-1 text-[11px] text-hub-amber-deep">
+              <span className="bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
+                {confirmNotice}
+                <button className="ml-2 text-hub-textFaint" onClick={() => setConfirmNotice(null)}>
+                  ✕
+                </button>
+              </span>
+            </div>
+          )}
 
           {/* 2. 客户信息容器：两行、每行 3 字段、平铺左右对齐 */}
           <Card title="客户信息">
@@ -254,7 +257,7 @@ export function TicketDetailPage() {
 
           {/* 3. 工单描述容器：主题 / 问题描述 / 附件，垂直分布，字段名 + 字段值两列左对齐 */}
           <Card title="工单描述">
-            <dl className="space-y-3">
+            <dl className="space-y-6 py-2">
               <DescRow label="主题">{d.title ?? "—"}</DescRow>
               <DescRow label="问题描述">
                 {d.body ? (
@@ -483,7 +486,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="bg-white border border-hub-border rounded-[10px] shadow-sm">
       <div className="px-4 py-2.5 border-b border-hub-borderLight">
-        <h2 className="m-0 text-[12px] font-bold text-hub-textSecondary tracking-[.3px]">
+        <h2 className="m-0 text-[13px] font-extrabold text-hub-text tracking-[.3px]">
           {title}
         </h2>
       </div>
@@ -507,10 +510,14 @@ function VerticalTimeline({
   onSelect: (idx: number) => void;
 }) {
   return (
-    <ol className="relative overflow-y-auto pr-1" style={{ maxHeight: 288 }}>
+    // 固定高度=约 4 个节点，节点纵向均分填满容器；超过 4 个滚动查看
+    <ol
+      className="relative overflow-y-auto pr-1 flex flex-col justify-between h-full"
+      style={{ minHeight: 360 }}
+    >
       {/* 贯穿粗竖线：left 对齐圆点中心(圆点 w-4=16px，中心 8px；li 左内边距对齐) */}
       <span
-        className="absolute top-2 bottom-2 w-[3px] bg-hub-border rounded"
+        className="absolute top-3 bottom-3 w-[3px] bg-hub-border rounded"
         style={{ left: 7 }}
         aria-hidden
       />
@@ -533,7 +540,7 @@ function VerticalTimeline({
             key={idx}
             onClick={() => onSelect(idx)}
             className={
-              "relative flex items-start gap-2.5 cursor-pointer rounded-md py-1.5 pr-1 pl-0.5 " +
+              "relative flex-1 min-h-[76px] flex items-start gap-2.5 cursor-pointer rounded-md py-2 pr-1 pl-0.5 " +
               (isSel ? "bg-hub-teal-light" : "hover:bg-hub-panel")
             }
           >

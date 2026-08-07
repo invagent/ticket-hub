@@ -15,6 +15,10 @@ export default {
           segment: "#ece7dc",
           border: "#e8e3d9",
           borderLight: "#efeae0",
+          // 暗色系（仅侧边栏 + 页签栏；内容区保持 page 灰）
+          sidebar: "#1c1b19",
+          sidebarHover: "#2a2825",
+          tabbar: "#e3ddd0",
           badgeNeutralBg: "#f3f0e9",
           controlBorder: "#c9c3b6",
           text: "#2b2a26",

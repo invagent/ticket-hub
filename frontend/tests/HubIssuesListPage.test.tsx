@@ -147,7 +147,7 @@ describe("HubIssuesListPage (工单任务表)", () => {
     expect(screen.getByRole("link", { name: "HUB-2" })).toBeInTheDocument();
 
     // 点「开发中」→ 仅保留 linear_status=In Progress 的 HUB-1
-    await user.click(screen.getByRole("button", { name: "开发中" }));
+    await user.click(screen.getByRole("button", { name: /^开发中/ }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "HUB-2" })).not.toBeInTheDocument());
     expect(screen.getByRole("link", { name: "HUB-1" })).toBeInTheDocument();
   });
@@ -169,10 +169,14 @@ describe("HubIssuesListPage (工单任务表)", () => {
 
     const user = userEvent.setup();
     renderPage();
-    // 初始：全部(2) 进行中(1) 已完成(1)
-    expect(await screen.findByRole("button", { name: /全部\(2\)/ })).toBeInTheDocument();
-    // 点「开发中」过滤后只剩 1 条 → 任务状态计数应变为全部(1)
-    await user.click(screen.getByRole("button", { name: "开发中" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /全部\(1\)/ })).toBeInTheDocument());
+    // 初始：任务状态 进行中(1) 已完成(1)（"全部(N)" 在多处出现，改用进行中/已完成断言更精确）
+    expect(await screen.findByRole("button", { name: /进行中\(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已完成\(1\)/ })).toBeInTheDocument();
+    // 点「开发中」过滤后只剩 In Progress 的 HUB-1 → 已完成计数归零
+    await user.click(screen.getByRole("button", { name: /^开发中/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /已完成\(0\)/ })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: /进行中\(1\)/ })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/api/client";
 import { isSupervisor } from "@/api/auth";
@@ -24,6 +24,8 @@ export function HubIssueDetailPage() {
   const { hubIssueId } = useParams<{ hubIssueId: string }>();
   const id = Number(hubIssueId);
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [confirmNotice, setConfirmNotice] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ["hub-issue-detail", id],
@@ -36,17 +38,48 @@ export function HubIssueDetailPage() {
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
-      {/* 返回列表：左上 */}
-      <Link to="/hub-issues" className="text-xs text-hub-teal hover:underline">
-        ← 返回列表
-      </Link>
       {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
       {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
       {detail.data && (
-        <div className="mt-3 space-y-4">
+        <div className="space-y-4">
+          {/* 标题 + 操作按钮（确认 | 返回列表）同行、顶端对齐 */}
           <div className="flex items-start justify-between gap-3 flex-wrap">
             {/* 标题风格保持：任务编号 + 任务说明 */}
             <Header data={detail.data} />
+            <div className="flex items-center gap-2.5 flex-wrap justify-end">
+              {isSupervisor() && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setConfirmNotice("已确认，任务状态将置为「处理完成」（状态落库待后端接口）")
+                  }
+                  title="确认后强制修改任务状态为处理完成"
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95"
+                >
+                  确认
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => navigate("/hub-issues")}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+              >
+                返回列表
+              </button>
+            </div>
+          </div>
+          {confirmNotice && (
+            <div className="text-[11px] text-hub-amber-deep">
+              <span className="bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
+                {confirmNotice}
+                <button className="ml-2 text-hub-textFaint" onClick={() => setConfirmNotice(null)}>
+                  ✕
+                </button>
+              </span>
+            </div>
+          )}
+          {/* 协同动作（催办/发版通知/记录回访）单独一行 */}
+          <div className="flex justify-end">
             <HubCollabActions
               hub={detail.data as unknown as HubIssueSummary}
               onChange={() => qc.invalidateQueries({ queryKey: ["hub-issue-detail", id] })}
@@ -545,7 +578,10 @@ function TaskProgressCard({ data }: { data: HubIssueDetail }) {
             )}
           </div>
         ) : nodeSolution(sel) ? (
-          <pre className="text-xs whitespace-pre-wrap p-3 bg-hub-teal-light rounded-[10px] border border-hub-teal-border text-hub-teal-deep m-0">
+          <pre
+            className="text-xs whitespace-pre-wrap break-words p-3 bg-hub-teal-light rounded-[10px] border border-hub-teal-border text-hub-teal-deep m-0 overflow-y-auto font-hub"
+            style={{ lineHeight: 1.3, height: 120 }}
+          >
             {nodeSolution(sel)}
           </pre>
         ) : (

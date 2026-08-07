@@ -19,7 +19,8 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function GridIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <rect x="1" y="1" width="5.5" height="5.5" rx="1.5" fill={c} />
@@ -31,7 +32,8 @@ function GridIcon({ active }: { active: boolean }) {
 }
 
 function TicketIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <rect x="1.5" y="2" width="12" height="11" rx="2" fill="none" stroke={c} strokeWidth="1.4" />
@@ -42,7 +44,8 @@ function TicketIcon({ active }: { active: boolean }) {
 }
 
 function LinkIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <circle cx="4" cy="7.5" r="2.6" fill="none" stroke={c} strokeWidth="1.4" />
@@ -53,7 +56,8 @@ function LinkIcon({ active }: { active: boolean }) {
 }
 
 function TargetIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <circle cx="7.5" cy="7.5" r="5.6" fill="none" stroke={c} strokeWidth="1.4" />
@@ -63,7 +67,8 @@ function TargetIcon({ active }: { active: boolean }) {
 }
 
 function ChartIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <rect x="2" y="8" width="2.6" height="5" fill={c} />
@@ -74,7 +79,8 @@ function ChartIcon({ active }: { active: boolean }) {
 }
 
 function AdminIcon({ active }: { active: boolean }) {
-  const c = active ? "#177e83" : "#8b8577";
+  const c = "currentColor";
+  void active;
   return (
     <svg width="15" height="15" viewBox="0 0 15 15">
       <circle cx="7.5" cy="5" r="2.6" fill="none" stroke={c} strokeWidth="1.4" />
@@ -150,12 +156,12 @@ export function Layout() {
 
   return (
     <div className="min-h-screen flex">
-      <nav className="w-[210px] flex-none bg-hub-panel border-r border-hub-border flex flex-col sticky top-0 h-screen box-border font-hub">
+      <nav className="w-[210px] flex-none bg-hub-sidebar flex flex-col sticky top-0 h-screen box-border font-hub">
         <div className="flex items-center gap-2 px-[18px] pt-[18px] pb-4">
           <div className="w-5 h-5 rounded-md bg-hub-teal flex items-center justify-center text-white text-[11px] font-extrabold">
             t
           </div>
-          <div className="text-[14.5px] font-bold tracking-[.2px] text-hub-text">ticket-hub</div>
+          <div className="text-[14.5px] font-bold tracking-[.2px] text-white">ticket-hub</div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
           {visibleNav.map((item) => (
@@ -164,10 +170,10 @@ export function Layout() {
               to={item.to}
               end={item.to === "/"}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline ${
+                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline font-semibold ${
                   isActive
-                    ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
-                    : "text-hub-textSecondary hover:bg-hub-neutral-light"
+                    ? "bg-hub-teal text-white"
+                    : "text-white/85 hover:bg-hub-sidebarHover hover:text-white"
                 }`
               }
             >
@@ -181,21 +187,21 @@ export function Layout() {
           ))}
         </div>
         <div className="flex-1" />
-        <div className="border-t border-hub-borderLight px-3.5 py-3 flex items-center gap-2.5">
+        <div className="border-t border-white/10 px-3.5 py-3 flex items-center gap-2.5">
           <div className="w-[26px] h-[26px] flex-none rounded-full bg-hub-teal text-white text-[11px] font-bold flex items-center justify-center">
             {initials}
           </div>
           {user && (
             <div className="flex-1 min-w-0">
-              <div className="text-[12.5px] font-semibold text-hub-text truncate">{user.name}</div>
-              <div className="text-[10.5px] text-hub-textFaint truncate">
+              <div className="text-[12.5px] font-semibold text-white truncate">{user.name}</div>
+              <div className="text-[10.5px] text-white/50 truncate">
                 {ROLE_LABELS[user.role as string] ?? user.role}
               </div>
             </div>
           )}
           <button
             onClick={logout}
-            className="text-[11px] text-hub-textMuted hover:text-hub-rose flex-none"
+            className="text-[11px] text-white/60 hover:text-hub-rose flex-none"
           >
             退出
           </button>

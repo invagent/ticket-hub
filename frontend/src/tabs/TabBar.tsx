@@ -8,7 +8,7 @@ export function TabBar() {
   const { tabs, activeKey, setActive, closeTab } = useTabs();
 
   return (
-    <div className="flex items-stretch gap-1 border-b border-hub-border bg-hub-panel px-2 overflow-x-auto">
+    <div className="flex items-stretch gap-1 border-b border-hub-border bg-hub-tabbar px-2 overflow-x-auto">
       {tabs.map((t) => {
         const active = t.key === activeKey;
         return (
