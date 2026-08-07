@@ -169,6 +169,8 @@ export function TicketDetailPage() {
   });
 
   const d = detail.data;
+  // 选中节点是否为当前节点（idx0=倒序后最上）；历史节点无逐节点记录，右侧三块显示「无数据」
+  const isCurrentNode = nodeIdx === 0;
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-2.5 pt-5 pb-10">
@@ -347,57 +349,71 @@ export function TicketDetailPage() {
                   <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                     处理说明
                     <span className="ml-2 font-normal text-hub-textFaint">
-                      {nodeIdx === 0 ? "（当前节点）" : "（历史节点 · 只读）"}
+                      {isCurrentNode ? "（当前节点）" : "（历史节点）"}
                     </span>
                   </div>
-                  {/* 选中节点=当前节点(idx0)且工单非终态 → 可编辑；否则只读。
-                      逐节点处理说明后端无字段 → 本地草稿 noteDrafts；当前节点默认取 cached_reply_content。
-                      无独立保存按钮，入库随页面顶部「确认」按钮（落库待后端）。 */}
-                  {(() => {
-                    const editable = nodeIdx === 0 && !DONE_STATUSES.includes(d.status);
-                    const fallback = nodeIdx === 0 ? (d.cached_reply_content ?? "") : "";
-                    const val = noteDrafts[nodeIdx] ?? fallback;
-                    return (
-                      <textarea
-                        readOnly={!editable}
-                        maxLength={2000}
-                        value={val}
-                        onChange={(e) =>
-                          setNoteDrafts((prev) => ({ ...prev, [nodeIdx]: e.target.value }))
-                        }
-                        placeholder={
-                          editable
-                            ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
-                            : "历史节点只读"
-                        }
-                        className={
-                          "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
-                          (editable
-                            ? "bg-white focus:border-hub-teal"
-                            : "bg-hub-panel cursor-not-allowed")
-                        }
-                      />
-                    );
-                  })()}
-                  <div className="mt-1 text-[10.5px] text-hub-textFaint">
-                    {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
-                    最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
-                  </div>
+                  {/* 当前节点(idx0)：可编辑文本框（默认取 cached_reply_content，无独立保存按钮，入库随页面「确认」）。
+                      历史节点：有逐节点记录则只读展示，无内容才「无数据」——不显示任何可操作控件。
+                      逐节点处理说明后端暂无字段，历史内容目前仅来自本地草稿 noteDrafts。 */}
+                  {isCurrentNode ? (
+                    <>
+                      {(() => {
+                        const editable = !DONE_STATUSES.includes(d.status);
+                        const val = noteDrafts[0] ?? (d.cached_reply_content ?? "");
+                        return (
+                          <textarea
+                            readOnly={!editable}
+                            maxLength={2000}
+                            value={val}
+                            onChange={(e) =>
+                              setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
+                            }
+                            placeholder={
+                              editable
+                                ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
+                                : "工单已终态，只读"
+                            }
+                            className={
+                              "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
+                              (editable
+                                ? "bg-white focus:border-hub-teal"
+                                : "bg-hub-panel cursor-not-allowed")
+                            }
+                          />
+                        );
+                      })()}
+                      <div className="mt-1 text-[10.5px] text-hub-textFaint">
+                        {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
+                        最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
+                      </div>
+                    </>
+                  ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
+                    <div className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-hub-panel whitespace-pre-wrap break-words">
+                      {noteDrafts[nodeIdx]}
+                    </div>
+                  ) : (
+                    <EmptyNodeData />
+                  )}
                 </div>
 
                 <div>
                   <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                     处理附件 / 补充凭证
                   </div>
-                  {/* 上传/删除/查看待后端支持；只展示附件名，点击新开窗口 */}
-                  <div className="border border-dashed border-hub-border rounded-[8px] px-3 py-4 text-center bg-hub-panel">
-                    <span className="inline-flex items-center gap-1.5 text-[12px] text-hub-textFaint">
-                      <span className="inline-flex items-center gap-1 bg-white border border-hub-border rounded-full px-2.5 py-1 text-hub-textSecondary">
-                        📎 上传附件
+                  {/* 只有当前节点展示上传区；历史节点无逐节点附件记录 → 「无数据」。
+                      上传/删除/查看待后端支持；只展示附件名，点击新开窗口。 */}
+                  {isCurrentNode ? (
+                    <div className="border border-dashed border-hub-border rounded-[8px] px-3 py-4 text-center bg-hub-panel">
+                      <span className="inline-flex items-center gap-1.5 text-[12px] text-hub-textFaint">
+                        <span className="inline-flex items-center gap-1 bg-white border border-hub-border rounded-full px-2.5 py-1 text-hub-textSecondary">
+                          📎 上传附件
+                        </span>
+                        支持上传诊断包 / SQL / 现场日志（上传 · 删除 · 查看待后端支持）
                       </span>
-                      支持上传诊断包 / SQL / 现场日志（上传 · 删除 · 查看待后端支持）
-                    </span>
-                  </div>
+                    </div>
+                  ) : (
+                    <EmptyNodeData />
+                  )}
                 </div>
 
                 <div>
@@ -406,7 +422,7 @@ export function TicketDetailPage() {
                       子任务列表
                     </div>
                     <div className="flex-1" />
-                    {isSupervisor() && (
+                    {isCurrentNode && isSupervisor() && (
                       <>
                         <button
                           type="button"
@@ -431,10 +447,17 @@ export function TicketDetailPage() {
                       </>
                     )}
                   </div>
-                  {gradErr && <div className="text-[11px] text-hub-rose mb-1">{gradErr}</div>}
-                  {/* 拆分关联子任务：逐个拉取 children_ticket_ids 的工单详情（无批量端点，N+1）。
+                  {isCurrentNode && gradErr && (
+                    <div className="text-[11px] text-hub-rose mb-1">{gradErr}</div>
+                  )}
+                  {/* 只有当前节点展示子任务列表；历史节点无逐节点记录 → 「无数据」。
+                      拆分关联子任务：逐个拉取 children_ticket_ids 的工单详情（无批量端点，N+1）。
                       编号/说明/类型/状态/处理人真实；解决方案=处理方案。draft 为「添加子任务」本地草稿。 */}
-                  <SubTicketList childIds={d.children_ticket_ids ?? []} drafts={subDrafts} />
+                  {isCurrentNode ? (
+                    <SubTicketList childIds={d.children_ticket_ids ?? []} drafts={subDrafts} />
+                  ) : (
+                    <EmptyNodeData />
+                  )}
                 </div>
               </div>
             </div>
@@ -975,6 +998,15 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+// 历史节点无逐节点记录时的统一「无数据」占位（处理说明/处理附件/子任务列表共用）
+function EmptyNodeData() {
+  return (
+    <div className="border border-hub-borderLight rounded-[8px] px-3 py-4 text-center text-[12px] text-hub-textFaint bg-hub-panel">
+      无数据
+    </div>
   );
 }
 

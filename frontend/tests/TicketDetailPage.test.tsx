@@ -235,7 +235,7 @@ describe("TicketDetailPage", () => {
     expect(container.querySelectorAll(".hub-node-blink").length).toBe(0);
   });
 
-  it("处理说明：当前节点可编辑，点历史节点转只读；无独立保存按钮", async () => {
+  it("处理说明：当前节点可编辑，点历史节点显示「无数据」；无独立保存按钮", async () => {
     server.use(
       http.get("*/api/tickets/610", () =>
         HttpResponse.json({
@@ -272,9 +272,10 @@ describe("TicketDetailPage", () => {
     expect(ta().readOnly).toBe(false);
     // 无独立「保存」按钮（入库随页面「确认」）
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
-    // 点历史节点(∅→received) → 只读
+    // 点历史节点(∅→received) → 无逐节点记录，处理说明文本框消失、显示「无数据」
     await userEvent.click(screen.getByText(/∅ → received/));
-    expect(ta().readOnly).toBe(true);
+    expect(ta()).toBeNull();
+    expect(screen.getAllByText("无数据").length).toBeGreaterThanOrEqual(1);
   });
 
   // #3 工单手动毕业按钮
