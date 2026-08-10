@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.logging import get_logger
+from app.core.storage.minio_store import classify_attachment_kind
 from app.models import Attachment, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
@@ -174,13 +175,14 @@ class KSMIngester:
 
         self._db.flush()
 
-        # 4b. 建附件行（仅建行，不下载；下载+OCR 由异步流水线处理）
+        # 4b. 建附件行（仅建行，不下载；下载+OCR 由异步流水线处理）。
+        # 按扩展名判定 kind——只 image 进 OCR，其余（pdf/video/other）仅下载存档。
         for url in payload.get("attachment_urls", []) or []:
             self._db.add(
                 Attachment(
                     ticket_id=ticket.id,
                     source_url=url,
-                    kind="image",
+                    kind=classify_attachment_kind(url),
                     vision_status="queued",
                 )
             )

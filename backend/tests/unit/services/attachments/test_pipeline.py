@@ -212,6 +212,38 @@ def test_no_vision_key_stores_but_skips_ocr(db_session, monkeypatch):
     assert rep.skipped == 1 and rep.extracted == 0 and rep.failed == 0
 
 
+def test_non_image_stores_but_skips_ocr(db_session, monkeypatch):
+    """方案 A：非图片（zip/log 等）也下载存 MinIO，但跳过 OCR，落终态 skipped。"""
+    _set_pipeline(monkeypatch, enabled=True, dry_run=False)
+    t = _mk_ticket(db_session)
+    a = _mk_att(db_session, t.id, kind="other", source_url="http://k/server.log", filename="server.log")
+    ksm, store, vision = _mocks(img=b"LOGDATA")
+    rep = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
+    db_session.refresh(a)
+    db_session.refresh(t)
+    # 下载 + 存档都发生
+    ksm.download_attachment.assert_called_once()
+    store.put_bytes.assert_called_once()
+    assert a.storage_key is not None
+    # 但没跑 OCR
+    vision.extract.assert_not_called()
+    assert a.vision_status == "skipped"
+    assert a.last_error == "ocr_skipped_non_image:other"
+    assert not a.extracted_text
+    assert t.body == "orig"  # body 未追加
+    assert rep.skipped == 1 and rep.extracted == 0 and rep.failed == 0
+
+
+def test_non_image_scanned_even_without_image_kind(db_session, monkeypatch):
+    """扫描不再限 kind='image'：pdf/other 也会被扫到处理（方案 A 放宽）。"""
+    _set_pipeline(monkeypatch, enabled=True, dry_run=False)
+    t = _mk_ticket(db_session)
+    _mk_att(db_session, t.id, kind="pdf", source_url="http://k/r.pdf", filename="r.pdf")
+    ksm, store, vision = _mocks()
+    rep = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
+    assert rep.scanned == 1  # pdf 被扫到（旧逻辑会因 kind!=image 漏掉）
+
+
 # helper：monkeypatch settings
 def _set_pipeline(mp, *, enabled, dry_run, max_bytes=10 * 1024 * 1024, max_attempts=3):
     from app.services.attachments import pipeline as pipeline_mod

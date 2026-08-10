@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.core.storage.minio_store import classify_attachment_kind
 from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
@@ -277,13 +278,14 @@ class ZhichiIngester:
         self._db.flush()
 
         # 建附件行（仅建行，不下载；下载+OCR 由异步流水线 drain_attachments 处理）。
-        # 智齿附件来自 file_str（sobot CDN 图片 URL），解析层已归一化为 attachment_urls。
+        # 智齿附件来自 file_str，可能是图片/日志/zip 等；按扩展名判定 kind——
+        # 只 image 进 OCR，其余（pdf/video/other）仅下载存档供处理人查看/下载。
         for url in payload.get("attachment_urls") or []:
             self._db.add(
                 Attachment(
                     ticket_id=ticket.id,
                     source_url=url,
-                    kind="image",
+                    kind=classify_attachment_kind(url),
                     vision_status="queued",
                 )
             )

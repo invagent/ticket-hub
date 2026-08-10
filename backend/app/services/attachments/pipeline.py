@@ -59,7 +59,7 @@ def drain_pending_attachments(
                 and_(
                     Attachment.vision_status == "queued",
                     Attachment.storage_key.is_(None),
-                    Attachment.kind == "image",
+                    # 不再限 image：日志/zip/pdf 等也下载存档（方案 A），只是非图片跳 OCR。
                     Attachment.source_url.is_not(None),
                 )
             )
@@ -125,6 +125,18 @@ def drain_pending_attachments(
     return report
 
 
+def _guess_content_type(att: Attachment) -> str:
+    """按文件名/URL 扩展名猜 content_type；图片兜底 image/png，其余 octet-stream。"""
+    import mimetypes
+
+    for name in (att.filename, att.source_url):
+        if name:
+            guessed, _ = mimetypes.guess_type(name.split("?")[0])
+            if guessed:
+                return guessed
+    return "image/png" if att.kind == "image" else "application/octet-stream"
+
+
 def process_one(
     db: Session,
     att: Attachment,
@@ -144,12 +156,23 @@ def process_one(
             return "skipped"
 
         key = attachment_object_key(att.ticket_id, att.id, att.filename)
-        content_type = att.mime or "image/png"
+        # content_type：att.mime 优先，缺失时按 URL/文件名扩展名猜，图片兜底 image/png、
+        # 其余 octet-stream（避免把 zip/log 错标成 image/png 存进 MinIO）。
+        content_type = att.mime or _guess_content_type(att)
         # 先只留局部变量，不写 att.storage_key：drain 扫描条件是 storage_key IS NULL，
         # 若下面 vision 失败就 return，让这行继续可被扫到重试（否则会卡成 stuck row）。
         # key 是确定性的，重试重新上传会覆盖同一个 MinIO 对象，不产生重复。
         public_url = store.put_bytes(key, img, content_type)
         size_bytes = len(img)
+
+        # 非图片（日志/zip/pdf/video 等）：只下载存档不 OCR，落终态 skipped。
+        # 附件已进 MinIO，处理人可经下载端点取回；storage_key 落地故不再被扫。
+        if att.kind != "image":
+            att.storage_key = public_url
+            att.size_bytes = size_bytes
+            att.vision_status = "skipped"
+            att.last_error = f"ocr_skipped_non_image:{att.kind}"
+            return "skipped"
 
         # vision 不可用（无 key）：只存档不 OCR，落终态 skipped（附件已进 MinIO，
         # storage_key 落地故不再被扫；last_error 标原因供后续人工/补跑区分）。

@@ -23,6 +23,35 @@ class MinioNotConfiguredError(Exception):
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
+# 附件类型判定（按扩展名）。ck_attachments_kind 允许 image/pdf/video/other。
+# 未知/无扩展名 → other（保守：不当图片去 OCR）。
+_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".tiff", ".ico"}
+_VIDEO_EXT = {".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv", ".webm", ".m4v"}
+_EXT_RE = re.compile(r"\.([A-Za-z0-9]{1,6})(?:$)")
+
+
+def classify_attachment_kind(url_or_name: str | None) -> str:
+    """按 URL/文件名的扩展名判定附件 kind（image/pdf/video/other）。
+
+    zip/log/txt/doc/xls/csv 等及无扩展名一律归 other——只 image 会进 OCR，
+    其余仅下载存档。取路径末段的扩展名（忽略 query/fragment）。
+    """
+    if not url_or_name or not isinstance(url_or_name, str):
+        return "other"
+    path = url_or_name.split("?")[0].split("#")[0]
+    seg = path[path.rfind("/") + 1 :]
+    m = _EXT_RE.search(seg)
+    if not m:
+        return "other"
+    ext = "." + m.group(1).lower()
+    if ext in _IMAGE_EXT:
+        return "image"
+    if ext == ".pdf":
+        return "pdf"
+    if ext in _VIDEO_EXT:
+        return "video"
+    return "other"
+
 
 def attachment_object_key(ticket_id: int, att_id: int, filename: str | None) -> str:
     """确定性对象 key：ksm/{ticket_id}/{att_id}_{safe_filename}。

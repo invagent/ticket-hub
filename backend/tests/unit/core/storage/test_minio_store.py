@@ -7,6 +7,7 @@ from app.core.storage.minio_store import (
     MinioNotConfiguredError,
     MinioStore,
     attachment_object_key,
+    classify_attachment_kind,
 )
 
 
@@ -57,3 +58,35 @@ def test_public_url_falls_back_to_endpoint(mock_minio):
     url = store.public_url("ksm/1/2_a.png")
     assert "ticket-hub-attachments/ksm/1/2_a.png" in url
     assert url.startswith("http://localhost:9000")
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://img.sobot.com/x/OGX1u_123.jpg", "image"),
+        ("http://k/a.PNG", "image"),
+        ("https://x/screenshot.webp", "image"),
+        ("https://x/report.pdf", "pdf"),
+        ("https://x/demo.mp4", "video"),
+        ("https://x/logs.zip", "other"),
+        ("https://x/server.log", "other"),
+        ("https://x/data.csv", "other"),
+        ("https://x/notes.txt", "other"),
+        ("https://x/archive.tar.gz", "other"),
+        ("https://x/no_ext_here", "other"),
+        ("https://x/a.jpg?sign=abc&t=1", "image"),  # 忽略 query
+        (None, "other"),
+        ("", "other"),
+    ],
+)
+def test_classify_attachment_kind(url, expected):
+    assert classify_attachment_kind(url) == expected
+
+
+@patch("app.core.storage.minio_store.Minio")
+def test_key_from_storage_url(mock_minio):
+    store = MinioStore(_settings(minio_public_base=""))
+    sk = "http://localhost:9000/ticket-hub-attachments/ksm/5951/1"
+    assert store.key_from_storage_url(sk) == "ksm/5951/1"
+    # 非本 bucket 的 URL → None（回落 source_url）
+    assert store.key_from_storage_url("https://other.com/foo/bar") is None
