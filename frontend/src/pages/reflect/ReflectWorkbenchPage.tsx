@@ -17,6 +17,7 @@ import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getByPath, postByPath, putByPath, ApiError } from "@/api/client";
 import type { paths } from "@/api/types";
+import { StatusBadge } from "../tickets/ticketStatus";
 
 type EscalationCtx =
   paths["/api/supervisor/tickets/{ticket_id}/escalation-context"]["get"]["responses"]["200"]["content"]["application/json"];
@@ -118,9 +119,7 @@ export function ReflectWorkbenchPage() {
               >
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10.5px] font-mono text-[#8b8577]">{tk.short_code}</span>
-                  <span className="text-[9.5px] font-bold rounded px-1 py-px text-[#9a6c1c] bg-[#faf3e3] border border-[#eddfba]">
-                    {tk.status}
-                  </span>
+                  <StatusBadge status={tk.status} />
                 </div>
                 <div className="text-[12.5px] font-semibold mt-1 truncate">{tk.title || "（无标题）"}</div>
                 <div className="text-[10.5px] text-[#a09a8c] mt-0.5">

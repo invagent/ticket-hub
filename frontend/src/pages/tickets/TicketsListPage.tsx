@@ -23,6 +23,7 @@ import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
+import { StatusBadge } from "./ticketStatus";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -30,36 +31,6 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
   } catch {
     return null;
   }
-}
-
-// 状态徽标（设计 token：每档四件套）
-const STATUS_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
-  received: { bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
-  linked: { bg: "#f2edf8", fg: "#7a5ba6", bd: "#ddd0ec" },
-  waiting_assign: { bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
-  assigned: { bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
-  waiting_reply: { bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
-  in_progress: { bg: "#e9f3f2", fg: "#14666a", bd: "#cfe4e2" },
-  code_merged: { bg: "#e9f3f2", fg: "#14666a", bd: "#cfe4e2" },
-  released: { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  replied: { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  done: { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  closed: { bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
-  split: { bg: "#f2edf8", fg: "#7a5ba6", bd: "#ddd0ec" },
-  superseded: { bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
-  rejected: { bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const c = STATUS_BADGE[status] ?? STATUS_BADGE.received;
-  return (
-    <span
-      className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
-      style={{ background: c.bg, color: c.fg, borderColor: c.bd }}
-    >
-      {status}
-    </span>
-  );
 }
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];

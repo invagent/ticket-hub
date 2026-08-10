@@ -16,6 +16,7 @@ import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
+import { ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -152,6 +153,7 @@ export function TicketDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      void qc.invalidateQueries({ queryKey: ["tickets"] });  // 列表缓存作废，回列表自动刷新
       setTransferOpen(false);
     },
   });
@@ -164,6 +166,8 @@ export function TicketDetailPage() {
     onSuccess: () => {
       setGradErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["tickets"] });  // 毕业后工单列表 + 任务表都变
+      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
     },
     onError: (e) => setGradErr(e instanceof ApiError ? e.message : String(e)),
   });
@@ -660,7 +664,7 @@ function StatusTag({ status }: { status: string }) {
     : ACTIVE_STATUSES.includes(status)
       ? "green"
       : "blue";
-  return <Tag tone={tone}>{status}</Tag>;
+  return <Tag tone={tone}>{ticketStatusLabel(status)}</Tag>;
 }
 
 function RemainingTag({ hours }: { hours: number | null | undefined }) {

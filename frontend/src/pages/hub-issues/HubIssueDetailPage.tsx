@@ -8,6 +8,7 @@ import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { HubCollabActions } from "@/components/hubActions";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import type { paths } from "@/api/types";
+import { StatusBadge } from "../tickets/ticketStatus";
 
 type HubIssueDetail =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
@@ -904,7 +905,7 @@ function LinkedTickets({ tickets }: { tickets: HubIssueDetail["linked_tickets"] 
               <span className="text-[11px] text-hub-textMuted">
                 {t.source_code ?? "—"} #{t.source_ticket_id ?? "—"}
               </span>
-              <span className="text-[11px]">{t.status}</span>
+              <StatusBadge status={t.status} />
             </div>
           ))}
         </div>
