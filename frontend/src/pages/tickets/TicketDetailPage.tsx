@@ -68,6 +68,7 @@ type AttachmentRef = {
   name: string;
   isImage?: boolean; // 图片走缩略图预览，其余走文件链接
   ocr?: string | null; // OCR 提取文本（后端 attachments 表才有）
+  proxied?: boolean; // true=走后端代理端点(需 Bearer 鉴权,浏览器原生请求带不了 → 必须 fetch+blob)
 };
 
 type AttachmentOut = NonNullable<TicketDetailData["attachments"]>[number];
@@ -88,13 +89,14 @@ function mergeAttachments(
     seen.add(a.url);
     out.push(a);
   };
-  // 1) 后端 attachments 表（代理下载，含 kind/OCR）
+  // 1) 后端 attachments 表（代理下载，含 kind/OCR）——proxied 标记：需鉴权，走 fetch+blob
   for (const r of rows ?? []) {
     add({
       url: r.download_url,
       name: r.filename || `附件 #${r.id}`,
       isImage: r.kind === "image",
       ocr: r.extracted_text,
+      proxied: true,
     });
   }
   // 2) source_payload 解析兜底（历史工单未进表的）
@@ -1021,7 +1023,108 @@ function AddSubTaskModal({
   );
 }
 
-// 附件列表：垂直列出，只显示附件名，点击新开浏览器窗口查看
+// 后端代理端点需 Bearer 鉴权，浏览器原生 <img src>/<a href> 请求带不了 token（→ 401 裂图）。
+// 故对 proxied 附件用带鉴权的 fetch 拉字节，转 blob: URL 供 <img>/下载使用。
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+
+function useAuthedBlob(url: string, enabled: boolean): { blobUrl: string | null; error: boolean } {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    if (!enabled) return;
+    let revoked: string | null = null;
+    let cancelled = false;
+    const token = localStorage.getItem("auth_token");
+    fetch(`${API_BASE}${url}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.blob();
+      })
+      .then((b) => {
+        if (cancelled) return;
+        const obj = URL.createObjectURL(b);
+        revoked = obj;
+        setBlobUrl(obj);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [url, enabled]);
+  return { blobUrl, error };
+}
+
+// 单张图片缩略图：proxied 走 blob，直链原样加载。点击在新窗口打开（blob URL 也可直接开）。
+function AttachmentImage({ a }: { a: AttachmentRef }) {
+  const { blobUrl, error } = useAuthedBlob(a.url, !!a.proxied);
+  const src = a.proxied ? blobUrl : a.url;
+  const title = a.ocr ? `${a.name}\n[识别] ${a.ocr}` : a.name;
+  if (a.proxied && error) {
+    return (
+      <span
+        className="h-24 w-24 flex items-center justify-center text-[11px] text-hub-textFaint border border-hub-border rounded-[8px] bg-hub-panel text-center px-1"
+        title={a.name}
+      >
+        加载失败
+      </span>
+    );
+  }
+  if (!src) {
+    return (
+      <span className="h-24 w-24 flex items-center justify-center text-[11px] text-hub-textFaint border border-hub-border rounded-[8px] bg-hub-panel">
+        加载中…
+      </span>
+    );
+  }
+  return (
+    <a
+      href={src}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block border border-hub-border rounded-[8px] overflow-hidden hover:border-hub-teal-border"
+      title={title}
+    >
+      <img src={src} alt={a.name} loading="lazy" className="h-24 w-24 object-cover bg-hub-panel" />
+    </a>
+  );
+}
+
+// 非图片文件 chip：proxied 走 blob 下载（download 属性带文件名），直链原样打开。
+function AttachmentFileLink({ a }: { a: AttachmentRef }) {
+  const { blobUrl, error } = useAuthedBlob(a.url, !!a.proxied);
+  const href = a.proxied ? blobUrl : a.url;
+  const cls =
+    "inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]";
+  if (a.proxied && error) {
+    return (
+      <span className={`${cls} opacity-60`} title={a.name}>
+        <span className="text-hub-textFaint flex-none">📎</span>
+        <span className="truncate">{a.name}（加载失败）</span>
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href ?? undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={a.proxied ? a.name : undefined}
+      className={cls}
+      title={a.name}
+      aria-disabled={a.proxied && !href}
+    >
+      <span className="text-hub-textFaint flex-none">📎</span>
+      <span className="truncate">{a.name}</span>
+    </a>
+  );
+}
+
+// 附件列表：图片缩略图网格 + 非图片文件 chip；proxied 附件经带鉴权 fetch 加载。
 function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
   if (attachments.length === 0) {
     return <span className="text-hub-textFaint">暂无附件</span>;
@@ -1030,43 +1133,18 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
   const files = attachments.filter((a) => !a.isImage);
   return (
     <div className="flex flex-col gap-2.5">
-      {/* 图片：缩略图网格，点击新窗口看原图；带 OCR 时 hover 显示识别文本 */}
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {images.map((a, i) => (
-            <a
-              key={`img-${i}`}
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block border border-hub-border rounded-[8px] overflow-hidden hover:border-hub-teal-border"
-              title={a.ocr ? `${a.name}\n[识别] ${a.ocr}` : a.name}
-            >
-              <img
-                src={a.url}
-                alt={a.name}
-                loading="lazy"
-                className="h-24 w-24 object-cover bg-hub-panel"
-              />
-            </a>
+            <AttachmentImage key={`img-${i}`} a={a} />
           ))}
         </div>
       )}
-      {/* 非图片：文件名 chip */}
       {files.length > 0 && (
         <ul className="flex flex-wrap gap-2 m-0 list-none p-0">
           {files.map((a, i) => (
             <li key={`file-${i}`}>
-              <a
-                href={a.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]"
-                title={a.name}
-              >
-                <span className="text-hub-textFaint flex-none">📎</span>
-                <span className="truncate">{a.name}</span>
-              </a>
+              <AttachmentFileLink a={a} />
             </li>
           ))}
         </ul>
