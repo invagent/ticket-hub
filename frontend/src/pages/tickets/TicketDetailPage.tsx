@@ -204,6 +204,16 @@ export function TicketDetailPage() {
     enabled: !Number.isNaN(id) && detail.isSuccess,
   });
 
+  // 已毕业工单：拉 hub 详情读 hub.status，判「分类是否已确认」——与工作台待确认队列口径一致：
+  // pending_review = 研发类自动毕业待人工确认，仍算「未确认」；created / 其它状态 = 已确认。
+  const hubId = detail.data?.hub_issue_id ?? null;
+  const hub = useQuery({
+    queryKey: ["hub-issue-detail", hubId],
+    queryFn: () => getByPath("/api/hub-issues/{hub_issue_id}", { hub_issue_id: hubId as number }),
+    enabled: hubId != null,
+    retry: false,
+  });
+
   // 回填 tab 标题为真实短码（TKT-005890）
   useTabTitle(detail.data?.short_code);
 
@@ -267,8 +277,15 @@ export function TicketDetailPage() {
   const d = detail.data;
   // 选中节点是否为当前节点（idx0=倒序后最上）；历史节点无逐节点记录，右侧三块显示「无数据」
   const isCurrentNode = nodeIdx === 0;
-  // 分类闸门：未毕业成 hub_issue = 分类未明确，右侧只显示改判区
-  const classified = d?.hub_issue_id != null;
+  // 分类闸门（与工作台「待确认分类」队列口径一致）：
+  // - 未毕业（hub_issue_id 为空）= 分类未明确
+  // - 已毕业但 hub.status == "pending_review"（研发类自动毕业待人工确认）= 仍未确认
+  // 两种都视为「未确认」，右侧只显示改判区；其余视为「已确认」，按 type 分流。
+  const hubStatus = hub.data?.status ?? null;
+  const pendingReview = hubStatus === "pending_review";
+  // hub 仍在加载时，先不当作已确认（避免闪现「已推 Linear」再回退）
+  const hubResolved = d?.hub_issue_id == null || hub.isSuccess;
+  const classified = d?.hub_issue_id != null && hubResolved && !pendingReview;
   // 明确分类后按 predicted_type 分流展示
   const isDevType = d?.predicted_type === "Bug_fix" || d?.predicted_type === "Demand";
   const isOperation = d?.predicted_type === "Operation";
@@ -429,8 +446,22 @@ export function TicketDetailPage() {
                   </span>
                 </Field>
 
-                {/* 分类未明确（未毕业 hub_issue）：只显示分类改判，隐藏处理建议/说明/附件 */}
-                {!classified && (
+                {/* hub 加载中（已毕业但尚未取到 status）：先占位，避免误判已确认闪现 */}
+                {d.hub_issue_id != null && hub.isLoading && (
+                  <p className="text-[11px] text-hub-textFaint">分类状态加载中…</p>
+                )}
+
+                {/* 待确认分类（研发类自动毕业 pending_review）：复用工作台三动作，确认后与队列一致 */}
+                {pendingReview && hub.data && (
+                  <ClassificationReviewInline
+                    hubId={hub.data.id}
+                    aiType={hub.data.type}
+                    ticketId={id}
+                  />
+                )}
+
+                {/* 分类未明确（未毕业 hub_issue）：改判 + 确认分类（走 create-hub-issue） */}
+                {!classified && d.hub_issue_id == null && (
                   <div>
                     <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                       分类改判
@@ -458,7 +489,7 @@ export function TicketDetailPage() {
                       {gradErr && <span className="ml-2 text-[11px] text-hub-rose">{gradErr}</span>}
                     </div>
                     <div className="mt-1 text-[10.5px] text-hub-textFaint">
-                      确认后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
+                      人工确认分类后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
                     </div>
                   </div>
                 )}
@@ -727,6 +758,129 @@ export function TicketDetailPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- 待确认分类三动作（研发类自动毕业 pending_review）------------------------
+// 与主管工作台「待确认分类」队列 / hub 详情页 ClassificationReviewPanel 打同样三端点，
+// 确认/改判/误报后双向一致：工单详情确认 → 工作台队列该项消失。
+const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
+
+function ClassificationReviewInline({
+  hubId,
+  aiType,
+  ticketId,
+}: {
+  hubId: number;
+  aiType: string;
+  ticketId: number;
+}) {
+  const qc = useQueryClient();
+  const [newType, setNewType] = useState<string>("Operation");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // 三视图缓存全部作废：本页(ticket-detail/hub-detail)、工作台待确认队列、工单/hub 列表
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+    void qc.invalidateQueries({ queryKey: ["ticket-history", ticketId] });
+    void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
+    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
+    void qc.invalidateQueries({ queryKey: ["tickets"] });
+    void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+  };
+  const onErr = (e: unknown) => setError(e instanceof ApiError ? e.message : String(e));
+
+  const confirm = useMutation({
+    mutationFn: () => api.post("/api/supervisor/confirm-classification", { hub_issue_id: hubId }),
+    onSuccess: () => {
+      setNotice("已确认并推送 Linear");
+      refresh();
+    },
+    onError: onErr,
+  });
+  const reclassify = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/reclassify", {
+        hub_issue_id: hubId,
+        new_type: newType,
+        reason: "工单详情页改判",
+      }),
+    onSuccess: () => {
+      setNotice(`已改判为 ${newType}`);
+      refresh();
+    },
+    onError: onErr,
+  });
+  const dismiss = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/dismiss-classification", {
+        hub_issue_id: hubId,
+        reason: "工单详情页误报关闭",
+      }),
+    onSuccess: () => {
+      setNotice("已关闭（误报）");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  if (!isSupervisor()) {
+    return (
+      <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3 text-[11.5px] text-hub-blue-deep">
+        该工单 AI 判为 {HUB_TYPE_LABELS[aiType] ?? aiType}，待主管确认分类后才会推送研发（Linear）。
+      </div>
+    );
+  }
+
+  const busy = confirm.isPending || reclassify.isPending || dismiss.isPending;
+
+  return (
+    <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="text-[12px] font-semibold text-hub-blue-deep">
+        待确认分类：AI 判为 {HUB_TYPE_LABELS[aiType] ?? aiType}，确认后推送研发（Linear），或改判 / 关闭
+      </div>
+      {notice && <div className="text-xs text-hub-green font-semibold">{notice}</div>}
+      {error && <div className="text-xs text-hub-rose">{error}</div>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => confirm.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          确认推送
+        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            disabled={busy}
+            className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px]"
+          >
+            {_RECLASSIFY_TYPES.map((tp) => (
+              <option key={tp} value={tp}>
+                {HUB_TYPE_LABELS[tp] ?? tp}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => reclassify.mutate()}
+            disabled={busy}
+            className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border disabled:opacity-50 hover:bg-hub-panel"
+          >
+            改判
+          </button>
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={() => dismiss.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-border disabled:opacity-50 hover:bg-hub-panel"
+        >
+          误报关闭
+        </button>
+      </div>
     </div>
   );
 }
