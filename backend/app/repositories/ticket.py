@@ -89,6 +89,7 @@ class TicketRepository:
         customer_identity_id: int | None = None,
         hub_issue_id: int | None = None,
         source_ticket_q: str | None = None,
+        op_status: str | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Page[Ticket]:
@@ -135,6 +136,12 @@ class TicketRepository:
             )
             base = base.where(cond)
             count_base = count_base.where(cond)
+        if op_status:
+            # 处理状态筛选（op_status 在所挂 hub_issue 上，仅 Operation 有值）。
+            # 用 IN 子查询过滤挂了该 op_status 的 hub → 只返回对应工单，不改主查询结构。
+            hub_sub = select(HubIssue.id).where(HubIssue.op_status == op_status)
+            base = base.where(Ticket.hub_issue_id.in_(hub_sub))
+            count_base = count_base.where(Ticket.hub_issue_id.in_(hub_sub))
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (

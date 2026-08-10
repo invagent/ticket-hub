@@ -204,6 +204,16 @@ def test_list_tickets_source_ticket_q_excludes_soft_deleted(
     assert r.json()["total"] == 0
 
 
+def test_list_tickets_filter_op_status(app_client: TestClient, world: Session) -> None:
+    # TKT-2 挂 Operation hub(op_status=processing) → 按处理状态筛选命中；其余不带
+    r = app_client.get("/api/tickets?op_status=processing", headers=_bearer())
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["short_code"] == "TKT-2"
+    # 无此 op_status → 空
+    r2 = app_client.get("/api/tickets?op_status=closed", headers=_bearer())
+    assert r2.json()["total"] == 0
+
+
 def test_list_tickets_filter_assigned_user(app_client: TestClient, world: Session) -> None:
     r = app_client.get("/api/tickets?assigned_user_id=1", headers=_bearer())
     assert r.json()["total"] == 2  # TKT-1 + TKT-2

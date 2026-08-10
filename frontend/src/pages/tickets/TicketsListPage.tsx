@@ -18,12 +18,12 @@ import {
 } from "@tanstack/react-table";
 import { api, type TicketSummary } from "@/api/client";
 import { MultiUserSelect, UserSelect } from "@/components/selectors";
-import { OpStatusBadge } from "@/components/OpStatusBadge";
+import { OpStatusBadge, OP_STATUS_LABEL } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
-import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
+import { StatusBadge } from "./ticketStatus";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -35,22 +35,6 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
 
-// 状态筛选下拉可选值（ticket.status 常见态；label 走 ticketStatusLabel 中文化）
-const STATUS_FILTER_OPTIONS = [
-  "received",
-  "linked",
-  "waiting_assign",
-  "assigned",
-  "waiting_reply",
-  "in_progress",
-  "replied",
-  "resolved",
-  "released",
-  "split",
-  "done",
-  "closed",
-  "rejected",
-];
 
 function fmtTime(v: string | null | undefined): string {
   if (!v) return "—";
@@ -126,7 +110,8 @@ function loadPrefs(): TablePrefs {
 export function TicketsListPage() {
   const [params, setParams] = useSearchParams();
   const sourceCode = params.get("source_code") ?? "";
-  const status = params.get("status") ?? "";
+  const status = params.get("status") ?? ""; // 工单原始状态：UI 已隐藏,仍支持外部链接带入
+  const opStatus = params.get("op_status") ?? ""; // 处理状态筛选(所挂 hub 的 op_status)
   const unassigned = params.get("unassigned") === "true";
   const page = Number(params.get("page") ?? "1");
   const assignedUserIds = params
@@ -202,6 +187,7 @@ export function TicketsListPage() {
       {
         sourceCode,
         status,
+        opStatus,
         unassigned,
         page,
         assignedUserIds,
@@ -214,6 +200,7 @@ export function TicketsListPage() {
       api.get("/api/tickets", {
         source_code: sourceCode || undefined,
         status: status || undefined,
+        op_status: opStatus || undefined,
         unassigned_only: unassigned || undefined,
         assigned_user_ids: assignedUserIds.length ? assignedUserIds : undefined,
         predicted_types: predictedTypes.length ? predictedTypes : undefined,
@@ -282,6 +269,7 @@ export function TicketsListPage() {
   const hasFilters =
     sourceCode ||
     status ||
+    opStatus ||
     unassigned ||
     assignedUserIds.length ||
     predictedTypes.length ||
@@ -726,15 +714,16 @@ export function TicketsListPage() {
             <option value="ai_cs">内部提单</option>
             <option value="zammad">外部提单</option>
           </select>
+          {/* 处理状态筛选（op_status，替换原工单状态筛选；仅 Operation 工单有值） */}
           <select
-            value={status}
-            onChange={(e) => setFilter("status", e.target.value)}
+            value={opStatus}
+            onChange={(e) => setFilter("op_status", e.target.value)}
             className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           >
-            <option value="">全部状态</option>
-            {STATUS_FILTER_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {ticketStatusLabel(s)}
+            <option value="">全部处理状态</option>
+            {Object.entries(OP_STATUS_LABEL).map(([value, { label }]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>

@@ -8114,6 +8114,7 @@ export interface operations {
                 customer_identity_id?: number | null;
                 hub_issue_id?: number | null;
                 source_ticket_q?: string | null;
+                op_status?: string | null;
                 page?: number;
                 page_size?: number;
             };
