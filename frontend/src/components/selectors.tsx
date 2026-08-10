@@ -436,10 +436,18 @@ export function MultiCheckSelect({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  // 已选但不在 options 里的"幽灵值"（如历史手输拼错/已失效的 code）：也并进列表并标注，
+  // 否则用户看不见、无法取消，且计数会比可见项多。放最前，标"已失效"。
+  const optValues = new Set(options.map((o) => o.value));
+  const ghosts: MultiOption[] = value
+    .filter((v) => !optValues.has(v))
+    .map((v) => ({ value: v, label: `${v}（已失效）` }));
+  const allOptions = [...ghosts, ...options];
+
   const kwLower = kw.trim().toLowerCase();
   const opts = kwLower
-    ? options.filter((o) => o.label.toLowerCase().includes(kwLower) || o.value.toLowerCase().includes(kwLower))
-    : options;
+    ? allOptions.filter((o) => o.label.toLowerCase().includes(kwLower) || o.value.toLowerCase().includes(kwLower))
+    : allOptions;
   const selected = new Set(value);
 
   function toggle(v: string) {
@@ -495,15 +503,18 @@ export function MultiCheckSelect({
             {!loading && opts.length === 0 && (
               <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
             )}
-            {opts.map((o) => (
-              <label
-                key={o.value}
-                className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
-              >
-                <input type="checkbox" checked={selected.has(o.value)} onChange={() => toggle(o.value)} className="rounded" />
-                <span className="truncate">{o.label}</span>
-              </label>
-            ))}
+            {opts.map((o) => {
+              const isGhost = !optValues.has(o.value);
+              return (
+                <label
+                  key={o.value}
+                  className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
+                >
+                  <input type="checkbox" checked={selected.has(o.value)} onChange={() => toggle(o.value)} className="rounded" />
+                  <span className={`truncate ${isGhost ? "text-hub-rose" : ""}`}>{o.label}</span>
+                </label>
+              );
+            })}
           </div>
         </div>
       )}
