@@ -112,6 +112,10 @@ describe("HubIssuesListPage (工单任务表)", () => {
     let lastQuery: URLSearchParams | null = null;
     server.use(
       http.get("*/api/admin/users", () => HttpResponse.json(usersFixture)),
+      // 产品分类选项数据驱动：mock product-options 返回实际值
+      http.get("*/api/hub-issues/product-options", () =>
+        HttpResponse.json({ products: ["星瀚-开票", "标准版-收票"] }),
+      ),
       http.get("*/api/hub-issues", ({ request }) => {
         lastQuery = new URL(request.url).searchParams;
         return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 50, has_more: false });
@@ -122,7 +126,8 @@ describe("HubIssuesListPage (工单任务表)", () => {
     renderPage();
     await waitFor(() => expect(lastQuery).not.toBeNull());
 
-    await user.click(screen.getByRole("button", { name: "星瀚-开票" }));
+    // chip 来自 product-options 端点，等它渲染出来再点
+    await user.click(await screen.findByRole("button", { name: "星瀚-开票" }));
     await waitFor(() => expect(lastQuery!.get("product")).toBe("星瀚-开票"));
   });
 

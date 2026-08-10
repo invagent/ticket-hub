@@ -258,7 +258,11 @@ class HubIssueRepository:
         if assigned_user_id is not None:
             clauses.append(HubIssue.assigned_user_id == assigned_user_id)
         if product:
-            clauses.append(HubIssue.product == product)
+            # 产品分类筛选匹配 product_line_code（product 字段创建时未赋值，恒为空——
+            # 真实产品信息在 product_line_code，继承自 ticket）。兼容历史 product 有值的行。
+            clauses.append(
+                or_(HubIssue.product_line_code == product, HubIssue.product == product)
+            )
         if module:
             clauses.append(HubIssue.module == module)
         if search:
@@ -324,6 +328,16 @@ class HubIssueRepository:
         )
         items = list(self._db.execute(rows_stmt).scalars().all())
         return Page(items=items, total=total, page=page, page_size=page_size)
+
+    def distinct_product_lines(self) -> list[str]:
+        """数据里实际存在的 product_line_code 列表（非空，按数量降序）——供产品分类筛选下拉。"""
+        stmt = (
+            select(HubIssue.product_line_code, func.count(HubIssue.id).label("n"))
+            .where(HubIssue.deleted_at.is_(None), HubIssue.product_line_code.is_not(None))
+            .group_by(HubIssue.product_line_code)
+            .order_by(func.count(HubIssue.id).desc())
+        )
+        return [r[0] for r in self._db.execute(stmt).all() if r[0]]
 
     def _hub_count(self, clauses: list[Any]) -> int:
         stmt = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None), *clauses)

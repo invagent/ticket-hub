@@ -881,6 +881,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/product-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hub Issue Product Options
+         * @description 产品分类筛选下拉的实际可选值（数据驱动，不写死清单）。
+         */
+        get: operations["hub_issue_product_options_api_hub_issues_product_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/self-bug": {
         parameters: {
             query?: never;
@@ -3640,6 +3660,11 @@ export interface components {
             sla_reply_hours?: number | null;
             /** Sla Resolve Hours */
             sla_resolve_hours?: number | null;
+        };
+        /** ProductOptionsResponse */
+        ProductOptionsResponse: {
+            /** Products */
+            products: string[];
         };
         /** PromoteBody */
         PromoteBody: {
@@ -6615,6 +6640,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hub_issue_product_options_api_hub_issues_product_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductOptionsResponse"];
                 };
             };
         };

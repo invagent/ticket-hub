@@ -4466,6 +4466,22 @@
         "title": "ProductLinePatch",
         "type": "object"
       },
+      "ProductOptionsResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Products",
+            "type": "array"
+          }
+        },
+        "required": [
+          "products"
+        ],
+        "title": "ProductOptionsResponse",
+        "type": "object"
+      },
       "PromoteBody": {
         "properties": {
           "reason": {
@@ -10924,6 +10940,28 @@
           }
         },
         "summary": "Hub Issue Filter Counts",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/product-options": {
+      "get": {
+        "description": "产品分类筛选下拉的实际可选值（数据驱动，不写死清单）。",
+        "operationId": "hub_issue_product_options_api_hub_issues_product_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductOptionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Hub Issue Product Options",
         "tags": [
           "hub-issues"
         ]

@@ -57,25 +57,8 @@ const LINEAR_ST: Record<string, { bg: string; fg: string; bd: string }> = {
   canceled: { bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
 };
 
-// ---- 筛选枚举（工单调整 V1.0，文档口径；后端暂无对应参数的均为占位） ----
-// 产品分类（文档 15 项）— 后端 /api/hub-issues 无该多选参数 → 占位不生效
-const PRODUCT_CATEGORIES = [
-  "星瀚-开票",
-  "星瀚-收票",
-  "星瀚-档案",
-  "星瀚-影像",
-  "星空旗舰版-开票",
-  "星空旗舰版-收票",
-  "标准版-档案",
-  "标准版-收票",
-  "标准版-开票",
-  "标准版-影像",
-  "标准版(星空企业版)-开票",
-  "标准版(星空企业版)-收票",
-  "EOP运营",
-  "基础研发",
-  "ISV接口-开票",
-];
+// ---- 筛选枚举（工单调整 V1.0） ----
+// 产品分类：改为数据驱动（product-options 端点返回实际 product_line_code），不再写死清单。
 // 任务类型（文档新分类法）— 后端无对应字段，本次隐藏筛选，将来后端加分类字段再恢复。
 
 // 研发工程状态（中文档位）→ 现由后端 dev_stage 参数按 linear_status 集合筛选（DEV_STAGE_MATCH 已搬后端）
@@ -179,6 +162,12 @@ export function HubIssuesListPage() {
   const users = useQuery({
     queryKey: ["admin", "users"],
     queryFn: () => api.get("/api/admin/users"),
+    staleTime: 60_000,
+  });
+  // 产品分类筛选选项：数据驱动（数据里实际存在的 product_line_code），不写死清单
+  const productOptions = useQuery({
+    queryKey: ["hub-issue-product-options"],
+    queryFn: () => api.get("/api/hub-issues/product-options"),
     staleTime: 60_000,
   });
   const userMap = useMemo(() => {
@@ -361,6 +350,7 @@ export function HubIssuesListPage() {
         assignedUserId={assignedUserId}
         onAssignedUser={(v) => setFilter("assigned_user_id", v)}
         userList={userList}
+        productOptions={productOptions.data?.products ?? []}
         devStage={devStage}
         onDevStage={(v) => setFilter("dev_stage", v)}
         createTime={createTime}
@@ -717,6 +707,7 @@ function FilterPanel({
   assignedUserId,
   onAssignedUser,
   userList,
+  productOptions,
   devStage,
   onDevStage,
   createTime,
@@ -743,6 +734,7 @@ function FilterPanel({
   assignedUserId: string;
   onAssignedUser: (v: string) => void;
   userList: { id: number; name: string }[];
+  productOptions: string[];
   devStage: string;
   onDevStage: (v: string) => void;
   createTime: string;
@@ -791,10 +783,10 @@ function FilterPanel({
 
       {!collapsed && (
         <div className="space-y-2.5 mt-3">
-      {/* 产品分类（真实生效：→ 服务端 product 过滤） */}
+      {/* 产品分类（数据驱动：服务端 product→product_line_code 过滤；选项来自 product-options 端点） */}
       <FilterRow label="产品分类">
         <Chip active={!product} label="全部" onClick={() => onProduct("")} />
-        {PRODUCT_CATEGORIES.map((c) => (
+        {productOptions.map((c) => (
           <Chip
             key={c}
             active={product === c}

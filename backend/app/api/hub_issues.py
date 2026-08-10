@@ -237,6 +237,19 @@ def hub_issue_filter_counts(
     return FilterCountsResponse(**counts)
 
 
+class ProductOptionsResponse(BaseModel):
+    products: list[str]  # 数据里实际存在的 product_line_code（按数量降序）
+
+
+@router.get("/product-options", response_model=ProductOptionsResponse)
+def hub_issue_product_options(
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> ProductOptionsResponse:
+    """产品分类筛选下拉的实际可选值（数据驱动，不写死清单）。"""
+    return ProductOptionsResponse(products=HubIssueRepository(db).distinct_product_lines())
+
+
 @router.get("/{hub_issue_id}", response_model=HubIssueDetail)
 def get_hub_issue(
     hub_issue_id: int,
