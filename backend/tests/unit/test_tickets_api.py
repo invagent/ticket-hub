@@ -178,6 +178,32 @@ def test_list_tickets_filter_status(app_client: TestClient, world: Session) -> N
     assert {it["short_code"] for it in r.json()["items"]} == {"TKT-1", "TKT-3"}
 
 
+def test_list_tickets_source_ticket_q_matches_source_id(
+    app_client: TestClient, world: Session
+) -> None:
+    # 按来源工单号子串（大小写不敏感）：'KSM-2' 命中 source_ticket_id='ksm-2'
+    r = app_client.get("/api/tickets?source_ticket_q=KSM-2", headers=_bearer())
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["short_code"] == "TKT-2"
+
+
+def test_list_tickets_source_ticket_q_matches_short_code(
+    app_client: TestClient, world: Session
+) -> None:
+    # 方案 B：同一搜索框也匹配本系统编号 short_code。'TKT-3' 命中 short_code。
+    r = app_client.get("/api/tickets?source_ticket_q=TKT-3", headers=_bearer())
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["short_code"] == "TKT-3"
+
+
+def test_list_tickets_source_ticket_q_excludes_soft_deleted(
+    app_client: TestClient, world: Session
+) -> None:
+    # 软删的 TKT-DEL / ksm-deleted 不应被搜出
+    r = app_client.get("/api/tickets?source_ticket_q=deleted", headers=_bearer())
+    assert r.json()["total"] == 0
+
+
 def test_list_tickets_filter_assigned_user(app_client: TestClient, world: Session) -> None:
     r = app_client.get("/api/tickets?assigned_user_id=1", headers=_bearer())
     assert r.json()["total"] == 2  # TKT-1 + TKT-2

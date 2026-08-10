@@ -125,11 +125,16 @@ class TicketRepository:
             base = base.where(Ticket.hub_issue_id == hub_issue_id)
             count_base = count_base.where(Ticket.hub_issue_id == hub_issue_id)
         if source_ticket_q:
-            # 来源工单号子串匹配（支持输入后几位）；ilike 大小写不敏感。转义 LIKE 元字符。
+            # 工单号子串匹配（支持输入后几位）：来源工单号 source_ticket_id OR
+            # 本系统工单编号 short_code（如 TKT-005920）。ilike 大小写不敏感，转义 LIKE 元字符。
             esc = source_ticket_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{esc}%"
-            base = base.where(Ticket.source_ticket_id.ilike(pattern, escape="\\"))
-            count_base = count_base.where(Ticket.source_ticket_id.ilike(pattern, escape="\\"))
+            cond = or_(
+                Ticket.source_ticket_id.ilike(pattern, escape="\\"),
+                Ticket.short_code.ilike(pattern, escape="\\"),
+            )
+            base = base.where(cond)
+            count_base = count_base.where(cond)
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (

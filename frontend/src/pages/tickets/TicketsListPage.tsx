@@ -706,13 +706,13 @@ export function TicketsListPage() {
           </div>
         )}
         <div className="grid grid-cols-6 gap-2.5 items-center">
-          {/* 来源工单号搜索（后端 source_ticket_q 全表子串匹配，支持后几位；debounce 350ms） */}
+          {/* 工单号搜索（后端 source_ticket_q 全表子串匹配 来源工单号 OR 本系统编号；debounce 350ms） */}
           <input
             type="text"
             value={sourceTicketInput}
             onChange={(e) => setSourceTicketInput(e.target.value)}
-            placeholder="来源工单号"
-            title="按来源工单号搜索（全表，支持输入后几位）"
+            placeholder="工单号（来源号/TKT编号）"
+            title="按工单号搜索：来源工单号 或 本系统编号(TKT-xxxxxx)，全表，支持输入后几位"
             className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           />
           <select
