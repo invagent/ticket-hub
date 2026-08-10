@@ -9,7 +9,7 @@ All authenticated users can read; replies require supervisor.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -132,6 +132,23 @@ class HubIssueListResponse(BaseModel):
     has_more: bool
 
 
+# 时间区间按北京时区（+08:00）解释 date 边界，再转 UTC（hub 时间字段是 tz-aware UTC）。
+def _day_bounds(
+    from_d: date | None, to_d: date | None
+) -> tuple[datetime | None, datetime | None]:
+    """[from 当天 00:00, to+1天 00:00) 半开区间，按北京时区解释后转 UTC。"""
+    bj = timezone(timedelta(hours=8))
+    from_dt = (
+        datetime.combine(from_d, time.min, tzinfo=bj).astimezone(UTC) if from_d else None
+    )
+    to_dt = (
+        datetime.combine(to_d + timedelta(days=1), time.min, tzinfo=bj).astimezone(UTC)
+        if to_d
+        else None
+    )
+    return from_dt, to_dt
+
+
 @router.get("", response_model=HubIssueListResponse)
 def list_hub_issues(
     _user: AuthedUser = Depends(require_user),
@@ -142,9 +159,17 @@ def list_hub_issues(
     product: str | None = Query(None),
     module: str | None = Query(None),
     search: str | None = Query(None),
+    task_state: str | None = Query(None),  # in_progress | done（→ status 集合）
+    dev_stage: str | None = Query(None),  # 研发工程状态中文档位（→ linear_status 集合）
+    created_from: date | None = Query(None),
+    created_to: date | None = Query(None),
+    closed_from: date | None = Query(None),
+    closed_to: date | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> HubIssueListResponse:
+    cf, ct = _day_bounds(created_from, created_to)
+    clf, clt = _day_bounds(closed_from, closed_to)
     p = HubIssueRepository(db).list_paginated(
         type_=type,
         status=status,
@@ -152,6 +177,12 @@ def list_hub_issues(
         product=product,
         module=module,
         search=search,
+        task_state=task_state,
+        dev_stage=dev_stage,
+        created_from=cf,
+        created_to=ct,
+        closed_from=clf,
+        closed_to=clt,
         page=page,
         page_size=page_size,
     )
@@ -162,6 +193,48 @@ def list_hub_issues(
         page_size=p.page_size,
         has_more=p.has_more,
     )
+
+
+class FilterCountsResponse(BaseModel):
+    task_state: dict[str, int]  # {in_progress, done, all}
+    dev_stage: dict[str, int]  # {待处理, 计划, 开发中, 测试中, 已发版}
+
+
+@router.get("/filter-counts", response_model=FilterCountsResponse)
+def hub_issue_filter_counts(
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+    type: str | None = Query(None, alias="type"),
+    status: str | None = Query(None),
+    assigned_user_id: int | None = Query(None),
+    product: str | None = Query(None),
+    module: str | None = Query(None),
+    search: str | None = Query(None),
+    task_state: str | None = Query(None),
+    dev_stage: str | None = Query(None),
+    created_from: date | None = Query(None),
+    created_to: date | None = Query(None),
+    closed_from: date | None = Query(None),
+    closed_to: date | None = Query(None),
+) -> FilterCountsResponse:
+    """各筛选维度的全量分档计数（跨页真实值，供 chip 上的 (数量) 显示）。"""
+    cf, ct = _day_bounds(created_from, created_to)
+    clf, clt = _day_bounds(closed_from, closed_to)
+    counts = HubIssueRepository(db).filter_counts(
+        type_=type,
+        status=status,
+        assigned_user_id=assigned_user_id,
+        product=product,
+        module=module,
+        search=search,
+        task_state=task_state,
+        dev_stage=dev_stage,
+        created_from=cf,
+        created_to=ct,
+        closed_from=clf,
+        closed_to=clt,
+    )
+    return FilterCountsResponse(**counts)
 
 
 @router.get("/{hub_issue_id}", response_model=HubIssueDetail)

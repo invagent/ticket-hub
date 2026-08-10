@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -199,6 +199,22 @@ class TicketRepository:
         return list(self._db.execute(stmt).scalars().all())
 
 
+# 任务状态分组（进行中/已完成）→ hub_issue.status 集合。前后端共识（原前端 STATUS_GROUP）。
+HUB_STATUS_GROUP: dict[str, list[str]] = {
+    "in_progress": ["created", "pending", "pending_review", "in_progress"],
+    "done": ["released", "done", "closed"],
+}
+
+# 研发工程状态（中文档位）→ linear_status 取值集合（小写比较）。原前端 DEV_STAGE_MATCH。
+DEV_STAGE_MATCH: dict[str, list[str]] = {
+    "待处理": ["backlog", "unstarted", "todo"],
+    "计划": ["planned", "计划"],
+    "开发中": ["started", "in progress", "in_progress", "in review"],
+    "测试中": ["testing", "qa", "in test"],
+    "已发版": ["done", "completed", "released"],
+}
+
+
 class HubIssueRepository:
     """Read helpers for SLA scanning + read API."""
 
@@ -213,6 +229,55 @@ class HubIssueRepository:
             return None
         return h
 
+    @staticmethod
+    def _hub_filter_clauses(
+        *,
+        type_: str | None = None,
+        status: str | None = None,
+        assigned_user_id: int | None = None,
+        product: str | None = None,
+        module: str | None = None,
+        search: str | None = None,
+        task_state: str | None = None,
+        dev_stage: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        closed_from: datetime | None = None,
+        closed_to: datetime | None = None,
+    ) -> list[Any]:
+        """构造 hub_issue 列表/计数共用的 where 条件（deleted_at 除外）。
+
+        task_state → status 集合；dev_stage → linear_status 集合（小写比较）；
+        时间 from/to 已是 datetime 边界（调用方把 date 转成 [from, to) 半开区间）。
+        """
+        clauses: list[Any] = []
+        if type_:
+            clauses.append(HubIssue.type == type_)
+        if status:
+            clauses.append(HubIssue.status == status)
+        if assigned_user_id is not None:
+            clauses.append(HubIssue.assigned_user_id == assigned_user_id)
+        if product:
+            clauses.append(HubIssue.product == product)
+        if module:
+            clauses.append(HubIssue.module == module)
+        if search:
+            like = f"%{search}%"
+            clauses.append(or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like)))
+        if task_state and task_state in HUB_STATUS_GROUP:
+            clauses.append(HubIssue.status.in_(HUB_STATUS_GROUP[task_state]))
+        if dev_stage and dev_stage in DEV_STAGE_MATCH:
+            clauses.append(func.lower(HubIssue.linear_status).in_(DEV_STAGE_MATCH[dev_stage]))
+        if created_from is not None:
+            clauses.append(HubIssue.first_seen_at >= created_from)
+        if created_to is not None:
+            clauses.append(HubIssue.first_seen_at < created_to)
+        if closed_from is not None:
+            clauses.append(HubIssue.closed_at >= closed_from)
+        if closed_to is not None:
+            clauses.append(HubIssue.closed_at < closed_to)
+        return clauses
+
     def list_paginated(
         self,
         *,
@@ -222,35 +287,34 @@ class HubIssueRepository:
         product: str | None = None,
         module: str | None = None,
         search: str | None = None,
+        task_state: str | None = None,
+        dev_stage: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        closed_from: datetime | None = None,
+        closed_to: datetime | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Page[HubIssue]:
         page = max(page, 1)
         page_size = max(min(page_size, 200), 1)
 
-        base = select(HubIssue).where(HubIssue.deleted_at.is_(None))
-        count_base = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None))
-        if type_:
-            base = base.where(HubIssue.type == type_)
-            count_base = count_base.where(HubIssue.type == type_)
-        if status:
-            base = base.where(HubIssue.status == status)
-            count_base = count_base.where(HubIssue.status == status)
-        if assigned_user_id is not None:
-            base = base.where(HubIssue.assigned_user_id == assigned_user_id)
-            count_base = count_base.where(HubIssue.assigned_user_id == assigned_user_id)
-        if product:
-            base = base.where(HubIssue.product == product)
-            count_base = count_base.where(HubIssue.product == product)
-        if module:
-            base = base.where(HubIssue.module == module)
-            count_base = count_base.where(HubIssue.module == module)
-        if search:
-            like = f"%{search}%"
-            base = base.where(or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like)))
-            count_base = count_base.where(
-                or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like))
-            )
+        clauses = self._hub_filter_clauses(
+            type_=type_,
+            status=status,
+            assigned_user_id=assigned_user_id,
+            product=product,
+            module=module,
+            search=search,
+            task_state=task_state,
+            dev_stage=dev_stage,
+            created_from=created_from,
+            created_to=created_to,
+            closed_from=closed_from,
+            closed_to=closed_to,
+        )
+        base = select(HubIssue).where(HubIssue.deleted_at.is_(None), *clauses)
+        count_base = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None), *clauses)
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (
@@ -260,6 +324,71 @@ class HubIssueRepository:
         )
         items = list(self._db.execute(rows_stmt).scalars().all())
         return Page(items=items, total=total, page=page, page_size=page_size)
+
+    def _hub_count(self, clauses: list[Any]) -> int:
+        stmt = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None), *clauses)
+        return self._db.execute(stmt).scalar() or 0
+
+    def filter_counts(
+        self,
+        *,
+        type_: str | None = None,
+        status: str | None = None,
+        assigned_user_id: int | None = None,
+        product: str | None = None,
+        module: str | None = None,
+        search: str | None = None,
+        task_state: str | None = None,
+        dev_stage: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        closed_from: datetime | None = None,
+        closed_to: datetime | None = None,
+    ) -> dict[str, dict[str, int]]:
+        """各筛选维度的全量分档计数（跨页真实值）。
+
+        每个维度排除其自身选择再计数——切换该维度档位时其它档计数保持稳定
+        （如已选进行中时，"已完成"档仍显示该筛选组合下的真实条数）。
+        """
+        # 任务状态：排除 task_state 自身，各档 + all
+        base_no_state = self._hub_filter_clauses(
+            type_=type_,
+            status=status,
+            assigned_user_id=assigned_user_id,
+            product=product,
+            module=module,
+            search=search,
+            dev_stage=dev_stage,
+            created_from=created_from,
+            created_to=created_to,
+            closed_from=closed_from,
+            closed_to=closed_to,
+        )
+        state_counts: dict[str, int] = {"all": self._hub_count(base_no_state)}
+        for key, vals in HUB_STATUS_GROUP.items():
+            state_counts[key] = self._hub_count([*base_no_state, HubIssue.status.in_(vals)])
+
+        # 研发工程状态：排除 dev_stage 自身，各中文档位
+        base_no_dev = self._hub_filter_clauses(
+            type_=type_,
+            status=status,
+            assigned_user_id=assigned_user_id,
+            product=product,
+            module=module,
+            search=search,
+            task_state=task_state,
+            created_from=created_from,
+            created_to=created_to,
+            closed_from=closed_from,
+            closed_to=closed_to,
+        )
+        dev_counts: dict[str, int] = {}
+        for label, vals in DEV_STAGE_MATCH.items():
+            dev_counts[label] = self._hub_count(
+                [*base_no_dev, func.lower(HubIssue.linear_status).in_(vals)]
+            )
+
+        return {"task_state": state_counts, "dev_stage": dev_counts}
 
     def find_overdue_by_type(
         self,

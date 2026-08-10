@@ -76,21 +76,10 @@ const PRODUCT_CATEGORIES = [
   "基础研发",
   "ISV接口-开票",
 ];
-// 任务类型（文档新分类法）— 与现有 type 不一致 → 占位不生效
-const TASK_TYPE_OPTIONS = ["需求", "bug", "应用咨询", "数据问题", "环境运维"];
-// 任务类型（文档新分类法，替换现有 4 类）— 后端字段替换后按此值过滤；当前对当前结果集尽力匹配。
-// 说明：8=用新分类法替换现有分类。后端替换 type 字段前，现有数据仍是旧值，故列表列渲染沿用 TYPE_LABEL，
-// 该筛选按「新分类中文值」对当前结果集过滤，命中即生效、后端替换后自然贯通。
+// 任务类型（文档新分类法）— 后端无对应字段，本次隐藏筛选，将来后端加分类字段再恢复。
 
-// 研发工程状态（中文档位）→ 匹配 linear_status 的取值集合（客户端对当前结果集过滤，真实生效）
+// 研发工程状态（中文档位）→ 现由后端 dev_stage 参数按 linear_status 集合筛选（DEV_STAGE_MATCH 已搬后端）
 const DEV_STAGE_OPTIONS = ["待处理", "计划", "开发中", "测试中", "已发版"];
-const DEV_STAGE_MATCH: Record<string, string[]> = {
-  待处理: ["backlog", "unstarted", "todo"],
-  计划: ["planned", "计划"],
-  开发中: ["started", "in progress", "in_progress", "in review"],
-  测试中: ["testing", "qa", "in test"],
-  已发版: ["done", "completed", "released"],
-};
 // 时间区间预设
 const TIME_PRESETS = ["全部", "今天", "3天内", "7天内", "10天以上", "自定义"];
 // 预设 → [最早天数下界, 最晚天数上界]（距今天数）。null 表示无界。自定义走日期区间。
@@ -100,28 +89,31 @@ const TIME_PRESET_DAYS: Record<string, [number | null, number | null]> = {
   "7天内": [0, 7],
   "10天以上": [10, null],
 };
-// 判断某时间戳是否落在预设/自定义区间内
-function inTimeRange(
-  iso: string | null | undefined,
+// 本地日期 YYYY-MM-DD（今天偏移 offsetDays 天）
+function ymd(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// 预设/自定义 → 后端 date 区间 {from?, to?}（服务端全表筛用）。
+// TIME_PRESET_DAYS 是[距今天数下界 lo, 上界 hi]：from=today-hi, to=today-lo。
+function resolveDateRange(
   preset: string,
   from: string,
   to: string,
-): boolean {
-  if (!preset || preset === "全部") return true;
-  if (!iso) return false; // 有筛选但该项无时间 → 排除
-  const t = new Date(iso).getTime();
-  if (preset === "自定义") {
-    if (from && t < new Date(from).getTime()) return false;
-    if (to && t > new Date(to).getTime() + 86400_000 - 1) return false; // 含当日
-    return true;
-  }
+): { from: string | undefined; to: string | undefined } {
+  if (!preset || preset === "全部") return { from: undefined, to: undefined };
+  if (preset === "自定义") return { from: from || undefined, to: to || undefined };
   const range = TIME_PRESET_DAYS[preset];
-  if (!range) return true;
-  const days = (Date.now() - t) / 86400_000;
+  if (!range) return { from: undefined, to: undefined };
   const [lo, hi] = range;
-  if (lo != null && days < lo) return false;
-  if (hi != null && days > hi) return false;
-  return true;
+  return {
+    from: hi != null ? ymd(-hi) : undefined,
+    to: lo != null ? ymd(-lo) : undefined,
+  };
 }
 
 function currentRole(): string {
@@ -147,11 +139,7 @@ function cumulativeHours(h: HubIssueSummary): number | null {
   return Math.max(0, Math.round(((end - start) / 3600_000) * 10) / 10);
 }
 
-// 「进行中 / 已完成」→ 现有 status 的近似映射（任务状态筛选：尽量生效）
-const STATUS_GROUP: Record<string, string[]> = {
-  in_progress: ["created", "pending", "pending_review", "in_progress"],
-  done: ["released", "done", "closed"],
-};
+// 任务状态分组（进行中/已完成）→ status 集合映射已搬后端 task_state 参数（HUB_STATUS_GROUP）。
 
 export function HubIssuesListPage() {
   const [params, setParams] = useSearchParams();
@@ -159,8 +147,7 @@ export function HubIssuesListPage() {
   const status = params.get("status") ?? "";
   // 任务状态筛选（进行中/已完成）— 前端对当前结果集做分组过滤
   const taskState = params.get("task_state") ?? "";
-  // 任务类型新分类法（8：替换现有分类）；研发工程状态（9）；创建/关闭时间区间（10）
-  const taskType = params.get("task_type") ?? "";
+  // 研发工程状态（dev_stage）；创建/关闭时间区间（服务端筛）
   const devStage = params.get("dev_stage") ?? "";
   const createTime = params.get("create_time") ?? "";
   const createFrom = params.get("create_from") ?? "";
@@ -204,15 +191,30 @@ export function HubIssuesListPage() {
     [users.data],
   );
 
+  // 时间预设/自定义 → 后端 date 参数 {from, to}（服务端全表筛，不再客户端过滤）
+  const createRange = resolveDateRange(createTime, createFrom, createTo);
+  const closeRange = resolveDateRange(closeTime, closeFrom, closeTo);
+
+  // 服务端筛选参数集合（供 list + filter-counts 共用）
+  const serverFilters = {
+    type: type || undefined,
+    status: status || undefined,
+    assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
+    product: product || undefined,
+    search: search || undefined,
+    task_state: taskState || undefined,
+    dev_stage: devStage || undefined,
+    created_from: createRange.from,
+    created_to: createRange.to,
+    closed_from: closeRange.from,
+    closed_to: closeRange.to,
+  };
+
   const list = useQuery({
-    queryKey: ["hub-issues", { type, status, page, assignedUserId, product, search }],
+    queryKey: ["hub-issues", { ...serverFilters, page }],
     queryFn: () =>
       api.get("/api/hub-issues", {
-        type: type || undefined,
-        status: status || undefined,
-        assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
-        product: product || undefined,
-        search: search || undefined,
+        ...serverFilters,
         page,
         page_size: 50,
       }),
@@ -244,66 +246,20 @@ export function HubIssuesListPage() {
     setSelectedIds(new Set());
   }
 
-  const rawItems = useMemo(() => list.data?.items ?? [], [list.data]);
+  // 筛选全部走服务端，items 直接用返回结果（不再客户端过滤）
+  const items = useMemo(() => list.data?.items ?? [], [list.data]);
 
-  // 客户端筛选（对当前结果集，真实生效；后端补参数后可平滑改为服务端）：
-  //   任务状态分组 / 任务类型新分类法(8) / 研发工程状态(9) / 创建·关闭时间区间(10)。
-  // 处理人 / 产品 / 关键字已在服务端过滤。
-  const matchDevStage = (h: HubIssueSummary) => {
-    if (!devStage) return true;
-    const vals = DEV_STAGE_MATCH[devStage] ?? [];
-    return vals.includes((h.linear_status ?? "").toLowerCase());
+  // 各筛选维度的全量分档计数（跨页真实值）——服务端聚合端点
+  const filterCounts = useQuery({
+    queryKey: ["hub-issue-filter-counts", serverFilters],
+    queryFn: () => api.get("/api/hub-issues/filter-counts", serverFilters),
+  });
+  const stateCounts = {
+    in_progress: filterCounts.data?.task_state?.in_progress ?? 0,
+    done: filterCounts.data?.task_state?.done ?? 0,
+    all: filterCounts.data?.task_state?.all ?? 0,
   };
-  const matchTaskType = (h: HubIssueSummary) => {
-    if (!taskType) return true;
-    // 后端替换 type 字段前，现有数据是旧英文值；按新中文分类对当前结果集匹配（命中即生效）。
-    return (h.type ?? "") === taskType || TYPE_LABEL[h.type] === taskType;
-  };
-  const items = useMemo(() => {
-    return rawItems.filter(
-      (h) =>
-        (!taskState || !STATUS_GROUP[taskState] || STATUS_GROUP[taskState].includes(h.status)) &&
-        matchTaskType(h) &&
-        matchDevStage(h) &&
-        inTimeRange(h.first_seen_at, createTime, createFrom, createTo) &&
-        inTimeRange(h.closed_at, closeTime, closeFrom, closeTo),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawItems, taskState, taskType, devStage, createTime, createFrom, createTo, closeTime, closeFrom, closeTo]);
-
-  // (11) 计数只按「当前筛选条件查询出来的数据」聚合 → 全部基于已过滤的 items。
-  const typeCounts = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const h of items) m[h.type] = (m[h.type] ?? 0) + 1;
-    return m;
-  }, [items]);
-  const stateCounts = useMemo(() => {
-    let ip = 0;
-    let dn = 0;
-    for (const h of items) {
-      if (STATUS_GROUP.in_progress.includes(h.status)) ip++;
-      else if (STATUS_GROUP.done.includes(h.status)) dn++;
-    }
-    return { in_progress: ip, done: dn, all: items.length };
-  }, [items]);
-  // 研发工程状态：每档按 linear_status 对当前结果集计数
-  const devStageCounts = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const c of DEV_STAGE_OPTIONS) {
-      const vals = DEV_STAGE_MATCH[c] ?? [];
-      m[c] = items.filter((h) => vals.includes((h.linear_status ?? "").toLowerCase())).length;
-    }
-    return m;
-  }, [items]);
-  // 任务创建时间：每档预设对当前结果集计数（"全部"=总数；"自定义"不计数）
-  const createTimeCounts = useMemo(() => {
-    const m: Record<string, number> = { 全部: items.length };
-    for (const c of TIME_PRESETS) {
-      if (c === "全部" || c === "自定义") continue;
-      m[c] = items.filter((h) => inTimeRange(h.first_seen_at, c, "", "")).length;
-    }
-    return m;
-  }, [items]);
+  const devStageCounts: Record<string, number> = filterCounts.data?.dev_stage ?? {};
 
   // 批量催单：对选中的、可催办的研发类任务逐条调用 /urge
   const urgeTargets = useMemo(
@@ -392,10 +348,8 @@ export function HubIssuesListPage() {
 
       {/* 筛选条件区（工单调整 V1.0：删 tab 改筛选） */}
       <FilterPanel
-        typeCounts={typeCounts}
         stateCounts={stateCounts}
         devStageCounts={devStageCounts}
-        createTimeCounts={createTimeCounts}
         taskState={taskState}
         onTaskState={(v) => setFilter("task_state", v)}
         status={status}
@@ -407,8 +361,6 @@ export function HubIssuesListPage() {
         assignedUserId={assignedUserId}
         onAssignedUser={(v) => setFilter("assigned_user_id", v)}
         userList={userList}
-        taskType={taskType}
-        onTaskType={(v) => setFilter("task_type", v)}
         devStage={devStage}
         onDevStage={(v) => setFilter("dev_stage", v)}
         createTime={createTime}
@@ -424,6 +376,11 @@ export function HubIssuesListPage() {
           setFilters({ close_time: preset, close_from: from ?? "", close_to: to ?? "" })
         }
         selectCls={selectCls}
+        activeCount={
+          [product, search, assignedUserId, taskState, devStage, createTime, closeTime, status].filter(
+            Boolean,
+          ).length
+        }
       />
 
       {/* 批量催单操作栏 */}
@@ -744,11 +701,11 @@ export function HubIssuesListPage() {
 //   研发工程状态(9)、创建/关闭时间区间(10)。(数量) 均按当前筛选结果聚合(11)。
 // 说明：任务类型(8) 用新 5 类替换旧分类；后端 type 字段替换前，对当前数据尽力匹配。
 
+const FILTERS_COLLAPSED_KEY = "hub_filters_collapsed";
+
 function FilterPanel({
-  typeCounts,
   stateCounts,
   devStageCounts,
-  createTimeCounts,
   taskState,
   onTaskState,
   status,
@@ -760,8 +717,6 @@ function FilterPanel({
   assignedUserId,
   onAssignedUser,
   userList,
-  taskType,
-  onTaskType,
   devStage,
   onDevStage,
   createTime,
@@ -773,11 +728,10 @@ function FilterPanel({
   closeTo,
   onCloseTime,
   selectCls,
+  activeCount,
 }: {
-  typeCounts: Record<string, number>;
   stateCounts: { in_progress: number; done: number; all: number };
   devStageCounts: Record<string, number>;
-  createTimeCounts: Record<string, number>;
   taskState: string;
   onTaskState: (v: string) => void;
   status: string;
@@ -789,8 +743,6 @@ function FilterPanel({
   assignedUserId: string;
   onAssignedUser: (v: string) => void;
   userList: { id: number; name: string }[];
-  taskType: string;
-  onTaskType: (v: string) => void;
   devStage: string;
   onDevStage: (v: string) => void;
   createTime: string;
@@ -802,12 +754,43 @@ function FilterPanel({
   closeTo: string;
   onCloseTime: (preset: string, from?: string, to?: string) => void;
   selectCls: string;
+  activeCount: number;
 }) {
   const [searchDraft, setSearchDraft] = useState(search);
   // 外部（URL / 浏览器前进后退 / 重置）改变 search 时，同步回输入框，避免草稿态残留
   useEffect(() => setSearchDraft(search), [search]);
+  // 折叠状态：localStorage 持久化，用户自行收起/展开
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(FILTERS_COLLAPSED_KEY) === "1",
+  );
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem(FILTERS_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+  };
   return (
-    <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-3 mb-3 space-y-2.5">
+    <div className="bg-white border border-hub-border rounded-[10px] px-3.5 py-3 mb-3">
+      {/* 折叠标题行 */}
+      <button
+        onClick={toggleCollapsed}
+        className="w-full flex items-center gap-2 text-[13px] font-semibold text-hub-text hover:text-hub-teal-deep"
+      >
+        <span className="text-hub-textMuted">{collapsed ? "▸" : "▾"}</span>
+        <span>筛选条件</span>
+        {activeCount > 0 && (
+          <span className="text-[11px] font-normal text-hub-teal-deep bg-hub-teal-light border border-hub-teal-border rounded-full px-2 py-px">
+            已启用 {activeCount} 项
+          </span>
+        )}
+        <span className="ml-auto text-[11.5px] font-normal text-hub-textMuted">
+          {collapsed ? "展开" : "收起"}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="space-y-2.5 mt-3">
       {/* 产品分类（真实生效：→ 服务端 product 过滤） */}
       <FilterRow label="产品分类">
         <Chip active={!product} label="全部" onClick={() => onProduct("")} />
@@ -817,19 +800,6 @@ function FilterPanel({
             active={product === c}
             label={c}
             onClick={() => onProduct(product === c ? "" : c)}
-          />
-        ))}
-      </FilterRow>
-
-      {/* 任务类型（新 5 类分类法，替换旧分类；对当前结果集过滤，后端替换 type 后贯通） */}
-      <FilterRow label="任务类型">
-        <Chip active={!taskType} label="全部" onClick={() => onTaskType("")} />
-        {TASK_TYPE_OPTIONS.map((c) => (
-          <Chip
-            key={c}
-            active={taskType === c}
-            label={`${c}(${typeCounts[c] ?? 0})`}
-            onClick={() => onTaskType(taskType === c ? "" : c)}
           />
         ))}
       </FilterRow>
@@ -868,7 +838,6 @@ function FilterPanel({
         preset={createTime}
         from={createFrom}
         to={createTo}
-        counts={createTimeCounts}
         onChange={onCreateTime}
       />
       <TimeRangeRow
@@ -926,6 +895,8 @@ function FilterPanel({
           </select>
         </div>
       </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -126,57 +126,48 @@ describe("HubIssuesListPage (工单任务表)", () => {
     await waitFor(() => expect(lastQuery!.get("product")).toBe("星瀚-开票"));
   });
 
-  it("研发工程状态 client-filters current result set (In Progress → 开发中)", async () => {
+  it("研发工程状态 forwards dev_stage to the API (服务端筛)", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    let lastQuery: URLSearchParams | null = null;
     server.use(
       http.get("*/api/admin/users", () => HttpResponse.json(usersFixture)),
-      http.get("*/api/hub-issues", () =>
-        HttpResponse.json({
-          items: [
-            { id: 1, short_code: "HUB-1", type: "Bug_fix", title: "开发中任务", status: "in_progress", assigned_user_id: 7, ...baseHub, linear_status: "In Progress" },
-            { id: 2, short_code: "HUB-2", type: "Bug_fix", title: "已发版任务", status: "released", assigned_user_id: 7, ...baseHub, linear_status: "Done", closed_at: "2026-08-04T09:00:00Z" },
-          ],
-          total: 2, page: 1, page_size: 50, has_more: false,
-        }),
+      http.get("*/api/hub-issues/filter-counts", () =>
+        HttpResponse.json({ task_state: { in_progress: 0, done: 0, all: 0 }, dev_stage: {} }),
       ),
+      http.get("*/api/hub-issues", ({ request }) => {
+        lastQuery = new URL(request.url).searchParams;
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 50, has_more: false });
+      }),
     );
 
     const user = userEvent.setup();
     renderPage();
-    expect(await screen.findByRole("link", { name: "HUB-1" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "HUB-2" })).toBeInTheDocument();
+    await waitFor(() => expect(lastQuery).not.toBeNull());
 
-    // 点「开发中」→ 仅保留 linear_status=In Progress 的 HUB-1
+    // 点「开发中」→ dev_stage 参数发给后端（服务端全表筛，不再客户端过滤）
     await user.click(screen.getByRole("button", { name: /^开发中/ }));
-    await waitFor(() => expect(screen.queryByRole("link", { name: "HUB-2" })).not.toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "HUB-1" })).toBeInTheDocument();
+    await waitFor(() => expect(lastQuery!.get("dev_stage")).toBe("开发中"));
   });
 
-  it("(数量) aggregates over the current filtered result set", async () => {
+  it("(数量) 用后端 filter-counts 聚合端点的真实全量值", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     server.use(
       http.get("*/api/admin/users", () => HttpResponse.json(usersFixture)),
-      http.get("*/api/hub-issues", () =>
+      http.get("*/api/hub-issues/filter-counts", () =>
         HttpResponse.json({
-          items: [
-            { id: 1, short_code: "HUB-1", type: "Bug_fix", title: "a", status: "in_progress", assigned_user_id: 7, ...baseHub, linear_status: "In Progress" },
-            { id: 2, short_code: "HUB-2", type: "Bug_fix", title: "b", status: "released", assigned_user_id: 7, ...baseHub, linear_status: "Done", closed_at: "2026-08-04T09:00:00Z" },
-          ],
-          total: 2, page: 1, page_size: 50, has_more: false,
+          task_state: { in_progress: 12, done: 5, all: 17 },
+          dev_stage: { 待处理: 3, 计划: 1, 开发中: 8, 测试中: 0, 已发版: 5 },
         }),
+      ),
+      http.get("*/api/hub-issues", () =>
+        HttpResponse.json({ items: [], total: 17, page: 1, page_size: 50, has_more: false }),
       ),
     );
 
-    const user = userEvent.setup();
     renderPage();
-    // 初始：任务状态 进行中(1) 已完成(1)（"全部(N)" 在多处出现，改用进行中/已完成断言更精确）
-    expect(await screen.findByRole("button", { name: /进行中\(1\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /已完成\(1\)/ })).toBeInTheDocument();
-    // 点「开发中」过滤后只剩 In Progress 的 HUB-1 → 已完成计数归零
-    await user.click(screen.getByRole("button", { name: /^开发中/ }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /已完成\(0\)/ })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("button", { name: /进行中\(1\)/ })).toBeInTheDocument();
+    // chip 上的 (数量) 来自 filter-counts 端点（跨页真实值）
+    expect(await screen.findByRole("button", { name: /进行中\(12\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /已完成\(5\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /开发中\(8\)/ })).toBeInTheDocument();
   });
 });

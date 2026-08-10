@@ -861,6 +861,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/filter-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hub Issue Filter Counts
+         * @description 各筛选维度的全量分档计数（跨页真实值，供 chip 上的 (数量) 显示）。
+         */
+        get: operations["hub_issue_filter_counts_api_hub_issues_filter_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/self-bug": {
         parameters: {
             query?: never;
@@ -2875,6 +2895,17 @@ export interface components {
             open_department_id: string;
             /** Parent Department Id */
             parent_department_id: string;
+        };
+        /** FilterCountsResponse */
+        FilterCountsResponse: {
+            /** Dev Stage */
+            dev_stage: {
+                [key: string]: number;
+            };
+            /** Task State */
+            task_state: {
+                [key: string]: number;
+            };
         };
         /** FunnelOut */
         FunnelOut: {
@@ -6511,6 +6542,12 @@ export interface operations {
                 product?: string | null;
                 module?: string | null;
                 search?: string | null;
+                task_state?: string | null;
+                dev_stage?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                closed_from?: string | null;
+                closed_to?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -6527,6 +6564,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubIssueListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hub_issue_filter_counts_api_hub_issues_filter_counts_get: {
+        parameters: {
+            query?: {
+                type?: string | null;
+                status?: string | null;
+                assigned_user_id?: number | null;
+                product?: string | null;
+                module?: string | null;
+                search?: string | null;
+                task_state?: string | null;
+                dev_stage?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                closed_from?: string | null;
+                closed_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilterCountsResponse"];
                 };
             };
             /** @description Validation Error */
