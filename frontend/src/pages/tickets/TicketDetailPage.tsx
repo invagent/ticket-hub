@@ -63,10 +63,35 @@ function nextStepHint(status: string | null | undefined): string {
   }
 }
 
+// 附件在线查看方式：image=缩略图；pdf/video/text=浏览器原生在线查看；download=仅下载。
+// 用户支持清单：图片/pdf/ofd/xml/视频/log/txt 可在线看(ofd 暂除外);zip/doc/xls/ppt 仅下载。
+type ViewMode = "image" | "pdf" | "video" | "text" | "download";
+
+const _IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff", "ico"];
+const _VIDEO_EXT = ["mp4", "webm", "mov", "avi", "mkv", "m4v", "wmv", "flv"];
+const _TEXT_EXT = ["log", "txt", "xml"]; // 浏览器可当文本在线查看
+// 仅下载：ofd(浏览器无原生支持)、zip/rar/7z、doc(x)/xls(x)/ppt(x) 等
+
+function extOf(name: string): string {
+  const clean = name.split("?")[0].split("#")[0];
+  const seg = clean.substring(clean.lastIndexOf("/") + 1);
+  const i = seg.lastIndexOf(".");
+  return i >= 0 ? seg.slice(i + 1).toLowerCase() : "";
+}
+
+function attachmentViewMode(name: string): ViewMode {
+  const ext = extOf(name);
+  if (_IMAGE_EXT.includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (_VIDEO_EXT.includes(ext)) return "video";
+  if (_TEXT_EXT.includes(ext)) return "text";
+  return "download";
+}
+
 type AttachmentRef = {
   url: string;
   name: string;
-  isImage?: boolean; // 图片走缩略图预览，其余走文件链接
+  viewMode: ViewMode; // 展示/查看方式
   ocr?: string | null; // OCR 提取文本（后端 attachments 表才有）
   proxied?: boolean; // true=走后端代理端点(需 Bearer 鉴权,浏览器原生请求带不了 → 必须 fetch+blob)
 };
@@ -89,12 +114,16 @@ function mergeAttachments(
     seen.add(a.url);
     out.push(a);
   };
-  // 1) 后端 attachments 表（代理下载，含 kind/OCR）——proxied 标记：需鉴权，走 fetch+blob
+  // 1) 后端 attachments 表（代理下载，含 kind/OCR）——proxied 标记：需鉴权，走 fetch+blob。
+  // viewMode 按 filename 扩展名细分（后端 kind 把 ofd/xml/log 都归 other，前端才能区分查看方式）。
   for (const r of rows ?? []) {
+    const name = r.filename || `附件 #${r.id}`;
+    // kind=image 直接 image；否则按文件名扩展名判定（拿不到文件名时回落 download）
+    const viewMode = r.kind === "image" ? "image" : r.filename ? attachmentViewMode(name) : "download";
     add({
       url: r.download_url,
-      name: r.filename || `附件 #${r.id}`,
-      isImage: r.kind === "image",
+      name,
+      viewMode,
       ocr: r.extracted_text,
       proxied: true,
     });
@@ -126,8 +155,9 @@ function extractAttachments(payload: unknown): AttachmentRef[] {
   const pushUrl = (u: unknown, name?: unknown) => {
     if (typeof u !== "string" || !u.trim()) return;
     const nm = typeof name === "string" && name.trim() ? name : nameFromUrl(u);
-    const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(u.split("?")[0]) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(nm);
-    out.push({ url: u, name: nm, isImage });
+    // 直链附件：按 URL(优先，含扩展名)或文件名判定查看方式。直链非 proxied，浏览器可直接开。
+    const viewMode = attachmentViewMode(u) !== "download" ? attachmentViewMode(u) : attachmentViewMode(nm);
+    out.push({ url: u, name: nm, viewMode });
   };
 
   // KSM: attachment_urls: string[]
@@ -1094,33 +1124,69 @@ function AttachmentImage({ a }: { a: AttachmentRef }) {
   );
 }
 
-// 非图片文件 chip：proxied 走 blob 下载（download 属性带文件名），直链原样打开。
-function AttachmentFileLink({ a }: { a: AttachmentRef }) {
+// 类型徽标文案（扩展名大写；无扩展名用 FILE）
+function typeTag(name: string): string {
+  const ext = extOf(name);
+  return ext ? ext.toUpperCase() : "FILE";
+}
+const CAN_VIEW: ViewMode[] = ["pdf", "video", "text"];
+
+// 非图片文件 chip：类型徽标 + 文件名 +（可在线看的）查看/下载双动作，其余仅下载。
+// proxied 附件走带鉴权 blob URL（浏览器原生 viewer 靠后端设好的 content-type 打开）；直链直接用 url。
+function AttachmentFileChip({ a }: { a: AttachmentRef }) {
   const { blobUrl, error } = useAuthedBlob(a.url, !!a.proxied);
   const href = a.proxied ? blobUrl : a.url;
-  const cls =
-    "inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]";
+  const canView = CAN_VIEW.includes(a.viewMode);
+  const loading = a.proxied && !href && !error;
+
+  const wrap =
+    "inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full pl-1.5 pr-2.5 py-1 text-[12px] text-hub-textSecondary max-w-[300px]";
+  const tag = (
+    <span className="flex-none text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white border border-hub-border text-hub-textMuted">
+      {typeTag(a.name)}
+    </span>
+  );
+
   if (a.proxied && error) {
     return (
-      <span className={`${cls} opacity-60`} title={a.name}>
-        <span className="text-hub-textFaint flex-none">📎</span>
+      <span className={`${wrap} opacity-60`} title={a.name}>
+        {tag}
         <span className="truncate">{a.name}（加载失败）</span>
       </span>
     );
   }
+
   return (
-    <a
-      href={href ?? undefined}
-      target="_blank"
-      rel="noopener noreferrer"
-      download={a.proxied ? a.name : undefined}
-      className={cls}
-      title={a.name}
-      aria-disabled={a.proxied && !href}
-    >
-      <span className="text-hub-textFaint flex-none">📎</span>
-      <span className="truncate">{a.name}</span>
-    </a>
+    <span className={wrap} title={a.name} aria-busy={loading}>
+      {tag}
+      <span className="truncate flex-1">{a.name}</span>
+      {loading ? (
+        <span className="flex-none text-[10px] text-hub-textFaint">加载中…</span>
+      ) : (
+        <span className="flex-none flex items-center gap-1.5">
+          {canView && (
+            <a
+              href={href ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-hub-teal hover:text-hub-teal-deep font-semibold"
+            >
+              查看
+            </a>
+          )}
+          <a
+            href={href ?? undefined}
+            download={a.proxied ? a.name : undefined}
+            target={a.proxied ? undefined : "_blank"}
+            rel="noopener noreferrer"
+            className="text-hub-textMuted hover:text-hub-teal-deep"
+            title="下载"
+          >
+            下载
+          </a>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -1129,8 +1195,8 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
   if (attachments.length === 0) {
     return <span className="text-hub-textFaint">暂无附件</span>;
   }
-  const images = attachments.filter((a) => a.isImage);
-  const files = attachments.filter((a) => !a.isImage);
+  const images = attachments.filter((a) => a.viewMode === "image");
+  const files = attachments.filter((a) => a.viewMode !== "image");
   return (
     <div className="flex flex-col gap-2.5">
       {images.length > 0 && (
@@ -1141,10 +1207,10 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
         </div>
       )}
       {files.length > 0 && (
-        <ul className="flex flex-wrap gap-2 m-0 list-none p-0">
+        <ul className="flex flex-col gap-1.5 m-0 list-none p-0">
           {files.map((a, i) => (
             <li key={`file-${i}`}>
-              <AttachmentFileLink a={a} />
+              <AttachmentFileChip a={a} />
             </li>
           ))}
         </ul>

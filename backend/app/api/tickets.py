@@ -21,7 +21,11 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_user
 from app.config import get_settings
 from app.core.logging import get_logger
-from app.core.storage.minio_store import MinioNotConfiguredError, MinioStore
+from app.core.storage.minio_store import (
+    MinioNotConfiguredError,
+    MinioStore,
+    guess_content_type,
+)
 from app.db import get_session
 from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, User
 from app.repositories.status_history import StatusHistoryRepository
@@ -331,32 +335,16 @@ def download_attachment(
 
 
 def _content_type(att: Attachment, data: bytes) -> str:
-    """推断响应 Content-Type：att.mime 优先，缺失时按文件名/URL 扩展名，再按字节 magic。
+    """推断响应 Content-Type：att.mime 优先，否则走共享 guess_content_type。
 
     历史附件（如智齿早期入库）mime 常为空，返回 octet-stream 会让 <img> 不渲染，
-    故补推断，让图片正确以 image/* 返回。
+    故补推断（含 ofd/log/xml/txt 映射 + 字节 magic），让文件正确按类型返回。
     """
     if att.mime:
         return att.mime
-    import mimetypes
-
-    for name in (att.filename, att.source_url):
-        if name:
-            guessed, _ = mimetypes.guess_type(name.split("?")[0])
-            if guessed:
-                return guessed
-    # 字节 magic 兜底（最常见的截图格式）
-    if data[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return "image/gif"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    if data[:5] == b"%PDF-":
-        return "application/pdf"
-    return "application/octet-stream"
+    return guess_content_type(
+        filename=att.filename, source_url=att.source_url, kind=att.kind, data=data
+    )
 
 
 def _fetch_source_bytes(source_url: str, settings: Any) -> bytes:

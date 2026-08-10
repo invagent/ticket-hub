@@ -8,6 +8,8 @@ from app.core.storage.minio_store import (
     MinioStore,
     attachment_object_key,
     classify_attachment_kind,
+    filename_from_url,
+    guess_content_type,
 )
 
 
@@ -68,11 +70,18 @@ def test_public_url_falls_back_to_endpoint(mock_minio):
         ("https://x/screenshot.webp", "image"),
         ("https://x/report.pdf", "pdf"),
         ("https://x/demo.mp4", "video"),
+        # 用户清单里非图片/pdf/video 的都归 other（前端再按扩展名细分查看方式）
         ("https://x/logs.zip", "other"),
         ("https://x/server.log", "other"),
-        ("https://x/data.csv", "other"),
+        ("https://x/invoice.ofd", "other"),
+        ("https://x/data.xml", "other"),
         ("https://x/notes.txt", "other"),
-        ("https://x/archive.tar.gz", "other"),
+        ("https://x/report.doc", "other"),
+        ("https://x/report.docx", "other"),
+        ("https://x/sheet.xls", "other"),
+        ("https://x/sheet.xlsx", "other"),
+        ("https://x/slides.ppt", "other"),
+        ("https://x/slides.pptx", "other"),
         ("https://x/no_ext_here", "other"),
         ("https://x/a.jpg?sign=abc&t=1", "image"),  # 忽略 query
         (None, "other"),
@@ -81,6 +90,46 @@ def test_public_url_falls_back_to_endpoint(mock_minio):
 )
 def test_classify_attachment_kind(url, expected):
     assert classify_attachment_kind(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://img.sobot.com/a/OGX1u_1786328048047.jpg", "OGX1u_1786328048047.jpg"),
+        ("https://x/report.pdf?sign=abc", "report.pdf"),  # 去 query
+        ("https://x/%E5%8F%91%E7%A5%A8.ofd", "发票.ofd"),  # URL-decode
+        ("https://x/dir/", None),  # 末段空
+        (None, None),
+        ("", None),
+    ],
+)
+def test_filename_from_url(url, expected):
+    assert filename_from_url(url) == expected
+
+
+@pytest.mark.parametrize(
+    "filename,kind,expected",
+    [
+        ("server.log", "other", "text/plain; charset=utf-8"),  # log → 文本(在线看)
+        ("notes.txt", "other", "text/plain; charset=utf-8"),
+        ("data.xml", "other", "application/xml; charset=utf-8"),
+        ("invoice.ofd", "other", "application/ofd"),  # ofd 自定义
+        ("report.pdf", "pdf", "application/pdf"),  # mimetypes
+        ("shot.png", "image", "image/png"),
+        ("clip.mp4", "video", "video/mp4"),
+    ],
+)
+def test_guess_content_type_by_ext(filename, kind, expected):
+    assert guess_content_type(filename=filename, source_url=None, kind=kind) == expected
+
+
+def test_guess_content_type_magic_fallback():
+    # 无扩展名信息，靠字节 magic
+    assert guess_content_type(filename=None, source_url=None, kind="image", data=b"\xff\xd8\xff\xe0") == "image/jpeg"
+    assert guess_content_type(filename=None, source_url=None, kind="other", data=b"%PDF-1.7") == "application/pdf"
+    # 全无 → kind 兜底
+    assert guess_content_type(filename=None, source_url=None, kind="image") == "image/png"
+    assert guess_content_type(filename=None, source_url=None, kind="other") == "application/octet-stream"
 
 
 @patch("app.core.storage.minio_store.Minio")

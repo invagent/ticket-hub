@@ -30,20 +30,57 @@ _VIDEO_EXT = {".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv", ".webm", ".m4v"}
 _EXT_RE = re.compile(r"\.([A-Za-z0-9]{1,6})(?:$)")
 
 
+# content-type 兜底映射：mimetypes 不认或映射不理想的扩展名（ofd/log 等）。
+# log/txt/xml 走 text/* 让浏览器在线看当文本；ofd 无浏览器原生支持故仅供下载。
+_EXT_CONTENT_TYPE = {
+    ".ofd": "application/ofd",
+    ".log": "text/plain; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".xml": "application/xml; charset=utf-8",
+}
+
+
+def _basename(url_or_name: str) -> str:
+    """取路径末段（忽略 query/fragment）。"""
+    path = url_or_name.split("?")[0].split("#")[0]
+    return path[path.rfind("/") + 1 :]
+
+
+def _ext_of(url_or_name: str | None) -> str | None:
+    """提取小写扩展名（含点，如 `.pdf`）；无则 None。"""
+    if not url_or_name or not isinstance(url_or_name, str):
+        return None
+    m = _EXT_RE.search(_basename(url_or_name))
+    return "." + m.group(1).lower() if m else None
+
+
+def filename_from_url(url: str | None) -> str | None:
+    """从 URL 提取文件名（末段、去 query/fragment、URL-decode）；取不到返回 None。
+
+    智齿 5951 例：`.../OGX1u_1786328048047.jpg` → `OGX1u_1786328048047.jpg`。
+    """
+    if not url or not isinstance(url, str):
+        return None
+    from urllib.parse import unquote
+
+    seg = _basename(url).strip()
+    if not seg:
+        return None
+    try:
+        return unquote(seg)
+    except Exception:
+        return seg
+
+
 def classify_attachment_kind(url_or_name: str | None) -> str:
     """按 URL/文件名的扩展名判定附件 kind（image/pdf/video/other）。
 
     zip/log/txt/doc/xls/csv 等及无扩展名一律归 other——只 image 会进 OCR，
     其余仅下载存档。取路径末段的扩展名（忽略 query/fragment）。
     """
-    if not url_or_name or not isinstance(url_or_name, str):
+    ext = _ext_of(url_or_name)
+    if ext is None:
         return "other"
-    path = url_or_name.split("?")[0].split("#")[0]
-    seg = path[path.rfind("/") + 1 :]
-    m = _EXT_RE.search(seg)
-    if not m:
-        return "other"
-    ext = "." + m.group(1).lower()
     if ext in _IMAGE_EXT:
         return "image"
     if ext == ".pdf":
@@ -51,6 +88,40 @@ def classify_attachment_kind(url_or_name: str | None) -> str:
     if ext in _VIDEO_EXT:
         return "video"
     return "other"
+
+
+def guess_content_type(
+    *, filename: str | None, source_url: str | None, kind: str, data: bytes | None = None
+) -> str:
+    """推断附件 Content-Type，供下载端点 + 存档上传共用。
+
+    优先级：自定义映射(ofd/log/xml/txt) → mimetypes(按 filename/URL) → 字节 magic
+    → kind 兜底(image→image/png，其余 octet-stream)。
+    log/txt/xml 落 text/* 让浏览器在线查看当文本渲染。
+    """
+    import mimetypes
+
+    for name in (filename, source_url):
+        ext = _ext_of(name)
+        if ext and ext in _EXT_CONTENT_TYPE:
+            return _EXT_CONTENT_TYPE[ext]
+    for name in (filename, source_url):
+        if name:
+            guessed, _ = mimetypes.guess_type(_basename(name))
+            if guessed:
+                return guessed
+    if data:
+        if data[:3] == b"\xff\xd8\xff":
+            return "image/jpeg"
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return "image/gif"
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        if data[:5] == b"%PDF-":
+            return "application/pdf"
+    return "image/png" if kind == "image" else "application/octet-stream"
 
 
 def attachment_object_key(ticket_id: int, att_id: int, filename: str | None) -> str:

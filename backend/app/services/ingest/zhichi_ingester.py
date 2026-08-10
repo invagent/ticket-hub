@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.core.storage.minio_store import classify_attachment_kind
+from app.core.storage.minio_store import classify_attachment_kind, filename_from_url
 from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
@@ -285,6 +285,7 @@ class ZhichiIngester:
                 Attachment(
                     ticket_id=ticket.id,
                     source_url=url,
+                    filename=filename_from_url(url),
                     kind=classify_attachment_kind(url),
                     vision_status="queued",
                 )

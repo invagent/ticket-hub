@@ -22,6 +22,7 @@ from app.core.storage.minio_store import (
     MinioNotConfiguredError,
     MinioStore,
     attachment_object_key,
+    guess_content_type,
 )
 from app.models import Attachment, Ticket
 
@@ -126,15 +127,8 @@ def drain_pending_attachments(
 
 
 def _guess_content_type(att: Attachment) -> str:
-    """按文件名/URL 扩展名猜 content_type；图片兜底 image/png，其余 octet-stream。"""
-    import mimetypes
-
-    for name in (att.filename, att.source_url):
-        if name:
-            guessed, _ = mimetypes.guess_type(name.split("?")[0])
-            if guessed:
-                return guessed
-    return "image/png" if att.kind == "image" else "application/octet-stream"
+    """存档上传的 content_type：走共享 guess_content_type（ofd/log/xml/txt 映射 + 扩展名）。"""
+    return guess_content_type(filename=att.filename, source_url=att.source_url, kind=att.kind)
 
 
 def process_one(
