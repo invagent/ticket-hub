@@ -88,6 +88,7 @@ class TicketRepository:
         unassigned_only: bool = False,
         customer_identity_id: int | None = None,
         hub_issue_id: int | None = None,
+        source_ticket_q: str | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Page[Ticket]:
@@ -123,6 +124,12 @@ class TicketRepository:
         if hub_issue_id is not None:
             base = base.where(Ticket.hub_issue_id == hub_issue_id)
             count_base = count_base.where(Ticket.hub_issue_id == hub_issue_id)
+        if source_ticket_q:
+            # 来源工单号子串匹配（支持输入后几位）；ilike 大小写不敏感。转义 LIKE 元字符。
+            esc = source_ticket_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{esc}%"
+            base = base.where(Ticket.source_ticket_id.ilike(pattern, escape="\\"))
+            count_base = count_base.where(Ticket.source_ticket_id.ilike(pattern, escape="\\"))
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (

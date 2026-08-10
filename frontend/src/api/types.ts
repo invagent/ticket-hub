@@ -8113,6 +8113,7 @@ export interface operations {
                 unassigned_only?: boolean;
                 customer_identity_id?: number | null;
                 hub_issue_id?: number | null;
+                source_ticket_q?: string | null;
                 page?: number;
                 page_size?: number;
             };

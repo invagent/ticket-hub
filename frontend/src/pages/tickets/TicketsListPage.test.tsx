@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -97,9 +97,11 @@ describe("TicketsListPage", () => {
     const rowCb = screen.getAllByRole("checkbox")[1];
     await user.click(rowCb);
     expect(screen.getByText(/已选 1 条/)).toBeInTheDocument();
-    // 输入来源工单号 → 选择应被清空
+    // 输入来源工单号 → debounce(350ms) 后写 URL + 清空选择（防批量操作误伤隐藏行）
     await user.type(screen.getByPlaceholderText("来源工单号"), "x");
-    expect(screen.queryByText(/已选 \d+ 条/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/已选 \d+ 条/)).not.toBeInTheDocument();
+    });
     localStorage.clear();
   });
 

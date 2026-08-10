@@ -23,7 +23,7 @@ import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
-import { StatusBadge } from "./ticketStatus";
+import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -34,6 +34,23 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
 }
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
+
+// 状态筛选下拉可选值（ticket.status 常见态；label 走 ticketStatusLabel 中文化）
+const STATUS_FILTER_OPTIONS = [
+  "received",
+  "linked",
+  "waiting_assign",
+  "assigned",
+  "waiting_reply",
+  "in_progress",
+  "replied",
+  "resolved",
+  "released",
+  "split",
+  "done",
+  "closed",
+  "rejected",
+];
 
 function fmtTime(v: string | null | undefined): string {
   if (!v) return "—";
@@ -119,12 +136,14 @@ export function TicketsListPage() {
   const predictedTypes = params.getAll("predicted_types");
   // 关联工单：工单任务表「关联工单」链接过来带 ?hub_issue_id=，后端 /api/tickets 支持该参数
   const hubIssueId = params.get("hub_issue_id");
+  // 来源工单号搜索：走后端 source_ticket_q 子串匹配（全表，支持后几位）
+  const sourceTicketQ = params.get("source_ticket_q") ?? "";
 
   const authUser = getAuthUser();
   const isSupervisor = authUser?.role === "supervisor" || authUser?.role === "admin";
 
-  // 来源工单号搜索：后端 /api/tickets 暂无该 query 参数 → 前端对当前页做过滤（仅当前页有效）
-  const [sourceTicketQuery, setSourceTicketQuery] = useState("");
+  // 输入框本地态 + debounce 同步到 URL（避免每次击键都请求）
+  const [sourceTicketInput, setSourceTicketInput] = useState(sourceTicketQ);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showReroute, setShowReroute] = useState(false);
@@ -157,10 +176,39 @@ export function TicketsListPage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [typeMenuOpen]);
 
+  // 外部改 URL（重置筛选等）时，输入框跟随 source_ticket_q
+  useEffect(() => {
+    setSourceTicketInput(sourceTicketQ);
+  }, [sourceTicketQ]);
+
+  // 搜索框 debounce（350ms）→ 写入 URL source_ticket_q，触发后端查询
+  useEffect(() => {
+    const v = sourceTicketInput.trim();
+    if (v === sourceTicketQ) return;
+    const t = setTimeout(() => {
+      const next = new URLSearchParams(params);
+      if (v) next.set("source_ticket_q", v);
+      else next.delete("source_ticket_q");
+      next.set("page", "1");
+      setParams(next);
+      setSelectedIds(new Set());
+    }, 350);
+    return () => clearTimeout(t);
+  }, [sourceTicketInput, sourceTicketQ, params, setParams]);
+
   const tickets = useQuery({
     queryKey: [
       "tickets",
-      { sourceCode, status, unassigned, page, assignedUserIds, predictedTypes, hubIssueId },
+      {
+        sourceCode,
+        status,
+        unassigned,
+        page,
+        assignedUserIds,
+        predictedTypes,
+        hubIssueId,
+        sourceTicketQ,
+      },
     ],
     queryFn: () =>
       api.get("/api/tickets", {
@@ -170,17 +218,13 @@ export function TicketsListPage() {
         assigned_user_ids: assignedUserIds.length ? assignedUserIds : undefined,
         predicted_types: predictedTypes.length ? predictedTypes : undefined,
         hub_issue_id: hubIssueId ? Number(hubIssueId) : undefined,
+        source_ticket_q: sourceTicketQ || undefined,
         page,
         page_size: 50,
       }),
   });
 
-  const items = useMemo(() => {
-    const all = tickets.data?.items ?? [];
-    const q = sourceTicketQuery.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((t) => (t.source_ticket_id ?? "").toLowerCase().includes(q));
-  }, [tickets.data, sourceTicketQuery]);
+  const items = tickets.data?.items ?? [];
   const allSelected = items.length > 0 && items.every((t) => selectedIds.has(t.id));
   const someSelected = items.some((t) => selectedIds.has(t.id)) && !allSelected;
 
@@ -241,7 +285,7 @@ export function TicketsListPage() {
     unassigned ||
     assignedUserIds.length ||
     predictedTypes.length ||
-    sourceTicketQuery.trim();
+    sourceTicketQ.trim();
 
   // ---- 列定义 --------------------------------------------------------------
   const columns = useMemo<ColumnDef<TicketSummary>[]>(() => {
@@ -653,7 +697,7 @@ export function TicketsListPage() {
               onClick={() => {
                 setParams(new URLSearchParams());
                 setSelectedIds(new Set());
-                setSourceTicketQuery("");
+                setSourceTicketInput("");
               }}
               className="text-[11.5px] text-hub-textMuted hover:text-hub-rose"
             >
@@ -662,17 +706,13 @@ export function TicketsListPage() {
           </div>
         )}
         <div className="grid grid-cols-6 gap-2.5 items-center">
-          {/* 来源工单号搜索（当前页过滤，后端参数待支持） */}
+          {/* 来源工单号搜索（后端 source_ticket_q 全表子串匹配，支持后几位；debounce 350ms） */}
           <input
             type="text"
-            value={sourceTicketQuery}
-            onChange={(e) => {
-              setSourceTicketQuery(e.target.value);
-              // 清空选择：避免过滤后隐藏行仍在 selectedIds 中被批量操作误伤
-              setSelectedIds(new Set());
-            }}
+            value={sourceTicketInput}
+            onChange={(e) => setSourceTicketInput(e.target.value)}
             placeholder="来源工单号"
-            title="按来源工单号搜索（当前页过滤，后端参数待支持）"
+            title="按来源工单号搜索（全表，支持输入后几位）"
             className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           />
           <select
@@ -692,12 +732,11 @@ export function TicketsListPage() {
             className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
           >
             <option value="">全部状态</option>
-            <option value="received">received</option>
-            <option value="linked">linked</option>
-            <option value="waiting_reply">waiting_reply</option>
-            <option value="in_progress">in_progress</option>
-            <option value="replied">replied</option>
-            <option value="done">done</option>
+            {STATUS_FILTER_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {ticketStatusLabel(s)}
+              </option>
+            ))}
           </select>
 
           {/* 处理人多选 */}

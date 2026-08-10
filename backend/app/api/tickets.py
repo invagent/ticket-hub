@@ -136,6 +136,7 @@ def list_tickets(
     unassigned_only: bool = Query(False),
     customer_identity_id: int | None = Query(None),
     hub_issue_id: int | None = Query(None),
+    source_ticket_q: str | None = Query(None),  # 来源工单号子串搜索（支持后几位，全表）
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> TicketListResponse:
@@ -149,6 +150,7 @@ def list_tickets(
         unassigned_only=unassigned_only,
         customer_identity_id=customer_identity_id,
         hub_issue_id=hub_issue_id,
+        source_ticket_q=source_ticket_q,
         page=page,
         page_size=page_size,
     )
