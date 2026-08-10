@@ -1,11 +1,14 @@
 # hub-issue SIT — git-driven docker deploy (ticket-hub backend stack).
 #
 # PG + Redis are REMOTE (see .env: PG_DSN / REDIS_URL). No local pg/redis here.
+# MinIO IS local (attachment 存档；vision 直接吃 bytes，MinIO 只存档不需公网可达)。
 # Code is baked into the image (no volume mount) — update flow:
 #     git pull && docker compose -f deploy/docker-compose.sit.yml up -d --build
 #
 # .env lives next to this file (deploy/.env on the server) — gitignored, holds
 # secrets + remote DB/Redis targets. Copy deploy/.env.sit.example to start.
+# MinIO 凭证从 .env 读：MINIO_ROOT_USER / MINIO_ROOT_PASSWORD（与 MINIO_ACCESS_KEY /
+# MINIO_SECRET_KEY 一致）；worker 走 compose 内网 hub-issue-sit-minio:9000 连接。
 name: hub-issue-sit
 
 services:
@@ -19,6 +22,8 @@ services:
     ports:
       - "9095:8080"
     restart: unless-stopped
+    depends_on:
+      - minio
 
   worker:
     image: hub-issue-sit-backend:latest
@@ -28,6 +33,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - minio
 
   worker-beat:
     image: hub-issue-sit-backend:latest
@@ -37,3 +43,24 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+
+  minio:
+    image: minio/minio:latest
+    container_name: hub-issue-sit-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9001:9001"  # console（可选，方便浏览器查桶）；9000 走内网不对外暴露
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  minio-data:
