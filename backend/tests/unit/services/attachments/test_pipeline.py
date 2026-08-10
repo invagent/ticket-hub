@@ -180,6 +180,38 @@ def test_ensure_bucket_called_once_upfront(db_session, monkeypatch):
     assert store.ensure_bucket.call_count == 1
 
 
+def test_no_vision_key_stores_but_skips_ocr(db_session, monkeypatch):
+    """无 vision key：附件仍下载+存 MinIO，跳过 OCR，落终态 skipped（不卡 queued、不报错）。"""
+    from app.core.llm_router.vision import VisionError
+    from app.services.attachments import pipeline as pipeline_mod
+
+    _set_pipeline(monkeypatch, enabled=True, dry_run=False)
+    # 模拟无 key：VisionClient.from_settings 抛错 → pipeline 降级 vision_client=None
+    monkeypatch.setattr(
+        pipeline_mod.VisionClient,
+        "from_settings",
+        classmethod(lambda cls: (_ for _ in ()).throw(VisionError("no vision API key"))),
+    )
+    t = _mk_ticket(db_session)
+    a = _mk_att(db_session, t.id)
+    ksm, store, _vision = _mocks()
+    rep = drain_pending_attachments(
+        db_session, ksm_client=ksm, store=store, vision_client=None
+    )
+    db_session.refresh(a)
+    db_session.refresh(t)
+    # 下载 + 存 MinIO 都发生了
+    ksm.download_attachment.assert_called_once()
+    store.put_bytes.assert_called_once()
+    assert a.storage_key is not None  # 已存档
+    # 但 OCR 跳过：终态 skipped、无识别文本、body 未追加
+    assert a.vision_status == "skipped"
+    assert a.last_error == "ocr_skipped_no_vision_key"
+    assert not a.extracted_text
+    assert t.body == "orig"
+    assert rep.skipped == 1 and rep.extracted == 0 and rep.failed == 0
+
+
 # helper：monkeypatch settings
 def _set_pipeline(mp, *, enabled, dry_run, max_bytes=10 * 1024 * 1024, max_attempts=3):
     from app.services.attachments import pipeline as pipeline_mod

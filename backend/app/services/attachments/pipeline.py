@@ -96,7 +96,14 @@ def drain_pending_attachments(
     store.ensure_bucket()
 
     ksm_client = ksm_client or KSMClient(KSMConfig.from_settings(settings))
-    vision_client = vision_client or VisionClient.from_settings()
+    # vision 可选：无 API key 时 VisionClient.from_settings() 抛错——降级为 None，
+    # 附件仍下载+存 MinIO，只跳过 OCR（不整批中断）。配了 key 后新附件自动 OCR。
+    if vision_client is None:
+        try:
+            vision_client = VisionClient.from_settings()
+        except Exception as e:
+            logger.warning("attachment_pipeline_vision_unavailable_ocr_skipped", error=str(e))
+            vision_client = None
 
     for att in rows:
         status = process_one(
@@ -124,7 +131,7 @@ def process_one(
     *,
     store: MinioStore,
     ksm_client: KSMClient,
-    vision_client: VisionClient,
+    vision_client: VisionClient | None,
     settings: Settings,
 ) -> str:
     try:
@@ -143,6 +150,15 @@ def process_one(
         # key 是确定性的，重试重新上传会覆盖同一个 MinIO 对象，不产生重复。
         public_url = store.put_bytes(key, img, content_type)
         size_bytes = len(img)
+
+        # vision 不可用（无 key）：只存档不 OCR，落终态 skipped（附件已进 MinIO，
+        # storage_key 落地故不再被扫；last_error 标原因供后续人工/补跑区分）。
+        if vision_client is None:
+            att.storage_key = public_url
+            att.size_bytes = size_bytes
+            att.vision_status = "skipped"
+            att.last_error = "ocr_skipped_no_vision_key"
+            return "skipped"
 
         result = vision_client.extract(prompt=_VISION_PROMPT, image_bytes=img, mime=content_type)
         text = getattr(result, "ocr_text", None) or getattr(result, "text", None) or ""
