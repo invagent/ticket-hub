@@ -305,7 +305,6 @@ def download_attachment(
         raise HTTPException(status_code=404, detail="attachment not found")
 
     settings = get_settings()
-    content_type = att.mime or "application/octet-stream"
 
     # 1) 已存档：从 MinIO 按对象 key 读回（浏览器无法直连内网 MinIO，故走后端代理）。
     if att.storage_key:
@@ -314,7 +313,7 @@ def download_attachment(
             key = store.key_from_storage_url(att.storage_key)
             if key is not None:
                 data = store.get_bytes(key)
-                return Response(content=data, media_type=content_type)
+                return Response(content=data, media_type=_content_type(att, data))
         except MinioNotConfiguredError:
             pass  # 未配 MinIO → 回落 source_url
         except Exception as e:  # MinIO 读失败（对象丢失等）→ 回落 source_url
@@ -324,11 +323,40 @@ def download_attachment(
     if att.source_url:
         try:
             data = _fetch_source_bytes(att.source_url, settings)
-            return Response(content=data, media_type=content_type)
+            return Response(content=data, media_type=_content_type(att, data))
         except Exception as e:
             logger.warning("attachment_download_source_failed", att_id=attachment_id, error=str(e))
 
     raise HTTPException(status_code=404, detail="attachment content unavailable")
+
+
+def _content_type(att: Attachment, data: bytes) -> str:
+    """推断响应 Content-Type：att.mime 优先，缺失时按文件名/URL 扩展名，再按字节 magic。
+
+    历史附件（如智齿早期入库）mime 常为空，返回 octet-stream 会让 <img> 不渲染，
+    故补推断，让图片正确以 image/* 返回。
+    """
+    if att.mime:
+        return att.mime
+    import mimetypes
+
+    for name in (att.filename, att.source_url):
+        if name:
+            guessed, _ = mimetypes.guess_type(name.split("?")[0])
+            if guessed:
+                return guessed
+    # 字节 magic 兜底（最常见的截图格式）
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:5] == b"%PDF-":
+        return "application/pdf"
+    return "application/octet-stream"
 
 
 def _fetch_source_bytes(source_url: str, settings: Any) -> bytes:
