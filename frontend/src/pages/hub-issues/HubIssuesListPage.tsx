@@ -39,6 +39,13 @@ const TYPE_BADGE: Record<string, { bg: string; fg: string; bd: string }> = {
   Internal_task: { bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
 };
 
+// 任务状态徽标（非 Operation、非 pending_review 的研发/内部类走二值近似：进行中/已完成）
+// 语义配色对齐 LINEAR_ST：进行中=青蓝(进行态)、已完成=绿(完成态)
+const TASK_STATE_BADGE: Record<"in_progress" | "done", { bg: string; fg: string; bd: string }> = {
+  in_progress: { bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
+  done: { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
+};
+
 const LINEAR_ST: Record<string, { bg: string; fg: string; bd: string }> = {
   backlog: { bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   unstarted: { bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
@@ -558,7 +565,20 @@ export function HubIssuesListPage() {
                             待确认分类
                           </span>
                         ) : (
-                          <span className="text-[11px] text-hub-textSecondary">
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                            style={{
+                              background: done
+                                ? TASK_STATE_BADGE.done.bg
+                                : TASK_STATE_BADGE.in_progress.bg,
+                              color: done
+                                ? TASK_STATE_BADGE.done.fg
+                                : TASK_STATE_BADGE.in_progress.fg,
+                              borderColor: done
+                                ? TASK_STATE_BADGE.done.bd
+                                : TASK_STATE_BADGE.in_progress.bd,
+                            }}
+                          >
                             {done ? "已完成" : "进行中"}
                           </span>
                         )}
