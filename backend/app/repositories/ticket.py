@@ -200,9 +200,11 @@ class TicketRepository:
 
 
 # 任务状态分组（进行中/已完成）→ hub_issue.status 集合。前后端共识（原前端 STATUS_GROUP）。
+# resolved = 已解决（devcollab 回访确认/Operation 完结），归「已完成」。
 HUB_STATUS_GROUP: dict[str, list[str]] = {
-    "in_progress": ["created", "pending", "pending_review", "in_progress"],
-    "done": ["released", "done", "closed"],
+    "in_progress": ["created", "pending", "pending_review", "in_progress", "waiting_reply",
+                    "waiting_schedule", "scheduled", "assigned", "waiting_assign"],
+    "done": ["released", "done", "closed", "resolved", "rejected", "superseded"],
 }
 
 # 研发工程状态（中文档位）→ linear_status 取值集合（小写比较）。原前端 DEV_STAGE_MATCH。

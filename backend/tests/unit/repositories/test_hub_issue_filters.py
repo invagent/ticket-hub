@@ -37,9 +37,10 @@ def test_task_state_done(db_session):
     _mk(db_session, short_code="HUB-1", status="in_progress")
     _mk(db_session, short_code="HUB-2", status="released")
     _mk(db_session, short_code="HUB-3", status="closed")
+    _mk(db_session, short_code="HUB-4", status="resolved")  # resolved 也归已完成
     repo = HubIssueRepository(db_session)
     p = repo.list_paginated(task_state="done")
-    assert {h.short_code for h in p.items} == {"HUB-2", "HUB-3"}
+    assert {h.short_code for h in p.items} == {"HUB-2", "HUB-3", "HUB-4"}
 
 
 def test_dev_stage_matches_linear_status_case_insensitive(db_session):

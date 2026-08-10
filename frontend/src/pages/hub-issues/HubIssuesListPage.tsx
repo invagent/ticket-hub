@@ -341,8 +341,6 @@ export function HubIssuesListPage() {
         devStageCounts={devStageCounts}
         taskState={taskState}
         onTaskState={(v) => setFilter("task_state", v)}
-        status={status}
-        onStatus={(v) => setFilter("status", v)}
         product={product}
         onProduct={(v) => setFilter("product", v)}
         search={search}
@@ -698,8 +696,6 @@ function FilterPanel({
   devStageCounts,
   taskState,
   onTaskState,
-  status,
-  onStatus,
   product,
   onProduct,
   search,
@@ -725,8 +721,6 @@ function FilterPanel({
   devStageCounts: Record<string, number>;
   taskState: string;
   onTaskState: (v: string) => void;
-  status: string;
-  onStatus: (v: string) => void;
   product: string;
   onProduct: (v: string) => void;
   search: string;
@@ -840,7 +834,8 @@ function FilterPanel({
         onChange={onCloseTime}
       />
 
-      {/* 处理人下拉（→assigned_user_id）+ 关键字搜索(→search) + hub 状态(→status)，均真实生效 */}
+      {/* 处理人下拉（→assigned_user_id）+ 关键字搜索(→search)，均真实生效。
+          hub 原始状态下拉已隐藏（与「任务状态」重复；status 参数仍支持外部链接带入） */}
       <div className="flex items-center gap-3 flex-wrap pt-1">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px]">
@@ -870,21 +865,6 @@ function FilterPanel({
             placeholder="任务编号 / 说明（回车搜索）"
             className={`${selectCls} !w-[200px]`}
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">hub 状态</span>
-          <select
-            value={status}
-            onChange={(e) => onStatus(e.target.value)}
-            className={`${selectCls} !w-[160px]`}
-          >
-            <option value="">全部状态</option>
-            <option value="created">created</option>
-            <option value="pending">pending（待人工）</option>
-            <option value="in_progress">in_progress</option>
-            <option value="released">released</option>
-            <option value="done">done</option>
-          </select>
         </div>
       </div>
         </div>
