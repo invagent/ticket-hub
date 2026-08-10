@@ -129,6 +129,7 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
             "erp_uid": pick(fields.get("对接ERP"), ext.get("对接ERP")),
         },
         "company": pick(fields.get("客户名称"), raw.get("enterprise_name")),
+        "tax_no": pick(fields.get("公司税号"), ext.get("公司税号")),  # 提单公司税号（扩展字段）
         "attachment_urls": _parse_file_str(pick(fields.get("附件"), raw.get("file_str"))),
         "_envelope": payload,  # 出站回写要用的原始信封整体
     }
@@ -164,6 +165,7 @@ def _flatten_native(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "customerid": payload.get("userid"),
         "company": payload.get("enterprise_name") or ext.get("公司/项目名称"),
+        "tax_no": ext.get("公司税号"),  # 提单公司税号（扩展字段）
         "attachment_urls": _parse_file_str(payload.get("file_str")),
         "_envelope": payload,
     }
@@ -250,8 +252,9 @@ class ZhichiIngester:
                 "source_user_id": payload.get("customerid")
                 or _customer_field(payload, "customerid"),
             },
-            # 提单快照：智齿 payload 有公司名 + 工单等级；税号/租户上游不带，留空。
+            # 提单快照：智齿 payload 有公司名 + 公司税号(扩展字段) + 工单等级；租户上游不带，留空。
             reporter_company=payload.get("company"),
+            reporter_tax_no=payload.get("tax_no"),
             service_level=_zhichi_service_level(payload.get("_envelope") or {}),
         )
         self._tickets.add(ticket)
