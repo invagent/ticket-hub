@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     AssignmentScopeModule,
+    Attachment,
     Customer,
     CustomerIdentity,
     ProductLine,
@@ -307,6 +308,40 @@ def test_ingest_native_flat_maps_fields(world: Session) -> None:
     # source_payload 存原样，出站回写读 deal_agent_name / ticket_level
     assert t.source_payload["ticket_code"] == "20260720000001"
     assert t.source_payload["extend_fields_list"][0]["field_name"] == "产品分类"
+
+
+def test_native_flat_creates_attachment_from_file_str(world: Session) -> None:
+    """智齿 file_str（sobot CDN 图片 URL）→ 建 Attachment 行（queued，待异步下载+OCR）。"""
+    url = "https://img.sobot.com/console/ticket/20260810/abc/pic_123.jpg"
+    res = ZhichiIngester(world).ingest(_native_flat(file_str=url))
+    world.commit()
+    atts = world.query(Attachment).filter_by(ticket_id=res.ticket_id).all()
+    assert len(atts) == 1
+    assert atts[0].source_url == url
+    assert atts[0].kind == "image"
+    assert atts[0].vision_status == "queued"
+
+
+def test_native_flat_multiple_file_str(world: Session) -> None:
+    """file_str 多个 URL（逗号/空格分隔）→ 每个建一行。"""
+    two = (
+        "https://img.sobot.com/a/1.jpg, https://img.sobot.com/b/2.png"
+    )
+    res = ZhichiIngester(world).ingest(_native_flat(file_str=two))
+    world.commit()
+    atts = world.query(Attachment).filter_by(ticket_id=res.ticket_id).all()
+    assert len(atts) == 2
+    assert {a.source_url for a in atts} == {
+        "https://img.sobot.com/a/1.jpg",
+        "https://img.sobot.com/b/2.png",
+    }
+
+
+def test_native_flat_no_file_str_no_attachment(world: Session) -> None:
+    """无 file_str → 不建附件行。"""
+    res = ZhichiIngester(world).ingest(_native_flat())
+    world.commit()
+    assert world.query(Attachment).filter_by(ticket_id=res.ticket_id).count() == 0
 
 
 def test_native_flat_fallback_title_uses_content(world: Session) -> None:
