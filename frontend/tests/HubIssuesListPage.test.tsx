@@ -131,13 +131,17 @@ describe("HubIssuesListPage (工单任务表)", () => {
     await waitFor(() => expect(lastQuery!.get("product")).toBe("星瀚-开票"));
   });
 
-  it("研发工程状态 forwards dev_stage to the API (服务端筛)", async () => {
+  it("研发状态 forwards dev_stage to the API (数据驱动+服务端筛)", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     let lastQuery: URLSearchParams | null = null;
     server.use(
       http.get("*/api/admin/users", () => HttpResponse.json(usersFixture)),
       http.get("*/api/hub-issues/filter-counts", () =>
-        HttpResponse.json({ task_state: { in_progress: 0, done: 0, all: 0 }, dev_stage: {} }),
+        HttpResponse.json({ op_status: { all: 0 }, dev_stage: {} }),
+      ),
+      // 研发状态选项数据驱动：mock dev-status-options 返回实际 linear_status 值
+      http.get("*/api/hub-issues/dev-status-options", () =>
+        HttpResponse.json({ statuses: ["In Progress", "Backlog"] }),
       ),
       http.get("*/api/hub-issues", ({ request }) => {
         lastQuery = new URL(request.url).searchParams;
@@ -149,9 +153,9 @@ describe("HubIssuesListPage (工单任务表)", () => {
     renderPage();
     await waitFor(() => expect(lastQuery).not.toBeNull());
 
-    // 点「开发中」→ dev_stage 参数发给后端（服务端全表筛，不再客户端过滤）
-    await user.click(screen.getByRole("button", { name: /^开发中/ }));
-    await waitFor(() => expect(lastQuery!.get("dev_stage")).toBe("开发中"));
+    // 点实际的 linear_status 值 → dev_stage 精确匹配发给后端
+    await user.click(await screen.findByRole("button", { name: /^In Progress/ }));
+    await waitFor(() => expect(lastQuery!.get("dev_stage")).toBe("In Progress"));
   });
 
   it("(数量) 用后端 filter-counts 聚合端点的真实全量值", async () => {
@@ -160,9 +164,12 @@ describe("HubIssuesListPage (工单任务表)", () => {
       http.get("*/api/admin/users", () => HttpResponse.json(usersFixture)),
       http.get("*/api/hub-issues/filter-counts", () =>
         HttpResponse.json({
-          task_state: { in_progress: 12, done: 5, all: 17 },
-          dev_stage: { 待处理: 3, 计划: 1, 开发中: 8, 测试中: 0, 已发版: 5 },
+          op_status: { processing: 4, answered: 7, all: 17 },
+          dev_stage: { "In Progress": 8, Backlog: 3 },
         }),
+      ),
+      http.get("*/api/hub-issues/dev-status-options", () =>
+        HttpResponse.json({ statuses: ["In Progress", "Backlog"] }),
       ),
       http.get("*/api/hub-issues", () =>
         HttpResponse.json({ items: [], total: 17, page: 1, page_size: 50, has_more: false }),
@@ -170,9 +177,9 @@ describe("HubIssuesListPage (工单任务表)", () => {
     );
 
     renderPage();
-    // chip 上的 (数量) 来自 filter-counts 端点（跨页真实值）
-    expect(await screen.findByRole("button", { name: /进行中\(12\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /已完成\(5\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /开发中\(8\)/ })).toBeInTheDocument();
+    // 工单状态(op_status) chip + 研发状态 chip 的 (数量) 来自 filter-counts 端点
+    expect(await screen.findByRole("button", { name: /处理中\(4\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /处理完成\(7\)/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /In Progress\(8\)/ })).toBeInTheDocument();
   });
 });

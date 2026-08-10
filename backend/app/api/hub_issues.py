@@ -159,8 +159,8 @@ def list_hub_issues(
     product: str | None = Query(None),
     module: str | None = Query(None),
     search: str | None = Query(None),
-    task_state: str | None = Query(None),  # in_progress | done（→ status 集合）
-    dev_stage: str | None = Query(None),  # 研发工程状态中文档位（→ linear_status 集合）
+    op_status: str | None = Query(None),  # 工单状态=运营处理状态（仅 Operation 有值）
+    dev_stage: str | None = Query(None),  # 研发状态：精确匹配实际 linear_status
     created_from: date | None = Query(None),
     created_to: date | None = Query(None),
     closed_from: date | None = Query(None),
@@ -177,7 +177,7 @@ def list_hub_issues(
         product=product,
         module=module,
         search=search,
-        task_state=task_state,
+        op_status=op_status,
         dev_stage=dev_stage,
         created_from=cf,
         created_to=ct,
@@ -196,8 +196,8 @@ def list_hub_issues(
 
 
 class FilterCountsResponse(BaseModel):
-    task_state: dict[str, int]  # {in_progress, done, all}
-    dev_stage: dict[str, int]  # {待处理, 计划, 开发中, 测试中, 已发版}
+    op_status: dict[str, int]  # {processing, answered, ..., all} 运营处理状态各档
+    dev_stage: dict[str, int]  # {实际 linear_status 值: 数}
 
 
 @router.get("/filter-counts", response_model=FilterCountsResponse)
@@ -210,7 +210,7 @@ def hub_issue_filter_counts(
     product: str | None = Query(None),
     module: str | None = Query(None),
     search: str | None = Query(None),
-    task_state: str | None = Query(None),
+    op_status: str | None = Query(None),
     dev_stage: str | None = Query(None),
     created_from: date | None = Query(None),
     created_to: date | None = Query(None),
@@ -227,7 +227,7 @@ def hub_issue_filter_counts(
         product=product,
         module=module,
         search=search,
-        task_state=task_state,
+        op_status=op_status,
         dev_stage=dev_stage,
         created_from=cf,
         created_to=ct,
@@ -248,6 +248,19 @@ def hub_issue_product_options(
 ) -> ProductOptionsResponse:
     """产品分类筛选下拉的实际可选值（数据驱动，不写死清单）。"""
     return ProductOptionsResponse(products=HubIssueRepository(db).distinct_product_lines())
+
+
+class DevStatusOptionsResponse(BaseModel):
+    statuses: list[str]  # 数据里实际存在的 linear_status（按数量降序）
+
+
+@router.get("/dev-status-options", response_model=DevStatusOptionsResponse)
+def hub_issue_dev_status_options(
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> DevStatusOptionsResponse:
+    """研发状态筛选下拉的实际可选值（数据驱动的 linear_status；工单推 Linear 后有值）。"""
+    return DevStatusOptionsResponse(statuses=HubIssueRepository(db).distinct_linear_statuses())
 
 
 @router.get("/{hub_issue_id}", response_model=HubIssueDetail)

@@ -1235,6 +1235,22 @@
         "title": "DefaultPoolUserOut",
         "type": "object"
       },
+      "DevStatusOptionsResponse": {
+        "properties": {
+          "statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Statuses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "statuses"
+        ],
+        "title": "DevStatusOptionsResponse",
+        "type": "object"
+      },
       "DiagnosisBody": {
         "properties": {
           "cause": {
@@ -2083,16 +2099,16 @@
             "title": "Dev Stage",
             "type": "object"
           },
-          "task_state": {
+          "op_status": {
             "additionalProperties": {
               "type": "integer"
             },
-            "title": "Task State",
+            "title": "Op Status",
             "type": "object"
           }
         },
         "required": [
-          "task_state",
+          "op_status",
           "dev_stage"
         ],
         "title": "FilterCountsResponse",
@@ -10565,7 +10581,7 @@
           },
           {
             "in": "query",
-            "name": "task_state",
+            "name": "op_status",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10576,7 +10592,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Task State"
+              "title": "Op Status"
             }
           },
           {
@@ -10715,6 +10731,28 @@
         ]
       }
     },
+    "/api/hub-issues/dev-status-options": {
+      "get": {
+        "description": "研发状态筛选下拉的实际可选值（数据驱动的 linear_status；工单推 Linear 后有值）。",
+        "operationId": "hub_issue_dev_status_options_api_hub_issues_dev_status_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevStatusOptionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Hub Issue Dev Status Options",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
     "/api/hub-issues/filter-counts": {
       "get": {
         "description": "各筛选维度的全量分档计数（跨页真实值，供 chip 上的 (数量) 显示）。",
@@ -10818,7 +10856,7 @@
           },
           {
             "in": "query",
-            "name": "task_state",
+            "name": "op_status",
             "required": false,
             "schema": {
               "anyOf": [
@@ -10829,7 +10867,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Task State"
+              "title": "Op Status"
             }
           },
           {

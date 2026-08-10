@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, type HubIssueSummary } from "@/api/client";
-import { OpStatusBadge } from "@/components/OpStatusBadge";
+import { OpStatusBadge, OP_STATUS_LABEL } from "@/components/OpStatusBadge";
 import {
   Modal,
   ModalHeader,
@@ -61,8 +61,7 @@ const LINEAR_ST: Record<string, { bg: string; fg: string; bd: string }> = {
 // 产品分类：改为数据驱动（product-options 端点返回实际 product_line_code），不再写死清单。
 // 任务类型（文档新分类法）— 后端无对应字段，本次隐藏筛选，将来后端加分类字段再恢复。
 
-// 研发工程状态（中文档位）→ 现由后端 dev_stage 参数按 linear_status 集合筛选（DEV_STAGE_MATCH 已搬后端）
-const DEV_STAGE_OPTIONS = ["待处理", "计划", "开发中", "测试中", "已发版"];
+// 研发状态选项改数据驱动（dev-status-options 端点返回实际 linear_status），不再写死档位。
 // 时间区间预设
 const TIME_PRESETS = ["全部", "今天", "3天内", "7天内", "10天以上", "自定义"];
 // 预设 → [最早天数下界, 最晚天数上界]（距今天数）。null 表示无界。自定义走日期区间。
@@ -122,15 +121,12 @@ function cumulativeHours(h: HubIssueSummary): number | null {
   return Math.max(0, Math.round(((end - start) / 3600_000) * 10) / 10);
 }
 
-// 任务状态分组（进行中/已完成）→ status 集合映射已搬后端 task_state 参数（HUB_STATUS_GROUP）。
-
 export function HubIssuesListPage() {
   const [params, setParams] = useSearchParams();
   const type = params.get("type") ?? ""; // 现有后端参数（占位控件之外，仍保留 URL 驱动）
   const status = params.get("status") ?? "";
-  // 任务状态筛选（进行中/已完成）— 前端对当前结果集做分组过滤
-  const taskState = params.get("task_state") ?? "";
-  // 研发工程状态（dev_stage）；创建/关闭时间区间（服务端筛）
+  // 工单状态 = 运营处理状态 op_status（仅 Operation 有值）；研发状态 = 精确匹配实际 linear_status
+  const opStatusFilter = params.get("op_status") ?? "";
   const devStage = params.get("dev_stage") ?? "";
   const createTime = params.get("create_time") ?? "";
   const createFrom = params.get("create_from") ?? "";
@@ -170,6 +166,12 @@ export function HubIssuesListPage() {
     queryFn: () => api.get("/api/hub-issues/product-options"),
     staleTime: 60_000,
   });
+  // 研发状态筛选选项：数据驱动（数据里实际存在的 linear_status；工单推 Linear 后有值）
+  const devStatusOptions = useQuery({
+    queryKey: ["hub-issue-dev-status-options"],
+    queryFn: () => api.get("/api/hub-issues/dev-status-options"),
+    staleTime: 60_000,
+  });
   const userMap = useMemo(() => {
     const m = new Map<number, string>();
     for (const u of (users.data ?? []) as { id: number; name: string }[]) m.set(u.id, u.name);
@@ -191,7 +193,7 @@ export function HubIssuesListPage() {
     assigned_user_id: assignedUserId ? Number(assignedUserId) : undefined,
     product: product || undefined,
     search: search || undefined,
-    task_state: taskState || undefined,
+    op_status: opStatusFilter || undefined,
     dev_stage: devStage || undefined,
     created_from: createRange.from,
     created_to: createRange.to,
@@ -243,11 +245,8 @@ export function HubIssuesListPage() {
     queryKey: ["hub-issue-filter-counts", serverFilters],
     queryFn: () => api.get("/api/hub-issues/filter-counts", serverFilters),
   });
-  const stateCounts = {
-    in_progress: filterCounts.data?.task_state?.in_progress ?? 0,
-    done: filterCounts.data?.task_state?.done ?? 0,
-    all: filterCounts.data?.task_state?.all ?? 0,
-  };
+  // 工单状态(op_status)各档计数 + 研发状态(实际 linear_status)各值计数
+  const opStatusCounts: Record<string, number> = filterCounts.data?.op_status ?? {};
   const devStageCounts: Record<string, number> = filterCounts.data?.dev_stage ?? {};
 
   // 批量催单：对选中的、可催办的研发类任务逐条调用 /urge
@@ -337,10 +336,10 @@ export function HubIssuesListPage() {
 
       {/* 筛选条件区（工单调整 V1.0：删 tab 改筛选） */}
       <FilterPanel
-        stateCounts={stateCounts}
+        opStatusCounts={opStatusCounts}
         devStageCounts={devStageCounts}
-        taskState={taskState}
-        onTaskState={(v) => setFilter("task_state", v)}
+        opStatusFilter={opStatusFilter}
+        onOpStatus={(v) => setFilter("op_status", v)}
         product={product}
         onProduct={(v) => setFilter("product", v)}
         search={search}
@@ -349,6 +348,7 @@ export function HubIssuesListPage() {
         onAssignedUser={(v) => setFilter("assigned_user_id", v)}
         userList={userList}
         productOptions={productOptions.data?.products ?? []}
+        devStatusOptions={devStatusOptions.data?.statuses ?? []}
         devStage={devStage}
         onDevStage={(v) => setFilter("dev_stage", v)}
         createTime={createTime}
@@ -365,7 +365,7 @@ export function HubIssuesListPage() {
         }
         selectCls={selectCls}
         activeCount={
-          [product, search, assignedUserId, taskState, devStage, createTime, closeTime, status].filter(
+          [product, search, assignedUserId, opStatusFilter, devStage, createTime, closeTime, status].filter(
             Boolean,
           ).length
         }
@@ -692,10 +692,10 @@ export function HubIssuesListPage() {
 const FILTERS_COLLAPSED_KEY = "hub_filters_collapsed";
 
 function FilterPanel({
-  stateCounts,
+  opStatusCounts,
   devStageCounts,
-  taskState,
-  onTaskState,
+  opStatusFilter,
+  onOpStatus,
   product,
   onProduct,
   search,
@@ -704,6 +704,7 @@ function FilterPanel({
   onAssignedUser,
   userList,
   productOptions,
+  devStatusOptions,
   devStage,
   onDevStage,
   createTime,
@@ -717,10 +718,10 @@ function FilterPanel({
   selectCls,
   activeCount,
 }: {
-  stateCounts: { in_progress: number; done: number; all: number };
+  opStatusCounts: Record<string, number>;
   devStageCounts: Record<string, number>;
-  taskState: string;
-  onTaskState: (v: string) => void;
+  opStatusFilter: string;
+  onOpStatus: (v: string) => void;
   product: string;
   onProduct: (v: string) => void;
   search: string;
@@ -729,6 +730,7 @@ function FilterPanel({
   onAssignedUser: (v: string) => void;
   userList: { id: number; name: string }[];
   productOptions: string[];
+  devStatusOptions: string[];
   devStage: string;
   onDevStage: (v: string) => void;
   createTime: string;
@@ -790,32 +792,38 @@ function FilterPanel({
         ))}
       </FilterRow>
 
-      {/* 任务状态（当前结果集过滤，真实生效） */}
-      <FilterRow label="任务状态">
-        <Chip active={!taskState} label={`全部(${stateCounts.all})`} onClick={() => onTaskState("")} />
+      {/* 工单状态 = 运营处理状态 op_status（仅 Operation 有值，服务端筛，跨页真实计数） */}
+      <FilterRow label="工单状态">
         <Chip
-          active={taskState === "in_progress"}
-          label={`进行中(${stateCounts.in_progress})`}
-          onClick={() => onTaskState(taskState === "in_progress" ? "" : "in_progress")}
+          active={!opStatusFilter}
+          label={`全部(${opStatusCounts.all ?? 0})`}
+          onClick={() => onOpStatus("")}
         />
-        <Chip
-          active={taskState === "done"}
-          label={`已完成(${stateCounts.done})`}
-          onClick={() => onTaskState(taskState === "done" ? "" : "done")}
-        />
-      </FilterRow>
-
-      {/* 研发工程状态（对当前结果集按 linear_status 过滤，真实生效；每档带 (数量)） */}
-      <FilterRow label="研发工程状态">
-        <Chip active={!devStage} label="全部" onClick={() => onDevStage("")} />
-        {DEV_STAGE_OPTIONS.map((c) => (
+        {Object.entries(OP_STATUS_LABEL).map(([value, { label }]) => (
           <Chip
-            key={c}
-            active={devStage === c}
-            label={`${c}(${devStageCounts[c] ?? 0})`}
-            onClick={() => onDevStage(devStage === c ? "" : c)}
+            key={value}
+            active={opStatusFilter === value}
+            label={`${label}(${opStatusCounts[value] ?? 0})`}
+            onClick={() => onOpStatus(opStatusFilter === value ? "" : value)}
           />
         ))}
+      </FilterRow>
+
+      {/* 研发状态 = 实际 linear_status（数据驱动选项，服务端精确匹配；工单推 Linear 后有值） */}
+      <FilterRow label="研发状态">
+        <Chip active={!devStage} label="全部" onClick={() => onDevStage("")} />
+        {devStatusOptions.length === 0 ? (
+          <span className="text-[11px] text-hub-textFaint">（暂无研发状态数据）</span>
+        ) : (
+          devStatusOptions.map((c) => (
+            <Chip
+              key={c}
+              active={devStage === c}
+              label={`${c}(${devStageCounts[c] ?? 0})`}
+              onClick={() => onDevStage(devStage === c ? "" : c)}
+            />
+          ))
+        )}
       </FilterRow>
 
       {/* 任务创建时间 / 关闭时间（预设 + 自定义区间，对当前结果集过滤，真实生效） */}

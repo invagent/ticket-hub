@@ -199,22 +199,9 @@ class TicketRepository:
         return list(self._db.execute(stmt).scalars().all())
 
 
-# 任务状态分组（进行中/已完成）→ hub_issue.status 集合。前后端共识（原前端 STATUS_GROUP）。
-# resolved = 已解决（devcollab 回访确认/Operation 完结），归「已完成」。
-HUB_STATUS_GROUP: dict[str, list[str]] = {
-    "in_progress": ["created", "pending", "pending_review", "in_progress", "waiting_reply",
-                    "waiting_schedule", "scheduled", "assigned", "waiting_assign"],
-    "done": ["released", "done", "closed", "resolved", "rejected", "superseded"],
-}
-
-# 研发工程状态（中文档位）→ linear_status 取值集合（小写比较）。原前端 DEV_STAGE_MATCH。
-DEV_STAGE_MATCH: dict[str, list[str]] = {
-    "待处理": ["backlog", "unstarted", "todo"],
-    "计划": ["planned", "计划"],
-    "开发中": ["started", "in progress", "in_progress", "in review"],
-    "测试中": ["testing", "qa", "in test"],
-    "已发版": ["done", "completed", "released"],
-}
+# 运营态 op_status 档位（工单状态筛选）；研发态直接精确匹配实际 linear_status（数据驱动）。
+# 二者取代旧的进行中/已完成二分 + DEV_STAGE_MATCH 中文档位映射。
+OP_STATUS_VALUES = ["processing", "answered", "closed", "supplementing", "exception", "reviewing"]
 
 
 class HubIssueRepository:
@@ -240,7 +227,7 @@ class HubIssueRepository:
         product: str | None = None,
         module: str | None = None,
         search: str | None = None,
-        task_state: str | None = None,
+        op_status: str | None = None,
         dev_stage: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
@@ -249,7 +236,7 @@ class HubIssueRepository:
     ) -> list[Any]:
         """构造 hub_issue 列表/计数共用的 where 条件（deleted_at 除外）。
 
-        task_state → status 集合；dev_stage → linear_status 集合（小写比较）；
+        op_status → 运营处理状态（仅 Operation 有值）；dev_stage → 精确匹配实际 linear_status；
         时间 from/to 已是 datetime 边界（调用方把 date 转成 [from, to) 半开区间）。
         """
         clauses: list[Any] = []
@@ -270,10 +257,10 @@ class HubIssueRepository:
         if search:
             like = f"%{search}%"
             clauses.append(or_(HubIssue.short_code.ilike(like), HubIssue.title.ilike(like)))
-        if task_state and task_state in HUB_STATUS_GROUP:
-            clauses.append(HubIssue.status.in_(HUB_STATUS_GROUP[task_state]))
-        if dev_stage and dev_stage in DEV_STAGE_MATCH:
-            clauses.append(func.lower(HubIssue.linear_status).in_(DEV_STAGE_MATCH[dev_stage]))
+        if op_status:
+            clauses.append(HubIssue.op_status == op_status)
+        if dev_stage:
+            clauses.append(HubIssue.linear_status == dev_stage)
         if created_from is not None:
             clauses.append(HubIssue.first_seen_at >= created_from)
         if created_to is not None:
@@ -293,7 +280,7 @@ class HubIssueRepository:
         product: str | None = None,
         module: str | None = None,
         search: str | None = None,
-        task_state: str | None = None,
+        op_status: str | None = None,
         dev_stage: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
@@ -312,7 +299,7 @@ class HubIssueRepository:
             product=product,
             module=module,
             search=search,
-            task_state=task_state,
+            op_status=op_status,
             dev_stage=dev_stage,
             created_from=created_from,
             created_to=created_to,
@@ -341,6 +328,19 @@ class HubIssueRepository:
         )
         return [r[0] for r in self._db.execute(stmt).all() if r[0]]
 
+    def distinct_linear_statuses(self) -> list[str]:
+        """数据里实际存在的 linear_status 列表（非空，按数量降序）——供研发状态筛选下拉。
+
+        存的是 Linear 列显示名（团队自定义）；工单推 Linear 后才有值。
+        """
+        stmt = (
+            select(HubIssue.linear_status, func.count(HubIssue.id).label("n"))
+            .where(HubIssue.deleted_at.is_(None), HubIssue.linear_status.is_not(None))
+            .group_by(HubIssue.linear_status)
+            .order_by(func.count(HubIssue.id).desc())
+        )
+        return [r[0] for r in self._db.execute(stmt).all() if r[0]]
+
     def _hub_count(self, clauses: list[Any]) -> int:
         stmt = select(func.count(HubIssue.id)).where(HubIssue.deleted_at.is_(None), *clauses)
         return self._db.execute(stmt).scalar() or 0
@@ -354,7 +354,7 @@ class HubIssueRepository:
         product: str | None = None,
         module: str | None = None,
         search: str | None = None,
-        task_state: str | None = None,
+        op_status: str | None = None,
         dev_stage: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
@@ -363,11 +363,11 @@ class HubIssueRepository:
     ) -> dict[str, dict[str, int]]:
         """各筛选维度的全量分档计数（跨页真实值）。
 
-        每个维度排除其自身选择再计数——切换该维度档位时其它档计数保持稳定
-        （如已选进行中时，"已完成"档仍显示该筛选组合下的真实条数）。
+        每个维度排除其自身选择再计数——切换该维度档位时其它档计数保持稳定。
+        op_status：运营处理状态 6 档；dev_stage：数据里实际的 linear_status 各值。
         """
-        # 任务状态：排除 task_state 自身，各档 + all
-        base_no_state = self._hub_filter_clauses(
+        # 工单状态(op_status)：排除 op_status 自身，各档 + all
+        base_no_op = self._hub_filter_clauses(
             type_=type_,
             status=status,
             assigned_user_id=assigned_user_id,
@@ -380,11 +380,11 @@ class HubIssueRepository:
             closed_from=closed_from,
             closed_to=closed_to,
         )
-        state_counts: dict[str, int] = {"all": self._hub_count(base_no_state)}
-        for key, vals in HUB_STATUS_GROUP.items():
-            state_counts[key] = self._hub_count([*base_no_state, HubIssue.status.in_(vals)])
+        op_counts: dict[str, int] = {"all": self._hub_count(base_no_op)}
+        for key in OP_STATUS_VALUES:
+            op_counts[key] = self._hub_count([*base_no_op, HubIssue.op_status == key])
 
-        # 研发工程状态：排除 dev_stage 自身，各中文档位
+        # 研发状态(dev_stage)：排除 dev_stage 自身，按实际 linear_status 各值分组计数
         base_no_dev = self._hub_filter_clauses(
             type_=type_,
             status=status,
@@ -392,19 +392,22 @@ class HubIssueRepository:
             product=product,
             module=module,
             search=search,
-            task_state=task_state,
+            op_status=op_status,
             created_from=created_from,
             created_to=created_to,
             closed_from=closed_from,
             closed_to=closed_to,
         )
-        dev_counts: dict[str, int] = {}
-        for label, vals in DEV_STAGE_MATCH.items():
-            dev_counts[label] = self._hub_count(
-                [*base_no_dev, func.lower(HubIssue.linear_status).in_(vals)]
-            )
+        dev_stmt = (
+            select(HubIssue.linear_status, func.count(HubIssue.id))
+            .where(HubIssue.deleted_at.is_(None), HubIssue.linear_status.is_not(None), *base_no_dev)
+            .group_by(HubIssue.linear_status)
+        )
+        dev_counts: dict[str, int] = {
+            r[0]: r[1] for r in self._db.execute(dev_stmt).all() if r[0]
+        }
 
-        return {"task_state": state_counts, "dev_stage": dev_counts}
+        return {"op_status": op_counts, "dev_stage": dev_counts}
 
     def find_overdue_by_type(
         self,

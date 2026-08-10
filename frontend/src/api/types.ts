@@ -861,6 +861,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/dev-status-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hub Issue Dev Status Options
+         * @description 研发状态筛选下拉的实际可选值（数据驱动的 linear_status；工单推 Linear 后有值）。
+         */
+        get: operations["hub_issue_dev_status_options_api_hub_issues_dev_status_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/filter-counts": {
         parameters: {
             query?: never;
@@ -2591,6 +2611,11 @@ export interface components {
             /** User Name */
             user_name: string | null;
         };
+        /** DevStatusOptionsResponse */
+        DevStatusOptionsResponse: {
+            /** Statuses */
+            statuses: string[];
+        };
         /** DiagnosisBody */
         DiagnosisBody: {
             /** Cause */
@@ -2922,8 +2947,8 @@ export interface components {
             dev_stage: {
                 [key: string]: number;
             };
-            /** Task State */
-            task_state: {
+            /** Op Status */
+            op_status: {
                 [key: string]: number;
             };
         };
@@ -6567,7 +6592,7 @@ export interface operations {
                 product?: string | null;
                 module?: string | null;
                 search?: string | null;
-                task_state?: string | null;
+                op_status?: string | null;
                 dev_stage?: string | null;
                 created_from?: string | null;
                 created_to?: string | null;
@@ -6602,6 +6627,26 @@ export interface operations {
             };
         };
     };
+    hub_issue_dev_status_options_api_hub_issues_dev_status_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevStatusOptionsResponse"];
+                };
+            };
+        };
+    };
     hub_issue_filter_counts_api_hub_issues_filter_counts_get: {
         parameters: {
             query?: {
@@ -6611,7 +6656,7 @@ export interface operations {
                 product?: string | null;
                 module?: string | null;
                 search?: string | null;
-                task_state?: string | null;
+                op_status?: string | null;
                 dev_stage?: string | null;
                 created_from?: string | null;
                 created_to?: string | null;
