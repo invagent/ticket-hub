@@ -231,9 +231,12 @@ def get_ticket(
             else:
                 detail.customer_display_name = identity.raw_name
     if ticket.reporter and isinstance(ticket.reporter, dict):
-        detail.reporter_name = ticket.reporter.get("feedback_user") or ticket.reporter.get(
-            "linkman"
-        )
+        # 提单人信息从 reporter JSON 解析（入库写的是 name/mobile/email，见 zhichi_ingester）。
+        # 与列表接口 _to_summary 口径一致；feedback_user/linkman 作旧数据兜底。
+        rep = ticket.reporter
+        detail.reporter_name = rep.get("name") or rep.get("feedback_user") or rep.get("linkman")
+        detail.reporter_mobile = rep.get("mobile")
+        detail.reporter_email = rep.get("email")
     return detail
 
 

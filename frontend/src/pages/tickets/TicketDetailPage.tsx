@@ -173,7 +173,7 @@ export function TicketDetailPage() {
   const isCurrentNode = nodeIdx === 0;
 
   return (
-    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-2.5 pt-5 pb-10">
+    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-2.5 pt-5 pb-10">
       {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
       {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
 
