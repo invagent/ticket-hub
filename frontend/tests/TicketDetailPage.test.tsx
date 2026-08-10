@@ -264,6 +264,9 @@ describe("TicketDetailPage", () => {
           ],
         }),
       ),
+      http.get("*/api/hub-issues/61", () =>
+        HttpResponse.json({ id: 61, short_code: "HUB-61", type: "Operation", status: "created" }),
+      ),
     );
 
     renderPage(610);
@@ -303,6 +306,19 @@ describe("TicketDetailPage", () => {
         HttpResponse.json({ ticket_id: id, items: [] }),
       ),
     );
+    // 已毕业工单：默认 hub 已确认（status=created），避免 hub 查询 unhandled 报错
+    if (hubIssueId != null) {
+      server.use(
+        http.get(`*/api/hub-issues/${hubIssueId}`, () =>
+          HttpResponse.json({
+            id: hubIssueId,
+            short_code: `HUB-${hubIssueId}`,
+            type: "Bug_fix",
+            status: "created",
+          }),
+        ),
+      );
+    }
   }
 
   // 标题=工单编号（不再展示工单主题溢出）
@@ -425,6 +441,10 @@ describe("TicketDetailPage", () => {
       http.get(`*/api/tickets/${id}/history`, () =>
         HttpResponse.json({ ticket_id: id, items: [] }),
       ),
+      // 运营 hub 默认已确认（created）；个别用例可在其后覆盖
+      http.get(`*/api/hub-issues/88`, () =>
+        HttpResponse.json({ id: 88, short_code: "HUB-88", type: "Operation", status: "created" }),
+      ),
     );
   }
 
@@ -495,10 +515,98 @@ describe("TicketDetailPage", () => {
   it("未拆分时子任务列表回落显示当前工单本身（不显示无子任务）", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(325, { title: "回落工单标题", children_ticket_ids: [] });
+    // 运营已确认（hub.status=created）
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({ id: 88, short_code: "HUB-88", type: "Operation", status: "created" }),
+      ),
+    );
     renderPage(325);
     expect(await screen.findByText("子任务列表")).toBeInTheDocument();
     expect(screen.queryByText("无子任务")).not.toBeInTheDocument();
     expect(screen.getAllByText("回落工单标题").length).toBeGreaterThan(0);
+    localStorage.clear();
+  });
+
+  // ---- 分类闸门对齐工作台 pending_review（2026-08-10 修正）----
+
+  // 已毕业但 pending_review 的研发类工单 helper（含 hub 详情 mock）
+  function stubPendingReviewTicket(id: number, hubId: number, hubType: string) {
+    server.use(
+      http.get(`*/api/tickets/${id}`, () =>
+        HttpResponse.json({
+          id,
+          short_code: `TKT-${id}`,
+          source_code: "ksm",
+          source_ticket_id: `ksm-${id}`,
+          type: "Raw",
+          status: "linked",
+          title: "待确认分类工单",
+          module: null,
+          assigned_user_id: null,
+          ...baseTicket,
+          hub_issue_id: hubId,
+          predicted_type: hubType,
+        }),
+      ),
+      http.get(`*/api/tickets/${id}/history`, () =>
+        HttpResponse.json({ ticket_id: id, items: [] }),
+      ),
+      http.get(`*/api/hub-issues/${hubId}`, () =>
+        HttpResponse.json({
+          id: hubId,
+          short_code: `HUB-${hubId}`,
+          type: hubType,
+          status: "pending_review",
+        }),
+      ),
+    );
+  }
+
+  it("已毕业但 pending_review 的需求工单显示待确认分类三动作，不显示已推送 Linear", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubPendingReviewTicket(330, 91, "Demand");
+    renderPage(330);
+    expect(await screen.findByRole("heading", { name: "TKT-330" })).toBeInTheDocument();
+    // 待确认分类面板出现（与工作台一致的三动作）
+    expect(await screen.findByRole("button", { name: "确认推送" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "改判" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "误报关闭" })).toBeInTheDocument();
+    // 关键：不能因为 hub_issue_id 非空就当作已确认显示「已推送 Linear」
+    expect(screen.queryByText(/已推送 Linear/)).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("待确认分类点「确认推送」调 confirm-classification", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    let confirmBody: unknown = null;
+    stubPendingReviewTicket(331, 92, "Bug_fix");
+    server.use(
+      http.post("*/api/supervisor/confirm-classification", async ({ request }) => {
+        confirmBody = await request.json();
+        return HttpResponse.json({ hub_issue_id: 92, status: "created", type: "Bug_fix" });
+      }),
+    );
+    renderPage(331);
+    const btn = await screen.findByRole("button", { name: "确认推送" });
+    await userEvent.click(btn);
+    await waitFor(() => expect(confirmBody).not.toBeNull());
+    expect((confirmBody as { hub_issue_id: number }).hub_issue_id).toBe(92);
+    localStorage.clear();
+  });
+
+  it("已确认（hub.status=created）的 Bug_fix 才显示已推送 Linear", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(332, 93); // predicted_type=Bug_fix
+    server.use(
+      http.get("*/api/hub-issues/93", () =>
+        HttpResponse.json({ id: 93, short_code: "HUB-93", type: "Bug_fix", status: "created" }),
+      ),
+    );
+    renderPage(332);
+    expect(await screen.findByRole("heading", { name: "TKT-332" })).toBeInTheDocument();
+    expect(await screen.findByText(/已推送 Linear/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 });
