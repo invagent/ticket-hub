@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -110,7 +110,7 @@ describe("TicketDetailPage", () => {
     renderPage(100);
 
     // Detail header（标题同时作为主标题与「工单描述」容器的「主题」值，故 getAllByText）
-    expect(await screen.findByText("TKT-100")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-100" })).toBeInTheDocument();
     expect(screen.getAllByText("应付审核报错").length).toBeGreaterThanOrEqual(1);
 
     // 处理节点时间轴（工单调整 V1.0 重排）
@@ -191,7 +191,7 @@ describe("TicketDetailPage", () => {
     );
 
     renderPage(500);
-    expect(await screen.findByText("TKT-500")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-500" })).toBeInTheDocument();
     // 文件名从 url 推断 + ai_cs filename
     const link1 = await screen.findByRole("link", { name: /errshot\.png/ });
     expect(link1).toHaveAttribute("href", "https://cdn.example.com/errshot.png");
@@ -229,7 +229,7 @@ describe("TicketDetailPage", () => {
     );
 
     const { container } = renderPage(600);
-    expect(await screen.findByText("TKT-600")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-600" })).toBeInTheDocument();
     await screen.findByText(/in_progress → done/);
     // 终态工单：时间轴无「进行中」闪烁节点
     expect(container.querySelectorAll(".hub-node-blink").length).toBe(0);
@@ -248,8 +248,10 @@ describe("TicketDetailPage", () => {
           title: "进行中工单",
           module: null,
           assigned_user_id: null,
+          predicted_type: "Operation", // 运营类才显示处理说明（分类闸门后）
           ...baseTicket,
-          hub_issue_id: null,
+          hub_issue_id: 61, // 已明确分类，处理说明区才渲染
+          op_status: "processing",
           source_payload: null,
         }),
       ),
@@ -265,7 +267,7 @@ describe("TicketDetailPage", () => {
     );
 
     renderPage(610);
-    expect(await screen.findByText("TKT-610")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-610" })).toBeInTheDocument();
     await screen.findByText(/received → in_progress/);
     const ta = () => document.querySelector("textarea") as HTMLTextAreaElement;
     // 默认选中当前节点(idx0) → 可编辑
@@ -319,7 +321,7 @@ describe("TicketDetailPage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(300, null);
     renderPage(300);
-    expect(await screen.findByText("TKT-300")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-300" })).toBeInTheDocument();
     const btn = screen.getByRole("button", { name: "确认子任务" });
     expect(btn).toBeEnabled();
     localStorage.clear();
@@ -329,7 +331,7 @@ describe("TicketDetailPage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(301, 55);
     renderPage(301);
-    expect(await screen.findByText("TKT-301")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-301" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "确认子任务" })).toBeDisabled();
     localStorage.clear();
   });
@@ -338,7 +340,7 @@ describe("TicketDetailPage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubTicket(302, null);
     renderPage(302);
-    expect(await screen.findByText("TKT-302")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-302" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认子任务" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "添加子任务" })).not.toBeInTheDocument();
     localStorage.clear();
@@ -349,7 +351,7 @@ describe("TicketDetailPage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(308, null);
     renderPage(308);
-    expect(await screen.findByText("TKT-308")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-308" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "添加子任务" }));
     const ta = await screen.findByPlaceholderText("描述子任务内容");
     await userEvent.type(ta, "导出接口报错");
@@ -374,7 +376,7 @@ describe("TicketDetailPage", () => {
       ),
     );
     renderPage(306);
-    expect(await screen.findByText("TKT-306")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-306" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "转派" }));
     expect(await screen.findByText("转派处理人")).toBeInTheDocument();
     expect(screen.getByText(/当前处理人/)).toBeInTheDocument();
@@ -387,8 +389,116 @@ describe("TicketDetailPage", () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubTicket(307, 55);
     renderPage(307);
-    expect(await screen.findByText("TKT-307")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "TKT-307" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  // ---- 工单处理栏重构（2026-08-10）：分类闸门 ----
+
+  // 明确分类的运营工单：细化载荷 helper（含 op_status / cached_reply_content）
+  function stubOperationTicket(
+    id: number,
+    overrides: Record<string, unknown> = {},
+  ) {
+    server.use(
+      http.get(`*/api/tickets/${id}`, () =>
+        HttpResponse.json({
+          id,
+          short_code: `TKT-${id}`,
+          source_code: "ksm",
+          source_ticket_id: `ksm-${id}`,
+          type: "Raw",
+          status: "in_progress",
+          title: "运营答复测试",
+          module: null,
+          assigned_user_id: 1,
+          assigned_user_name: "张三",
+          ...baseTicket,
+          hub_issue_id: 88,
+          predicted_type: "Operation",
+          op_status: "processing",
+          cached_reply_content: "AI 建议的答复内容",
+          ...overrides,
+        }),
+      ),
+      http.get(`*/api/tickets/${id}/history`, () =>
+        HttpResponse.json({ ticket_id: id, items: [] }),
+      ),
+    );
+  }
+
+  it("未明确分类(hub_issue_id 为空)只显示分类改判，隐藏处理建议/说明/附件", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(320, null);
+    renderPage(320);
+    expect(await screen.findByRole("heading", { name: "TKT-320" })).toBeInTheDocument();
+    expect(screen.getByText("确认分类")).toBeInTheDocument();
+    expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
+    expect(screen.queryByText("处理说明")).not.toBeInTheDocument();
+    expect(screen.queryByText("处理附件 / 补充凭证")).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("明确分类的 Bug_fix 显示已推送 Linear，不显示处理建议下拉", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubTicket(321, 70); // stubTicket predicted_type=Bug_fix
+    renderPage(321);
+    expect(await screen.findByRole("heading", { name: "TKT-321" })).toBeInTheDocument();
+    expect(screen.getByText(/已推送 Linear/)).toBeInTheDocument();
+    expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("明确分类的 Operation 显示处理建议 + 处理说明", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(322);
+    renderPage(322);
+    expect(await screen.findByRole("heading", { name: "TKT-322" })).toBeInTheDocument();
+    expect(screen.getByText("处理建议")).toBeInTheDocument();
+    expect(screen.getByText("处理说明")).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("运营正常跟进——点提交答复调用 reply 接口，body 为处理说明内容", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    let replyBody: unknown = null;
+    stubOperationTicket(323, { cached_reply_content: "AI 建议的答复内容" });
+    server.use(
+      http.post("*/api/hub-issues/88/reply", async ({ request }) => {
+        replyBody = await request.json();
+        return HttpResponse.json({
+          hub_issue_id: 88,
+          version: 1,
+          cascaded_ticket_count: 1,
+          outbox_count: 1,
+        });
+      }),
+    );
+    renderPage(323);
+    const btn = await screen.findByRole("button", { name: "提交答复" });
+    await userEvent.click(btn);
+    await waitFor(() => expect(replyBody).not.toBeNull());
+    expect((replyBody as { content: string }).content).toBe("AI 建议的答复内容");
+    localStorage.clear();
+  });
+
+  it("op_status=reviewing 显示 AI 草稿待审核提示", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(324, { op_status: "reviewing" });
+    renderPage(324);
+    expect(await screen.findByRole("heading", { name: "TKT-324" })).toBeInTheDocument();
+    expect(screen.getByText(/AI 草稿待审核/)).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("未拆分时子任务列表回落显示当前工单本身（不显示无子任务）", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(325, { title: "回落工单标题", children_ticket_ids: [] });
+    renderPage(325);
+    expect(await screen.findByText("子任务列表")).toBeInTheDocument();
+    expect(screen.queryByText("无子任务")).not.toBeInTheDocument();
+    expect(screen.getAllByText("回落工单标题").length).toBeGreaterThan(0);
     localStorage.clear();
   });
 });

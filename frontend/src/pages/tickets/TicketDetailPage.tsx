@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getByPath } from "@/api/client";
+import { api, ApiError, getByPath, postByPath } from "@/api/client";
 import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
@@ -210,6 +210,8 @@ export function TicketDetailPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [gradErr, setGradErr] = useState<string | null>(null);
+  // 分类改判本地态：类型选择（默认 predicted_type，回落 Operation）
+  const [classifyType, setClassifyType] = useState<string>("Operation");
   // 处理建议（前端态，默认正常跟进）+ 确认按钮提示（逻辑待后端）
   const [suggestion, setSuggestion] = useState<string>("normal");
   const [confirmNotice, setConfirmNotice] = useState<string | null>(null);
@@ -234,7 +236,7 @@ export function TicketDetailPage() {
     mutationFn: () =>
       api.post("/api/supervisor/create-hub-issue", {
         ticket_id: id,
-        type: detail.data?.predicted_type ?? "Operation",
+        type: classifyType,
       }),
     onSuccess: () => {
       setGradErr(null);
@@ -244,10 +246,38 @@ export function TicketDetailPage() {
     },
     onError: (e) => setGradErr(e instanceof ApiError ? e.message : String(e)),
   });
+  // 运营正常跟进：把处理说明作为答复发出（纯文本，不带附件）
+  const [replyErr, setReplyErr] = useState<string | null>(null);
+  const reply = useMutation({
+    mutationFn: (content: string) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/reply",
+        { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
+        { content },
+      ),
+    onSuccess: () => {
+      setReplyErr(null);
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+    },
+    onError: (e) => setReplyErr(e instanceof ApiError ? e.message : String(e)),
+  });
 
   const d = detail.data;
   // 选中节点是否为当前节点（idx0=倒序后最上）；历史节点无逐节点记录，右侧三块显示「无数据」
   const isCurrentNode = nodeIdx === 0;
+  // 分类闸门：未毕业成 hub_issue = 分类未明确，右侧只显示改判区
+  const classified = d?.hub_issue_id != null;
+  // 明确分类后按 predicted_type 分流展示
+  const isDevType = d?.predicted_type === "Bug_fix" || d?.predicted_type === "Demand";
+  const isOperation = d?.predicted_type === "Operation";
+  // 改判类型默认取 AI 预测类型（在 HUB_TYPES 内才采纳）
+  useEffect(() => {
+    if (d?.predicted_type && HUB_TYPES.includes(d.predicted_type as (typeof HUB_TYPES)[number])) {
+      setClassifyType(d.predicted_type);
+    }
+  }, [d?.predicted_type]);
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-2.5 pt-5 pb-10">
@@ -399,6 +429,43 @@ export function TicketDetailPage() {
                   </span>
                 </Field>
 
+                {/* 分类未明确（未毕业 hub_issue）：只显示分类改判，隐藏处理建议/说明/附件 */}
+                {!classified && (
+                  <div>
+                    <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
+                      分类改判
+                    </div>
+                    <select
+                      value={classifyType}
+                      onChange={(e) => setClassifyType(e.target.value)}
+                      className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
+                    >
+                      {HUB_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {HUB_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => graduate.mutate()}
+                        disabled={graduate.isPending}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {graduate.isPending ? "确认中…" : "确认分类"}
+                      </button>
+                      {gradErr && <span className="ml-2 text-[11px] text-hub-rose">{gradErr}</span>}
+                    </div>
+                    <div className="mt-1 text-[10.5px] text-hub-textFaint">
+                      确认后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
+                    </div>
+                  </div>
+                )}
+
+                {/* 明确分类且为运营类：处理建议 + 处理说明 + 处理附件（研发类/内部任务见下方分流） */}
+                {classified && isOperation && (
+                <div className="space-y-5">
                 <div>
                   <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                     处理建议
@@ -429,6 +496,11 @@ export function TicketDetailPage() {
                       {isCurrentNode ? "（当前节点）" : "（历史节点）"}
                     </span>
                   </div>
+                  {d.op_status === "reviewing" && (
+                    <div className="mb-1.5 text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-1">
+                      AI 草稿待审核，确认后正式发出
+                    </div>
+                  )}
                   {/* 当前节点(idx0)：可编辑文本框（默认取 cached_reply_content，无独立保存按钮，入库随页面「确认」）。
                       历史节点：有逐节点记录则只读展示，无内容才「无数据」——不显示任何可操作控件。
                       逐节点处理说明后端暂无字段，历史内容目前仅来自本地草稿 noteDrafts。 */}
@@ -493,6 +565,55 @@ export function TicketDetailPage() {
                   )}
                 </div>
 
+                {/* 处理意见确认动作：正常跟进=发答复；退回/拆分=前端占位 */}
+                <div>
+                  <button
+                    type="button"
+                    disabled={reply.isPending || suggestion === "split"}
+                    onClick={() => {
+                      if (suggestion === "normal") {
+                        const content = (noteDrafts[0] ?? d.cached_reply_content ?? "").trim();
+                        if (!content) {
+                          setReplyErr("处理说明为空，无法答复");
+                          return;
+                        }
+                        reply.mutate(content);
+                      } else if (suggestion === "return") {
+                        setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
+                      } else if (suggestion === "split") {
+                        setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
+                      }
+                    }}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {suggestion === "normal"
+                      ? reply.isPending
+                        ? "提交中…"
+                        : "提交答复"
+                      : suggestion === "return"
+                        ? "退回转单"
+                        : "拆分转单（待后端）"}
+                  </button>
+                  {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
+                </div>
+                </div>
+                )}
+
+                {/* 明确分类且为研发类（Bug 修复 / 需求）：已推 Linear，无对客答复 */}
+                {classified && isDevType && d.predicted_type && (
+                  <div className="border border-hub-blue-border bg-hub-blue-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-blue-deep">
+                    已推送 Linear（{HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}{" "}
+                    类工单由研发在 Linear 跟进，无需在此对客答复）
+                  </div>
+                )}
+
+                {/* 明确分类但非运营 / 非研发（内部任务等）：无对客答复流程 */}
+                {classified && !isOperation && !isDevType && (
+                  <div className="border border-hub-borderLight rounded-[8px] px-3 py-2.5 text-[12px] text-hub-textFaint bg-hub-panel">
+                    内部任务已建立，无对客答复流程。
+                  </div>
+                )}
+
                 <div>
                   <div className="flex items-center gap-2 mb-1.5">
                     <div className="text-[11px] font-bold text-hub-textMuted tracking-wide">
@@ -531,7 +652,19 @@ export function TicketDetailPage() {
                       拆分关联子任务：逐个拉取 children_ticket_ids 的工单详情（无批量端点，N+1）。
                       编号/说明/类型/状态/处理人真实；解决方案=处理方案。draft 为「添加子任务」本地草稿。 */}
                   {isCurrentNode ? (
-                    <SubTicketList childIds={d.children_ticket_ids ?? []} drafts={subDrafts} />
+                    <SubTicketList
+                      childIds={d.children_ticket_ids ?? []}
+                      drafts={subDrafts}
+                      self={{
+                        short_code: d.short_code,
+                        title: d.title,
+                        predicted_type: d.predicted_type,
+                        status: d.status,
+                        assigned_user_name: d.assigned_user_name,
+                        assigned_user_id: d.assigned_user_id,
+                        cached_reply_content: d.cached_reply_content,
+                      }}
+                    />
                   ) : (
                     <EmptyNodeData />
                   )}
@@ -761,9 +894,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function SubTicketList({
   childIds,
   drafts,
+  self,
 }: {
   childIds: number[];
   drafts: { title: string; type: string }[];
+  // 未拆分时回落显示的当前工单本身
+  self: {
+    short_code: string;
+    title: string | null | undefined;
+    predicted_type: string | null | undefined;
+    status: string;
+    assigned_user_name: string | null | undefined;
+    assigned_user_id: number | null | undefined;
+    cached_reply_content: string | null | undefined;
+  };
 }) {
   const results = useQueries({
     queries: childIds.map((cid) => ({
@@ -788,10 +932,27 @@ function SubTicketList({
           </tr>
         </thead>
         <tbody>
+          {/* 未拆分（无子单、无草稿）：回落显示当前工单本身一行 */}
           {empty && (
-            <tr>
-              <td colSpan={6} className="px-2.5 py-3 text-center text-hub-textFaint">
-                无子任务
+            <tr className="border-t border-hub-borderLight hover:bg-hub-panel">
+              <td className="px-2.5 py-1.5 whitespace-nowrap">
+                <span className="font-mono text-hub-textMuted">{self.short_code}</span>
+              </td>
+              <td className="px-2.5 py-1.5 max-w-[220px] truncate" title={self.title ?? ""}>
+                {self.title ?? "—"}
+              </td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap">
+                {self.predicted_type ? <PredictedTypeBadge type={self.predicted_type} /> : "—"}
+              </td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap">{ticketStatusLabel(self.status)}</td>
+              <td className="px-2.5 py-1.5 whitespace-nowrap">
+                {self.assigned_user_name ??
+                  (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
+              </td>
+              <td className="px-2.5 py-1.5 max-w-[260px]">
+                <span className="truncate block" title={self.cached_reply_content ?? ""}>
+                  {self.cached_reply_content ?? "—"}
+                </span>
               </td>
             </tr>
           )}
