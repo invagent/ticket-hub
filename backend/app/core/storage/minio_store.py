@@ -65,6 +65,27 @@ class MinioStore:
         logger.info("minio_put", bucket=self._bucket, key=key, size=len(data))
         return self.public_url(key)
 
+    def get_bytes(self, key: str) -> bytes:
+        """按对象 key 读回附件字节（下载代理端点用；不存在则 minio 抛错）。"""
+        resp = self._client.get_object(self._bucket, key)
+        try:
+            return resp.read()
+        finally:
+            resp.close()
+            resp.release_conn()
+
+    def key_from_storage_url(self, storage_key: str) -> str | None:
+        """从落库的 storage_key（put_bytes 返回的完整 URL）还原 MinIO 对象 key。
+
+        storage_key 形如 `{base}/{bucket}/{object_key}`；截 `/{bucket}/` 之后的部分。
+        非本 bucket 的 URL（历史脏数据/外部直链）返回 None，调用方回落 source_url。
+        """
+        marker = f"/{self._bucket}/"
+        idx = storage_key.find(marker)
+        if idx < 0:
+            return None
+        return storage_key[idx + len(marker) :]
+
     def public_url(self, key: str) -> str:
         if self._public_base:
             return f"{self._public_base}/{self._bucket}/{key}"

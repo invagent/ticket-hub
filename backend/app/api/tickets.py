@@ -13,19 +13,23 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
+from app.config import get_settings
+from app.core.logging import get_logger
+from app.core.storage.minio_store import MinioNotConfiguredError, MinioStore
 from app.db import get_session
-from app.models import Customer, CustomerIdentity, HubIssue, ProductLine, User
+from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class TicketSummary(BaseModel):
@@ -67,6 +71,25 @@ class TicketSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AttachmentOut(BaseModel):
+    """工单附件（attachments 表行）——前端「工单描述」附件区展示用。
+
+    download_url 指向后端代理端点，从 MinIO 拉流回吐（存档过的）或回落原始 source_url
+    重新下载。前端不直接暴露 MinIO 内网地址 / 需鉴权的 source_url。
+    """
+
+    id: int
+    filename: str | None
+    kind: str
+    mime: str | None
+    size_bytes: int | None
+    vision_status: str
+    extracted_text: str | None  # OCR 结果（无 key 时为空）
+    download_url: str
+
+    model_config = {"from_attributes": True}
+
+
 class TicketDetail(TicketSummary):
     body: str | None
     body_html: str | None
@@ -85,6 +108,7 @@ class TicketDetail(TicketSummary):
     customer_display_name: str | None = None
     customer_id: int | None = None
     reporter_name: str | None = None
+    attachments: list[AttachmentOut] = []  # 附件表记录（智齿/KSM/ai_cs 同步的截图等）
 
 
 class TicketListResponse(BaseModel):
@@ -237,7 +261,96 @@ def get_ticket(
         detail.reporter_name = rep.get("name") or rep.get("feedback_user") or rep.get("linkman")
         detail.reporter_mobile = rep.get("mobile")
         detail.reporter_email = rep.get("email")
+    # 附件（attachments 表）：智齿 file_str / KSM / ai_cs 同步下来的截图等。
+    # download_url 走后端代理端点，前端不碰 MinIO 内网地址 / 需鉴权的原始 URL。
+    atts = (
+        db.execute(
+            select(Attachment)
+            .where(Attachment.ticket_id == ticket_id)
+            .order_by(Attachment.id)
+        )
+        .scalars()
+        .all()
+    )
+    detail.attachments = [
+        AttachmentOut(
+            id=a.id,
+            filename=a.filename,
+            kind=a.kind,
+            mime=a.mime,
+            size_bytes=a.size_bytes,
+            vision_status=a.vision_status,
+            extracted_text=a.extracted_text,
+            download_url=f"/api/tickets/{ticket_id}/attachments/{a.id}/download",
+        )
+        for a in atts
+    ]
     return detail
+
+
+@router.get("/{ticket_id}/attachments/{attachment_id}/download")
+def download_attachment(
+    ticket_id: int,
+    attachment_id: int,
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> Response:
+    """附件下载代理：优先从 MinIO 拉回（已存档），回落原始 source_url 重新下载。
+
+    统一经此端点，前端不直接暴露 MinIO 内网地址（storage_key）或需鉴权的
+    上游 source_url（KSM）。任何一路都拿不到 → 404。
+    """
+    att = db.get(Attachment, attachment_id)
+    if att is None or att.ticket_id != ticket_id:
+        raise HTTPException(status_code=404, detail="attachment not found")
+
+    settings = get_settings()
+    content_type = att.mime or "application/octet-stream"
+
+    # 1) 已存档：从 MinIO 按对象 key 读回（浏览器无法直连内网 MinIO，故走后端代理）。
+    if att.storage_key:
+        try:
+            store = MinioStore(settings)
+            key = store.key_from_storage_url(att.storage_key)
+            if key is not None:
+                data = store.get_bytes(key)
+                return Response(content=data, media_type=content_type)
+        except MinioNotConfiguredError:
+            pass  # 未配 MinIO → 回落 source_url
+        except Exception as e:  # MinIO 读失败（对象丢失等）→ 回落 source_url
+            logger.warning("attachment_download_minio_failed", att_id=attachment_id, error=str(e))
+
+    # 2) 回落：从原始 source_url 重新下载（KSM 需鉴权，走 KSMClient；其余走通用 GET）。
+    if att.source_url:
+        try:
+            data = _fetch_source_bytes(att.source_url, settings)
+            return Response(content=data, media_type=content_type)
+        except Exception as e:
+            logger.warning("attachment_download_source_failed", att_id=attachment_id, error=str(e))
+
+    raise HTTPException(status_code=404, detail="attachment content unavailable")
+
+
+def _fetch_source_bytes(source_url: str, settings: Any) -> bytes:
+    """从原始 URL 拉附件字节。KSM 附件走 KSMClient（带鉴权），其余走通用 httpx GET。
+
+    通用路径也伪装浏览器 UA——智齿 sobot 图床等对默认 UA 可能拒绝（同 KSM 套路）。
+    """
+    if "kingdee" in source_url or "ierp" in source_url:
+        from adapters.ksm.client import KSMClient
+        from adapters.ksm.types import KSMConfig
+
+        return KSMClient(KSMConfig.from_settings(settings)).download_attachment(source_url)
+    import httpx
+
+    resp = httpx.get(
+        source_url,
+        timeout=30,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    resp.raise_for_status()
+    return resp.content
 
 
 # ---- /history -------------------------------------------------------------

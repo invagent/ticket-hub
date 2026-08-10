@@ -1926,6 +1926,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/attachments/{attachment_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Attachment
+         * @description 附件下载代理：优先从 MinIO 拉回（已存档），回落原始 source_url 重新下载。
+         *
+         *     统一经此端点，前端不直接暴露 MinIO 内网地址（storage_key）或需鉴权的
+         *     上游 source_url（KSM）。任何一路都拿不到 → 404。
+         */
+        get: operations["download_attachment_api_tickets__ticket_id__attachments__attachment_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/history": {
         parameters: {
             query?: never;
@@ -2223,6 +2246,31 @@ export interface components {
             tier: string;
             /** User Id */
             user_id: number;
+        };
+        /**
+         * AttachmentOut
+         * @description 工单附件（attachments 表行）——前端「工单描述」附件区展示用。
+         *
+         *     download_url 指向后端代理端点，从 MinIO 拉流回吐（存档过的）或回落原始 source_url
+         *     重新下载。前端不直接暴露 MinIO 内网地址 / 需鉴权的 source_url。
+         */
+        AttachmentOut: {
+            /** Download Url */
+            download_url: string;
+            /** Extracted Text */
+            extracted_text: string | null;
+            /** Filename */
+            filename: string | null;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Mime */
+            mime: string | null;
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Vision Status */
+            vision_status: string;
         };
         /** AuthorReplyBody */
         AuthorReplyBody: {
@@ -4186,6 +4234,11 @@ export interface components {
             assigned_user_id: number | null;
             /** Assigned User Name */
             assigned_user_name?: string | null;
+            /**
+             * Attachments
+             * @default []
+             */
+            attachments: components["schemas"]["AttachmentOut"][];
             /** Body */
             body: string | null;
             /** Body Html */
@@ -8107,6 +8160,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_attachment_api_tickets__ticket_id__attachments__attachment_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+                attachment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

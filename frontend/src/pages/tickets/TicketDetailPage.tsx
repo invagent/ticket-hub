@@ -21,6 +21,9 @@ import { ticketStatusLabel } from "./ticketStatus";
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
 
+type TicketDetailData =
+  paths["/api/tickets/{ticket_id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
 // 工单来源系统：code → 中文展示名（文档口径：KSM / 智齿 / 内部提单 / 外部提单）
 const SOURCE_LABEL: Record<string, string> = {
   ksm: "KSM",
@@ -60,14 +63,50 @@ function nextStepHint(status: string | null | undefined): string {
   }
 }
 
-type AttachmentRef = { url: string; name: string };
+type AttachmentRef = {
+  url: string;
+  name: string;
+  isImage?: boolean; // 图片走缩略图预览，其余走文件链接
+  ocr?: string | null; // OCR 提取文本（后端 attachments 表才有）
+};
+
+type AttachmentOut = NonNullable<TicketDetailData["attachments"]>[number];
 
 /**
- * 从 ticket.source_payload 提取附件（后端 TicketDetail 无专门 attachments 字段，
- * 但 source_payload 保留了源系统原始载荷）：
+ * 合并两个附件来源，优先后端 attachments 表（智齿 file_str / KSM / ai_cs 同步下来的，
+ * 走 download_url 代理端点可查看），回落 source_payload 解析（尚未进 attachments 表的历史工单）。
+ * 按展示 url 去重。
+ */
+function mergeAttachments(
+  rows: AttachmentOut[] | undefined,
+  payload: unknown,
+): AttachmentRef[] {
+  const out: AttachmentRef[] = [];
+  const seen = new Set<string>();
+  const add = (a: AttachmentRef) => {
+    if (seen.has(a.url)) return;
+    seen.add(a.url);
+    out.push(a);
+  };
+  // 1) 后端 attachments 表（代理下载，含 kind/OCR）
+  for (const r of rows ?? []) {
+    add({
+      url: r.download_url,
+      name: r.filename || `附件 #${r.id}`,
+      isImage: r.kind === "image",
+      ocr: r.extracted_text,
+    });
+  }
+  // 2) source_payload 解析兜底（历史工单未进表的）
+  for (const a of extractAttachments(payload)) add(a);
+  return out;
+}
+
+/**
+ * 从 ticket.source_payload 提取附件（历史工单未进 attachments 表时的兜底）：
  * - KSM：`attachment_urls`(string[]) + `_subscribe_callback.attachment[].url`
  * - ai_cs / escalation：`ai_cs.attachments[].{url,filename}`
- * 仅解析已知形态，容错返回空数组。真正的 attachments 表 + 下载鉴权端点仍需后端补。
+ * 仅解析已知形态，容错返回空数组。
  */
 function extractAttachments(payload: unknown): AttachmentRef[] {
   if (!payload || typeof payload !== "object") return [];
@@ -84,7 +123,9 @@ function extractAttachments(payload: unknown): AttachmentRef[] {
   };
   const pushUrl = (u: unknown, name?: unknown) => {
     if (typeof u !== "string" || !u.trim()) return;
-    out.push({ url: u, name: typeof name === "string" && name.trim() ? name : nameFromUrl(u) });
+    const nm = typeof name === "string" && name.trim() ? name : nameFromUrl(u);
+    const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(u.split("?")[0]) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(nm);
+    out.push({ url: u, name: nm, isImage });
   };
 
   // KSM: attachment_urls: string[]
@@ -281,9 +322,9 @@ export function TicketDetailPage() {
                 )}
               </DescRow>
               <DescRow label="附件">
-                {/* 从 source_payload 提取（KSM attachment_urls / ai_cs attachments）；
-                    多个则垂直列出，只显示附件名，点击新开窗口查看 */}
-                <AttachmentList attachments={extractAttachments(d.source_payload)} />
+                {/* 优先后端 attachments 表（智齿/KSM/ai_cs 同步，走 download_url 代理），
+                    回落 source_payload 解析（历史工单未进表）。图片显示缩略图，点击新窗口查看 */}
+                <AttachmentList attachments={mergeAttachments(d.attachments, d.source_payload)} />
               </DescRow>
             </dl>
           </Card>
@@ -985,23 +1026,52 @@ function AttachmentList({ attachments }: { attachments: AttachmentRef[] }) {
   if (attachments.length === 0) {
     return <span className="text-hub-textFaint">暂无附件</span>;
   }
+  const images = attachments.filter((a) => a.isImage);
+  const files = attachments.filter((a) => !a.isImage);
   return (
-    <ul className="flex flex-wrap gap-2 m-0 list-none p-0">
-      {attachments.map((a, i) => (
-        <li key={i}>
-          <a
-            href={a.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]"
-            title={a.name}
-          >
-            <span className="text-hub-textFaint flex-none">📎</span>
-            <span className="truncate">{a.name}</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2.5">
+      {/* 图片：缩略图网格，点击新窗口看原图；带 OCR 时 hover 显示识别文本 */}
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {images.map((a, i) => (
+            <a
+              key={`img-${i}`}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block border border-hub-border rounded-[8px] overflow-hidden hover:border-hub-teal-border"
+              title={a.ocr ? `${a.name}\n[识别] ${a.ocr}` : a.name}
+            >
+              <img
+                src={a.url}
+                alt={a.name}
+                loading="lazy"
+                className="h-24 w-24 object-cover bg-hub-panel"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {/* 非图片：文件名 chip */}
+      {files.length > 0 && (
+        <ul className="flex flex-wrap gap-2 m-0 list-none p-0">
+          {files.map((a, i) => (
+            <li key={`file-${i}`}>
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 bg-hub-panel border border-hub-border rounded-full px-2.5 py-1 text-[12px] text-hub-textSecondary hover:border-hub-teal-border hover:text-hub-teal-deep max-w-[240px]"
+                title={a.name}
+              >
+                <span className="text-hub-textFaint flex-none">📎</span>
+                <span className="truncate">{a.name}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
