@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models import Ticket
+from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
@@ -129,8 +129,17 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
             "erp_uid": pick(fields.get("对接ERP"), ext.get("对接ERP")),
         },
         "company": pick(fields.get("客户名称"), raw.get("enterprise_name")),
+        "attachment_urls": _parse_file_str(pick(fields.get("附件"), raw.get("file_str"))),
         "_envelope": payload,  # 出站回写要用的原始信封整体
     }
+
+
+def _parse_file_str(value: Any) -> list[str]:
+    """智齿附件 file_str → URL 列表。可能是单个 URL 或逗号/空格/分号分隔的多个。"""
+    if not value or not isinstance(value, str):
+        return []
+    parts = re.split(r"[,\s;]+", value.strip())
+    return [u for u in parts if u.startswith("http")]
 
 
 def _flatten_native(payload: dict[str, Any]) -> dict[str, Any]:
@@ -155,6 +164,7 @@ def _flatten_native(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "customerid": payload.get("userid"),
         "company": payload.get("enterprise_name") or ext.get("公司/项目名称"),
+        "attachment_urls": _parse_file_str(payload.get("file_str")),
         "_envelope": payload,
     }
 
@@ -262,6 +272,18 @@ class ZhichiIngester:
             ticket.assigned_user_id = route.assigned_user_ids[0]
 
         self._db.flush()
+
+        # 建附件行（仅建行，不下载；下载+OCR 由异步流水线 drain_attachments 处理）。
+        # 智齿附件来自 file_str（sobot CDN 图片 URL），解析层已归一化为 attachment_urls。
+        for url in payload.get("attachment_urls") or []:
+            self._db.add(
+                Attachment(
+                    ticket_id=ticket.id,
+                    source_url=url,
+                    kind="image",
+                    vision_status="queued",
+                )
+            )
 
         self._history.record(
             entity_type="ticket",
