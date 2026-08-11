@@ -25,8 +25,6 @@ from app.repositories.user import UserRepository
 
 logger = get_logger(__name__)
 
-_ASSIGNABLE_ROLES = frozenset({"assignee", "supervisor", "admin"})
-
 
 class TargetUserInvalidError(Exception):
     """目标用户不存在 / 已停用 / 角色不允许被指派。"""
@@ -64,8 +62,7 @@ class ManualAssignService:
         target = user_repo.get(req.assigned_user_id)
         if target is None or not target.is_active:
             raise TargetUserInvalidError(f"目标用户 {req.assigned_user_id} 不存在或已停用")
-        if target.role not in _ASSIGNABLE_ROLES:
-            raise TargetUserInvalidError(f"用户 {target.name}（{target.role}）不可被指派工单")
+        # 不限角色：真实处理人大量是 member（分派/转交均无角色限制），只要 active 即可作为处理人
 
         ticket_repo = TicketRepository(self._db)
         history_repo = StatusHistoryRepository(self._db)
@@ -86,11 +83,12 @@ class ManualAssignService:
                 continue
 
             ticket = found[tid]
-            prev = ticket.assigned_user_id
+            # 转交改写处理人（handler_user_id），不动责任人（assigned_user_id）
+            prev = ticket.handler_user_id
             self._db.execute(
                 update(Ticket)
                 .where(Ticket.id == ticket.id)
-                .values(assigned_user_id=req.assigned_user_id)
+                .values(handler_user_id=req.assigned_user_id)
             )
             history_repo.record(
                 entity_type="ticket",
@@ -98,11 +96,11 @@ class ManualAssignService:
                 from_status=ticket.status,
                 to_status=ticket.status,
                 changed_by="system:manual_assign",
-                reason=f"manual assign to user_id={req.assigned_user_id} by user_id={req.operator_user_id}",
+                reason=f"转交处理人 to user_id={req.assigned_user_id} by user_id={req.operator_user_id}",
                 metadata={
                     "operator_user_id": req.operator_user_id,
-                    "assigned_user_id": req.assigned_user_id,
-                    "prev_assigned_user_id": prev,
+                    "handler_user_id": req.assigned_user_id,
+                    "prev_handler_user_id": prev,
                 },
             )
             logger.info(

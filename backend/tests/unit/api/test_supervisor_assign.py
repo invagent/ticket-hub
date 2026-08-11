@@ -74,18 +74,22 @@ def test_assign_endpoint_success(app_client: TestClient, assign_world: Session) 
     assign_world.expire_all()
     ticket = assign_world.get(Ticket, 100)
     assert ticket is not None
-    assert ticket.assigned_user_id == 3
+    # 转交改处理人（handler_user_id），责任人不动
+    assert ticket.handler_user_id == 3
 
 
-def test_assign_endpoint_role_not_allowed_422(
+def test_assign_endpoint_member_allowed(
     app_client: TestClient, assign_world: Session
 ) -> None:
+    """member 角色可作为处理人（转交目标不再限角色）。"""
     resp = app_client.post(
         "/api/supervisor/assign",
         json={"ticket_ids": [101], "assigned_user_id": 2},  # bob is 'member'
         headers=_bearer(1),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 200, resp.text
+    assign_world.expire_all()
+    assert assign_world.get(Ticket, 101).handler_user_id == 2
 
 
 def test_assign_endpoint_requires_supervisor(app_client: TestClient, assign_world: Session) -> None:
