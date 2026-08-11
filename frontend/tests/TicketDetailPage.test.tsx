@@ -703,4 +703,72 @@ describe("TicketDetailPage", () => {
     expect(screen.getByText(/已答复完成，不可再编辑/)).toBeInTheDocument();
     localStorage.clear();
   });
+
+  // ---- 操作留痕进时间轴（2026-08-11）----
+
+  it("时间轴把操作审计事件(from==to+reason)渲染为操作说明", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(350);
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "answered",
+        }),
+      ),
+      http.get("*/api/tickets/350/history", () =>
+        HttpResponse.json({
+          ticket_id: 350,
+          items: [
+            {
+              kind: "status",
+              occurred_at: "2026-08-11T10:00:00Z",
+              from_status: "in_progress",
+              to_status: "in_progress",
+              changed_by: "user:张三",
+              reason: "主管答复客户",
+              metadata_: { action: "reply" },
+              hub_issue_id: null,
+              effective_to: null,
+              change_reason: null,
+              human_confirmed: null,
+            },
+          ],
+        }),
+      ),
+    );
+    renderPage(350);
+    await screen.findByRole("heading", { name: "TKT-350" });
+    expect(await screen.findByText("主管答复客户")).toBeInTheDocument();
+    // 不再渲染成 in_progress → in_progress
+    expect(screen.queryByText(/in_progress → in_progress/)).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("点退回转单在时间轴插入本地占位节点", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(351);
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "processing",
+        }),
+      ),
+    );
+    renderPage(351);
+    await screen.findByRole("heading", { name: "TKT-351" });
+    await userEvent.selectOptions(screen.getByRole("combobox"), "return");
+    await userEvent.click(screen.getByRole("button", { name: "退回转单" }));
+    // 时间轴出现本地占位节点
+    expect(await screen.findByText("退回转单（待后端）")).toBeInTheDocument();
+    expect(screen.getByText(/本地操作·待后端/)).toBeInTheDocument();
+    localStorage.clear();
+  });
 });

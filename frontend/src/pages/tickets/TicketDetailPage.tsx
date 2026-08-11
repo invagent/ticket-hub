@@ -211,6 +211,8 @@ export function TicketDetailPage() {
   // 处理节点：选中节点 idx（0=最新/当前）+ 逐节点处理说明草稿（后端逐节点字段待补）
   const [nodeIdx, setNodeIdx] = useState(0);
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+  // 退回/拆分转单：后端动作待做，点击先在时间轴插一条前端本地占位节点
+  const [localActions, setLocalActions] = useState<{ label: string }[]>([]);
   const assign = useMutation({
     mutationFn: (uid: number) =>
       api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
@@ -230,6 +232,7 @@ export function TicketDetailPage() {
     onSuccess: () => {
       setGradErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });  // 毕业写「关联建立」节点
       void qc.invalidateQueries({ queryKey: ["tickets"] });  // 毕业后工单列表 + 任务表都变
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
     },
@@ -384,17 +387,38 @@ export function TicketDetailPage() {
                     时间线加载失败：{String(history.error)}
                   </p>
                 )}
-                {history.data && history.data.items.length === 0 && (
-                  <p className="text-[11px] text-hub-textFaint">暂无处理节点</p>
-                )}
-                {history.data && history.data.items.length > 0 && (
-                  <VerticalTimeline
-                    events={[...history.data.items].reverse()}
-                    terminal={DONE_STATUSES.includes(d.status)}
-                    selectedIdx={nodeIdx}
-                    onSelect={setNodeIdx}
-                  />
-                )}
+                {(() => {
+                  if (!history.data) return null;
+                  // 后端历史（倒序，最新在上）+ 前端本地占位节点（退回/拆分，插最上）
+                  const backendEvents = [...history.data.items].reverse();
+                  const localEvents = localActions.map(
+                    (a): HistoryEvent => ({
+                      kind: "status",
+                      occurred_at: "",
+                      from_status: null,
+                      to_status: null,
+                      changed_by: "本地操作·待后端",
+                      reason: a.label,
+                      metadata_: null,
+                      hub_issue_id: null,
+                      effective_to: null,
+                      change_reason: null,
+                      human_confirmed: null,
+                    }),
+                  );
+                  const merged = [...localEvents, ...backendEvents];
+                  if (merged.length === 0) {
+                    return <p className="text-[11px] text-hub-textFaint">暂无处理节点</p>;
+                  }
+                  return (
+                    <VerticalTimeline
+                      events={merged}
+                      terminal={DONE_STATUSES.includes(d.status)}
+                      selectedIdx={nodeIdx}
+                      onSelect={setNodeIdx}
+                    />
+                  );
+                })()}
               </div>
 
               {/* 5.2 右：节点处理详情 */}
@@ -588,8 +612,10 @@ export function TicketDetailPage() {
                         reply.mutate(content);
                       } else if (suggestion === "return") {
                         setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
+                        setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
                       } else if (suggestion === "split") {
                         setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
+                        setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
                       }
                     }}
                     className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -913,7 +939,11 @@ function VerticalTimeline({
         const ts = fmtDateTime(ev.occurred_at);
         const label =
           ev.kind === "status"
-            ? `${ev.from_status ?? "∅"} → ${ev.to_status ?? ""}`
+            ? // 操作审计事件（不改状态 from==to）优先用 reason 作为操作说明；
+              // 真实状态流转仍显示 "from → to"
+              ev.from_status === ev.to_status && ev.reason
+              ? ev.reason
+              : `${ev.from_status ?? "∅"} → ${ev.to_status ?? ""}`
             : ev.effective_to !== null
               ? `关联关闭 HUB-${ev.hub_issue_id}`
               : `关联建立 HUB-${ev.hub_issue_id}`;
