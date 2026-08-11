@@ -14,6 +14,7 @@ import { isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
+import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
 import { ticketStatusLabel } from "./ticketStatus";
@@ -305,7 +306,14 @@ export function TicketDetailPage() {
                 <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
                 <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
                 {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
-                <StatusTag status={d.status} />
+                <ProcessStatusBadge
+                  opStatus={d.op_status}
+                  hubStatus={hub.data?.status}
+                  predictedType={d.predicted_type}
+                  hubIssueId={d.hub_issue_id}
+                  ticketStatus={d.status}
+                  ticketStatusLabel={ticketStatusLabel}
+                />
                 <RemainingTag hours={d.remaining_hours} />
               </div>
             </header>
@@ -425,7 +433,14 @@ export function TicketDetailPage() {
               <div className="space-y-5 lg:border-l lg:border-hub-borderLight lg:pl-4">
                 <Field label="处理状态">
                   <span className="inline-flex items-center gap-2">
-                    <StatusTag status={d.op_status ?? d.status} />
+                    <ProcessStatusBadge
+                      opStatus={d.op_status}
+                      hubStatus={hub.data?.status}
+                      predictedType={d.predicted_type}
+                      hubIssueId={d.hub_issue_id}
+                      ticketStatus={d.status}
+                      ticketStatusLabel={ticketStatusLabel}
+                    />
                   </span>
                 </Field>
 
@@ -1012,17 +1027,8 @@ function Tag({ tone, children }: { tone: TagTone; children: ReactNode }) {
   );
 }
 
-// 服务状态标签（终态灰 / 进行绿 / 其余中性）
+// 终态集合（处理说明只读判定 / 时间轴 terminal 判定复用）
 const DONE_STATUSES = ["done", "closed", "superseded", "rejected"];
-const ACTIVE_STATUSES = ["in_progress", "replied", "released", "code_merged", "waiting_reply"];
-function StatusTag({ status }: { status: string }) {
-  const tone: TagTone = DONE_STATUSES.includes(status)
-    ? "neutral"
-    : ACTIVE_STATUSES.includes(status)
-      ? "green"
-      : "blue";
-  return <Tag tone={tone}>{ticketStatusLabel(status)}</Tag>;
-}
 
 function RemainingTag({ hours }: { hours: number | null | undefined }) {
   if (hours == null) return <Tag tone="neutral">剩余 —</Tag>;

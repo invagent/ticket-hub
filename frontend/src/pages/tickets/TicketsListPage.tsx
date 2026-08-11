@@ -18,12 +18,12 @@ import {
 } from "@tanstack/react-table";
 import { api, type TicketSummary } from "@/api/client";
 import { MultiUserSelect, UserSelect } from "@/components/selectors";
-import { OpStatusBadge, OP_STATUS_LABEL } from "@/components/OpStatusBadge";
+import { OP_STATUS_LABEL, ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
-import { StatusBadge } from "./ticketStatus";
+import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -57,20 +57,6 @@ const SOURCE_LABEL: Record<string, string> = {
 function sourceLabel(code: string | null | undefined): string {
   if (!code) return "—";
   return SOURCE_LABEL[code] ?? code;
-}
-
-// 研发类（Bug/需求）处理状态徽标：done=处理完成（绿），否则处理中（青）。
-// 复用 op_status 的 answered/processing 配色，与运营类视觉统一。
-function DevStatusBadge({ done }: { done: boolean }) {
-  const c = done ? OP_STATUS_LABEL.answered : OP_STATUS_LABEL.processing;
-  return (
-    <span
-      className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
-      style={{ background: c.bg, color: c.fg, borderColor: c.bd }}
-    >
-      {c.label}
-    </span>
-  );
 }
 
 // 工单类型多选可选项（研发/运营三类，对应后端 predicted_type）
@@ -468,15 +454,21 @@ export function TicketsListPage() {
         size: 92,
         cell: ({ row }) => {
           const t = row.original;
-          // Operation：op_status 状态机徽标
-          if (t.op_status) return <OpStatusBadge status={t.op_status} />;
-          // 研发类（Bug/需求）已毕业：按 Linear 同步状态判处理中/处理完成，避免恒空。
-          // hub.status==released（Linear completed 级联结果）=处理完成，其余=处理中。
-          const isDev = t.predicted_type === "Bug_fix" || t.predicted_type === "Demand";
-          if (isDev && t.hub_issue_id != null) {
-            return <DevStatusBadge done={t.hub_status === "released"} />;
+          // 未毕业/无 hub 的工单在列表处理状态列仍显示「—」（列表口径：只标处理进度）；
+          // Operation / 研发类走统一 ProcessStatusBadge。
+          if (!t.op_status && !(t.hub_issue_id != null && (t.predicted_type === "Bug_fix" || t.predicted_type === "Demand"))) {
+            return <span className="text-hub-textFaint text-[10.5px]">—</span>;
           }
-          return <span className="text-hub-textFaint text-[10.5px]">—</span>;
+          return (
+            <ProcessStatusBadge
+              opStatus={t.op_status}
+              hubStatus={t.hub_status}
+              predictedType={t.predicted_type}
+              hubIssueId={t.hub_issue_id}
+              ticketStatus={t.status}
+              ticketStatusLabel={ticketStatusLabel}
+            />
+          );
         },
       },
       {

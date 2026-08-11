@@ -748,6 +748,27 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
+  it("研发类：顶部状态与处理区处理状态一致(released→都显示处理完成)", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubPendingReviewTicket(360, 96, "Bug_fix");
+    // 覆盖 hub 为已完成（released）
+    server.use(
+      http.get("*/api/hub-issues/96", () =>
+        HttpResponse.json({
+          id: 96,
+          short_code: "HUB-96",
+          type: "Bug_fix",
+          status: "released",
+        }),
+      ),
+    );
+    renderPage(360);
+    await screen.findByRole("heading", { name: "TKT-360" });
+    // 顶部 + 处理区两处「处理完成」（研发类 released 统一口径）
+    expect(await screen.findAllByText("处理完成")).toHaveLength(2);
+    localStorage.clear();
+  });
+
   it("点退回转单在时间轴插入本地占位节点", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(351);
