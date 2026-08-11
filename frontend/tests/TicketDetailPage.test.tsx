@@ -380,11 +380,14 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  // 转派：顶部转派按钮 → 弹窗（当前处理人 + 转派人搜索 + 原因）
-  it("supervisor → 顶部显示转派按钮，点击开弹窗含当前处理人/转派人/转派原因", async () => {
+  // 转派：处理区「提交答复」左侧转派按钮 → 弹窗（当前处理人 + 转派人搜索 + 原因）
+  it("supervisor 运营类 → 处理区显示转派按钮，点击开弹窗含当前处理人/转派人/转派原因", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubTicket(306, 55);
+    stubOperationTicket(306);
     server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({ id: 88, short_code: "HUB-88", type: "Operation", status: "created", op_status: "processing" }),
+      ),
       http.get("*/api/admin/users", () =>
         HttpResponse.json([
           { id: 1, name: "张三", feishu_uid: "u1", employee_no: null, email: null, mobile: null, ksm_account: null, zhichi_agent_id: null, linear_user_id: null, linear_team_id: null, role: "assignee", is_active: true },
@@ -397,13 +400,31 @@ describe("TicketDetailPage", () => {
     expect(await screen.findByText("转派处理人")).toBeInTheDocument();
     expect(screen.getByText(/当前处理人/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("填写转派原因（原因记录待后端支持）")).toBeInTheDocument();
-    // 右侧「工单处理」面板不再独立展示当前处理人字段
     localStorage.clear();
   });
 
-  it("member → 不显示转派按钮", async () => {
+  it("详情页右上角不再有确认按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(309);
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({ id: 88, short_code: "HUB-88", type: "Operation", status: "created", op_status: "processing" }),
+      ),
+    );
+    renderPage(309);
+    expect(await screen.findByRole("heading", { name: "TKT-309" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("member 运营类 → 不显示转派按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
-    stubTicket(307, 55);
+    stubOperationTicket(307);
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({ id: 88, short_code: "HUB-88", type: "Operation", status: "created", op_status: "processing" }),
+      ),
+    );
     renderPage(307);
     expect(await screen.findByRole("heading", { name: "TKT-307" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();

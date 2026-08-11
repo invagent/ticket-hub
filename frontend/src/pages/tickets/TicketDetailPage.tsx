@@ -42,27 +42,6 @@ function fmtDateTime(v: string | null | undefined): string {
   return new Date(v).toLocaleString("zh-CN");
 }
 
-// 确认按钮：按当前工单状态推断下一步（前端提示；实际状态流转待后端接口）
-function nextStepHint(status: string | null | undefined): string {
-  switch (status) {
-    case "in_progress":
-    case "replied":
-    case "waiting_reply":
-      return "下一步：关闭工单（确认动作逻辑待后端接口）";
-    case "received":
-    case "linked":
-    case "assigned":
-      return "下一步：进入处理中（确认动作逻辑待后端接口）";
-    case "done":
-    case "closed":
-    case "superseded":
-    case "rejected":
-      return "工单已终态，无需确认";
-    default:
-      return "下一步：按流程推进（确认动作逻辑待后端接口）";
-  }
-}
-
 // 附件在线查看方式：image=缩略图；pdf/video/text=浏览器原生在线查看；download=仅下载。
 // 用户支持清单：图片/pdf/ofd/xml/视频/log/txt 可在线看(ofd 暂除外);zip/doc/xls/ppt 仅下载。
 type ViewMode = "image" | "pdf" | "video" | "text" | "download";
@@ -327,31 +306,8 @@ export function TicketDetailPage() {
                 <RemainingTag hours={d.remaining_hours} />
               </div>
             </header>
-            {/* 确认 | 转派 | 返回列表，与标题顶端对齐 */}
+            {/* 返回列表（确认按钮已去除；转派移至处理区「提交答复」左侧） */}
             <div className="flex items-center gap-2.5 flex-wrap justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  const hasNote = (noteDrafts[0] ?? "").trim().length > 0;
-                  setConfirmNotice(
-                    (hasNote ? "已记录当前节点处理说明；" : "") + nextStepHint(d?.status),
-                  );
-                }}
-                title="按工单状态判断下一步操作（如处理中→关闭工单）；提交当前节点处理说明"
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95"
-              >
-                确认
-              </button>
-              {isSupervisor() && (
-                <button
-                  type="button"
-                  onClick={() => setTransferOpen(true)}
-                  title="转派处理人"
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95"
-                >
-                  转派
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => navigate("/tickets")}
@@ -606,8 +562,19 @@ export function TicketDetailPage() {
                   )}
                 </div>
 
-                {/* 处理意见确认动作：正常跟进=发答复；退回/拆分=前端占位 */}
-                <div>
+                {/* 处理意见确认动作：转派（分类完成后、答复前可用）| 提交答复；退回/拆分=前端占位 */}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  {isSupervisor() && (
+                    <button
+                      type="button"
+                      onClick={() => setTransferOpen(true)}
+                      disabled={opDone}
+                      title="转派处理人（提交答复前可转派）"
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      转派
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={reply.isPending || suggestion === "split" || opDone}
