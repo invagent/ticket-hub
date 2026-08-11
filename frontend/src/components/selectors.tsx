@@ -47,6 +47,16 @@ function useUserOptions() {
   });
 }
 
+/** 解析 user id → 展示名（含工号/角色）。找不到时回落 `#id`。复用 useUserOptions 缓存。 */
+export function useUserName(): (id: number) => string {
+  const q = useUserOptions();
+  const users = (q.data ?? []) as UserOpt[];
+  return (id: number) => {
+    const u = users.find((x) => x.id === id);
+    return u ? labelForUser(u) : `#${id}`;
+  };
+}
+
 export function UserSelect({
   value,
   onChange,

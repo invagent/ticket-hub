@@ -21,6 +21,7 @@ import {
   useAllModuleOptions,
   useProductLineOptions,
   useSourceOptions,
+  useUserName,
   type AllModuleOpt,
   type SourceOpt,
 } from "@/components/selectors";
@@ -431,9 +432,10 @@ function AssigneeRow({
   onRemove: () => void;
   removing?: boolean;
 }) {
+  const userName = useUserName();
   return (
     <div className="flex items-center gap-2.5 px-1 py-1.5 border-b border-hub-borderLight text-[12.5px]">
-      <span className="font-semibold">#{userId}</span>
+      <span className="font-semibold">{userName(userId)}</span>
       <span
         className={`text-[9.5px] font-bold px-[7px] py-px rounded-full border ${
           tier === "overflow"
@@ -510,9 +512,18 @@ function AssigneeAddForm({
           <option value="overflow">溢出</option>
         </select>
       </div>
-      <button onClick={submit} disabled={!userId || adding} className={PRIMARY_BTN}>
+      <button
+        onClick={submit}
+        disabled={!userId || adding}
+        className={`${PRIMARY_BTN} ${userId ? "ring-2 ring-hub-teal ring-offset-1" : ""}`}
+      >
         {adding ? "添加中…" : "添加"}
       </button>
+      {userId && !adding && (
+        <span className="w-full text-[11px] text-hub-amber-deep">
+          已选择运营，请点「添加」确认加入分派人列表（仅选择不点添加不会生效）。
+        </span>
+      )}
     </div>
   );
 }
