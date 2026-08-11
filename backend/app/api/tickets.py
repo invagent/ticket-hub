@@ -48,8 +48,10 @@ class TicketSummary(BaseModel):
     product_line_code: str | None
     module: str | None
     feature: str | None
-    assigned_user_id: int | None
+    assigned_user_id: int | None  # 责任人（路由分工）
     assigned_user_name: str | None = None
+    handler_user_id: int | None = None  # 处理人（当前实际持有人）
+    handler_user_name: str | None = None
     predicted_type: str | None = None
     hub_issue_id: int | None
     op_status: str | None = (
@@ -128,13 +130,13 @@ class TicketListResponse(BaseModel):
 
 @router.get("", response_model=TicketListResponse)
 def list_tickets(
-    _user: AuthedUser = Depends(require_user),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
     source_code: str | None = Query(None),
     type: str | None = Query(None, alias="type"),
     status: str | None = Query(None),
     assigned_user_id: int | None = Query(None),
-    assigned_user_ids: list[int] | None = Query(None),  # 处理人多选筛选（1.1）
+    handler_user_ids: list[int] | None = Query(None),  # 处理人多选筛选
     predicted_types: list[str] | None = Query(None),  # AI 分类类型多选筛选（1.2）
     unassigned_only: bool = Query(False),
     customer_identity_id: int | None = Query(None),
@@ -144,12 +146,15 @@ def list_tickets(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> TicketListResponse:
+    # 行级可见性：admin + supervisor 看全部；其余角色只看处理人=自己的工单
+    is_privileged = user.role in ("admin", "supervisor")
     p = TicketRepository(db).list_paginated(
         source_code=source_code,
         type_=type,
         status=status,
         assigned_user_id=assigned_user_id,
-        assigned_user_ids=assigned_user_ids,
+        handler_user_ids=handler_user_ids,
+        visible_to_user_id=None if is_privileged else user.user_id,
         predicted_types=predicted_types,
         unassigned_only=unassigned_only,
         customer_identity_id=customer_identity_id,
@@ -159,8 +164,9 @@ def list_tickets(
         page=page,
         page_size=page_size,
     )
-    # batch-load user names to avoid N+1
+    # batch-load user names to avoid N+1（责任人 + 处理人）
     user_ids = {t.assigned_user_id for t in p.items if t.assigned_user_id is not None}
+    user_ids |= {t.handler_user_id for t in p.items if t.handler_user_id is not None}
     user_name_map: dict[int, str] = {}
     if user_ids:
         rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
@@ -219,6 +225,8 @@ def list_tickets(
         s = TicketSummary.model_validate(t)
         if t.assigned_user_id is not None:
             s.assigned_user_name = user_name_map.get(t.assigned_user_id)
+        if t.handler_user_id is not None:
+            s.handler_user_name = user_name_map.get(t.handler_user_id)
         if t.hub_issue_id is not None:
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
@@ -249,16 +257,22 @@ def list_tickets(
 @router.get("/{ticket_id}", response_model=TicketDetail)
 def get_ticket(
     ticket_id: int,
-    _user: AuthedUser = Depends(require_user),
+    auth_user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> TicketDetail:
     ticket = TicketRepository(db).get(ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
+    # 行级可见性：非 admin/主管 只能看处理人=自己的工单（否则等同不存在）
+    if auth_user.role not in ("admin", "supervisor") and ticket.handler_user_id != auth_user.user_id:
+        raise HTTPException(status_code=404, detail="ticket not found")
     detail = TicketDetail.model_validate(ticket)
     if ticket.assigned_user_id is not None:
-        user = db.get(User, ticket.assigned_user_id)
-        detail.assigned_user_name = user.name if user else None
+        u = db.get(User, ticket.assigned_user_id)
+        detail.assigned_user_name = u.name if u else None
+    if ticket.handler_user_id is not None:
+        hu = db.get(User, ticket.handler_user_id)
+        detail.handler_user_name = hu.name if hu else None
     if ticket.customer_identity_id is not None:
         identity = db.get(CustomerIdentity, ticket.customer_identity_id)
         if identity is not None:
@@ -417,10 +431,14 @@ class HistoryResponse(BaseModel):
 @router.get("/{ticket_id}/history", response_model=HistoryResponse)
 def get_ticket_history(
     ticket_id: int,
-    _user: AuthedUser = Depends(require_user),
+    auth_user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> HistoryResponse:
-    if TicketRepository(db).get(ticket_id) is None:
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    # 行级可见性：非 admin/主管 只能看处理人=自己的工单
+    if auth_user.role not in ("admin", "supervisor") and ticket.handler_user_id != auth_user.user_id:
         raise HTTPException(status_code=404, detail="ticket not found")
 
     status_rows = StatusHistoryRepository(db).find_for_entity(

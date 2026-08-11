@@ -4354,6 +4354,10 @@ export interface components {
             expected_resolved_at: string | null;
             /** Feature */
             feature: string | null;
+            /** Handler User Id */
+            handler_user_id?: number | null;
+            /** Handler User Name */
+            handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
             /** Hub Status */
@@ -4458,6 +4462,10 @@ export interface components {
             customer_replied_at: string | null;
             /** Feature */
             feature: string | null;
+            /** Handler User Id */
+            handler_user_id?: number | null;
+            /** Handler User Name */
+            handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
             /** Hub Status */
@@ -8283,7 +8291,7 @@ export interface operations {
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
-                assigned_user_ids?: number[] | null;
+                handler_user_ids?: number[] | null;
                 predicted_types?: string[] | null;
                 unassigned_only?: boolean;
                 customer_identity_id?: number | null;
