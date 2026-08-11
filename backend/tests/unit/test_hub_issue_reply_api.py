@@ -66,6 +66,15 @@ def test_reply_records_ticket_action_node(app_client: TestClient, reply_world: S
     assert rows[0].changed_by == "user:carol"
 
 
+def test_reply_sets_handler_to_author(app_client: TestClient, reply_world: Session) -> None:
+    """答复后 hub 下所有关联工单的处理人 = 答复者(carol uid 2)。"""
+    r = app_client.post(
+        "/api/hub-issues/90/reply", json={"content": "已处理"}, headers=_bearer(2)
+    )
+    assert r.status_code == 200, r.text
+    assert reply_world.get(Ticket, 300).handler_user_id == 2
+
+
 def test_reply_requires_supervisor(app_client: TestClient, reply_world: Session) -> None:
     r = app_client.post(
         "/api/hub-issues/90/reply",
