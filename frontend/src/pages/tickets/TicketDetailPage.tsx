@@ -1181,10 +1181,11 @@ function SearchableUserSelect({
     queryFn: () => api.get("/api/admin/users"),
     staleTime: 60_000,
   });
+  // 不限角色：真实处理人大量是 member（指派无角色限制），只排除已停用用户。
   const users = useMemo(
     () =>
       ((q.data ?? []) as { id: number; name: string; role: string; is_active: boolean }[]).filter(
-        (u) => ["assignee", "supervisor", "admin"].includes(u.role),
+        (u) => u.is_active,
       ),
     [q.data],
   );

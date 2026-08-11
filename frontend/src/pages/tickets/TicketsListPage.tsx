@@ -745,7 +745,8 @@ export function TicketsListPage() {
             value={assignedUserIds}
             onChange={(ids) => setMultiFilter("assigned_user_ids", ids)}
             placeholder="处理人"
-            roles={["assignee", "supervisor", "admin"]}
+            // 不限角色：实际工单处理人大量是 member 角色（分派/指派均无角色限制），
+            // 原来只列 assignee/supervisor/admin 会漏掉绝大多数真实处理人。
             className="w-full"
           />
 
@@ -937,7 +938,6 @@ export function TicketsListPage() {
             <UserSelect
               value={bulkAssignTo}
               onChange={setBulkAssignTo}
-              roles={["assignee", "supervisor", "admin"]}
               placeholder="指派给…"
               className="text-xs px-2.5 py-1.5 border border-hub-border rounded-full bg-hub-panel outline-none focus:border-hub-teal focus:bg-white min-w-[9rem]"
             />

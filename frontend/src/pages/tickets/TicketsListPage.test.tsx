@@ -115,6 +115,28 @@ describe("TicketsListPage", () => {
     expect(screen.getByText("3")).toBeInTheDocument(); // 关联任务
   });
 
+  it("处理人筛选包含 member 角色用户（真实处理人，非仅 assignee/supervisor/admin）", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    server.use(
+      http.get("*/api/tickets", () => HttpResponse.json(sample)),
+      http.get("*/api/admin/users", () =>
+        HttpResponse.json([
+          { id: 42, name: "苗一琳", feishu_uid: "u42", employee_no: null, email: null, mobile: null, ksm_account: null, zhichi_agent_id: null, linear_user_id: null, linear_team_id: null, role: "member", is_active: true },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("TKT-1");
+    // 打开「处理人」多选下拉：取在 <button> 内的那个「处理人」占位文本点击
+    const handlerLabel = screen
+      .getAllByText("处理人")
+      .find((el) => el.closest("button") !== null)!;
+    await user.click(handlerLabel);
+    // member 角色的苗一琳应出现在选项里
+    expect(await screen.findByText(/苗一琳/)).toBeInTheDocument();
+  });
+
   it("研发类处理状态：Linear 未完成→处理中，released→处理完成", async () => {
     const devSample = {
       ...sample,
