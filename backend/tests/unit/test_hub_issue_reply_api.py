@@ -44,6 +44,28 @@ def reply_world(db_session: Session) -> Session:
     return db_session
 
 
+def test_reply_records_ticket_action_node(app_client: TestClient, reply_world: Session) -> None:
+    """答复后每条关联 ticket 多一条 action=reply 的时间轴审计行。"""
+    from app.models import StatusHistory
+
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "您好，已处理"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    rows = [
+        h
+        for h in reply_world.query(StatusHistory)
+        .filter(StatusHistory.entity_type == "ticket", StatusHistory.entity_id == 300)
+        .all()
+        if (h.metadata_ or {}).get("action") == "reply"
+    ]
+    assert len(rows) == 1
+    assert rows[0].reason == "主管答复客户"
+    assert rows[0].changed_by == "user:carol"
+
+
 def test_reply_requires_supervisor(app_client: TestClient, reply_world: Session) -> None:
     r = app_client.post(
         "/api/hub-issues/90/reply",

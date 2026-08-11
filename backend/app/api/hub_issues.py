@@ -29,6 +29,7 @@ from app.services.hub_issues.op_status import (
     OP_EXCEPTION,
     OP_PROCESSING,
     apply_op_status,
+    record_ticket_action,
 )
 
 router = APIRouter()
@@ -348,6 +349,10 @@ def author_reply_endpoint(
     if hub is not None and hub.type == "Operation":
         apply_op_status(
             db, hub, to_status=OP_ANSWERED, handler=f"user:{user.name}", reason="主管人工答复"
+        )
+        # 答复留痕：给关联工单写时间轴节点（详情页左侧「处理节点」）
+        record_ticket_action(
+            db, hub, action="reply", changed_by=f"user:{user.name}", reason="主管答复客户"
         )
         db.commit()
 
