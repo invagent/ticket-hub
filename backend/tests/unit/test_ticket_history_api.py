@@ -18,7 +18,8 @@ from app.models import (
 )
 
 
-def _bearer(uid: int = 1, *, role: str = "assignee") -> dict[str, str]:
+def _bearer(uid: int = 1, *, role: str = "admin") -> dict[str, str]:
+    # 默认 admin：行级可见性对 admin/主管不设限，history 测试聚焦时间轴合并逻辑
     token, _ = issue_jwt(sub=str(uid), name="t", role=role)
     return {"Authorization": f"Bearer {token}"}
 
