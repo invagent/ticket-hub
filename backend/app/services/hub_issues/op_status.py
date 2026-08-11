@@ -106,6 +106,24 @@ def record_ticket_action(
     return len(tickets)
 
 
+def set_hub_tickets_handler(db: Session, hub: HubIssue, user_id: int) -> int:
+    """把 hub 下所有未删关联 ticket 的处理人（handler_user_id）置为 user_id。
+
+    处理人随「毕业运营分派 / 答复 / 转交」流动到工单。不 commit（复用调用方事务）。
+    返回写入条数。
+    """
+    from app.models import Ticket
+
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+        .all()
+    )
+    for t in tickets:
+        t.handler_user_id = user_id
+    return len(tickets)
+
+
 def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> str:
     """人工介入处理人名：default_pool 对应 user.name；未配则 '主管'。"""
     settings = settings or get_settings()

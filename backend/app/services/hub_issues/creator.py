@@ -164,6 +164,10 @@ def ensure_hub_issue_for_ticket(
         dr = dispatch_operation_handler(db, hub)
         if dr.user_id is not None:
             hub.op_handler_user_id = dr.user_id
+            # 处理人随运营分派流动到关联工单（分派无结果则保持入库时的责任人不变）
+            from app.services.hub_issues.op_status import set_hub_tickets_handler
+
+            set_hub_tickets_handler(db, hub, dr.user_id)
 
     db.add(
         TicketHubIssueHistory(
