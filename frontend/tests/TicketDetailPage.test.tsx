@@ -609,4 +609,75 @@ describe("TicketDetailPage", () => {
     expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
     localStorage.clear();
   });
+
+  // ---- 补料清单回填 + 答复后只读（2026-08-11）----
+
+  it("补料态处理说明默认填 AI 的补充资料清单(supply_note)", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    server.use(
+      http.get("*/api/tickets/340", () =>
+        HttpResponse.json({
+          id: 340,
+          short_code: "TKT-340",
+          source_code: "ksm",
+          source_ticket_id: "ksm-340",
+          type: "Raw",
+          status: "in_progress",
+          title: "补料工单",
+          module: null,
+          assigned_user_id: null,
+          predicted_type: "Operation",
+          ...baseTicket,
+          hub_issue_id: 95,
+          op_status: "supplementing",
+          cached_reply_content: null,
+        }),
+      ),
+      http.get("*/api/tickets/340/history", () =>
+        HttpResponse.json({ ticket_id: 340, items: [] }),
+      ),
+      http.get("*/api/hub-issues/95", () =>
+        HttpResponse.json({
+          id: 95,
+          short_code: "HUB-95",
+          type: "Operation",
+          status: "created",
+          op_status: "supplementing",
+          supply_note: "请提供:1) 报错截图 2) 操作步骤",
+        }),
+      ),
+    );
+    renderPage(340);
+    await screen.findByRole("heading", { name: "TKT-340" });
+    const ta = await screen.findByPlaceholderText(/填写当前节点处理说明/);
+    expect((ta as HTMLTextAreaElement).value).toContain("请提供:1) 报错截图 2) 操作步骤");
+    localStorage.clear();
+  });
+
+  it("答复后(op_status=answered)处理说明只读、处理建议禁用、提交按钮禁用", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(341, { op_status: "answered", cached_reply_content: "已发出的答复" });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "answered",
+        }),
+      ),
+    );
+    renderPage(341);
+    await screen.findByRole("heading", { name: "TKT-341" });
+    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    expect(ta.readOnly).toBe(true);
+    // 处理建议下拉禁用
+    const sel = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(sel.disabled).toBe(true);
+    // 提交答复按钮禁用
+    expect(screen.getByRole("button", { name: "提交答复" })).toBeDisabled();
+    expect(screen.getByText(/已答复完成，不可再编辑/)).toBeInTheDocument();
+    localStorage.clear();
+  });
 });

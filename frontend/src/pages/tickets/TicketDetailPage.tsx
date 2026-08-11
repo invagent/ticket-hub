@@ -289,6 +289,9 @@ export function TicketDetailPage() {
   // 明确分类后按 predicted_type 分流展示
   const isDevType = d?.predicted_type === "Bug_fix" || d?.predicted_type === "Demand";
   const isOperation = d?.predicted_type === "Operation";
+  // 答复完成(answered)或已关单(closed)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
+  const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
+  const opDone = opStatus === "answered" || opStatus === "closed";
   // 改判类型默认取 AI 预测类型（在 HUB_TYPES 内才采纳）
   useEffect(() => {
     if (d?.predicted_type && HUB_TYPES.includes(d.predicted_type as (typeof HUB_TYPES)[number])) {
@@ -505,7 +508,8 @@ export function TicketDetailPage() {
                   <select
                     value={suggestion}
                     onChange={(e) => setSuggestion(e.target.value)}
-                    className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
+                    disabled={opDone}
+                    className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="normal">正常跟进</option>
                     <option value="return">退回转单</option>
@@ -538,8 +542,12 @@ export function TicketDetailPage() {
                   {isCurrentNode ? (
                     <>
                       {(() => {
-                        const editable = !DONE_STATUSES.includes(d.status);
-                        const val = noteDrafts[0] ?? (d.cached_reply_content ?? "");
+                        // 答复完成/关单 或 工单终态 → 只读
+                        const editable = !DONE_STATUSES.includes(d.status) && !opDone;
+                        // 补料态默认填 AI 生成的「需补充资料」清单（cached_reply_content 补料态为空）
+                        const supplyNote =
+                          opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
+                        const val = noteDrafts[0] ?? (d.cached_reply_content || supplyNote || "");
                         return (
                           <textarea
                             readOnly={!editable}
@@ -551,7 +559,9 @@ export function TicketDetailPage() {
                             placeholder={
                               editable
                                 ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
-                                : "工单已终态，只读"
+                                : opDone
+                                  ? "已答复完成，只读"
+                                  : "工单已终态，只读"
                             }
                             className={
                               "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
@@ -600,7 +610,7 @@ export function TicketDetailPage() {
                 <div>
                   <button
                     type="button"
-                    disabled={reply.isPending || suggestion === "split"}
+                    disabled={reply.isPending || suggestion === "split" || opDone}
                     onClick={() => {
                       if (suggestion === "normal") {
                         const content = (noteDrafts[0] ?? d.cached_reply_content ?? "").trim();
@@ -625,6 +635,11 @@ export function TicketDetailPage() {
                         ? "退回转单"
                         : "拆分转单（待后端）"}
                   </button>
+                  {opDone && (
+                    <span className="ml-2 text-[10.5px] text-hub-textFaint">
+                      已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
+                    </span>
+                  )}
                   {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
                 </div>
                 </div>
