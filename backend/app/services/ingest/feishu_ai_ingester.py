@@ -128,6 +128,7 @@ class FeishuAiIngester:
             route.decision == "default_pool" and route.assigned_user_ids
         ):
             ticket.assigned_user_id = route.assigned_user_ids[0]
+            ticket.handler_user_id = ticket.assigned_user_id  # 处理人初始=责任人
         self._db.flush()
 
         attachment_ids: list[int] = []
