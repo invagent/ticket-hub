@@ -70,7 +70,8 @@ def test_assign_single_success(db_session: Session) -> None:
     assert res.results[0].success is True
     assert res.results[0].prev_assigned_user_id is None
     db_session.flush()
-    assert db_session.get(Ticket, t.id).assigned_user_id == target.id
+    # 转交改的是处理人（handler_user_id），责任人（assigned_user_id）不动
+    assert db_session.get(Ticket, t.id).handler_user_id == target.id
 
 
 def test_assign_records_status_history(db_session: Session) -> None:
@@ -86,15 +87,18 @@ def test_assign_records_status_history(db_session: Session) -> None:
     assert any(r.changed_by == "system:manual_assign" for r in rows)
 
 
-def test_assign_target_role_not_allowed(db_session: Session) -> None:
+def test_assign_target_member_allowed(db_session: Session) -> None:
+    """处理人可以是 member 角色（真实处理人主体），不再按角色白名单拒绝。"""
     op = _mk_user(db_session, name="op", role="supervisor")
     member = _mk_user(db_session, name="m", role="member")
     t = _mk_ticket(db_session, short_code="T-3")
 
-    with pytest.raises(TargetUserInvalidError):
-        ManualAssignService(db_session).assign(
-            AssignRequest(ticket_ids=[t.id], assigned_user_id=member.id, operator_user_id=op.id)
-        )
+    res = ManualAssignService(db_session).assign(
+        AssignRequest(ticket_ids=[t.id], assigned_user_id=member.id, operator_user_id=op.id)
+    )
+    assert res.assigned_count == 1
+    db_session.flush()
+    assert db_session.get(Ticket, t.id).handler_user_id == member.id
 
 
 def test_assign_target_inactive(db_session: Session) -> None:

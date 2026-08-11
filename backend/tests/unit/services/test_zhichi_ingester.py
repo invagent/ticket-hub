@@ -61,6 +61,18 @@ def test_first_ingest(world: Session) -> None:
     assert ticket.source_ticket_id == "zhichi-001"
 
 
+def test_ingest_handler_defaults_to_assignee(world: Session) -> None:
+    """入库时处理人(handler_user_id)默认=责任人(assigned_user_id)。"""
+    world.add(AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理"))
+    world.commit()
+    res = ZhichiIngester(world).ingest(_payload())
+    world.commit()
+    ticket = world.get(Ticket, res.ticket_id)
+    assert ticket is not None
+    assert ticket.assigned_user_id == 1
+    assert ticket.handler_user_id == 1  # 处理人初始=责任人
+
+
 def test_idempotent(world: Session) -> None:
     ZhichiIngester(world).ingest(_payload())
     world.commit()

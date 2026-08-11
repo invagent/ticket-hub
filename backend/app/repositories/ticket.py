@@ -83,7 +83,8 @@ class TicketRepository:
         type_: str | None = None,
         status: str | None = None,
         assigned_user_id: int | None = None,
-        assigned_user_ids: list[int] | None = None,
+        handler_user_ids: list[int] | None = None,
+        visible_to_user_id: int | None = None,
         predicted_types: list[str] | None = None,
         unassigned_only: bool = False,
         customer_identity_id: int | None = None,
@@ -110,9 +111,14 @@ class TicketRepository:
         if assigned_user_id is not None:
             base = base.where(Ticket.assigned_user_id == assigned_user_id)
             count_base = count_base.where(Ticket.assigned_user_id == assigned_user_id)
-        if assigned_user_ids:
-            base = base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
-            count_base = count_base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
+        # 处理人多选筛选（handler_user_id）
+        if handler_user_ids:
+            base = base.where(Ticket.handler_user_id.in_(handler_user_ids))
+            count_base = count_base.where(Ticket.handler_user_id.in_(handler_user_ids))
+        # 行级可见性：非特权用户强制只见处理人=自己的工单
+        if visible_to_user_id is not None:
+            base = base.where(Ticket.handler_user_id == visible_to_user_id)
+            count_base = count_base.where(Ticket.handler_user_id == visible_to_user_id)
         if predicted_types:
             base = base.where(Ticket.predicted_type.in_(predicted_types))
             count_base = count_base.where(Ticket.predicted_type.in_(predicted_types))

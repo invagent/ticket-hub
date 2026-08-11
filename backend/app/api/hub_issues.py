@@ -30,6 +30,7 @@ from app.services.hub_issues.op_status import (
     OP_PROCESSING,
     apply_op_status,
     record_ticket_action,
+    set_hub_tickets_handler,
 )
 
 router = APIRouter()
@@ -354,6 +355,8 @@ def author_reply_endpoint(
         record_ticket_action(
             db, hub, action="reply", changed_by=f"user:{user.name}", reason="主管答复客户"
         )
+        # 答复者成为处理人（hub 下所有关联工单同步）
+        set_hub_tickets_handler(db, hub, user.user_id)
         db.commit()
 
     logger.info(

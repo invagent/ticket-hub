@@ -13,7 +13,8 @@ from app.api.auth import issue_jwt
 from app.models import HubIssue, Source, Ticket, User
 
 
-def _bearer(user_id: int = 1, *, role: str = "assignee") -> dict[str, str]:
+def _bearer(user_id: int = 1, *, role: str = "admin") -> dict[str, str]:
+    # 默认 admin：看全部工单（行级可见性对 admin/主管不设限），保持既有断言口径
     token, _ = issue_jwt(sub=str(user_id), name="t", role=role)
     return {"Authorization": f"Bearer {token}"}
 
@@ -75,6 +76,7 @@ def world(db_session: Session) -> Session:
                 title="ksm a",
                 module="应付",
                 assigned_user_id=1,
+                handler_user_id=1,
                 received_at=base,
             ),
             Ticket(
@@ -88,6 +90,7 @@ def world(db_session: Session) -> Session:
                 hub_issue_id=10,
                 module="应付",
                 assigned_user_id=1,
+                handler_user_id=1,
                 received_at=base + timedelta(minutes=1),
             ),
             Ticket(
@@ -99,6 +102,7 @@ def world(db_session: Session) -> Session:
                 status="received",
                 title="zhichi a",
                 assigned_user_id=2,
+                handler_user_id=2,
                 received_at=base + timedelta(minutes=2),
             ),
             Ticket(
@@ -110,6 +114,7 @@ def world(db_session: Session) -> Session:
                 status="done",
                 title="ksm done",
                 hub_issue_id=20,
+                handler_user_id=3,
                 received_at=base - timedelta(hours=1),
             ),
             # soft-deleted: should NEVER appear in list/detail
@@ -162,6 +167,48 @@ def test_list_tickets_op_status(app_client: TestClient, world: Session) -> None:
     assert by_code["TKT-2"]["op_status"] == "processing"
     assert by_code["TKT-4"]["op_status"] is None  # 研发类 hub 无 op_status
     assert by_code["TKT-3"]["op_status"] is None  # 未挂 hub
+
+
+def test_summary_exposes_handler(app_client: TestClient, world: Session) -> None:
+    resp = app_client.get("/api/tickets", headers=_bearer())
+    by_code = {it["short_code"]: it for it in resp.json()["items"]}
+    assert by_code["TKT-1"]["handler_user_id"] == 1
+    assert "handler_user_name" in by_code["TKT-1"]
+
+
+def test_admin_sees_all_tickets(app_client: TestClient, world: Session) -> None:
+    resp = app_client.get("/api/tickets", headers=_bearer(1, role="admin"))
+    assert resp.json()["total"] == 4  # 4 非删除工单全可见
+
+
+def test_supervisor_sees_all_tickets(app_client: TestClient, world: Session) -> None:
+    resp = app_client.get("/api/tickets", headers=_bearer(9, role="supervisor"))
+    assert resp.json()["total"] == 4
+
+
+def test_member_sees_only_own_handled(app_client: TestClient, world: Session) -> None:
+    # user 2 处理的工单只有 TKT-3(handler=2)
+    resp = app_client.get("/api/tickets", headers=_bearer(2, role="member"))
+    codes = {it["short_code"] for it in resp.json()["items"]}
+    assert codes == {"TKT-3"}
+
+
+def test_filter_handler_user_ids(app_client: TestClient, world: Session) -> None:
+    resp = app_client.get("/api/tickets?handler_user_ids=1", headers=_bearer(1, role="admin"))
+    assert all(it["handler_user_id"] == 1 for it in resp.json()["items"])
+    assert {it["short_code"] for it in resp.json()["items"]} == {"TKT-1", "TKT-2"}
+
+
+def test_member_get_others_ticket_404(app_client: TestClient, world: Session) -> None:
+    # TKT-3(id102) handler=2；member user 5 看不到 → 404
+    resp = app_client.get("/api/tickets/102", headers=_bearer(5, role="member"))
+    assert resp.status_code == 404
+
+
+def test_member_get_own_ticket_ok(app_client: TestClient, world: Session) -> None:
+    resp = app_client.get("/api/tickets/102", headers=_bearer(2, role="member"))
+    assert resp.status_code == 200
+    assert resp.json()["handler_user_id"] == 2
 
 
 def test_list_tickets_hub_status_for_dev(app_client: TestClient, world: Session) -> None:
@@ -353,6 +400,7 @@ def world2(db_session: Session) -> Session:
                 product_line_code="cloud-fapiao",
                 hub_issue_id=50,
                 assigned_user_id=1,
+                handler_user_id=1,
                 received_at=base,
                 reporter={"name": "张三", "mobile": "13800000000", "email": "z@x.com"},
                 reporter_company="某某公司",
@@ -370,6 +418,7 @@ def world2(db_session: Session) -> Session:
                 title="bug",
                 predicted_type="Bug_fix",
                 assigned_user_id=2,
+                handler_user_id=2,
                 received_at=base + timedelta(minutes=1),
             ),
             # Parent：拆了 3 个子单
@@ -400,9 +449,9 @@ def test_filter_predicted_types_multi(app_client: TestClient, world2: Session) -
     assert {it["short_code"] for it in r.json()["items"]} == {"TKT-A", "TKT-B"}
 
 
-def test_filter_assigned_user_ids_multi(app_client: TestClient, world2: Session) -> None:
-    """处理人多选：assigned_user_ids=1&assigned_user_ids=2。"""
-    r = app_client.get("/api/tickets?assigned_user_ids=1&assigned_user_ids=2", headers=_bearer())
+def test_filter_handler_user_ids_multi(app_client: TestClient, world2: Session) -> None:
+    """处理人多选：handler_user_ids=1&handler_user_ids=2。"""
+    r = app_client.get("/api/tickets?handler_user_ids=1&handler_user_ids=2", headers=_bearer())
     assert {it["short_code"] for it in r.json()["items"]} == {"TKT-A", "TKT-B"}
 
 
