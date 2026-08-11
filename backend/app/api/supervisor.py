@@ -76,7 +76,11 @@ from app.services.hub_issues.creator import (
     ensure_hub_issue_for_ticket,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
-from app.services.hub_issues.op_status import OP_PROCESSING, apply_op_status
+from app.services.hub_issues.op_status import (
+    OP_PROCESSING,
+    apply_op_status,
+    record_ticket_action,
+)
 from app.services.ksm.notice_store import NoticeStore
 from app.services.ksm.writeback import drain_ksm_outbox
 from app.services.supervisor.config_warnings import get_config_warnings
@@ -1866,6 +1870,13 @@ def confirm_classification(
         changed_by=f"user:{user.name}",
         reason="主管确认分类",
     )
+    record_ticket_action(
+        db,
+        hub,
+        action="confirm_classification",
+        changed_by=f"user:{user.name}",
+        reason="确认分类，推送 Linear",
+    )
     db.commit()
     background_tasks.add_task(push_hub_issue_to_linear, hub.id)
     logger.info("supervisor_confirm_classification", hub_issue_id=hub.id, operator=user.name)
@@ -1927,6 +1938,13 @@ def reclassify(
         changed_by=f"user:{user.name}",
         reason=f"改判 {old_type}→{body.new_type}: {body.reason}",
     )
+    record_ticket_action(
+        db,
+        hub,
+        action="reclassify",
+        changed_by=f"user:{user.name}",
+        reason=f"改判为 {body.new_type}",
+    )
     db.commit()
     logger.info(
         "supervisor_reclassify",
@@ -1955,6 +1973,13 @@ def dismiss_classification(
         to_status="closed",
         changed_by=f"user:{user.name}",
         reason=f"主管判误报关闭: {body.reason}",
+    )
+    record_ticket_action(
+        db,
+        hub,
+        action="dismiss_classification",
+        changed_by=f"user:{user.name}",
+        reason="误报关闭",
     )
     db.commit()
     logger.info("supervisor_dismiss_classification", hub_issue_id=hub.id, operator=user.name)

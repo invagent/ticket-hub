@@ -50,6 +50,55 @@ def act_world(db_session: Session) -> Session:
     return db_session
 
 
+def _action_rows(db: Session, ticket_id: int, action: str) -> list:
+    from app.models import StatusHistory
+
+    return [
+        h
+        for h in db.query(StatusHistory)
+        .filter(StatusHistory.entity_type == "ticket", StatusHistory.entity_id == ticket_id)
+        .all()
+        if (h.metadata_ or {}).get("action") == action
+    ]
+
+
+def test_confirm_records_ticket_action(app_client: TestClient, act_world: Session) -> None:
+    # hub 71 挂 ticket 710
+    with patch("app.api.supervisor.push_hub_issue_to_linear"):
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 71},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    rows = _action_rows(act_world, 710, "confirm_classification")
+    assert len(rows) == 1
+    assert rows[0].changed_by == "user:carol"
+
+
+def test_reclassify_records_ticket_action(app_client: TestClient, act_world: Session) -> None:
+    r = app_client.post(
+        "/api/supervisor/reclassify",
+        json={"hub_issue_id": 71, "new_type": "Operation", "reason": "配置问题"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    rows = _action_rows(act_world, 710, "reclassify")
+    assert len(rows) == 1
+    assert rows[0].reason == "改判为 Operation"
+
+
+def test_dismiss_records_ticket_action(app_client: TestClient, act_world: Session) -> None:
+    r = app_client.post(
+        "/api/supervisor/dismiss-classification",
+        json={"hub_issue_id": 71, "reason": "误报"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    rows = _action_rows(act_world, 710, "dismiss_classification")
+    assert len(rows) == 1
+
+
 def test_confirm_pushes_linear(app_client: TestClient, act_world: Session) -> None:
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
         r = app_client.post(
