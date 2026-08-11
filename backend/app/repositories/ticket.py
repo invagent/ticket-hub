@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Generic, TypeVar
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import HubIssue, Ticket
@@ -138,8 +138,22 @@ class TicketRepository:
             count_base = count_base.where(cond)
         if op_status:
             # 处理状态筛选（op_status 在所挂 hub_issue 上，仅 Operation 有值）。
-            # 用 IN 子查询过滤挂了该 op_status 的 hub → 只返回对应工单，不改主查询结构。
-            hub_sub = select(HubIssue.id).where(HubIssue.op_status == op_status)
+            # 与列表展示口径一致：研发类（Bug_fix/Demand）无 op_status，其「处理状态」
+            # 由 hub.status 派生——released=处理完成(answered)，其余已毕业=处理中(processing)。
+            # 故筛 processing/answered 时把对应研发类 hub 一并纳入，保证筛选与展示一致。
+            hub_cond = HubIssue.op_status == op_status
+            dev_types = ("Bug_fix", "Demand")
+            if op_status == "processing":
+                hub_cond = or_(
+                    hub_cond,
+                    and_(HubIssue.type.in_(dev_types), HubIssue.status != "released"),
+                )
+            elif op_status == "answered":
+                hub_cond = or_(
+                    hub_cond,
+                    and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"),
+                )
+            hub_sub = select(HubIssue.id).where(hub_cond)
             base = base.where(Ticket.hub_issue_id.in_(hub_sub))
             count_base = count_base.where(Ticket.hub_issue_id.in_(hub_sub))
 

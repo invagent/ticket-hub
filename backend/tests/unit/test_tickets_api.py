@@ -214,13 +214,46 @@ def test_list_tickets_source_ticket_q_excludes_soft_deleted(
 
 
 def test_list_tickets_filter_op_status(app_client: TestClient, world: Session) -> None:
-    # TKT-2 挂 Operation hub(op_status=processing) → 按处理状态筛选命中；其余不带
+    # processing 与展示口径一致：Operation(op_status=processing) TKT-2 +
+    # 研发类未完成(Bug_fix hub status=in_progress≠released) TKT-4 都命中
     r = app_client.get("/api/tickets?op_status=processing", headers=_bearer())
-    assert r.json()["total"] == 1
-    assert r.json()["items"][0]["short_code"] == "TKT-2"
-    # 无此 op_status → 空
+    codes = {it["short_code"] for it in r.json()["items"]}
+    assert codes == {"TKT-2", "TKT-4"}
+    # closed 是 Operation 专属态，无研发映射 → 空
     r2 = app_client.get("/api/tickets?op_status=closed", headers=_bearer())
     assert r2.json()["total"] == 0
+
+
+def test_list_tickets_filter_answered_includes_released_dev(
+    app_client: TestClient, world: Session
+) -> None:
+    """筛「处理完成」(answered) 把 released 的研发类工单也带出（与展示口径一致）。"""
+    from app.models import HubIssue, Ticket
+
+    hub = HubIssue(
+        id=40, short_code="HUB-REL", type="Demand", title="done-dev", status="released"
+    )
+    world.add(hub)
+    world.flush()
+    world.add(
+        Ticket(
+            id=110,
+            short_code="TKT-REL",
+            source_code="ksm",
+            source_ticket_id="ksm-rel",
+            type="Raw",
+            status="released",
+            title="released dev",
+            hub_issue_id=40,
+        )
+    )
+    world.commit()
+
+    r = app_client.get("/api/tickets?op_status=answered", headers=_bearer())
+    codes = {it["short_code"] for it in r.json()["items"]}
+    assert "TKT-REL" in codes  # released 研发类计入处理完成
+    # 未完成的研发类(TKT-4, in_progress)不应出现在 answered
+    assert "TKT-4" not in codes
 
 
 def test_list_tickets_filter_assigned_user(app_client: TestClient, world: Session) -> None:
