@@ -572,6 +572,8 @@ describe("TicketDetailPage", () => {
     expect(await screen.findByRole("button", { name: "确认推送" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "改判" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "误报关闭" })).toBeInTheDocument();
+    // 改判下拉默认 = AI 判定分类（Demand→需求），不是写死的运营
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("Demand");
     // 关键：不能因为 hub_issue_id 非空就当作已确认显示「已推送 Linear」
     expect(screen.queryByText(/已推送 Linear/)).not.toBeInTheDocument();
     localStorage.clear();

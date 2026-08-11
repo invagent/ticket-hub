@@ -792,7 +792,10 @@ function ClassificationReviewInline({
   ticketId: number;
 }) {
   const qc = useQueryClient();
-  const [newType, setNewType] = useState<string>("Operation");
+  // 改判下拉默认 = AI 判定的分类（aiType），非法值才回落 Operation
+  const [newType, setNewType] = useState<string>(() =>
+    (_RECLASSIFY_TYPES as readonly string[]).includes(aiType) ? aiType : "Operation",
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
