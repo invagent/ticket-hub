@@ -2858,6 +2858,17 @@
             ],
             "title": "Superseded By Hub Issue Id"
           },
+          "supply_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply Note"
+          },
           "title": {
             "title": "Title",
             "type": "string"

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import HubIssue
+from app.models import AgentDecision, HubIssue
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
@@ -122,6 +122,8 @@ class HubIssueDetail(HubIssueSummary):
     linked_tickets: list[LinkedTicket] = []
     # owner-split 子 issue 里程碑（ADR-0016 P4）
     sub_issues: list[SubIssueItem] = []
+    # 补料清单：AI 判定需补料时生成的「需补充资料」文本（仅 op_status=supplementing 回填）
+    supply_note: str | None = None
 
 
 class HubIssueListResponse(BaseModel):
@@ -284,6 +286,22 @@ def get_hub_issue(
         .all()
     )
     detail.sub_issues = [SubIssueItem.model_validate(s) for s in subs]
+    # 补料态：回填 AI 生成的「需补充资料」清单（取最新 auto_reply decision 的 supply_note）
+    if hub.op_status == "supplementing":
+        dec = (
+            db.query(AgentDecision)
+            .filter(
+                AgentDecision.subject_type == "hub_issue",
+                AgentDecision.subject_id == hub_issue_id,
+                AgentDecision.decision_type == "auto_reply",
+            )
+            .order_by(AgentDecision.id.desc())
+            .first()
+        )
+        if dec and dec.proposal:
+            note = dec.proposal.get("supply_note")
+            if note:
+                detail.supply_note = str(note)
     return detail
 
 

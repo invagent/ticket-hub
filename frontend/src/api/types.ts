@@ -3177,6 +3177,8 @@ export interface components {
             supersede_reason: string | null;
             /** Superseded By Hub Issue Id */
             superseded_by_hub_issue_id: number | null;
+            /** Supply Note */
+            supply_note?: string | null;
             /** Title */
             title: string;
             /** Type */
