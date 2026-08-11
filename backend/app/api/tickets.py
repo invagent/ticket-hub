@@ -55,6 +55,9 @@ class TicketSummary(BaseModel):
     op_status: str | None = (
         None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）
     )
+    hub_status: str | None = (
+        None  # 所挂 hub_issue 的 status（研发类处理状态判定：released=处理完成，其余=处理中）
+    )
     product_name: str | None = None  # 主产品名称（product_line_code → product_lines.name）
     reject_count: int = 0  # 客户驳回次数（所挂 hub_issue 的 reject_count；研发类/无 hub 为 0）
     children_count: int = 1  # 关联任务数（拆分子单数；单问题=1，Parent=children_ticket_ids 长度）
@@ -167,14 +170,16 @@ def list_tickets(
     hub_ids = {t.hub_issue_id for t in p.items if t.hub_issue_id is not None}
     hub_op_map: dict[int, str | None] = {}
     hub_reject_map: dict[int, int] = {}
+    hub_status_map: dict[int, str | None] = {}
     if hub_ids:
         hrows = db.execute(
-            select(HubIssue.id, HubIssue.op_status, HubIssue.reject_count).where(
-                HubIssue.id.in_(hub_ids)
-            )
+            select(
+                HubIssue.id, HubIssue.op_status, HubIssue.reject_count, HubIssue.status
+            ).where(HubIssue.id.in_(hub_ids))
         ).all()
         hub_op_map = {r.id: r.op_status for r in hrows}
         hub_reject_map = {r.id: r.reject_count for r in hrows}
+        hub_status_map = {r.id: r.status for r in hrows}
 
     # batch-load 主产品名称 + SLA 解决时限（product_line_code → name / sla_resolve_hours）
     pl_codes = {t.product_line_code for t in p.items if t.product_line_code}
@@ -217,6 +222,7 @@ def list_tickets(
         if t.hub_issue_id is not None:
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
+            s.hub_status = hub_status_map.get(t.hub_issue_id)
         if t.product_line_code:
             s.product_name = product_name_map.get(t.product_line_code)
         # 关联任务数：拆分子单数（Parent 持有 children_ticket_ids）；单问题工单=1

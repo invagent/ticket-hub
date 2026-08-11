@@ -114,4 +114,43 @@ describe("TicketsListPage", () => {
     expect(screen.getByText("2")).toBeInTheDocument(); // 驳回次数
     expect(screen.getByText("3")).toBeInTheDocument(); // 关联任务
   });
+
+  it("研发类处理状态：Linear 未完成→处理中，released→处理完成", async () => {
+    const devSample = {
+      ...sample,
+      items: [
+        {
+          ...sample.items[0],
+          id: 11,
+          short_code: "TKT-DEV-DOING",
+          predicted_type: "Bug_fix",
+          hub_issue_id: 20,
+          op_status: null,
+          hub_status: "in_progress", // Linear 未完成
+        },
+        {
+          ...sample.items[0],
+          id: 12,
+          short_code: "TKT-DEV-DONE",
+          predicted_type: "Demand",
+          hub_issue_id: 30,
+          op_status: null,
+          hub_status: "released", // Linear completed 级联
+        },
+      ],
+      total: 2,
+    };
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(devSample)));
+    renderPage();
+
+    expect(await screen.findByText("TKT-DEV-DOING")).toBeInTheDocument();
+    // 在表格 body 内断言（避开筛选下拉里的同名选项）
+    const table = screen.getByRole("table");
+    const cellText = (kw: string) =>
+      Array.from(table.querySelectorAll("tbody td")).some((td) =>
+        (td.textContent ?? "").includes(kw),
+      );
+    expect(cellText("处理中")).toBe(true); // Bug_fix hub_status=in_progress
+    expect(cellText("处理完成")).toBe(true); // Demand hub_status=released
+  });
 });

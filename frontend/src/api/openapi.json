@@ -6516,6 +6516,17 @@
             ],
             "title": "Hub Issue Id"
           },
+          "hub_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Status"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -6932,6 +6943,17 @@
               }
             ],
             "title": "Hub Issue Id"
+          },
+          "hub_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Status"
           },
           "id": {
             "title": "Id",

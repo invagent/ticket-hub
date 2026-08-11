@@ -566,25 +566,7 @@ export function TicketDetailPage() {
                   )}
                 </div>
 
-                <div>
-                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
-                    处理附件 / 补充凭证
-                  </div>
-                  {/* 只有当前节点展示上传区；历史节点无逐节点附件记录 → 「无数据」。
-                      上传/删除/查看待后端支持；只展示附件名，点击新开窗口。 */}
-                  {isCurrentNode ? (
-                    <div className="border border-dashed border-hub-border rounded-[8px] px-3 py-4 text-center bg-hub-panel">
-                      <span className="inline-flex items-center gap-1.5 text-[12px] text-hub-textFaint">
-                        <span className="inline-flex items-center gap-1 bg-white border border-hub-border rounded-full px-2.5 py-1 text-hub-textSecondary">
-                          📎 上传附件
-                        </span>
-                        支持上传诊断包 / SQL / 现场日志（上传 · 删除 · 查看待后端支持）
-                      </span>
-                    </div>
-                  ) : (
-                    <EmptyNodeData />
-                  )}
-                </div>
+                {/* 「处理附件 / 补充凭证」区已按需求隐藏（出站附件后端未支持，先撤下上传占位） */}
 
                 {/* 处理意见确认动作：转派（分类完成后、答复前可用）| 提交答复；退回/拆分=前端占位 */}
                 <div className="flex items-center gap-2.5 flex-wrap">

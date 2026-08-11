@@ -164,6 +164,15 @@ def test_list_tickets_op_status(app_client: TestClient, world: Session) -> None:
     assert by_code["TKT-3"]["op_status"] is None  # 未挂 hub
 
 
+def test_list_tickets_hub_status_for_dev(app_client: TestClient, world: Session) -> None:
+    # 研发类工单带出所挂 hub 的 status（前端据此判处理中/处理完成，避免恒空）
+    resp = app_client.get("/api/tickets", headers=_bearer())
+    by_code = {it["short_code"]: it for it in resp.json()["items"]}
+    assert by_code["TKT-4"]["hub_status"] == "in_progress"  # 挂 Bug_fix hub(status=in_progress)
+    assert by_code["TKT-2"]["hub_status"] == "waiting_reply"  # Operation hub 也带 status
+    assert by_code["TKT-3"]["hub_status"] is None  # 未挂 hub
+
+
 def test_list_tickets_filter_source(app_client: TestClient, world: Session) -> None:
     r = app_client.get("/api/tickets?source_code=ksm", headers=_bearer())
     assert r.status_code == 200

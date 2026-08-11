@@ -4356,6 +4356,8 @@ export interface components {
             feature: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Status */
+            hub_status?: string | null;
             /** Id */
             id: number;
             /** Module */
@@ -4458,6 +4460,8 @@ export interface components {
             feature: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Status */
+            hub_status?: string | null;
             /** Id */
             id: number;
             /** Module */
