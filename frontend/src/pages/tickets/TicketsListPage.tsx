@@ -67,7 +67,9 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 // v2：默认列顺序调整（来源工单号紧跟标题；来源系统/创建时间/最后更新时间放最后；状态列隐藏）
-const PREFS_KEY = "tickets_table_prefs_v2";
+// v3：处理人列 id 由 assigned_user→handler_user 且移到处理状态之后；
+// bump key 让存量用户丢弃含旧 id 的持久化顺序，重取 DEFAULT_ORDER。
+const PREFS_KEY = "tickets_table_prefs_v3";
 type TablePrefs = { order?: ColumnOrderState; sizing?: ColumnSizingState };
 
 // 默认列顺序（工单调整 V1.0）：来源工单号在标题后；工单处理说明 + 来源系统 靠后；
@@ -83,8 +85,8 @@ const DEFAULT_ORDER: string[] = [
   "module",
   "reject_count",
   "children_count",
-  "handler_user",
   "op_status",
+  "handler_user",
   "service_level",
   "remaining_hours",
   "reporter_company",
