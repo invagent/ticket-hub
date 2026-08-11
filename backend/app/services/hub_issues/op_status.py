@@ -70,6 +70,42 @@ def apply_op_status(
     return True
 
 
+def record_ticket_action(
+    db: Session,
+    hub: HubIssue,
+    *,
+    action: str,
+    changed_by: str,
+    reason: str,
+) -> int:
+    """给 hub 的每条关联 ticket 补写一条操作审计（entity_type='ticket'）。
+
+    纯操作事件：不改 ticket 状态（from==to==当前状态），操作说明放 reason，
+    metadata.action 标操作类型。用于把 hub 维度操作（答复 / 分类动作）投影到
+    工单详情页左侧「处理节点」时间轴（该时间轴只查 entity_type='ticket'）。
+    不 commit（复用调用方事务）。返回写入条数。
+    """
+    from app.models import Ticket
+
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+        .all()
+    )
+    repo = StatusHistoryRepository(db)
+    for t in tickets:
+        repo.record(
+            entity_type="ticket",
+            entity_id=t.id,
+            from_status=t.status,
+            to_status=t.status,
+            changed_by=changed_by,
+            reason=reason,
+            metadata={"action": action},
+        )
+    return len(tickets)
+
+
 def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> str:
     """人工介入处理人名：default_pool 对应 user.name；未配则 '主管'。"""
     settings = settings or get_settings()
