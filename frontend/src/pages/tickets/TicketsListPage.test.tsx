@@ -33,6 +33,8 @@ const sample = {
       feature: null,
       assigned_user_id: 1,
       assigned_user_name: "张三",
+      handler_user_id: 1,
+      handler_user_name: "张三",
       predicted_type: "Bug_fix",
       hub_issue_id: null,
       op_status: null,
@@ -113,6 +115,31 @@ describe("TicketsListPage", () => {
     expect(screen.getByText("发票云")).toBeInTheDocument(); // 主产品
     expect(screen.getByText("2")).toBeInTheDocument(); // 驳回次数
     expect(screen.getByText("3")).toBeInTheDocument(); // 关联任务
+  });
+
+  it("处理人列显示 handler_user_name(处理人),非责任人", async () => {
+    server.use(
+      http.get("*/api/tickets", () =>
+        HttpResponse.json({
+          ...sample,
+          items: [
+            {
+              ...sample.items[0],
+              assigned_user_name: "杨慧莉", // 责任人
+              handler_user_id: 42,
+              handler_user_name: "苗一琳", // 处理人
+            },
+          ],
+        }),
+      ),
+    );
+    renderPage();
+    await screen.findByText("TKT-1");
+    const table = screen.getByRole("table");
+    const cellText = (kw: string) =>
+      Array.from(table.querySelectorAll("tbody td")).some((td) => (td.textContent ?? "").includes(kw));
+    expect(cellText("苗一琳")).toBe(true); // 处理人列显示 handler
+    expect(cellText("杨慧莉")).toBe(false); // 不显示责任人
   });
 
   it("处理人筛选包含 member 角色用户（真实处理人，非仅 assignee/supervisor/admin）", async () => {

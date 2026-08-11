@@ -83,7 +83,7 @@ const DEFAULT_ORDER: string[] = [
   "module",
   "reject_count",
   "children_count",
-  "assigned_user",
+  "handler_user",
   "op_status",
   "service_level",
   "remaining_hours",
@@ -114,8 +114,8 @@ export function TicketsListPage() {
   const opStatus = params.get("op_status") ?? ""; // 处理状态筛选(所挂 hub 的 op_status)
   const unassigned = params.get("unassigned") === "true";
   const page = Number(params.get("page") ?? "1");
-  const assignedUserIds = params
-    .getAll("assigned_user_ids")
+  const handlerUserIds = params
+    .getAll("handler_user_ids")
     .map(Number)
     .filter((n) => !Number.isNaN(n));
   const predictedTypes = params.getAll("predicted_types");
@@ -190,7 +190,7 @@ export function TicketsListPage() {
         opStatus,
         unassigned,
         page,
-        assignedUserIds,
+        handlerUserIds,
         predictedTypes,
         hubIssueId,
         sourceTicketQ,
@@ -202,7 +202,7 @@ export function TicketsListPage() {
         status: status || undefined,
         op_status: opStatus || undefined,
         unassigned_only: unassigned || undefined,
-        assigned_user_ids: assignedUserIds.length ? assignedUserIds : undefined,
+        handler_user_ids: handlerUserIds.length ? handlerUserIds : undefined,
         predicted_types: predictedTypes.length ? predictedTypes : undefined,
         hub_issue_id: hubIssueId ? Number(hubIssueId) : undefined,
         source_ticket_q: sourceTicketQ || undefined,
@@ -271,7 +271,7 @@ export function TicketsListPage() {
     status ||
     opStatus ||
     unassigned ||
-    assignedUserIds.length ||
+    handlerUserIds.length ||
     predictedTypes.length ||
     sourceTicketQ.trim();
 
@@ -422,18 +422,18 @@ export function TicketsListPage() {
         ),
       },
       {
-        id: "assigned_user",
+        id: "handler_user",
         header: "处理人",
-        accessorKey: "assigned_user_name",
+        accessorKey: "handler_user_name",
         size: 100,
         cell: ({ row }) =>
-          row.original.assigned_user_id != null ? (
+          row.original.handler_user_id != null ? (
             <span className="flex items-center gap-1.5">
               <span className="w-[18px] h-[18px] rounded-full bg-hub-teal text-white text-[9px] font-bold flex items-center justify-center flex-none">
-                {(row.original.assigned_user_name ?? "#").slice(-1)}
+                {(row.original.handler_user_name ?? "#").slice(-1)}
               </span>
               <span className="text-[11.5px] text-hub-textSecondary truncate">
-                {row.original.assigned_user_name ?? `#${row.original.assigned_user_id}`}
+                {row.original.handler_user_name ?? `#${row.original.handler_user_id}`}
               </span>
             </span>
           ) : (
@@ -742,8 +742,8 @@ export function TicketsListPage() {
 
           {/* 处理人多选 */}
           <MultiUserSelect
-            value={assignedUserIds}
-            onChange={(ids) => setMultiFilter("assigned_user_ids", ids)}
+            value={handlerUserIds}
+            onChange={(ids) => setMultiFilter("handler_user_ids", ids)}
             placeholder="处理人"
             // 不限角色：实际工单处理人大量是 member 角色（分派/指派均无角色限制），
             // 原来只列 assignee/supervisor/admin 会漏掉绝大多数真实处理人。
