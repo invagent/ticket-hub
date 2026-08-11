@@ -431,8 +431,12 @@ class Ticket(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # Routing (D1: assigned user, optional)
+    # Routing (D1: assigned user, optional) —— 责任人（路由分工）
     assigned_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True, index=True
+    )
+    # 处理人（当前实际持有人）：入库=责任人，毕业分派/答复/转交时流动。
+    handler_user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True, index=True
     )
     module: Mapped[str | None] = mapped_column(String(128), nullable=True)
