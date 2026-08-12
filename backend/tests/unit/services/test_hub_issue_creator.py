@@ -354,10 +354,12 @@ def test_auto_bugfix_gated_to_pending_review(
     assert pushed == []  # 未推 Linear
 
 
-def test_auto_operation_not_gated(
+def test_auto_operation_gated_to_pending_review(
     world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Operation 自动毕业不受闸门影响（本就不推 Linear，status=created）。"""
+    """闸门①（gate_classify_enabled，默认回落 require_review_before_linear=True）现覆盖
+    全类型：Operation 自动毕业也停 pending_review，不进自动答复链（op_status 已在毕业时
+    设为 processing，但 hub.status 停 pending_review 待人工确认分类）。"""
     import app.services.hub_issues.creator as creator_mod
 
     t = _make_ticket(world, 41, predicted_type="Operation")
@@ -369,7 +371,34 @@ def test_auto_operation_not_gated(
     assert result is not None and result.type == "Operation"
     world.expire_all()
     hub = world.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending_review"
+
+
+def test_auto_operation_not_gated_when_gate_classify_off(
+    world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """闸门①关（gate_classify_enabled=False）：Operation 自动毕业保持现状，
+    status=created，不进 pending_review（本就不推 Linear，走 drain 扫 op_status）。"""
+    import app.services.hub_issues.creator as creator_mod
+
+    monkeypatch.setenv("REQUIRE_REVIEW_BEFORE_LINEAR", "false")
+    monkeypatch.setenv("GATE_CLASSIFY_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    t = _make_ticket(world, 42, predicted_type="Operation")
+    tid = t.id
+    _point_make_session_at(sqlite_engine, monkeypatch)
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
+
+    result = creator_mod.create_hub_issue_for_ticket_auto(tid)
+    assert result is not None and result.type == "Operation"
+    world.expire_all()
+    hub = world.get(HubIssue, result.hub_issue_id)
     assert hub.status == "created"
+
+    get_settings.cache_clear()
 
 
 # ---- op_status 初始化：仅 Operation 毕业时设，研发类恒 NULL ----

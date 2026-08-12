@@ -174,7 +174,15 @@ def test_auto_dispatch_hit_with_review_goes_pending_review(
     monkeypatch.setattr(db_session, "close", lambda: None)
     monkeypatch.setattr(
         "app.services.hub_issues.creator.get_settings",
-        lambda: type("S", (), {"require_review_before_linear": True, "hub_dedup_enabled": False})(),
+        lambda: type(
+            "S",
+            (),
+            {
+                "require_review_before_linear": True,
+                "gate_classify_enabled": True,
+                "hub_dedup_enabled": False,
+            },
+        )(),
     )
 
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mock_push:
@@ -184,3 +192,57 @@ def test_auto_dispatch_hit_with_review_goes_pending_review(
     mock_push.assert_not_called()
     hub = db_session.get(HubIssue, result.hub_issue_id)
     assert hub.status == "pending_review"
+
+
+def test_gate_classify_on_operation_stays_pending_review(db_session, monkeypatch) -> None:
+    """闸门①开：Operation 毕业也停 pending_review，不进自动答复链。"""
+    reporter = _seed_user(db_session, "rep_op_gate")
+    t = _seed_classified_ticket(db_session, ptype="Operation", reporter_uid=reporter.id)
+    db_session.commit()
+    ticket_id = t.id
+    monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "gate_classify_enabled": True,
+                "hub_dedup_enabled": False,
+                "require_review_before_linear": True,
+                "gate_linear_push_enabled": True,
+            },
+        )(),
+    )
+    result = create_hub_issue_for_ticket_auto(ticket_id)
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending_review"
+
+
+def test_gate_classify_off_devclass_pushes(db_session, monkeypatch) -> None:
+    """闸门①关：研发类命中分派仍走现状分流，直接推 Linear。"""
+    reporter = _seed_user(db_session, "rep_off")
+    handler = _seed_user(db_session, "h_off")
+    _seed_dispatch_rule(db_session, handler.id)
+    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    db_session.commit()
+    ticket_id = t.id
+    monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "gate_classify_enabled": False,
+                "hub_dedup_enabled": False,
+                "require_review_before_linear": False,
+                "gate_linear_push_enabled": False,
+            },
+        )(),
+    )
+    with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
+        create_hub_issue_for_ticket_auto(ticket_id)
+    mp.assert_called_once()

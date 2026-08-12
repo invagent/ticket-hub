@@ -231,15 +231,26 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
     finally:
         db.close()
 
-    if result.created and result.type in ("Bug_fix", "Demand"):
-        if result.dispatch_missed:
-            # 分派无匹配处理人 → 转人工（复用 pending 队列），不进 pending_review、不推 Linear
-            _mark_dispatch_pending(result.hub_issue_id)
-        elif get_settings().require_review_before_linear:
-            # agent 自动毕业的研发类 → 进 pending_review 待主管确认，不自动推 Linear
-            _mark_pending_review(result.hub_issue_id)
-        else:
-            push_hub_issue_to_linear(result.hub_issue_id)
+    if not result.created:
+        return result
+
+    if result.type in ("Bug_fix", "Demand") and result.dispatch_missed:
+        # 分派无匹配处理人 → 转人工（复用 pending 队列），不进 pending_review、不推 Linear。
+        # 优先于闸门①判断：这是分派缺人问题，跟分类确认闸门无关。
+        _mark_dispatch_pending(result.hub_issue_id)
+        return result
+
+    settings = get_settings()
+    if settings.gate_classify_enabled:
+        # 闸门①：全类型（Operation/Bug_fix/Demand/Internal_task）毕业后停
+        # pending_review 待人工确认分类，不自动分流（不推 Linear、不进答复链）。
+        _mark_pending_review(result.hub_issue_id)
+        return result
+
+    # 闸门①关：现状自动分流。Operation 自动答复链由 Celery drain 扫
+    # op_status=processing/agent 触发（不在此处调用）；Internal_task 无动作。
+    if result.type in ("Bug_fix", "Demand"):
+        push_hub_issue_to_linear(result.hub_issue_id)
     return result
 
 
