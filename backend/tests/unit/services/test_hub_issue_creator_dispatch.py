@@ -1,0 +1,130 @@
+"""研发类工单走分派引擎单测。"""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy.orm import Session
+
+from app.models import (
+    DispatchAssignee,
+    DispatchRule,
+    HubIssue,
+    Source,
+    Ticket,
+    User,
+)
+from app.services.hub_issues.creator import ensure_hub_issue_for_ticket
+
+_next_uid = 0
+
+
+def _seed_user(db: Session, name: str) -> User:
+    global _next_uid
+    _next_uid += 1
+    u = User(
+        feishu_uid=f"ou_dispatch_{_next_uid}",
+        name=name,
+        email=f"{name}@x.com",
+        role="assignee",
+        is_active=True,
+    )
+    db.add(u)
+    db.flush()
+    return u
+
+
+def _seed_dispatch_rule(db: Session, assignee_user_id: int) -> DispatchRule:
+    """一条 match-all（空维度全通配）count 规则，命中任意 hub。"""
+    rule = DispatchRule(
+        name="all",
+        priority=1,
+        is_active=True,
+        match_sources=[],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+    )
+    db.add(rule)
+    db.flush()
+    db.add(
+        DispatchAssignee(
+            rule_id=rule.id,
+            user_id=assignee_user_id,
+            tier="main",
+            alloc_value=1,
+            daily_cap=None,
+            is_active=True,
+        )
+    )
+    db.flush()
+    return rule
+
+
+def _seed_classified_ticket(db: Session, *, ptype: str, reporter_uid: int) -> Ticket:
+    if db.query(Source).filter_by(code="ksm").first() is None:
+        db.add(Source(code="ksm", name="KSM"))
+        db.flush()
+    t = Ticket(
+        short_code=f"TKT-{ptype}-{reporter_uid}",
+        source_code="ksm",
+        source_ticket_id=f"ksm-{reporter_uid}",
+        type="Raw",
+        status="received",
+        title="开票报错",
+        body="点击开票提示系统异常",
+        predicted_type=ptype,
+        predicted_confidence=0.95,
+        assigned_user_id=reporter_uid,  # 入库责任人
+    )
+    db.add(t)
+    db.flush()
+    return t
+
+
+@pytest.mark.parametrize("ptype", ["Bug_fix", "Demand"])
+def test_dev_class_dispatch_overrides_assigned_user(db_session: Session, ptype: str) -> None:
+    """研发类命中分派 → assigned_user_id 被分派人覆盖（不再是入库责任人）。"""
+    reporter = _seed_user(db_session, f"reporter_{ptype}")
+    handler = _seed_user(db_session, f"handler_{ptype}")
+    _seed_dispatch_rule(db_session, handler.id)
+    t = _seed_classified_ticket(db_session, ptype=ptype, reporter_uid=reporter.id)
+    db_session.commit()
+
+    result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
+
+    assert result.created is True
+    assert result.dispatch_missed is False
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.assigned_user_id == handler.id  # 分派人覆盖了 reporter
+    assert hub.op_handler_user_id is None  # 研发类不写 op_handler_user_id
+
+
+def test_dev_class_dispatch_missed_sets_flag(db_session: Session) -> None:
+    """研发类无匹配规则+无兜底 → dispatch_missed=True，assigned_user_id 保持入库责任人。"""
+    reporter = _seed_user(db_session, "reporter2")
+    # 不建任何 DispatchRule → 分派无结果
+    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    db_session.commit()
+
+    result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
+
+    assert result.dispatch_missed is True
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.assigned_user_id == reporter.id  # 无分派 → 保持责任人不变
+
+
+def test_operation_dispatch_writes_op_handler_not_override(db_session: Session) -> None:
+    """Operation 命中分派 → 写 op_handler_user_id，assigned_user_id 保持入库责任人。"""
+    reporter = _seed_user(db_session, "reporter3")
+    handler = _seed_user(db_session, "ophandler")
+    _seed_dispatch_rule(db_session, handler.id)
+    t = _seed_classified_ticket(db_session, ptype="Operation", reporter_uid=reporter.id)
+    db_session.commit()
+
+    result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
+
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.op_handler_user_id == handler.id
+    assert hub.assigned_user_id == reporter.id  # Operation 不覆盖责任人
+    assert result.dispatch_missed is False  # Operation 无结果也不设 missed
