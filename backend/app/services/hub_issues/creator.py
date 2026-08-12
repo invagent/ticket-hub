@@ -155,7 +155,8 @@ def ensure_hub_issue_for_ticket(
 
     # 毕业分派：按多维规则选处理人（Operation 运营 + 研发类共用规则/人池）。
     # Operation → op_handler_user_id（op_handler 名保持 'agent' 不打断 drain）；
-    # Bug_fix/Demand → 覆盖 assigned_user_id（Linear 推送用它做 team 路由 + assignee）。
+    # Bug_fix/Demand → 写 ticket.handler_user_id（处理人），**不覆盖** hub/ticket
+    # 的 assigned_user_id（责任人保持入库值，人工可回退查看原始责任人归属）。
     # 放在 ticket 挂 hub + flush 之后：dispatch_handler 的 _hub_source_code 反查
     # 需要 ticket.hub_issue_id 已落库。研发类分派无结果 → dispatch_missed，
     # auto 路径据此转 pending 人工（见 create_hub_issue_for_ticket_auto）。
@@ -168,8 +169,8 @@ def ensure_hub_issue_for_ticket(
         if dr.user_id is not None:
             if issue_type == "Operation":
                 hub.op_handler_user_id = dr.user_id
-            else:
-                hub.assigned_user_id = dr.user_id  # 研发类：覆盖入库责任人
+            # 研发类：HubIssue 无 handler_user_id 列，写 ticket 层处理人，
+            # 不覆盖 hub.assigned_user_id（责任人保持入库时的值）。
             set_hub_tickets_handler(db, hub, dr.user_id)
         elif issue_type in ("Bug_fix", "Demand"):
             dispatch_missed = True

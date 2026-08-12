@@ -88,8 +88,9 @@ def _seed_classified_ticket(db: Session, *, ptype: str, reporter_uid: int) -> Ti
 
 
 @pytest.mark.parametrize("ptype", ["Bug_fix", "Demand"])
-def test_dev_class_dispatch_overrides_assigned_user(db_session: Session, ptype: str) -> None:
-    """研发类命中分派 → assigned_user_id 被分派人覆盖（不再是入库责任人）。"""
+def test_dev_class_dispatch_writes_handler_not_assigned(db_session: Session, ptype: str) -> None:
+    """研发类命中分派 → 写 ticket.handler_user_id（HubIssue 无此列）；
+    hub.assigned_user_id 保持入库责任人不变。"""
     reporter = _seed_user(db_session, f"reporter_{ptype}")
     handler = _seed_user(db_session, f"handler_{ptype}")
     _seed_dispatch_rule(db_session, handler.id)
@@ -101,7 +102,9 @@ def test_dev_class_dispatch_overrides_assigned_user(db_session: Session, ptype: 
     assert result.created is True
     assert result.dispatch_missed is False
     hub = db_session.get(HubIssue, result.hub_issue_id)
-    assert hub.assigned_user_id == handler.id  # 分派人覆盖了 reporter
+    db_session.refresh(t)
+    assert t.handler_user_id == handler.id  # 分派写 ticket 层 handler
+    assert hub.assigned_user_id == reporter.id  # 责任人不被覆盖
     assert hub.op_handler_user_id is None  # 研发类不写 op_handler_user_id
 
 
