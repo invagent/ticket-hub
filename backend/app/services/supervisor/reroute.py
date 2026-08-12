@@ -104,15 +104,20 @@ class RerouteService:
             # multi_match → success=False，不自动写入，需人工介入
 
             if new_assigned_id is not None:
+                values: dict[str, int] = {"assigned_user_id": new_assigned_id}
+                # 行级可见性按 handler_user_id 过滤;reroute 若只改 assigned 不改 handler,
+                # 被指派的责任人本人会看不到工单。仅当 handler 仍等于旧责任人(或为空)——
+                # 即处理人未被答复/转交改动过——才同步,避免抢走正在处理者的可见性。
+                if ticket.handler_user_id in (None, ticket.assigned_user_id):
+                    values["handler_user_id"] = new_assigned_id
                 self._db.execute(
-                    update(Ticket)
-                    .where(Ticket.id == ticket.id)
-                    .values(assigned_user_id=new_assigned_id)
+                    update(Ticket).where(Ticket.id == ticket.id).values(**values)
                 )
                 logger.info(
                     "supervisor_reroute_assigned",
                     ticket_id=ticket.id,
                     assigned_user_id=new_assigned_id,
+                    handler_synced="handler_user_id" in values,
                     decision=result_decision,
                     operator_user_id=req.operator_user_id,
                 )
