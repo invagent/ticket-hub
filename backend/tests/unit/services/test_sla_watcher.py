@@ -225,6 +225,44 @@ def test_hub_issue_resolved_skipped(base_world: Session) -> None:
     assert res.notifications_written == 0
 
 
+def test_hub_issue_pending_review_is_monitored(base_world: Session) -> None:
+    """pending_review(等主管确认才推 Linear)是 require_review_before_linear 默认开下的
+    主路径,必须纳入 SLA 监控,否则无人确认会静默滞留。"""
+    now = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
+    base_world.add(
+        HubIssue(
+            short_code="HUB-PR",
+            type="Bug_fix",
+            title="pending review overdue",
+            status="pending_review",
+            first_seen_at=now - timedelta(hours=10),  # over Bug_fix 8h
+            assigned_user_id=1,
+        )
+    )
+    base_world.commit()
+    res = SLAWatcher(base_world).scan(now=now)
+    assert res.notifications_written == 1
+    assert res.overdue_hub_issue_ids == [1]
+
+
+def test_hub_issue_pending_linear_push_is_monitored(base_world: Session) -> None:
+    """Linear 推送失败置 pending 的 hub 也要被监控。"""
+    now = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
+    base_world.add(
+        HubIssue(
+            short_code="HUB-PEND",
+            type="Demand",
+            title="pending push overdue",
+            status="pending",
+            first_seen_at=now - timedelta(hours=30),  # over Demand 24h
+            assigned_user_id=1,
+        )
+    )
+    base_world.commit()
+    res = SLAWatcher(base_world).scan(now=now)
+    assert res.notifications_written == 1
+
+
 # ---- D2-C: per-product-line threshold overrides ---------------------------
 
 

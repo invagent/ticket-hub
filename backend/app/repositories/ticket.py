@@ -451,6 +451,10 @@ class HubIssueRepository:
             "scheduled",
             "waiting_assign",
             "assigned",
+            # 待主管确认才推 Linear(require_review_before_linear 默认开下的主路径)
+            # 和 Linear 推送失败待人工的 pending —— 都需 SLA 监控,否则静默滞留。
+            "pending_review",
+            "pending",
         )
         clauses = []
         for type_name, threshold in type_thresholds.items():
