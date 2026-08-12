@@ -6,11 +6,14 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
+    DispatchAssignee,
+    DispatchRule,
     HubIssue,
     Source,
     StatusHistory,
     Ticket,
     TicketHubIssueHistory,
+    User,
 )
 from app.services.hub_issues.creator import (
     HubIssueCreateError,
@@ -276,6 +279,43 @@ def test_manual_graduate_skips_dedup(world: Session, monkeypatch: pytest.MonkeyP
 # ---- require_review_before_linear 闸门（自动路径）------------------------------
 
 
+def _seed_dispatch_rule(db: Session, n: int) -> None:
+    """一条 match-all（空维度全通配）count 规则，命中任意 hub。用于让研发类分派命中，
+    不误落 dispatch_missed=True 分支（该分支由 test_hub_issue_creator_dispatch.py 覆盖）。"""
+    u = User(
+        feishu_uid=f"ou_gate_{n}",
+        name=f"gate_handler_{n}",
+        email=f"gate_handler_{n}@x.com",
+        role="assignee",
+        is_active=True,
+    )
+    db.add(u)
+    db.flush()
+    rule = DispatchRule(
+        name=f"gate-all-{n}",
+        priority=1,
+        is_active=True,
+        match_sources=[],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+    )
+    db.add(rule)
+    db.flush()
+    db.add(
+        DispatchAssignee(
+            rule_id=rule.id,
+            user_id=u.id,
+            tier="main",
+            alloc_value=1,
+            daily_cap=None,
+            is_active=True,
+        )
+    )
+    db.commit()
+
+
 def _point_make_session_at(engine, monkeypatch: pytest.MonkeyPatch) -> None:
     """让 create_hub_issue_for_ticket_auto 里的 make_session() 命中同一个 in-memory DB
     （否则新开 session 见到空 :memory: → no such table）。仿 app_client fixture。"""
@@ -298,6 +338,7 @@ def test_auto_bugfix_gated_to_pending_review(
     import app.services.hub_issues.creator as creator_mod
     from app.services.hub_issues import linear_push
 
+    _seed_dispatch_rule(world, 40)  # 分派命中，防误落 dispatch_missed→pending 分支
     t = _make_ticket(world, 40, predicted_type="Bug_fix")
     tid = t.id
     _point_make_session_at(sqlite_engine, monkeypatch)

@@ -153,22 +153,26 @@ def ensure_hub_issue_for_ticket(
     ticket.hub_issue_id = hub.id
     db.flush()  # autoflush=False：_hub_source_code 的裸查询看不到未 flush 的挂载
 
-    # Operation 毕业：按规则预分配运营处理人（写 op_handler_user_id）。
-    # op_handler 名字仍保持 'agent'，不打断 drain 自动答复；转人工时才切成运营名。
-    # 放在 hub_dedup 查重之后 + ticket.hub_issue_id 挂上之后：dedup 命中已在上面
-    # return，走到这里说明 hub 未被 supersede；ticket 已挂 hub 才能让
-    # dispatch_operation_handler 里的 _hub_source_code 反查到 source_code
-    # （否则来源维度非空的 match_sources 规则永远匹配不中）。
-    if issue_type == "Operation":
-        from app.services.dispatch import dispatch_operation_handler
+    # 毕业分派：按多维规则选处理人（Operation 运营 + 研发类共用规则/人池）。
+    # Operation → op_handler_user_id（op_handler 名保持 'agent' 不打断 drain）；
+    # Bug_fix/Demand → 覆盖 assigned_user_id（Linear 推送用它做 team 路由 + assignee）。
+    # 放在 ticket 挂 hub + flush 之后：dispatch_handler 的 _hub_source_code 反查
+    # 需要 ticket.hub_issue_id 已落库。研发类分派无结果 → dispatch_missed，
+    # auto 路径据此转 pending 人工（见 create_hub_issue_for_ticket_auto）。
+    dispatch_missed = False
+    if issue_type in ("Operation", "Bug_fix", "Demand"):
+        from app.services.dispatch import dispatch_handler
+        from app.services.hub_issues.op_status import set_hub_tickets_handler
 
-        dr = dispatch_operation_handler(db, hub)
+        dr = dispatch_handler(db, hub)
         if dr.user_id is not None:
-            hub.op_handler_user_id = dr.user_id
-            # 处理人随运营分派流动到关联工单（分派无结果则保持入库时的责任人不变）
-            from app.services.hub_issues.op_status import set_hub_tickets_handler
-
+            if issue_type == "Operation":
+                hub.op_handler_user_id = dr.user_id
+            else:
+                hub.assigned_user_id = dr.user_id  # 研发类：覆盖入库责任人
             set_hub_tickets_handler(db, hub, dr.user_id)
+        elif issue_type in ("Bug_fix", "Demand"):
+            dispatch_missed = True
 
     db.add(
         TicketHubIssueHistory(
@@ -202,6 +206,7 @@ def ensure_hub_issue_for_ticket(
         ticket_id=ticket.id,
         type=issue_type,
         created=True,
+        dispatch_missed=dispatch_missed,
     )
 
 
@@ -226,7 +231,10 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         db.close()
 
     if result.created and result.type in ("Bug_fix", "Demand"):
-        if get_settings().require_review_before_linear:
+        if result.dispatch_missed:
+            # 分派无匹配处理人 → 转人工（复用 pending 队列），不进 pending_review、不推 Linear
+            _mark_dispatch_pending(result.hub_issue_id)
+        elif get_settings().require_review_before_linear:
             # agent 自动毕业的研发类 → 进 pending_review 待主管确认，不自动推 Linear
             _mark_pending_review(result.hub_issue_id)
         else:
@@ -250,6 +258,29 @@ def _mark_pending_review(hub_issue_id: int) -> None:
             to_status="pending_review",
             changed_by="agent:hub_issue_auto",
             reason="研发类待主管确认分类后推 Linear",
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_dispatch_pending(hub_issue_id: int) -> None:
+    """研发类分派无匹配处理人 → status=pending 转人工（复用 Linear 待人工队列）。
+    自开 session。主管补齐处理人后可重推 Linear。"""
+    db = make_session()
+    try:
+        hub = db.get(HubIssue, hub_issue_id)
+        if hub is None:
+            return
+        prev = hub.status
+        hub.status = "pending"
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status=prev,
+            to_status="pending",
+            changed_by="agent:dispatch",
+            reason="分派无匹配处理人，转人工补齐后重推 Linear",
         )
         db.commit()
     finally:

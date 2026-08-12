@@ -1,6 +1,6 @@
 """Operation 运营处理人分派引擎.
 
-毕业时调 dispatch_operation_handler 选运营。绝不抛异常（吞掉返回 None），
+毕业时调 dispatch_handler 选运营。绝不抛异常（吞掉返回 None），
 不阻断毕业。count：今日未达 daily_cap 者选最少，全满→溢出规则→兜底配置。
 ratio：按 alloc_value 权重，选今日「应得占比 - 实际占比」缺口最大者。
 按天靠 today_counts 只查当天 dispatch_log 天然重置。
@@ -79,8 +79,8 @@ def _pick_from_rule(
     return uid, ("main" if uid is not None else "")
 
 
-def dispatch_operation_handler(db: Session, hub: HubIssue) -> DispatchResult:
-    """选运营处理人。只对 Operation 有意义（调用方保证）。任异常吞掉返回 _NONE。"""
+def dispatch_handler(db: Session, hub: HubIssue) -> DispatchResult:
+    """选处理人（Operation 运营 / 研发类均可）。任异常吞掉返回 _NONE。"""
     try:
         repo = DispatchRepository(db)
         source = _hub_source_code(db, hub)
@@ -121,7 +121,7 @@ def dispatch_operation_handler(db: Session, hub: HubIssue) -> DispatchResult:
             reason=f"dispatch tier={tier} rule={rule_id_hit}",
         )
     except Exception:
-        logger.exception("dispatch_operation_handler_failed", hub_issue_id=getattr(hub, "id", None))
+        logger.exception("dispatch_handler_failed", hub_issue_id=getattr(hub, "id", None))
         return _NONE
 
 
