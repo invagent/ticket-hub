@@ -48,6 +48,7 @@ class HubIssueResult:
     ticket_id: int
     type: str
     created: bool  # False when the ticket was already linked
+    dispatch_missed: bool = False  # 研发类分派无匹配处理人（auto 路径据此转 pending）
 
 
 def _next_hub_short_code(db: Session) -> str:
