@@ -192,6 +192,15 @@ class Settings(BaseSettings):
     # 默认关，保持墙钟行为不变；填好 holidays 日历后再开。
     sla_workday_aware: bool = False
 
+    # ---- SLA 监控调度 ----
+    # SLAWatcher(超时检测→notification_log) + EscalationWorker(2h 升级链) 的 beat 调度开关。
+    # 默认关：SLAWatcher/EscalationWorker 代码早已就绪但从未挂 beat；开启前需知悉——
+    # 首次开启会对当前所有积压超时工单一次性生成 sla_overdue 通知，请在低峰期开或先清积压。
+    sla_watcher_enabled: bool = False
+    # 无 assignee 的超时实体，通知回落到该用户（一般是值班主管）；None 则跳过并计 skipped。
+    # 未单独配置时回落到 default_pool_user_id。
+    sla_fallback_recipient_id: int | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

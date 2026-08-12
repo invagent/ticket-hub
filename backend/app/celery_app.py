@@ -36,6 +36,7 @@ celery_app = Celery(
         "app.services.agents.operation_answer_task",
         "app.services.agents.op_close_task",
         "app.services.attachments.drain_task",
+        "app.services.sla.sla_task",
     ],
 )
 
@@ -86,5 +87,10 @@ celery_app.conf.beat_schedule = {
     "drain_attachments_every_5min": {
         "task": "app.services.attachments.drain_task.drain_attachments",
         "schedule": crontab(minute="*/5"),
+    },
+    # SLA 监控：超时检测 + 升级链（sla_watcher_enabled 未开则任务内自动跳过）
+    "run_sla_monitor_every_10min": {
+        "task": "app.services.sla.sla_task.run_sla_monitor",
+        "schedule": crontab(minute="7,17,27,37,47,57"),
     },
 }
