@@ -128,6 +128,29 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
     assert fake.requests[0].assignee_id == "lin-u-6"  # type: ignore[attr-defined]
 
 
+def test_push_uses_dispatched_assignee(world: Session) -> None:
+    """Task 5 (dispatch-engine regression)：分派引擎把 hub.assigned_user_id 指向某
+    dispatch 命中的处理人后，push 仍按 line~141 现有逻辑用该 user 的 Linear 映射
+    做 assignee/team（无需改生产代码）。机制上同 test_push_routes_to_assignee_team，
+    此处用分派场景命名以对齐 dev-class-dispatch spec 「分派人同时推给 Linear」验收项。
+    """
+    world.add(
+        User(
+            id=20,
+            feishu_uid="ou_dispatch",
+            name="dispatched-dev",
+            linear_user_id="lu-dispatch-1",
+            linear_team_id="team-dispatch-x",
+        )
+    )
+    world.commit()
+    hub = _make_hub(world, 20, type="Bug_fix", assigned_user_id=20)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert fake.requests[0].assignee_id == "lu-dispatch-1"  # type: ignore[attr-defined]
+    assert fake.requests[0].team_id == "team-dispatch-x"  # type: ignore[attr-defined]
+
+
 def test_push_falls_back_to_default_team_for_group(world: Session) -> None:
     """Group assignee (no linear_team_id) → default team."""
     world.add(User(id=7, feishu_uid="ou_grp", name="数电开票组"))  # no linear mapping
