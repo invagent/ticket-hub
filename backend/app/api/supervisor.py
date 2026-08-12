@@ -1890,7 +1890,7 @@ def reclassify(
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
     """主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。"""
-    from app.services.dispatch import dispatch_operation_handler
+    from app.services.dispatch import dispatch_handler
     from app.services.hub_issues.op_status import set_hub_tickets_handler
 
     hub = _get_pending_review_hub(db, body.hub_issue_id)
@@ -1932,7 +1932,7 @@ def reclassify(
         # 走兜底，拿不到分派引擎的预分配运营。（linked ticket 已挂 hub，
         # dispatch 内的来源维度反查可命中。）
         db.flush()
-        dr = dispatch_operation_handler(db, hub)
+        dr = dispatch_handler(db, hub)
         if dr.user_id is not None:
             hub.op_handler_user_id = dr.user_id
             set_hub_tickets_handler(db, hub, dr.user_id)

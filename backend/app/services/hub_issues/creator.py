@@ -156,12 +156,12 @@ def ensure_hub_issue_for_ticket(
     # op_handler 名字仍保持 'agent'，不打断 drain 自动答复；转人工时才切成运营名。
     # 放在 hub_dedup 查重之后 + ticket.hub_issue_id 挂上之后：dedup 命中已在上面
     # return，走到这里说明 hub 未被 supersede；ticket 已挂 hub 才能让
-    # dispatch_operation_handler 里的 _hub_source_code 反查到 source_code
+    # dispatch_handler 里的 _hub_source_code 反查到 source_code
     # （否则来源维度非空的 match_sources 规则永远匹配不中）。
     if issue_type == "Operation":
-        from app.services.dispatch import dispatch_operation_handler
+        from app.services.dispatch import dispatch_handler
 
-        dr = dispatch_operation_handler(db, hub)
+        dr = dispatch_handler(db, hub)
         if dr.user_id is not None:
             hub.op_handler_user_id = dr.user_id
             # 处理人随运营分派流动到关联工单（分派无结果则保持入库时的责任人不变）
