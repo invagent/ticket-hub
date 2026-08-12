@@ -80,7 +80,7 @@ gate_classify_enabled: bool = True       # 闸门①：全类型毕业后停 pen
 gate_linear_push_enabled: bool = True    # 闸门③：研发类推 Linear 前停 pending_linear_review 待确认
 ```
 
-`require_review_before_linear` 保留兼容或迁移为 `gate_classify_enabled`（实现时定，避免破坏现有 SIT env）。
+`gate_classify_enabled` 未显式设置时**回落读 `require_review_before_linear`**（保留兼容，不破坏现有 SIT env）；语义从"仅研发类"泛化到全类型。
 
 ### 闸门①：分类确认扩到全类型
 
@@ -171,8 +171,18 @@ webhook → ingest → 分派引擎写 handler_user_id → AI 分类（建议）
 - 无 API 破坏性变更（新增端点 + 扩展现有）；需 `make gen-types`。
 - SIT 部署：git 驱动，改开关走 .env + up -d。
 
-## 待实现时细化的开放项
+## 已定的实现细节（brainstorm 补充确认）
 
-- `require_review_before_linear` → `gate_classify_enabled` 的迁移方式（保留别名兼容，还是直接替换 + 改 SIT env）
-- `pending_linear_review` 用独立状态还是复用 pending + 标记
-- 前端三队列的布局（并列 tab / 按开关显隐）
+1. **`require_review_before_linear` 保留兼容**：新增 `gate_classify_enabled` 泛化它，`require_review_before_linear` 作为别名/回落保留，不破坏现有 SIT env。实现时：`gate_classify_enabled` 未显式设置时回落读 `require_review_before_linear` 的值，两者语义合并（后者原只管研发类，现泛化全类型）。
+2. **`pending_linear_review` 用独立新状态**：加入 hub_issue.status 的合法值集合，需迁移扩 CHECK 约束（若有）。清晰表达"分类已确认、研发类、待确认推 Linear"这一独立阶段。
+3. **前端三个 tab 固定显示**：主管/处理人工作台并列三个队列 tab（待确认分类 / 待确认答复 / 待推 Linear），闸门开关关闭时对应 tab 仍显示，队列为空。工单在三 tab 间依次流动。
+
+### 三个 tab 明细
+
+| Tab | 队列内容 | hub 状态 | 处理人动作 | 现状 |
+|-----|---------|---------|-----------|------|
+| Tab1 待确认分类 | 所有 AI 分类完、毕业未确认类型的工单 | `pending_review` | 确认/改判类型 | 现有队列，需从"仅研发类"扩到全类型 |
+| Tab2 待确认答复 | AI 起草答复的 Operation 工单 | op_status=`reviewing` | 改/确认答复后发客户 | ✅ 已实现（reviewing 队列） |
+| Tab3 待推 Linear | 已确认研发类、待推送 | `pending_linear_review` | 确认/改选模块负责人 → 推送 | 全新 |
+
+工单流动：毕业 → Tab1（pending_review）确认分类 → Operation 流向 Tab2 / 研发类流向 Tab3（pending_linear_review）/ Internal_task 直接 created。
