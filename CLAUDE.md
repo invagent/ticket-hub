@@ -399,7 +399,7 @@ D0✅ D1✅ D2✅ D3✅（A/B/C/D/E 全部完成，2026-06-12）D4🟢（第①�
 - **handler 身份**：`KSM_HANDLER_NAME`/`KSM_HANDLER_NUMBER`（account/accountName/accountNumber）；未配则整轮跳过
 - 触发：Celery beat `drain_ksm_writeback` 每 2min + 主管 `POST /api/supervisor/drain-ksm-writeback`（同步看成败）
 - **补料入口**：`POST /api/hub-issues/{id}/request-supply`（require_supervisor）→ `cascade/supply_sync.request_supply` 每有源工单入队 supply outbox（迁移 0016 扩 `ck_sync_outbox_kind` 加 'supply'）
-- **注意**：回复/补料文本是**对客出站**方向，**不过 pii_lite 遮罩**（遮罩只用于入库/喂模型方向，遮了会损坏答复）；智齿回写本期未做（outbox 留 zhichi 行未消费）
+- **注意**：回复/补料文本是**对客出站**方向，**不过 pii_lite 遮罩**（遮罩只用于入库/喂模型方向，遮了会损坏答复）；~~智齿回写本期未做~~ **已实现**（`services/zhichi/writeback.py` + beat `drain_zhichi_writeback_every_2min`，含 400258「工单已关闭」终态收尾；见 [[zhichi_writeback_400016_fix]]）——zhichi outbox 行有 sender 消费，不会堆积
 - **上线**（用户执行）：`git pull` + `alembic upgrade head`(0016) + 重启 3 个 systemd → `.env` 配 handler 身份 + 生产 `KSM_BASE_URL=ierp.kingdee.com` → 先 enabled+dry_run 观察 → 再翻 dry_run=false 真打。**尚未部署生产**
 
 ## 主管运营 UI：dedup 提案 + pending 重推（2026-06-12，D4 第①段）

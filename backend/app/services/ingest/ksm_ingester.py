@@ -165,7 +165,8 @@ class KSMIngester:
             )
         )
         # Only single-assignee routes to a concrete user.
-        # multi_match awaits Conflict Detect Agent (D3) — leave assigned_user_id NULL
+        # multi_match（归属歧义,命中多团队）无自动决议者——conflict_detect 已 ADR-0016
+        # P2c 退役;leave assigned_user_id NULL,主管经「仅未分配」筛选后人工归属
         # default_pool: assign if pool is configured + has exactly 1 user
         if (route.decision == "assigned" and len(route.assigned_user_ids) == 1) or (
             route.decision == "default_pool" and route.assigned_user_ids

@@ -65,6 +65,34 @@ def test_request_supply_enqueues_per_sourced_ticket(world: Session) -> None:
     assert any("补料请求" in (h.reason or "") for h in hist)
 
 
+def test_request_supply_sets_supplementing_when_processing(world: Session) -> None:
+    """Operation hub 在 processing 时请求补料 → op_status 转 supplementing,
+    这样自动答复 drain(扫 processing/agent)不会重复重答。"""
+    hub = _hub(world)
+    hub.op_status = "processing"
+    hub.op_handler = "agent"
+    world.commit()
+    _ticket(world, hub)
+
+    request_supply(world, hub.id, note="请提供操作日志", requested_by="user:carol")
+    world.refresh(hub)
+    assert hub.op_status == "supplementing"
+    assert hub.op_handler == "agent"  # handler 不变,不切走
+
+
+def test_request_supply_does_not_touch_answered(world: Session) -> None:
+    """已答复(answered)的 hub 请求补料不改 op_status,避免踩坏终态语义。"""
+    hub = _hub(world)
+    hub.op_status = "answered"
+    hub.op_handler = "agent"
+    world.commit()
+    _ticket(world, hub)
+
+    request_supply(world, hub.id, note="补料", requested_by="user:carol")
+    world.refresh(hub)
+    assert hub.op_status == "answered"  # 不动
+
+
 def test_child_ticket_skipped(world: Session) -> None:
     hub = _hub(world)
     sourced = _ticket(world, hub)

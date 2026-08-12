@@ -134,6 +134,41 @@ def test_reclassify_to_operation_enters_answer_chain(
     assert tk.predicted_type == "Operation"
 
 
+def test_reclassify_to_operation_runs_dispatch(app_client: TestClient, act_world: Session) -> None:
+    """改判进 Operation 要走分派引擎(与自动/手动毕业一致),写 op_handler_user_id;
+    否则该 hub 永远拿不到预分配运营,转人工只能走兜底。"""
+    from app.models import DispatchAssignee, DispatchRule, User
+
+    act_world.add(User(id=7, feishu_uid="ou_op7", name="op7", role="assignee"))
+    rule = DispatchRule(
+        name="all",
+        match_sources=[],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+        rule_type="primary",
+        priority=100,
+        is_active=True,
+    )
+    act_world.add(rule)
+    act_world.flush()
+    act_world.add(
+        DispatchAssignee(rule_id=rule.id, user_id=7, daily_cap=20, tier="main", is_active=True)
+    )
+    act_world.commit()
+
+    r = app_client.post(
+        "/api/supervisor/reclassify",
+        json={"hub_issue_id": 71, "new_type": "Operation", "reason": "配置问题"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    hub = act_world.get(HubIssue, 71)
+    act_world.refresh(hub)
+    assert hub.op_handler_user_id == 7  # 分派引擎预分配了运营处理人
+
+
 def test_dismiss_closes(app_client: TestClient, act_world: Session) -> None:
     r = app_client.post(
         "/api/supervisor/dismiss-classification",

@@ -19,6 +19,12 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.hub_issues.op_status import (
+    OP_EXCEPTION,
+    OP_PROCESSING,
+    OP_SUPPLEMENTING,
+    apply_op_status,
+)
 
 logger = get_logger(__name__)
 
@@ -97,6 +103,18 @@ def request_supply(
             to_status=t.status,
             changed_by=requested_by,
             reason=f"补料请求 from {hub.short_code}: {note[:120]}",
+        )
+
+    # Operation hub 请求补料后置 supplementing——与 AI 的 branch C 对齐。否则
+    # op_status 停在 processing/agent,若自动答复开着会被 drain 再次命中重答,
+    # 与"已请求客户补料、正等资料"冲突。保持当前 handler(不切 agent,免被重扫)。
+    if hub.type == "Operation" and hub.op_status in (OP_PROCESSING, OP_EXCEPTION):
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_SUPPLEMENTING,
+            handler=hub.op_handler or "agent",
+            reason=f"主管请求补料 by {requested_by}",
         )
 
     db.commit()
