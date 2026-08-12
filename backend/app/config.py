@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -175,6 +175,10 @@ class Settings(BaseSettings):
     # 默认开：agent 自动毕业的研发类进 pending_review 待确认队列，不自动推 Linear。
     # 主管手动毕业(create-hub-issue)不受此闸门影响，视为已确认直推。
     require_review_before_linear: bool = True
+    # 闸门①：全类型毕业后停 pending_review 待确认分类（默认 None → 回落 require_review_before_linear）
+    gate_classify_enabled: bool | None = None
+    # 闸门③：研发类推 Linear 前停 pending_linear_review 待处理人确认（默认开）
+    gate_linear_push_enabled: bool = True
     # D4 优化 v2: 建 Linear 前 hub 级语义去重（命中则 supersede 到已有 hub，不重复推）
     hub_dedup_enabled: bool = True
     hub_dedup_threshold: float = 0.85  # 余弦下限
@@ -202,6 +206,12 @@ class Settings(BaseSettings):
     # 无 assignee 的超时实体，通知回落到该用户（一般是值班主管）；None 则跳过并计 skipped。
     # 未单独配置时回落到 default_pool_user_id。
     sla_fallback_recipient_id: int | None = None
+
+    @model_validator(mode="after")
+    def _resolve_gate_classify(self) -> "Settings":
+        if self.gate_classify_enabled is None:
+            object.__setattr__(self, "gate_classify_enabled", self.require_review_before_linear)
+        return self
 
 
 @lru_cache

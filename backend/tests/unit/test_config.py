@@ -48,3 +48,20 @@ def test_operation_answer_accuracy_mode_accepts_valid_value() -> None:
 def test_operation_answer_accuracy_mode_rejects_typo() -> None:
     with pytest.raises(ValidationError):
         Settings(operation_answer_accuracy_mode="enforc")
+
+
+def test_gate_classify_falls_back_to_require_review() -> None:
+    # 未显式设 gate_classify_enabled 时，回落 require_review_before_linear
+    s = Settings(require_review_before_linear=False)
+    assert s.gate_classify_enabled is False
+    s2 = Settings(require_review_before_linear=True)
+    assert s2.gate_classify_enabled is True
+
+
+def test_gate_classify_explicit_overrides_fallback() -> None:
+    s = Settings(require_review_before_linear=True, gate_classify_enabled=False)
+    assert s.gate_classify_enabled is False
+
+
+def test_gate_linear_push_default_on() -> None:
+    assert Settings().gate_linear_push_enabled is True
