@@ -109,8 +109,10 @@ class Settings(BaseSettings):
 
     # ---- Operation 答复准确率闸门 ----
     # 答复准确率闸门：off=不打分同现状 / observe=打分记审计但照常直发（采集分布）
-    # / enforce=低置信存草稿转主管审核
-    operation_answer_accuracy_mode: Literal["off", "observe", "enforce"] = "off"
+    # / enforce=低置信存草稿转主管审核 / review=全部存草稿转主管审核（无自动直发）
+    # review 模式仍打分供主管参考，但无论分数高低都存草稿转 reviewing 队列，
+    # 由主管人工确认后经 POST /reply 发送——用于「所有答复必须人工确认」的场景。
+    operation_answer_accuracy_mode: Literal["off", "observe", "enforce", "review"] = "off"
     operation_answer_accuracy_threshold: int = 90  # 0-100，仅 enforce 生效
 
     # ---- LLM Providers (D3 onwards) ----

@@ -360,6 +360,46 @@ def test_d_enforce_high_accuracy_sends(db_session: Session) -> None:
     assert hub.reply_is_draft is False
 
 
+def test_d_review_mode_always_saves_draft_reviewing(db_session: Session) -> None:
+    """review：无论准确率高低都存草稿(不发) + reviewing + 转主管 + 无 outbox。"""
+    from app.models import SyncOutbox
+    from app.services.agents.answer_accuracy import AccuracyScore
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    s = _S()
+    s.operation_answer_accuracy_mode = "review"
+    fake = _FakeClient(answer="您好，请在【发票管理】页重新发起开票并保存。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D", supply_note=""),
+        ),
+        patch(
+            "app.services.agents.operation_answer.score_answer_accuracy",
+            return_value=AccuracyScore(accuracy=99, reason="准确"),  # 高分也不直发
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=s)
+    assert ok is True
+    db_session.refresh(hub)
+    assert hub.op_status == "reviewing"  # 高分也转审核
+    assert hub.op_handler != "agent"  # 转兜底主管
+    assert hub.reply_content == "您好，请在【发票管理】页重新发起开票并保存。"
+    assert hub.reply_is_draft is True  # 草稿标记，未发
+    assert hub.reply_content_version == 0  # 未经 author_reply（未级联）
+    # 不发客户 → 无 outbox
+    assert db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id).count() == 0
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None and d.proposal["branch"] == "D_review"
+    assert d.proposal.get("mode") == "review"
+
+
 # ---- drain_operation_auto_reply（异步扫描 + 补偿重试）----
 
 from app.services.agents.operation_answer import (  # noqa: E402

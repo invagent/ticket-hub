@@ -304,7 +304,7 @@ function ReviewingQueue() {
       <SectionHeader
         n={3}
         title="待审核答复"
-        note="低置信自动答复草稿，编辑后发送"
+        note="AI 生成的答复草稿，人工确认/编辑后发送客户"
         right={
           <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
             {items.length} 项待审核

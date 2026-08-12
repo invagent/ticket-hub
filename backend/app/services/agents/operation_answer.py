@@ -262,24 +262,34 @@ def auto_answer_operation(
         if not _is_answer_sendable(answer, settings):
             return _transfer("agent 答复未过确定性 floor（空/过短/含转人工词），降级留主管")
 
-        # 答复准确率三态闸门：off 不打分同现状；observe/enforce 打分。
+        # 答复准确率四态闸门：off 不打分同现状；observe/enforce/review 打分。
         # observe 无论分数高低都照常直发（纯采集分布，不影响客户）；
-        # enforce 低于阈值才转主管审核（唯一不直发的分支）。
+        # enforce 低于阈值才转主管审核；review 无论分数高低一律转主管审核
+        # （所有答复必须人工确认后发送，无自动直发）。
         mode = settings.operation_answer_accuracy_mode
         accuracy_extra: dict[str, object] | None = None
-        if mode in ("observe", "enforce"):
+        if mode in ("observe", "enforce", "review"):
             score = score_answer_accuracy(question, answer, cited_knowledge)
-            if mode == "enforce" and score.accuracy < settings.operation_answer_accuracy_threshold:
+            # review：全部转审核；enforce：仅低于阈值转审核。
+            needs_review = mode == "review" or (
+                mode == "enforce" and score.accuracy < settings.operation_answer_accuracy_threshold
+            )
+            if needs_review:
+                reason = (
+                    "全部答复转主管人工确认"
+                    if mode == "review"
+                    else (
+                        f"准确率 {score.accuracy}% < "
+                        f"{settings.operation_answer_accuracy_threshold}%，待主管审核"
+                    )
+                )
                 _save_draft_reply(db, hub, content=answer)
                 apply_op_status(
                     db,
                     hub,
                     to_status=OP_REVIEWING,
                     handler=resolve_op_handler(db, hub, settings),
-                    reason=(
-                        f"准确率 {score.accuracy}% < "
-                        f"{settings.operation_answer_accuracy_threshold}%，待主管审核"
-                    ),
+                    reason=reason,
                 )
                 _record_decision(
                     db,
@@ -288,11 +298,12 @@ def auto_answer_operation(
                     question=question,
                     answer=answer,
                     supply_note="",
-                    extra={"accuracy": score.accuracy, "reason": score.reason},
+                    extra={"accuracy": score.accuracy, "reason": score.reason, "mode": mode},
                 )
                 logger.info(
-                    "operation_answer_low_accuracy_review",
+                    "operation_answer_review",
                     hub_issue_id=hub.id,
+                    mode=mode,
                     accuracy=score.accuracy,
                 )
                 return True
