@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,10 @@ from app.models import (
     Ticket,
     User,
 )
-from app.services.hub_issues.creator import ensure_hub_issue_for_ticket
+from app.services.hub_issues.creator import (
+    create_hub_issue_for_ticket_auto,
+    ensure_hub_issue_for_ticket,
+)
 
 _next_uid = 0
 
@@ -128,3 +133,51 @@ def test_operation_dispatch_writes_op_handler_not_override(db_session: Session) 
     assert hub.op_handler_user_id == handler.id
     assert hub.assigned_user_id == reporter.id  # Operation 不覆盖责任人
     assert result.dispatch_missed is False  # Operation 无结果也不设 missed
+
+
+def test_auto_dispatch_missed_marks_pending_no_linear(db_session: Session, monkeypatch) -> None:
+    """auto 路径研发类分派无结果 → status=pending，不调 push_hub_issue_to_linear。"""
+    reporter = _seed_user(db_session, "reporter4")
+    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    db_session.commit()
+    ticket_id = t.id
+
+    # create_hub_issue_for_ticket_auto 自开 session，用 monkeypatch 让它复用测试 session
+    monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
+    # 防 session 被内部 close 掉影响断言
+    monkeypatch.setattr(db_session, "close", lambda: None)
+
+    with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mock_push:
+        result = create_hub_issue_for_ticket_auto(ticket_id)
+
+    assert result is not None and result.dispatch_missed is True
+    mock_push.assert_not_called()
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending"
+
+
+def test_auto_dispatch_hit_with_review_goes_pending_review(
+    db_session: Session, monkeypatch
+) -> None:
+    """auto 路径命中分派 + review 开 → pending_review（不误判为 dispatch pending）。"""
+    reporter = _seed_user(db_session, "reporter5")
+    handler = _seed_user(db_session, "handler5")
+    _seed_dispatch_rule(db_session, handler.id)
+    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    db_session.commit()
+    ticket_id = t.id
+
+    monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.get_settings",
+        lambda: type("S", (), {"require_review_before_linear": True, "hub_dedup_enabled": False})(),
+    )
+
+    with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mock_push:
+        result = create_hub_issue_for_ticket_auto(ticket_id)
+
+    assert result.dispatch_missed is False
+    mock_push.assert_not_called()
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending_review"

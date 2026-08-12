@@ -231,7 +231,10 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         db.close()
 
     if result.created and result.type in ("Bug_fix", "Demand"):
-        if get_settings().require_review_before_linear:
+        if result.dispatch_missed:
+            # 分派无匹配处理人 → 转人工（复用 pending 队列），不进 pending_review、不推 Linear
+            _mark_dispatch_pending(result.hub_issue_id)
+        elif get_settings().require_review_before_linear:
             # agent 自动毕业的研发类 → 进 pending_review 待主管确认，不自动推 Linear
             _mark_pending_review(result.hub_issue_id)
         else:
@@ -255,6 +258,29 @@ def _mark_pending_review(hub_issue_id: int) -> None:
             to_status="pending_review",
             changed_by="agent:hub_issue_auto",
             reason="研发类待主管确认分类后推 Linear",
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_dispatch_pending(hub_issue_id: int) -> None:
+    """研发类分派无匹配处理人 → status=pending 转人工（复用 Linear 待人工队列）。
+    自开 session。主管补齐处理人后可重推 Linear。"""
+    db = make_session()
+    try:
+        hub = db.get(HubIssue, hub_issue_id)
+        if hub is None:
+            return
+        prev = hub.status
+        hub.status = "pending"
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status=prev,
+            to_status="pending",
+            changed_by="agent:dispatch",
+            reason="分派无匹配处理人，转人工补齐后重推 Linear",
         )
         db.commit()
     finally:
