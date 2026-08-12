@@ -25,13 +25,13 @@ def world(db_session: Session) -> Session:
 
 
 def _mk_ticket(db: Session, **kw: object) -> Ticket:
-    defaults = dict(
-        short_code="TKT-1",
-        source_code="ksm",
-        source_ticket_id="ksm-1",
-        type="Raw",
-        status="received",
-    )
+    defaults: dict[str, object] = {
+        "short_code": "TKT-1",
+        "source_code": "ksm",
+        "source_ticket_id": "ksm-1",
+        "type": "Raw",
+        "status": "received",
+    }
     defaults.update(kw)
     t = Ticket(**defaults)  # type: ignore[arg-type]
     db.add(t)

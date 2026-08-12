@@ -1900,9 +1900,7 @@ def reclassify(
     # 一个 hub 可能挂多条 ticket（dedup 合并），全部更新——否则工单列表「AI 分类」
     # 列（读 ticket.predicted_type）仍显示旧类型，与 hub.type 不一致。
     linked = (
-        db.query(Ticket)
-        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
-        .all()
+        db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).all()
     )
     for tk in linked:
         tk.predicted_type = body.new_type

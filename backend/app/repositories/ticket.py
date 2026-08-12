@@ -269,9 +269,7 @@ class HubIssueRepository:
         if product:
             # 产品分类筛选匹配 product_line_code（product 字段创建时未赋值，恒为空——
             # 真实产品信息在 product_line_code，继承自 ticket）。兼容历史 product 有值的行。
-            clauses.append(
-                or_(HubIssue.product_line_code == product, HubIssue.product == product)
-            )
+            clauses.append(or_(HubIssue.product_line_code == product, HubIssue.product == product))
         if module:
             clauses.append(HubIssue.module == module)
         if search:
@@ -423,9 +421,7 @@ class HubIssueRepository:
             .where(HubIssue.deleted_at.is_(None), HubIssue.linear_status.is_not(None), *base_no_dev)
             .group_by(HubIssue.linear_status)
         )
-        dev_counts: dict[str, int] = {
-            r[0]: r[1] for r in self._db.execute(dev_stmt).all() if r[0]
-        }
+        dev_counts: dict[str, int] = {r[0]: r[1] for r in self._db.execute(dev_stmt).all() if r[0]}
 
         return {"op_status": op_counts, "dev_stage": dev_counts}
 

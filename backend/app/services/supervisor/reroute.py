@@ -110,9 +110,7 @@ class RerouteService:
                 # 即处理人未被答复/转交改动过——才同步,避免抢走正在处理者的可见性。
                 if ticket.handler_user_id in (None, ticket.assigned_user_id):
                     values["handler_user_id"] = new_assigned_id
-                self._db.execute(
-                    update(Ticket).where(Ticket.id == ticket.id).values(**values)
-                )
+                self._db.execute(update(Ticket).where(Ticket.id == ticket.id).values(**values))
                 logger.info(
                     "supervisor_reroute_assigned",
                     ticket_id=ticket.id,
