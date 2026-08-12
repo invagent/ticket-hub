@@ -1890,6 +1890,9 @@ def reclassify(
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
     """主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。"""
+    from app.services.dispatch import dispatch_operation_handler
+    from app.services.hub_issues.op_status import set_hub_tickets_handler
+
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     old_type = hub.type
     hub.type = body.new_type
@@ -1926,6 +1929,15 @@ def reclassify(
             handler="agent",
             reason=f"主管改判 {old_type}→Operation，回炉答复链",
         )
+        # 与自动/手动毕业的 Operation 路径一致：按规则预分配运营处理人。
+        # 否则改判进 Operation 的 hub 的 op_handler_user_id 恒 NULL，转人工永远
+        # 走兜底，拿不到分派引擎的预分配运营。（linked ticket 已挂 hub，
+        # dispatch 内的来源维度反查可命中。）
+        db.flush()
+        dr = dispatch_operation_handler(db, hub)
+        if dr.user_id is not None:
+            hub.op_handler_user_id = dr.user_id
+            set_hub_tickets_handler(db, hub, dr.user_id)
     elif body.new_type in ("Bug_fix", "Demand"):
         hub.status = "pending_review"  # 改完仍待确认才推 Linear
     else:  # Internal_task / Complaint：不推 Linear、不走答复
