@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import AgentDecision, HubIssue
+from app.models import AgentDecision, HubIssue, Ticket
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
@@ -336,6 +336,17 @@ def _authorize_hub_handler(
     if hub is None:
         return  # 交给端点内 404
     if hub.op_handler_user_id == user.user_id:
+        return
+    # hub 层没落运营处理人（历史单 / 未走分派的单），但处理人身份落在 ticket 层
+    # （ticket.handler_user_id，工单详情页据此判可见性/持有）。授权口径与可见性
+    # 口径对齐：该用户是本 hub 任一关联工单的处理人即放行。
+    is_ticket_handler = (
+        db.query(Ticket.id)
+        .filter(Ticket.hub_issue_id == hub_issue_id, Ticket.handler_user_id == user.user_id)
+        .first()
+        is not None
+    )
+    if is_ticket_handler:
         return
     raise HTTPException(
         status_code=403,

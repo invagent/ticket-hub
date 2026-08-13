@@ -106,6 +106,36 @@ def test_reply_allowed_for_op_handler(app_client: TestClient, reply_world: Sessi
     assert r2.status_code == 403
 
 
+def test_reply_allowed_for_ticket_handler_when_hub_op_handler_null(
+    app_client: TestClient, reply_world: Session
+) -> None:
+    """处理人身份只落在 ticket 层（handler_user_id），hub 层 op_handler_user_id 为空时，
+    也应放行——授权口径与工单详情页可见性口径对齐。
+
+    复现 TKT-005967：ticket.handler_user_id=42 但 hub.op_handler_user_id=NULL，
+    苗一琳从工单详情页答复被 403。
+    """
+    hub = reply_world.get(HubIssue, 90)
+    assert hub.op_handler_user_id is None  # hub 层无运营处理人
+    ticket = reply_world.get(Ticket, 300)
+    ticket.handler_user_id = 42  # 处理人只落在 ticket 层
+    reply_world.commit()
+    # 关联工单的处理人本人（member 角色）→ 放行
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "工单处理人答复"},
+        headers=_bearer(42, name="miao", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    # 与该工单无关的 member → 仍 403
+    r2 = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "路人答复"},
+        headers=_bearer(99, name="other", role="member"),
+    )
+    assert r2.status_code == 403
+
+
 def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
     r = app_client.post(
         "/api/hub-issues/90/reply",
