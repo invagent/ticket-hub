@@ -76,6 +76,7 @@ from app.services.hub_issues.creator import (
     ensure_hub_issue_for_ticket,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
+from app.services.hub_issues.module_owner import resolve_module_owner
 from app.services.hub_issues.op_status import (
     OP_PROCESSING,
     apply_op_status,
@@ -2051,4 +2052,118 @@ def dismiss_classification(
     )
     db.commit()
     logger.info("supervisor_dismiss_classification", hub_issue_id=hub.id, operator=user.name)
+    return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)
+
+
+# ---- 闸门③：待推 Linear 队列 + confirm-linear-push -----------------------
+
+
+class PendingLinearReviewItem(BaseModel):
+    hub_issue_id: int
+    short_code: str
+    title: str
+    type: str
+    product_line_code: str | None
+    module: str | None
+    default_assignee_user_id: int | None
+    default_assignee_name: str | None
+    default_assignee_in_linear: bool
+
+
+class PendingLinearReviewResponse(BaseModel):
+    items: list[PendingLinearReviewItem]
+
+
+@router.get("/pending-linear-review", response_model=PendingLinearReviewResponse)
+def list_pending_linear_review(
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> PendingLinearReviewResponse:
+    """闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
+    负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+    """
+    hubs = (
+        db.query(HubIssue)
+        .filter(
+            HubIssue.deleted_at.is_(None),
+            HubIssue.status == "pending_linear_review",
+            HubIssue.type.in_(["Bug_fix", "Demand"]),
+        )
+        .order_by(HubIssue.id.desc())
+        .limit(min(limit, 100))
+        .all()
+    )
+    items: list[PendingLinearReviewItem] = []
+    for h in hubs:
+        owner = resolve_module_owner(db, h.product_line_code, h.module)
+        items.append(
+            PendingLinearReviewItem(
+                hub_issue_id=h.id,
+                short_code=h.short_code,
+                title=h.title,
+                type=h.type,
+                product_line_code=h.product_line_code,
+                module=h.module,
+                default_assignee_user_id=owner.id if owner else None,
+                default_assignee_name=owner.name if owner else None,
+                default_assignee_in_linear=bool(owner and owner.linear_user_id),
+            )
+        )
+    return PendingLinearReviewResponse(items=items)
+
+
+class ConfirmLinearPushBody(BaseModel):
+    hub_issue_id: int
+    assignee_user_id: int | None = None
+
+
+@router.post("/confirm-linear-push", response_model=ClassificationActionResponse)
+def confirm_linear_push(
+    body: ConfirmLinearPushBody,
+    background_tasks: BackgroundTasks,
+    user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> ClassificationActionResponse:
+    """主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。"""
+    hub = db.get(HubIssue, body.hub_issue_id)
+    if hub is None or hub.deleted_at is not None or hub.status != "pending_linear_review":
+        raise HTTPException(
+            status_code=409,
+            detail=f"hub_issue {body.hub_issue_id} 非 pending_linear_review，不可确认推送",
+        )
+    assignee_user_id = body.assignee_user_id
+    if assignee_user_id is None:
+        owner = resolve_module_owner(db, hub.product_line_code, hub.module)
+        assignee_user_id = owner.id if owner else None
+
+    prev = hub.status
+    hub.status = "created"
+    StatusHistoryRepository(db).record(
+        entity_type="hub_issue",
+        entity_id=hub.id,
+        from_status=prev,
+        to_status="created",
+        changed_by=f"user:{user.name}",
+        reason="确认推送 Linear",
+    )
+    record_ticket_action(
+        db,
+        hub,
+        action="confirm_linear_push",
+        changed_by=f"user:{user.name}",
+        reason="确认推 Linear",
+    )
+    db.commit()
+
+    background_tasks.add_task(
+        push_hub_issue_to_linear, hub.id, assignee_override_user_id=assignee_user_id
+    )
+
+    logger.info(
+        "supervisor_confirm_linear_push",
+        hub_issue_id=hub.id,
+        assignee_user_id=assignee_user_id,
+        operator=user.name,
+    )
     return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)

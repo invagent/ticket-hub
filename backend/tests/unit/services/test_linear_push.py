@@ -332,3 +332,56 @@ def test_hub_dedup_no_dup_pushes_normally(world: Session, monkeypatch: pytest.Mo
     fake = _FakeLinearClient()
     res = lp.push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert res is not None and len(fake.requests) == 1
+
+
+# ---- Task 6: assignee_override_user_id（闸门③确认推送用手选/模块负责人覆盖）----
+
+
+def test_push_uses_assignee_override(world: Session) -> None:
+    """override 优先于 hub.assigned_user_id：assignee/team 都来自 override 用户。"""
+    world.add(
+        User(
+            id=30,
+            feishu_uid="ou_ovr",
+            name="override-dev",
+            linear_user_id="lu-ovr",
+            linear_team_id="team-ovr",
+        )
+    )
+    world.add(
+        User(id=31, feishu_uid="ou_assigned", name="assigned-dev", linear_user_id="lu-assigned")
+    )
+    world.commit()
+    hub = _make_hub(world, 30, assigned_user_id=31)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(  # type: ignore[arg-type]
+        hub.id, world, client=fake, assignee_override_user_id=30
+    )
+    assert fake.requests[0].assignee_id == "lu-ovr"  # type: ignore[attr-defined]
+    assert fake.requests[0].team_id == "team-ovr"  # type: ignore[attr-defined]
+
+
+def test_push_without_override_uses_assigned_user_id(world: Session) -> None:
+    """无 override 时沿用现有 hub.assigned_user_id 逻辑（回归）。"""
+    world.add(User(id=32, feishu_uid="ou_plain", name="plain-dev", linear_user_id="lu-plain"))
+    world.commit()
+    hub = _make_hub(world, 31, assigned_user_id=32)
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert fake.requests[0].assignee_id == "lu-plain"  # type: ignore[attr-defined]
+
+
+def test_push_override_unmatched_individual_marks_pending(world: Session) -> None:
+    """override 用户有邮箱但 Linear 查无此人 → 仍走既有 pending 守卫（不因为是
+    override 就绕过校验）。"""
+    world.add(User(id=33, feishu_uid="ou_ovr2", name="override-nolinear", email="ovr2@kingdee.com"))
+    world.commit()
+    hub = _make_hub(world, 32)
+    fake = _FakeLinearClient()
+    res = push_hub_issue_to_linear(  # type: ignore[arg-type]
+        hub.id, world, client=fake, assignee_override_user_id=33
+    )
+    assert res is None
+    assert fake.requests == []
+    world.refresh(hub)
+    assert hub.status == "pending"

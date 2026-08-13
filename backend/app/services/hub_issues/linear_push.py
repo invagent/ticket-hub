@@ -92,6 +92,7 @@ def push_hub_issue_to_linear(
     db: Session | None = None,
     *,
     client: LinearClient | None = None,
+    assignee_override_user_id: int | None = None,
 ) -> LinearPushResult | None:
     """Returns None when skipped or failed (logged); never raises."""
     settings = get_settings()
@@ -138,23 +139,26 @@ def push_hub_issue_to_linear(
         # as 'pending' instead of silently losing their assignee.
         assignee_linear_id: str | None = None
         team_id = settings.linear_team_id
-        if hub.assigned_user_id is not None:
-            assignee = db.get(User, hub.assigned_user_id)
-            if assignee is not None:
-                if assignee.email and not assignee.linear_user_id:
-                    _mark_pending(
-                        db,
-                        hub,
-                        reason=(
-                            f"处理人 {assignee.name}（{assignee.email}）在 Linear 工作区"
-                            "查无此人，推送暂停待人工处理（加入 Linear 后执行"
-                            " sync-from-linear 再重推）"
-                        ),
-                    )
-                    return None
-                assignee_linear_id = assignee.linear_user_id
-                if assignee.linear_team_id:
-                    team_id = assignee.linear_team_id
+        assignee_user: User | None = None
+        if assignee_override_user_id is not None:
+            assignee_user = db.get(User, assignee_override_user_id)
+        elif hub.assigned_user_id is not None:
+            assignee_user = db.get(User, hub.assigned_user_id)
+        if assignee_user is not None:
+            if assignee_user.email and not assignee_user.linear_user_id:
+                _mark_pending(
+                    db,
+                    hub,
+                    reason=(
+                        f"处理人 {assignee_user.name}（{assignee_user.email}）在 Linear 工作区"
+                        "查无此人，推送暂停待人工处理（加入 Linear 后执行"
+                        " sync-from-linear 再重推）"
+                    ),
+                )
+                return None
+            assignee_linear_id = assignee_user.linear_user_id
+            if assignee_user.linear_team_id:
+                team_id = assignee_user.linear_team_id
 
         req = CreateIssueRequest(
             title=f"[{hub.short_code}] {hub.title}",
