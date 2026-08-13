@@ -120,8 +120,10 @@ def test_auto_answer_passes_managed_skill_to_replay(db_session: Session) -> None
     assert fake.replay_kwargs.get("skill") == "customer-service"
 
 
-def test_auto_answer_c_transfers_to_supervisor(db_session: Session) -> None:
-    """route 判 C（需补料）→ 转兜底主管线下收集，不打回客户（无 supply outbox）。"""
+def test_auto_answer_c_stays_processing_with_draft(db_session: Session) -> None:
+    """route 判 C（需补料）→ 不再直接置补料中。留处理中 + 把需补内容写进处理说明
+    草稿（reply_content + reply_is_draft），handler 用人工名（非 agent，避免被 drain
+    重扫无限重答）；不打回客户（无 supply outbox）。"""
     from app.models import SyncOutbox
 
     hub, _t = _seed_op_hub(db_session)
@@ -137,12 +139,21 @@ def test_auto_answer_c_transfers_to_supervisor(db_session: Session) -> None:
         ok = auto_answer_operation(db_session, hub.id, settings=_S())
     assert ok is True
     db_session.refresh(hub)
-    assert hub.reply_content_version == 0  # 没答复
-    assert hub.op_status == "supplementing"
-    assert hub.op_handler != "agent"  # 已转主管
-    # 不再打回客户 → 无 supply outbox
+    assert hub.op_status == "processing"  # 留处理中，不再是 supplementing
+    assert hub.op_handler != "agent"  # 人工名，避免被 drain 重扫
+    assert hub.reply_content == "请提供开票报错截图"  # 需补内容进草稿
+    assert hub.reply_is_draft is True
+    assert hub.reply_content_version == 0  # 草稿未发（未经 author_reply）
+    # 不打回客户 → 无 supply outbox（补料要人工点「补充资料」才入队）
     ob = db_session.query(SyncOutbox).filter_by(hub_issue_id=hub.id, kind="supply").first()
     assert ob is None
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None and d.proposal["branch"] == "C"
+    assert d.proposal["supply_note"] == "请提供开票报错截图"
 
 
 def test_auto_answer_transfer_leaves_to_human(db_session: Session) -> None:
