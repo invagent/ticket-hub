@@ -266,6 +266,9 @@ export function TicketDetailPage() {
   // 两种都视为「未确认」，右侧只显示改判区；其余视为「已确认」，按 type 分流。
   const hubStatus = hub.data?.status ?? null;
   const pendingReview = hubStatus === "pending_review";
+  // 真的推过 Linear（linear_identifier 有值）才算「已推送」。pending（分派缺人/
+  // 推 Linear 失败转人工）虽已毕业但尚未推送，不能显示「已推送 Linear」。
+  const pushedToLinear = !!hub.data?.linear_identifier;
   // hub 仍在加载时，先不当作已确认（避免闪现「已推 Linear」再回退）
   const hubResolved = d?.hub_issue_id == null || hub.isSuccess;
   const classified = d?.hub_issue_id != null && hubResolved && !pendingReview;
@@ -635,11 +638,21 @@ export function TicketDetailPage() {
                 </div>
                 )}
 
-                {/* 明确分类且为研发类（Bug 修复 / 需求）：已推 Linear，无对客答复 */}
-                {classified && isDevType && d.predicted_type && (
+                {/* 明确分类且为研发类（Bug 修复 / 需求）且已真正推送 Linear：研发跟进，无对客答复 */}
+                {classified && isDevType && d.predicted_type && pushedToLinear && (
                   <div className="border border-hub-blue-border bg-hub-blue-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-blue-deep">
                     已推送 Linear（{HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}{" "}
                     类工单由研发在 Linear 跟进，无需在此对客答复）
+                  </div>
+                )}
+
+                {/* 研发类已毕业但未推送（分派缺人/推 Linear 失败转人工，pending 队列）：
+                    提示去主管工作台「Linear 推送待人工」处理，避免误显示「已推送」 */}
+                {classified && isDevType && d.predicted_type && !pushedToLinear && (
+                  <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
+                    {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
+                    类工单尚未推送 Linear（分派缺人或推送待人工）。请在主管工作台「Linear
+                    推送待人工」队列补齐处理人后重推。
                   </div>
                 )}
 
