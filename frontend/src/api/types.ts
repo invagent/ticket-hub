@@ -1388,9 +1388,35 @@ export interface paths {
         put?: never;
         /**
          * Confirm Classification
-         * @description 主管确认研发类分类无误 → status created + 推 Linear。
+         * @description 主管确认分类无误 → 按 hub.type 分流：
+         *
+         *     - Operation → created + op_status=processing/agent（回到自动答复链，由
+         *       Celery drain 扫描触发，此处不直接调答复）。
+         *     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
+         *       pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。
+         *     - Internal_task → created（无外部动作）。
          */
         post: operations["confirm_classification_api_supervisor_confirm_classification_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/confirm-linear-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Linear Push
+         * @description 主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。
+         */
+        post: operations["confirm_linear_push_api_supervisor_confirm_linear_push_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1715,10 +1741,12 @@ export interface paths {
         };
         /**
          * List Pending Classification
-         * @description 研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。
+         * @description 全类型 status=pending_review 待主管确认分类队列（闸门①）。
          *
-         *     注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，
-         *     pending-hub-issues 端点消费）是不同队列、不同状态值。
+         *     闸门①开启后 Operation/Bug_fix/Demand/Internal_task 毕业后一律先停
+         *     pending_review，故此队列不再只挑研发类。注意 pending_review 与既有
+         *     status='pending'（Linear 推送失败待人工，pending-hub-issues 端点消费）
+         *     是不同队列、不同状态值。
          */
         get: operations["list_pending_classification_api_supervisor_pending_classification_get"];
         put?: never;
@@ -1749,6 +1777,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/supervisor/pending-linear-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending Linear Review
+         * @description 闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
+         *     负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+         */
+        get: operations["list_pending_linear_review_api_supervisor_pending_linear_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/supervisor/reclassify": {
         parameters: {
             query?: never;
@@ -1760,7 +1809,13 @@ export interface paths {
         put?: never;
         /**
          * Reclassify
-         * @description 主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。
+         * @description 主管改判分类。改判本身即视为已确认分类，按新类型分流：
+         *
+         *     - Operation → 回炉自动答复链（op_status=processing/agent）。
+         *     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
+         *       pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像
+         *       confirm-classification 的分流，改判后不再回 pending_review 二次确认）。
+         *     - Internal_task/Complaint → created，不推 Linear、不走答复。
          */
         post: operations["reclassify_api_supervisor_reclassify_post"];
         delete?: never;
@@ -2459,6 +2514,13 @@ export interface components {
         };
         /** ConfirmClassificationBody */
         ConfirmClassificationBody: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+        };
+        /** ConfirmLinearPushBody */
+        ConfirmLinearPushBody: {
+            /** Assignee User Id */
+            assignee_user_id?: number | null;
             /** Hub Issue Id */
             hub_issue_id: number;
         };
@@ -3641,6 +3703,32 @@ export interface components {
         PendingHubIssuesResponse: {
             /** Items */
             items: components["schemas"]["PendingHubIssueItem"][];
+        };
+        /** PendingLinearReviewItem */
+        PendingLinearReviewItem: {
+            /** Default Assignee In Linear */
+            default_assignee_in_linear: boolean;
+            /** Default Assignee Name */
+            default_assignee_name: string | null;
+            /** Default Assignee User Id */
+            default_assignee_user_id: number | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
+        /** PendingLinearReviewResponse */
+        PendingLinearReviewResponse: {
+            /** Items */
+            items: components["schemas"]["PendingLinearReviewItem"][];
         };
         /**
          * ProductLineIn
@@ -7463,6 +7551,39 @@ export interface operations {
             };
         };
     };
+    confirm_linear_push_api_supervisor_confirm_linear_push_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmLinearPushBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_hub_issue_endpoint_api_supervisor_create_hub_issue_post: {
         parameters: {
             query?: never;
@@ -7947,6 +8068,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingHubIssuesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_linear_review_api_supervisor_pending_linear_review_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingLinearReviewResponse"];
                 };
             };
             /** @description Validation Error */

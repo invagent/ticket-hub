@@ -763,6 +763,30 @@
         "title": "ConfirmClassificationBody",
         "type": "object"
       },
+      "ConfirmLinearPushBody": {
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id"
+        ],
+        "title": "ConfirmLinearPushBody",
+        "type": "object"
+      },
       "CountsOut": {
         "properties": {
           "customers_total": {
@@ -4335,6 +4359,103 @@
           "items"
         ],
         "title": "PendingHubIssuesResponse",
+        "type": "object"
+      },
+      "PendingLinearReviewItem": {
+        "properties": {
+          "default_assignee_in_linear": {
+            "title": "Default Assignee In Linear",
+            "type": "boolean"
+          },
+          "default_assignee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Assignee Name"
+          },
+          "default_assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Assignee User Id"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "short_code",
+          "title",
+          "type",
+          "product_line_code",
+          "module",
+          "default_assignee_user_id",
+          "default_assignee_name",
+          "default_assignee_in_linear"
+        ],
+        "title": "PendingLinearReviewItem",
+        "type": "object"
+      },
+      "PendingLinearReviewResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingLinearReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingLinearReviewResponse",
         "type": "object"
       },
       "ProductLineIn": {
@@ -12087,7 +12208,7 @@
     },
     "/api/supervisor/confirm-classification": {
       "post": {
-        "description": "主管确认研发类分类无误 → status created + 推 Linear。",
+        "description": "主管确认分类无误 → 按 hub.type 分流：\n\n- Operation → created + op_status=processing/agent（回到自动答复链，由\n  Celery drain 扫描触发，此处不直接调答复）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。\n- Internal_task → created（无外部动作）。",
         "operationId": "confirm_classification_api_supervisor_confirm_classification_post",
         "requestBody": {
           "content": {
@@ -12122,6 +12243,48 @@
           }
         },
         "summary": "Confirm Classification",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
+    "/api/supervisor/confirm-linear-push": {
+      "post": {
+        "description": "主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。",
+        "operationId": "confirm_linear_push_api_supervisor_confirm_linear_push_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmLinearPushBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Linear Push",
         "tags": [
           "supervisor"
         ]
@@ -12704,7 +12867,7 @@
     },
     "/api/supervisor/pending-classification": {
       "get": {
-        "description": "研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。\n\n注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，\npending-hub-issues 端点消费）是不同队列、不同状态值。",
+        "description": "全类型 status=pending_review 待主管确认分类队列（闸门①）。\n\n闸门①开启后 Operation/Bug_fix/Demand/Internal_task 毕业后一律先停\npending_review，故此队列不再只挑研发类。注意 pending_review 与既有\nstatus='pending'（Linear 推送失败待人工，pending-hub-issues 端点消费）\n是不同队列、不同状态值。",
         "operationId": "list_pending_classification_api_supervisor_pending_classification_get",
         "parameters": [
           {
@@ -12790,9 +12953,53 @@
         ]
       }
     },
+    "/api/supervisor/pending-linear-review": {
+      "get": {
+        "description": "闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块\n负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。",
+        "operationId": "list_pending_linear_review_api_supervisor_pending_linear_review_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingLinearReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pending Linear Review",
+        "tags": [
+          "supervisor"
+        ]
+      }
+    },
     "/api/supervisor/reclassify": {
       "post": {
-        "description": "主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。",
+        "description": "主管改判分类。改判本身即视为已确认分类，按新类型分流：\n\n- Operation → 回炉自动答复链（op_status=processing/agent）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像\n  confirm-classification 的分流，改判后不再回 pending_review 二次确认）。\n- Internal_task/Complaint → created，不推 Linear、不走答复。",
         "operationId": "reclassify_api_supervisor_reclassify_post",
         "requestBody": {
           "content": {
