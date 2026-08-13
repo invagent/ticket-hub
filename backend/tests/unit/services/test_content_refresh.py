@@ -73,7 +73,9 @@ def test_refresh_appends_new_attachments(db_session: Session) -> None:
     t, _ = _seed(db_session)
     # 首次已有 1 张附件
     db_session.add(
-        Attachment(ticket_id=t.id, source_url="http://x/old.png", kind="image", vision_status="queued")
+        Attachment(
+            ticket_id=t.id, source_url="http://x/old.png", kind="image", vision_status="queued"
+        )
     )
     db_session.commit()
 

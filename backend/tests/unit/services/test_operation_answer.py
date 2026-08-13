@@ -421,6 +421,64 @@ def test_d_review_mode_always_saves_draft_reviewing(db_session: Session) -> None
     assert d.proposal.get("mode") == "review"
 
 
+# ---- 补料回流完整闭环 seam ----
+
+
+def test_supply_refill_full_loop(db_session: Session) -> None:
+    """完整闭环：判需补料→处理中(草稿,handler≠agent,drain 不扫)→点补充资料→
+    补料中→客户重推→处理中/agent(drain 扫到)→AI 重答成功。"""
+    from app.services.cascade.supply_sync import request_supply
+    from app.services.ingest.ksm_ingester import KSMIngester
+
+    hub, ticket = _seed_op_hub(db_session, source="ksm")
+    db_session.commit()
+
+    # 1. AI 判需补料 → 留处理中 + 草稿，handler=人工名
+    fake_c = _FakeClient(answer="需要更多信息才能定位")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake_c),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="C", supply_note="请提供开票报错截图"),
+        ),
+    ):
+        assert auto_answer_operation(db_session, hub.id, settings=_S()) is True
+    db_session.refresh(hub)
+    assert hub.op_status == "processing" and hub.op_handler != "agent"
+    assert hub.reply_content == "请提供开票报错截图" and hub.reply_is_draft is True
+
+    # 2. drain 一轮：handler≠agent → 不被扫（不抢人工处理中的单）
+    report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 0
+
+    # 3. 人工点「补充资料」→ supplementing
+    request_supply(db_session, hub.id, note="请提供开票报错截图", requested_by="user:张三")
+    db_session.refresh(hub)
+    assert hub.op_status == "supplementing"
+
+    # 4. 客户补料，KSM 重推同 billId → 转回 processing/agent
+    ing = KSMIngester(db_session, default_pool_user_id=None)
+    ing.ingest({"billId": ticket.source_ticket_id, "content": "这是补充的报错截图说明"})
+    db_session.commit()
+    db_session.refresh(hub)
+    assert hub.op_status == "processing" and hub.op_handler == "agent"
+
+    # 5. drain 再一轮：被扫到 → AI 重答成功
+    fake_d = _FakeClient(answer="您好，请在【发票管理】重新发起开票并保存后重试。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake_d),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        report2 = drain_operation_auto_reply(db_session, settings=_S())
+    assert report2.scanned == 1 and report2.answered == 1
+    db_session.refresh(hub)
+    assert hub.op_status == "answered"
+    assert hub.reply_content_version == 1
+
+
 # ---- drain_operation_auto_reply（异步扫描 + 补偿重试）----
 
 from app.services.agents.operation_answer import (  # noqa: E402
