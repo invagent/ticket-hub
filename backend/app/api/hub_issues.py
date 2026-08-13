@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor, require_user
+from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
 from app.models import AgentDecision, HubIssue
@@ -321,13 +321,39 @@ class AuthorReplyResponse(BaseModel):
     outbox_count: int  # 入队待回写源系统的条数（D5 sender 消费）
 
 
+def _authorize_hub_handler(
+    db: Session,
+    hub_issue_id: int,
+    user: AuthedUser,
+    *,
+    base_roles: tuple[str, ...] = ("supervisor", "admin"),
+) -> None:
+    """处理动作授权：base_roles 内的角色直接放行；否则要求当前用户是该 hub 的
+    Operation 处理人（op_handler_user_id），即"处理人可操作自己手上的工单"。都不满足 → 403。
+
+    hub 不存在时不在此报错（放行给端点内的 404 逻辑处理）。
+    """
+    if user.role in base_roles:
+        return
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None:
+        return  # 交给端点内 404
+    if hub.op_handler_user_id == user.user_id:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="需要主管/管理员权限，或本工单的处理人才能操作",
+    )
+
+
 @router.post("/{hub_issue_id}/reply", response_model=AuthorReplyResponse)
 def author_reply_endpoint(
     hub_issue_id: int,
     body: AuthorReplyBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> AuthorReplyResponse:
+    _authorize_hub_handler(db, hub_issue_id, user)
     """Author/replace the Operation reply. Cascades to linked tickets'
     cached_reply and enqueues sync_outbox rows for source write-back."""
     hub_before = db.get(HubIssue, hub_issue_id)
@@ -390,11 +416,12 @@ class RequestSupplyResponse(BaseModel):
 def request_supply_endpoint(
     hub_issue_id: int,
     body: RequestSupplyBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> RequestSupplyResponse:
     """Ask the customer for more info (补料). Enqueues a supply sync_outbox row
     per linked sourced ticket; the KSM sender drains them into supplyKsmOrder."""
+    _authorize_hub_handler(db, hub_issue_id, user)
     try:
         result = request_supply(db, hub_issue_id, note=body.note, requested_by=f"user:{user.name}")
     except SupplySyncError as e:
@@ -424,7 +451,7 @@ class ReAnswerResponse(BaseModel):
 @router.post("/{hub_issue_id}/re-answer", response_model=ReAnswerResponse)
 def re_answer_endpoint(
     hub_issue_id: int,
-    user: AuthedUser = Depends(require_knowledge_op),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> ReAnswerResponse:
     """主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。
@@ -435,7 +462,12 @@ def re_answer_endpoint(
     重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能
     点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、
     补料中等——这些场景走各自专属流程，不该被重答抢跑）。
+
+    权限：supervisor/admin/knowledge_op，或本工单的处理人（op_handler_user_id）。
     """
+    _authorize_hub_handler(
+        db, hub_issue_id, user, base_roles=("supervisor", "admin", "knowledge_op")
+    )
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None or hub.deleted_at is not None:
         raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")

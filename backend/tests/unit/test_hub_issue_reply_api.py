@@ -76,12 +76,34 @@ def test_reply_sets_handler_to_author(app_client: TestClient, reply_world: Sessi
 
 
 def test_reply_requires_supervisor(app_client: TestClient, reply_world: Session) -> None:
+    # 非处理人的 member 无权答复
     r = app_client.post(
         "/api/hub-issues/90/reply",
         json={"content": "回复"},
         headers=_bearer(1, name="bob", role="member"),
     )
     assert r.status_code == 403
+
+
+def test_reply_allowed_for_op_handler(app_client: TestClient, reply_world: Session) -> None:
+    """处理人（op_handler_user_id）即使是 member 也能答复自己手上的工单。"""
+    hub = reply_world.get(HubIssue, 90)
+    hub.op_handler_user_id = 42  # 指定处理人
+    reply_world.commit()
+    # 处理人本人（member 角色）→ 放行
+    r = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "处理人答复"},
+        headers=_bearer(42, name="miao", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    # 另一个非处理人 member → 仍 403
+    r2 = app_client.post(
+        "/api/hub-issues/90/reply",
+        json={"content": "路人答复"},
+        headers=_bearer(99, name="other", role="member"),
+    )
+    assert r2.status_code == 403
 
 
 def test_reply_e2e(app_client: TestClient, reply_world: Session) -> None:
