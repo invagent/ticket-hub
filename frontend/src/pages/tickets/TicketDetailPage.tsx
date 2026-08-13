@@ -278,6 +278,9 @@ export function TicketDetailPage() {
   // 答复完成(answered)或已关单(closed)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
   const opDone = opStatus === "answered" || opStatus === "closed";
+  // 待审核(reviewing)：AI 草稿答复存 hub.reply_content（未级联到 ticket），
+  // 供审核人在处理说明框查看/编辑后点答复正式发出。
+  const draftReply = opStatus === "reviewing" ? (hub.data?.reply_content ?? "") : "";
   // 改判类型默认取 AI 预测类型（在 HUB_TYPES 内才采纳）
   useEffect(() => {
     if (d?.predicted_type && HUB_TYPES.includes(d.predicted_type as (typeof HUB_TYPES)[number])) {
@@ -540,12 +543,17 @@ export function TicketDetailPage() {
                   {isCurrentNode ? (
                     <>
                       {(() => {
-                        // 答复完成/关单 或 工单终态 → 只读
-                        const editable = !DONE_STATUSES.includes(d.status) && !opDone;
+                        // 待审核可编辑（审核人改草稿）；否则答复完成/关单/工单终态 → 只读。
+                        // reviewing 单可能出现 ticket.status=closed 脱节，故 reviewing 显式放开。
+                        const editable =
+                          opStatus === "reviewing" ||
+                          (!DONE_STATUSES.includes(d.status) && !opDone);
                         // 补料态默认填 AI 生成的「需补充资料」清单（cached_reply_content 补料态为空）
                         const supplyNote =
                           opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
-                        const val = noteDrafts[0] ?? (d.cached_reply_content || supplyNote || "");
+                        // reviewing 态回落 hub 草稿答复（未级联到 ticket，cached_reply_content 为空）
+                        const val =
+                          noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
                         return (
                           <textarea
                             readOnly={!editable}
@@ -604,7 +612,12 @@ export function TicketDetailPage() {
                     disabled={reply.isPending || suggestion === "split" || opDone}
                     onClick={() => {
                       if (suggestion === "normal") {
-                        const content = (noteDrafts[0] ?? d.cached_reply_content ?? "").trim();
+                        const content = (
+                          noteDrafts[0] ??
+                          d.cached_reply_content ??
+                          draftReply ??
+                          ""
+                        ).trim();
                         if (!content) {
                           setReplyErr("处理说明为空，无法答复");
                           return;

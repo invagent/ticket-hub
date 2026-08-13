@@ -524,12 +524,29 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("op_status=reviewing 显示 AI 草稿待审核提示", async () => {
+  it("op_status=reviewing 显示 AI 草稿待审核提示 + 处理说明框填 hub 草稿答复", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubOperationTicket(324, { op_status: "reviewing" });
+    // ticket 层 cached 为空（草稿不级联）；草稿答复在 hub.reply_content
+    stubOperationTicket(324, { op_status: "reviewing", cached_reply_content: null });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "reviewing",
+          reply_content: "AI 草稿：标准版不支持预览开票",
+        }),
+      ),
+    );
     renderPage(324);
     expect(await screen.findByRole("heading", { name: "TKT-324" })).toBeInTheDocument();
     expect(screen.getByText(/AI 草稿待审核/)).toBeInTheDocument();
+    // 处理说明框（textarea）显示 hub 草稿答复，供审核人查看/编辑后发出
+    expect(
+      await screen.findByDisplayValue(/AI 草稿：标准版不支持预览开票/),
+    ).toBeInTheDocument();
     localStorage.clear();
   });
 
