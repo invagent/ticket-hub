@@ -99,18 +99,28 @@ def test_dismiss_records_ticket_action(app_client: TestClient, act_world: Sessio
     assert len(rows) == 1
 
 
-def test_confirm_pushes_linear(app_client: TestClient, act_world: Session) -> None:
-    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
-        r = app_client.post(
-            "/api/supervisor/confirm-classification",
-            json={"hub_issue_id": 70},
-            headers=_bearer(2),
-        )
-    assert r.status_code == 200, r.text
-    hub = act_world.get(HubIssue, 70)
-    act_world.refresh(hub)
-    assert hub.status == "created"
-    push.assert_called_once_with(70)
+def test_confirm_pushes_linear(
+    app_client: TestClient, act_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """闸门③关（gate_linear_push_enabled=False）时保留旧行为：直推 Linear。"""
+    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+            r = app_client.post(
+                "/api/supervisor/confirm-classification",
+                json={"hub_issue_id": 70},
+                headers=_bearer(2),
+            )
+        assert r.status_code == 200, r.text
+        hub = act_world.get(HubIssue, 70)
+        act_world.refresh(hub)
+        assert hub.status == "created"
+        push.assert_called_once_with(70)
+    finally:
+        get_settings.cache_clear()
 
 
 def test_reclassify_to_operation_enters_answer_chain(
@@ -201,3 +211,183 @@ def test_action_rejects_non_pending_review(app_client: TestClient, act_world: Se
         headers=_bearer(2),
     )
     assert r.status_code == 409
+
+
+# ---- Task 5: confirm-classification / reclassify 按类型分流 -----------------
+
+
+@pytest.fixture
+def type_world(db_session: Session) -> Session:
+    """闸门①下全类型都会停 pending_review——confirm/reclassify 需按 hub.type 分流。"""
+    db_session.add(User(id=2, feishu_uid="ou_c", name="carol", role="supervisor"))
+    db_session.add(
+        HubIssue(
+            id=80,
+            short_code="HUB-000080",
+            type="Operation",
+            title="配置咨询",
+            canonical_body="b",
+            status="pending_review",
+        )
+    )
+    db_session.add(
+        HubIssue(
+            id=81,
+            short_code="HUB-000081",
+            type="Bug_fix",
+            title="报错",
+            canonical_body="b",
+            status="pending_review",
+        )
+    )
+    db_session.add(
+        HubIssue(
+            id=82,
+            short_code="HUB-000082",
+            type="Internal_task",
+            title="内部任务",
+            canonical_body="b",
+            status="pending_review",
+        )
+    )
+    db_session.add(
+        HubIssue(
+            id=83,
+            short_code="HUB-000083",
+            type="Demand",
+            title="需求",
+            canonical_body="b",
+            status="pending_review",
+        )
+    )
+    db_session.commit()
+    return db_session
+
+
+def test_confirm_operation_enters_answer_chain(app_client: TestClient, type_world: Session) -> None:
+    r = app_client.post(
+        "/api/supervisor/confirm-classification",
+        json={"hub_issue_id": 80},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 80)
+    type_world.refresh(hub)
+    assert hub.status == "created"
+    assert hub.op_status == "processing"
+    assert hub.op_handler == "agent"
+
+
+def test_confirm_bugfix_gate_on_goes_pending_linear_review(
+    app_client: TestClient, type_world: Session
+) -> None:
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 81},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 81)
+    type_world.refresh(hub)
+    assert hub.status == "pending_linear_review"
+    assert hub.linear_uuid is None
+    push.assert_not_called()
+
+
+def test_confirm_demand_gate_on_goes_pending_linear_review(
+    app_client: TestClient, type_world: Session
+) -> None:
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 83},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 83)
+    type_world.refresh(hub)
+    assert hub.status == "pending_linear_review"
+    push.assert_not_called()
+
+
+def test_confirm_bugfix_gate_off_pushes_and_created(
+    app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+            r = app_client.post(
+                "/api/supervisor/confirm-classification",
+                json={"hub_issue_id": 81},
+                headers=_bearer(2),
+            )
+        assert r.status_code == 200, r.text
+        hub = type_world.get(HubIssue, 81)
+        type_world.refresh(hub)
+        assert hub.status == "created"
+        push.assert_called_once_with(81)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_confirm_internal_task_created_no_external_action(
+    app_client: TestClient, type_world: Session
+) -> None:
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 82},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 82)
+    type_world.refresh(hub)
+    assert hub.status == "created"
+    push.assert_not_called()
+
+
+def test_reclassify_to_bugfix_gate_on_goes_pending_linear_review(
+    app_client: TestClient, type_world: Session
+) -> None:
+    """改判成 Bug_fix/Demand 时也要经过闸门③（不是回到 pending_review 而是直接
+    pending_linear_review，因为主管这次改判本身已经是"确认分类"的动作）。"""
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 82, "new_type": "Bug_fix", "reason": "其实是研发类"},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 82)
+    type_world.refresh(hub)
+    assert hub.type == "Bug_fix"
+    assert hub.status == "pending_linear_review"
+    push.assert_not_called()
+
+
+def test_reclassify_to_demand_gate_off_pushes(
+    app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+            r = app_client.post(
+                "/api/supervisor/reclassify",
+                json={"hub_issue_id": 82, "new_type": "Demand", "reason": "其实是需求"},
+                headers=_bearer(2),
+            )
+        assert r.status_code == 200, r.text
+        hub = type_world.get(HubIssue, 82)
+        type_world.refresh(hub)
+        assert hub.type == "Demand"
+        assert hub.status == "created"
+        push.assert_called_once_with(82)
+    finally:
+        get_settings.cache_clear()

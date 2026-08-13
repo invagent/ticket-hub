@@ -1764,17 +1764,18 @@ def list_pending_classification(
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> PendingClassificationResponse:
-    """研发类(Bug_fix/Demand) status=pending_review 待主管确认分类队列。
+    """全类型 status=pending_review 待主管确认分类队列（闸门①）。
 
-    注意 pending_review 与既有 status='pending'（Linear 推送失败待人工，
-    pending-hub-issues 端点消费）是不同队列、不同状态值。
+    闸门①开启后 Operation/Bug_fix/Demand/Internal_task 毕业后一律先停
+    pending_review，故此队列不再只挑研发类。注意 pending_review 与既有
+    status='pending'（Linear 推送失败待人工，pending-hub-issues 端点消费）
+    是不同队列、不同状态值。
     """
     hubs = (
         db.query(HubIssue)
         .filter(
             HubIssue.deleted_at.is_(None),
             HubIssue.status == "pending_review",
-            HubIssue.type.in_(("Bug_fix", "Demand")),
         )
         .order_by(HubIssue.updated_at.desc())
         .limit(min(limit, 100))
@@ -1858,41 +1859,91 @@ def confirm_classification(
     user: AuthedUser = Depends(require_supervisor),
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
-    """主管确认研发类分类无误 → status created + 推 Linear。"""
+    """主管确认分类无误 → 按 hub.type 分流：
+
+    - Operation → created + op_status=processing/agent（回到自动答复链，由
+      Celery drain 扫描触发，此处不直接调答复）。
+    - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
+      pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。
+    - Internal_task → created（无外部动作）。
+    """
+    from app.config import get_settings
+
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     prev = hub.status
-    hub.status = "created"
+    settings = get_settings()
+
+    if hub.type == "Operation":
+        hub.status = "created"
+        apply_op_status(
+            db,
+            hub,
+            to_status=OP_PROCESSING,
+            handler="agent",
+            reason="主管确认分类，回自动答复链",
+        )
+        reason = "主管确认分类"
+    elif hub.type in ("Bug_fix", "Demand"):
+        if settings.gate_linear_push_enabled:
+            hub.status = "pending_linear_review"
+            reason = "确认分类，待处理人确认后推 Linear"
+        else:
+            hub.status = "created"
+            reason = "确认分类，推送 Linear"
+    else:  # Internal_task / Complaint
+        hub.status = "created"
+        reason = "主管确认分类"
+
     StatusHistoryRepository(db).record(
         entity_type="hub_issue",
         entity_id=hub.id,
         from_status=prev,
-        to_status="created",
+        to_status=hub.status,
         changed_by=f"user:{user.name}",
-        reason="主管确认分类",
+        reason=reason,
     )
     record_ticket_action(
         db,
         hub,
         action="confirm_classification",
         changed_by=f"user:{user.name}",
-        reason="确认分类，推送 Linear",
+        reason=reason,
     )
     db.commit()
-    background_tasks.add_task(push_hub_issue_to_linear, hub.id)
-    logger.info("supervisor_confirm_classification", hub_issue_id=hub.id, operator=user.name)
+
+    if hub.type in ("Bug_fix", "Demand") and not settings.gate_linear_push_enabled:
+        background_tasks.add_task(push_hub_issue_to_linear, hub.id)
+
+    logger.info(
+        "supervisor_confirm_classification",
+        hub_issue_id=hub.id,
+        type=hub.type,
+        status=hub.status,
+        operator=user.name,
+    )
     return ClassificationActionResponse(hub_issue_id=hub.id, status=hub.status, type=hub.type)
 
 
 @router.post("/reclassify", response_model=ClassificationActionResponse)
 def reclassify(
     body: ReclassifyBody,
+    background_tasks: BackgroundTasks,
     user: AuthedUser = Depends(require_supervisor),
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
-    """主管改判分类。改判成 Operation → 回炉自动答复链（op_status=processing/agent）。"""
+    """主管改判分类。改判本身即视为已确认分类，按新类型分流：
+
+    - Operation → 回炉自动答复链（op_status=processing/agent）。
+    - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
+      pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像
+      confirm-classification 的分流，改判后不再回 pending_review 二次确认）。
+    - Internal_task/Complaint → created，不推 Linear、不走答复。
+    """
+    from app.config import get_settings
     from app.services.dispatch import dispatch_handler
     from app.services.hub_issues.op_status import set_hub_tickets_handler
 
+    settings = get_settings()
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     old_type = hub.type
     hub.type = body.new_type
@@ -1937,7 +1988,10 @@ def reclassify(
             hub.op_handler_user_id = dr.user_id
             set_hub_tickets_handler(db, hub, dr.user_id)
     elif body.new_type in ("Bug_fix", "Demand"):
-        hub.status = "pending_review"  # 改完仍待确认才推 Linear
+        if settings.gate_linear_push_enabled:
+            hub.status = "pending_linear_review"  # 待处理人确认后推 Linear
+        else:
+            hub.status = "created"
     else:  # Internal_task / Complaint：不推 Linear、不走答复
         hub.status = "created"
     StatusHistoryRepository(db).record(
@@ -1956,6 +2010,10 @@ def reclassify(
         reason=f"改判为 {body.new_type}",
     )
     db.commit()
+
+    if body.new_type in ("Bug_fix", "Demand") and not settings.gate_linear_push_enabled:
+        background_tasks.add_task(push_hub_issue_to_linear, hub.id)
+
     logger.info(
         "supervisor_reclassify",
         hub_issue_id=hub.id,

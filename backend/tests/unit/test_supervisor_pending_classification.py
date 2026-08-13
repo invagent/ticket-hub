@@ -28,14 +28,29 @@ def pc_world(db_session: Session) -> Session:
             status="pending_review",
         )
     )
-    # 不该出现在队列：Operation / created
-    db_session.add(
-        HubIssue(id=61, short_code="HUB-000061", type="Operation", title="配置咨询", status="created")
-    )
-    # 不该出现：pending_review 但已是 Operation（改判后遗留场景不在此队列）
+    # 闸门①下 Operation 毕业也会停 pending_review——队列现在覆盖全类型，
+    # 不再只挑 Bug_fix/Demand。
     db_session.add(
         HubIssue(
-            id=62, short_code="HUB-000062", type="Operation", title="x", status="pending_review"
+            id=61,
+            short_code="HUB-000061",
+            type="Operation",
+            title="配置咨询",
+            status="pending_review",
+        )
+    )
+    # 不该出现：非 pending_review（已 created）
+    db_session.add(
+        HubIssue(id=62, short_code="HUB-000062", type="Operation", title="x", status="created")
+    )
+    # 覆盖 Internal_task 也进队列
+    db_session.add(
+        HubIssue(
+            id=63,
+            short_code="HUB-000063",
+            type="Internal_task",
+            title="内部任务",
+            status="pending_review",
         )
     )
     db_session.commit()
@@ -52,12 +67,13 @@ def test_pending_classification_requires_supervisor(
     assert r.status_code == 403
 
 
-def test_pending_classification_lists_only_pending_review_devtype(
+def test_pending_classification_lists_all_types_pending_review(
     app_client: TestClient, pc_world: Session
 ) -> None:
+    """闸门①覆盖全类型：队列不应再只挑 Bug_fix/Demand，Operation/Internal_task
+    的 pending_review hub 也要出现；非 pending_review（created）不出现。"""
     r = app_client.get("/api/supervisor/pending-classification", headers=_bearer(2))
     assert r.status_code == 200, r.text
     items = r.json()["items"]
-    assert len(items) == 1
-    assert items[0]["short_code"] == "HUB-000060"
-    assert items[0]["type"] == "Bug_fix"
+    codes = {i["short_code"] for i in items}
+    assert codes == {"HUB-000060", "HUB-000061", "HUB-000063"}
