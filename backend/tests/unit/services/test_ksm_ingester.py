@@ -292,9 +292,10 @@ def _seed_existing_with_hub(db_session, *, op_status, bill_id, short_code, hub_s
     return existing, hub
 
 
-def test_ingest_supplement_refresh_keeps_status(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """已存在 ticket 且 hub.op_status=supplementing → 客户主动重推：只 content_refresh，op_status 保持 supplementing。"""
-    from app.services.hub_issues.op_status import OP_SUPPLEMENTING
+def test_ingest_supplement_reopens_to_processing(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """已存在 ticket 且 hub.op_status=supplementing → 客户补料重推：content_refresh
+    刷内容 + 转回 processing/agent，让 drain 重新扫到自动重答（打通死胡同）。"""
+    from app.services.hub_issues.op_status import OP_PROCESSING, OP_SUPPLEMENTING
     from app.services.ingest import ksm_ingester as mod
 
     existing, hub = _seed_existing_with_hub(
@@ -304,7 +305,9 @@ def test_ingest_supplement_refresh_keeps_status(db_session, monkeypatch) -> None
         short_code="TKT-SP-1",
         hub_short_code="HUB-SP-1",
     )
-    prev_handler = hub.op_handler
+    # supplementing 是人工点「补充资料」后进的态，handler 为人工名
+    hub.op_handler = "主管"
+    db_session.commit()
 
     called: dict = {}
 
@@ -324,8 +327,40 @@ def test_ingest_supplement_refresh_keeps_status(db_session, monkeypatch) -> None
     assert result.ticket_id == existing.id
 
     db_session.refresh(hub)
-    assert hub.op_status == OP_SUPPLEMENTING  # 状态不变
-    assert hub.op_handler == prev_handler  # 处理人不变
+    assert hub.op_status == OP_PROCESSING  # 死胡同打通，转回处理中
+    assert hub.op_handler == "agent"  # 交回 agent，drain 会重新答
+
+
+def test_ingest_supplement_reopen_is_idempotent(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """客户短时多次重推：首次 supplementing→processing/agent 后已是 processing，
+    再推只刷内容不重复转态（apply_op_status 幂等），避免重复触发重答。"""
+    from app.services.hub_issues.op_status import OP_PROCESSING, OP_SUPPLEMENTING
+    from app.services.ingest import ksm_ingester as mod
+
+    _existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_SUPPLEMENTING,
+        bill_id="bill-supp-2",
+        short_code="TKT-SP-2",
+        hub_short_code="HUB-SP-2",
+    )
+    hub.op_handler = "主管"
+    db_session.commit()
+
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda db, ticket, payload: True)
+    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+
+    ing.ingest({"billId": "bill-supp-2", "content": "第一次补料"})  # supplementing→processing
+    db_session.commit()
+    db_session.refresh(hub)
+    changed_at_1 = hub.op_status_changed_at
+    assert hub.op_status == OP_PROCESSING
+
+    ing.ingest({"billId": "bill-supp-2", "content": "又推一次"})  # 已 processing/agent
+    db_session.commit()
+    db_session.refresh(hub)
+    assert hub.op_status == OP_PROCESSING
+    assert hub.op_status_changed_at == changed_at_1  # 未再次转态（幂等）
 
 
 def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
