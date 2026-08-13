@@ -138,8 +138,10 @@ def test_operation_dispatch_writes_op_handler_not_override(db_session: Session) 
     assert result.dispatch_missed is False  # Operation 无结果也不设 missed
 
 
-def test_auto_dispatch_missed_marks_pending_no_linear(db_session: Session, monkeypatch) -> None:
-    """auto 路径研发类分派无结果 → status=pending，不调 push_hub_issue_to_linear。"""
+def test_auto_dispatch_missed_gate_off_marks_pending_no_linear(
+    db_session: Session, monkeypatch
+) -> None:
+    """闸门①关 + 研发类分派无结果 → status=pending，不调 push_hub_issue_to_linear。"""
     reporter = _seed_user(db_session, "reporter4")
     t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
     db_session.commit()
@@ -149,6 +151,20 @@ def test_auto_dispatch_missed_marks_pending_no_linear(db_session: Session, monke
     monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
     # 防 session 被内部 close 掉影响断言
     monkeypatch.setattr(db_session, "close", lambda: None)
+    # 闸门①关：dispatch_missed 才走 pending 转人工
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "gate_classify_enabled": False,
+                "gate_linear_push_enabled": True,
+                "require_review_before_linear": False,
+                "hub_dedup_enabled": False,
+            },
+        )(),
+    )
 
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mock_push:
         result = create_hub_issue_for_ticket_auto(ticket_id)
@@ -157,6 +173,42 @@ def test_auto_dispatch_missed_marks_pending_no_linear(db_session: Session, monke
     mock_push.assert_not_called()
     hub = db_session.get(HubIssue, result.hub_issue_id)
     assert hub.status == "pending"
+
+
+def test_auto_dispatch_missed_gate_on_goes_pending_review(db_session: Session, monkeypatch) -> None:
+    """闸门①开 + 研发类分派无结果 → 仍先停 pending_review（分类确认优先于分派缺人转人工）。
+
+    回归 bug：dispatch_missed 提前分流曾绕过闸门①，让分派缺人的研发类工单
+    直接进 pending 队列而非 pending_review 分类确认队列（TKT-005963）。
+    """
+    reporter = _seed_user(db_session, "reporter4b")
+    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    db_session.commit()
+    ticket_id = t.id
+
+    monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "gate_classify_enabled": True,
+                "gate_linear_push_enabled": True,
+                "require_review_before_linear": True,
+                "hub_dedup_enabled": False,
+            },
+        )(),
+    )
+
+    with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mock_push:
+        result = create_hub_issue_for_ticket_auto(ticket_id)
+
+    assert result is not None and result.dispatch_missed is True
+    mock_push.assert_not_called()
+    hub = db_session.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "pending_review"  # 闸门①优先，不提前转 pending
 
 
 def test_auto_dispatch_hit_with_review_goes_pending_review(

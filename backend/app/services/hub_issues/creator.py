@@ -234,17 +234,19 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
     if not result.created:
         return result
 
-    if result.type in ("Bug_fix", "Demand") and result.dispatch_missed:
-        # 分派无匹配处理人 → 转人工（复用 pending 队列），不进 pending_review、不推 Linear。
-        # 优先于闸门①判断：这是分派缺人问题，跟分类确认闸门无关。
-        _mark_dispatch_pending(result.hub_issue_id)
-        return result
-
     settings = get_settings()
     if settings.gate_classify_enabled:
         # 闸门①：全类型（Operation/Bug_fix/Demand/Internal_task）毕业后停
         # pending_review 待人工确认分类，不自动分流（不推 Linear、不进答复链）。
+        # 必须优先于 dispatch_missed 判断：分派缺人的研发类工单同样要先过分类
+        # 确认闸门，不能因分派缺人就跳过 gate① 直接进 pending 队列（TKT-005963）。
         _mark_pending_review(result.hub_issue_id)
+        return result
+
+    if result.type in ("Bug_fix", "Demand") and result.dispatch_missed:
+        # 闸门①关时才生效：研发类分派无匹配处理人 → 转人工（复用 pending
+        # 队列），不推 Linear。闸门①开时上面已停 pending_review 提前返回。
+        _mark_dispatch_pending(result.hub_issue_id)
         return result
 
     # 闸门①关：分类自动确认。研发类还要过闸门③（gate_linear_push_enabled）
