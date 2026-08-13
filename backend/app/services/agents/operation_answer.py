@@ -199,6 +199,13 @@ def auto_answer_operation(
     if hub is None or hub.deleted_at is not None or hub.type != "Operation":
         return False
 
+    # 闸门①守卫：pending_review 是毕业后停摆待主管确认分类的态，还没过闸门
+    # 不该被自动答复——这条对 force 同样适用（不因 force 豁免，同 ai_cs 排除
+    # 守卫）。gate①-parked Operation 的 op_handler 恒为 'agent'（创建时预置，
+    # 未经改判），re-answer API 已挡 op_handler=='agent'，此处是防御性兜底。
+    if hub.status == "pending_review":
+        return False
+
     # escalation(ai_cs) 来源不自动答复（走 reflect 反思队列）
     linked = (
         db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).first()
@@ -394,6 +401,12 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
             HubIssue.type == "Operation",
             HubIssue.deleted_at.is_(None),
             ~ai_cs_ticket,
+            # 闸门①守卫：hub.status=='pending_review' 是毕业后停摆待主管确认
+            # 分类的态（op_status 已预置 processing/agent，但还没过闸门）。
+            # 确认分类/闸门①关的 Operation hub 落 status='created'——用它区分
+            # 两种 processing/agent 组合，防止 drain 抢在主管确认分类之前
+            # 就把 gate①-parked 的 hub 自动答复出去。
+            HubIssue.status == "created",
             HubIssue.op_status == OP_PROCESSING,
             HubIssue.op_handler == "agent",
         )

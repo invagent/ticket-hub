@@ -255,6 +255,16 @@ def test_auto_answer_ai_cs_source_skipped(db_session: Session) -> None:
     assert ok is False
 
 
+def test_auto_answer_gate_classify_parked_skipped(db_session: Session) -> None:
+    """闸门①停摆态（hub.status='pending_review'）不自动答复——即使 op_status/
+    op_handler 是 processing/agent。"""
+    hub, _t = _seed_op_hub(db_session)
+    hub.status = "pending_review"
+    db_session.commit()
+    ok = auto_answer_operation(db_session, hub.id, settings=_S())
+    assert ok is False
+
+
 # ---- 答复准确率三态闸门（off/observe/enforce）----
 
 
@@ -467,6 +477,40 @@ def test_drain_scans_only_unprocessed_processing_agent(db_session: Session) -> N
         report = drain_operation_auto_reply(db_session, settings=_S())
 
     assert report.scanned == 1  # 只有 _hub_agent
+
+
+def test_drain_excludes_gate_classify_parked_pending_review(db_session: Session) -> None:
+    """闸门①开时 Operation hub 停 hub.status='pending_review' 待主管确认分类
+    （op_status 仍是毕业时预置的 processing/agent，未过闸门）。drain 只看
+    op_status/op_handler，不看 hub.status，会误捞——必须加 hub.status 守卫。"""
+    hub, _ = _seed_op_hub(db_session, source="ksm")
+    hub.status = "pending_review"  # 闸门①停摆态：还没被主管确认分类
+    db_session.commit()
+
+    fake = _FakeClient(raise_err=True)
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        report = drain_operation_auto_reply(db_session, settings=_S())
+
+    assert report.scanned == 0
+
+
+def test_drain_includes_confirmed_created_hub(db_session: Session) -> None:
+    """闸门①关（或已确认）的 Operation hub：hub.status='created' +
+    op_status=processing/agent → drain 正常捞到。"""
+    hub, _ = _seed_op_hub(db_session, source="ksm")
+    assert hub.status == "created"
+    db_session.commit()
+    fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票。")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        report = drain_operation_auto_reply(db_session, settings=_S())
+    assert report.scanned == 1
+    assert report.answered == 1
 
 
 def test_drain_excludes_ai_cs_source(db_session: Session) -> None:

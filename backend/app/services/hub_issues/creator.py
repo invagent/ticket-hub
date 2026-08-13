@@ -247,10 +247,16 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         _mark_pending_review(result.hub_issue_id)
         return result
 
-    # 闸门①关：现状自动分流。Operation 自动答复链由 Celery drain 扫
-    # op_status=processing/agent 触发（不在此处调用）；Internal_task 无动作。
+    # 闸门①关：分类自动确认。研发类还要过闸门③（gate_linear_push_enabled）
+    # ——两个闸门是独立开关，闸门①关不能连带绕过闸门③。闸门③开则停
+    # pending_linear_review 待处理人确认，不推 Linear；关则维持现状直推。
+    # Operation 自动答复链由 Celery drain 扫 op_status=processing/agent
+    # 触发（不在此处调用）；Internal_task 无动作。
     if result.type in ("Bug_fix", "Demand"):
-        push_hub_issue_to_linear(result.hub_issue_id)
+        if settings.gate_linear_push_enabled:
+            _mark_pending_linear_review(result.hub_issue_id)
+        else:
+            push_hub_issue_to_linear(result.hub_issue_id)
     return result
 
 
@@ -270,6 +276,30 @@ def _mark_pending_review(hub_issue_id: int) -> None:
             to_status="pending_review",
             changed_by="agent:hub_issue_auto",
             reason="研发类待主管确认分类后推 Linear",
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_pending_linear_review(hub_issue_id: int) -> None:
+    """闸门①关+闸门③开：研发类自动分类确认后仍停 pending_linear_review 待
+    处理人确认推 Linear（镜像 confirm-classification/reclassify 的闸门③分流）。
+    自开 session。"""
+    db = make_session()
+    try:
+        hub = db.get(HubIssue, hub_issue_id)
+        if hub is None:
+            return
+        prev = hub.status
+        hub.status = "pending_linear_review"
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status=prev,
+            to_status="pending_linear_review",
+            changed_by="agent:hub_issue_auto",
+            reason="闸门③：待处理人确认后推 Linear",
         )
         db.commit()
     finally:
