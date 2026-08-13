@@ -85,12 +85,21 @@ class KSMIngester:
             hub = self._db.get(HubIssue, existing.hub_issue_id) if existing.hub_issue_id else None
             op = hub.op_status if hub is not None and hub.deleted_at is None else None
             if op == OP_SUPPLEMENTING:
-                # 主管收集补料期间客户主动重推同 billId：只刷新内容供主管参考，
-                # op_status 保持 supplementing 不变（不再转 resupplied，该状态已删）。
+                # 客户补料重推同 billId：content_refresh 刷内容 + 建新附件行，并把
+                # 工单转回 processing/agent，让 drain 重新扫到 → AI 自动重答 → 走
+                # 全局审核闸门。转态由 apply_op_status 保证幂等（已是 processing/agent
+                # 则 no-op），防客户短时多次重推重复触发重答。
                 assert hub is not None
                 apply_content_refresh(self._db, existing, payload)
+                apply_op_status(
+                    self._db,
+                    hub,
+                    to_status=OP_PROCESSING,
+                    handler="agent",
+                    reason="客户补料回流，交回 AI 重答",
+                )
                 logger.info(
-                    "ksm_ingest_supplement_refresh", bill_id=bill_id, existing_ticket_id=existing.id
+                    "ksm_ingest_supplement_reopen", bill_id=bill_id, existing_ticket_id=existing.id
                 )
                 return self._dedup_result(existing)
             if op == OP_ANSWERED:

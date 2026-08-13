@@ -103,7 +103,6 @@ export function HubIssueDetailPage() {
           {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") && (
             <SubIssuesSection data={detail.data} />
           )}
-          <SupplyRequestSection data={detail.data} />
           <LinkedTickets tickets={detail.data.linked_tickets} />
           {detail.data.canonical_body && (
             <Section title="规范化正文">
@@ -468,8 +467,25 @@ function TaskProgressCard({ data }: { data: HubIssueDetail }) {
     onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
   });
 
+  // 补充资料：把处理说明当前内容作为补料说明提交给 KSM（复用同一个框，不再单独
+  // note 输入）。仅 KSM 来源可用；智齿无补料接口，靠人工线下答复。
+  const supply = useMutation({
+    mutationFn: (note: string) =>
+      postByPath("/api/hub-issues/{hub_issue_id}/request-supply", { hub_issue_id: data.id }, { note }),
+    onSuccess: (r) => {
+      setError(null);
+      setEditing(false);
+      setNotice(`已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`);
+      qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
+  });
+
   const canEdit = isSupervisor();
   const isOperation = data.type === "Operation";
+  // 来源系统决定补料入口：任一关联工单是 KSM → 有补充资料接口（智齿无）。
+  const hasKsmSource = data.linked_tickets.some((t) => t.source_code === "ksm");
+  const isDraft = isOperation && data.reply_is_draft === true;
   const nodeSolution = (i: number) =>
     drafts[i] ?? (i === sel && isOperation ? (data.reply_content ?? "") : (drafts[i] ?? ""));
   const selVal = drafts[sel] ?? (isOperation ? (data.reply_content ?? "") : "");
@@ -530,13 +546,14 @@ function TaskProgressCard({ data }: { data: HubIssueDetail }) {
         ))}
       </ol>
 
-      {/* C2：选中节点的解决方案（点节点切换）+ 可改/保存 */}
+      {/* C2：处理说明（Operation 常驻可编辑框 + 提交答复/补充资料双按钮；
+          其它类型保留逐节点方案的修改/填写切换） */}
       <div className="mt-3 pt-3 border-t border-hub-borderLight">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">
-            解决方案 · {nodes[sel]?.label ?? ""}
+            {isOperation ? "处理说明" : `解决方案 · ${nodes[sel]?.label ?? ""}`}
           </span>
-          {canEdit && !editing && (
+          {canEdit && !isOperation && !editing && (
             <button
               onClick={() => {
                 setNotice(null);
@@ -548,7 +565,44 @@ function TaskProgressCard({ data }: { data: HubIssueDetail }) {
             </button>
           )}
         </div>
-        {editing ? (
+        {isOperation && canEdit ? (
+          <div className="space-y-2">
+            {isDraft && (
+              <p className="text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded-[7px] px-2.5 py-1.5">
+                以下为 AI 生成的处理建议，请审核后提交
+              </p>
+            )}
+            <textarea
+              value={selVal}
+              onChange={(e) => setDrafts((prev) => ({ ...prev, [sel]: e.target.value }))}
+              rows={5}
+              placeholder="填写答复客户的处理说明；KSM 工单也可据此点「补充资料」向客户要料…"
+              className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => save.mutate(selVal)}
+                disabled={save.isPending || supply.isPending || !selVal.trim()}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95"
+              >
+                {save.isPending ? "提交中…" : "提交答复"}
+              </button>
+              {hasKsmSource && (
+                <button
+                  onClick={() => supply.mutate(selVal)}
+                  disabled={supply.isPending || save.isPending || !selVal.trim()}
+                  className="px-3.5 py-1.5 text-xs font-semibold bg-hub-amber text-white rounded-md disabled:opacity-50 hover:brightness-95"
+                >
+                  {supply.isPending ? "提交中…" : "补充资料"}
+                </button>
+              )}
+            </div>
+            <p className="text-[10.5px] text-hub-textFaint">
+              提交答复：发给客户并置处理完成。补充资料（仅 KSM）：把上述内容作为补料说明提交
+              KSM，工单转补料中；客户补料后自动交 AI 重答。
+            </p>
+          </div>
+        ) : editing ? (
           <div className="space-y-2">
             <textarea
               value={selVal}
@@ -572,11 +626,9 @@ function TaskProgressCard({ data }: { data: HubIssueDetail }) {
                 取消
               </button>
             </div>
-            {!isOperation && (
-              <p className="text-[10.5px] text-hub-textFaint">
-                逐节点方案落库待后端；非运营类当前保存走 hub 回复接口。
-              </p>
-            )}
+            <p className="text-[10.5px] text-hub-textFaint">
+              逐节点方案落库待后端；非运营类当前保存走 hub 回复接口。
+            </p>
           </div>
         ) : nodeSolution(sel) ? (
           <pre
@@ -619,80 +671,6 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
         </h2>
       </div>
       <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
-function SupplyRequestSection({ data }: { data: HubIssueDetail }) {
-  const [editing, setEditing] = useState(false);
-  const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const request = useMutation({
-    mutationFn: () =>
-      postByPath(
-        "/api/hub-issues/{hub_issue_id}/request-supply",
-        { hub_issue_id: data.id },
-        { note },
-      ),
-    onSuccess: (r) => {
-      setError(null);
-      setEditing(false);
-      setNote("");
-      setNotice(`已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`);
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : String(e)),
-  });
-
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-3">
-        <SectionTitle>请客户补料</SectionTitle>
-        {!editing && (
-          <button
-            onClick={() => {
-              setNotice(null);
-              setEditing(true);
-            }}
-            className="text-[11.5px] text-hub-amber-deep hover:underline"
-          >
-            发起补料请求
-          </button>
-        )}
-      </div>
-      {editing && (
-        <div className="space-y-2">
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            placeholder="向客户说明需要补充的信息（如完整报错截图、操作步骤、单据编号…）"
-            className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => request.mutate()}
-              disabled={request.isPending || !note.trim()}
-              className="px-3.5 py-1.5 text-xs font-semibold bg-hub-amber text-white rounded-md disabled:opacity-50 hover:brightness-95"
-            >
-              {request.isPending ? "提交中…" : "提交补料请求"}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="px-3.5 py-1.5 text-xs font-semibold border border-hub-border rounded-md text-hub-textSecondary"
-            >
-              取消
-            </button>
-          </div>
-          <p className="text-[11px] text-hub-textMuted">
-            为每个有源工单入队一行 supply 回写；KSM 回写 sender 开关开启后自动调
-            supplyKsmOrder（补充资料）。
-          </p>
-        </div>
-      )}
-      {notice && <p className="text-[11px] text-hub-green">{notice}</p>}
-      {error && <p className="text-[11px] text-hub-rose">{error}</p>}
     </section>
   );
 }

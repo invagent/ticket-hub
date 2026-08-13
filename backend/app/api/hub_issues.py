@@ -108,6 +108,7 @@ class HubIssueDetail(HubIssueSummary):
     # Operation-only（其余 Operation 字段已在 Summary）
     reply_content: str | None
     reply_authored_by: str | None
+    reply_is_draft: bool = False  # True=AI 草稿（处理说明待人工审核/发送），前端据此提示
     # Bug_fix / Demand（identifier/status 已在 Summary）
     linear_uuid: str | None
     scheduled_iteration: str | None
@@ -137,14 +138,10 @@ class HubIssueListResponse(BaseModel):
 
 
 # 时间区间按北京时区（+08:00）解释 date 边界，再转 UTC（hub 时间字段是 tz-aware UTC）。
-def _day_bounds(
-    from_d: date | None, to_d: date | None
-) -> tuple[datetime | None, datetime | None]:
+def _day_bounds(from_d: date | None, to_d: date | None) -> tuple[datetime | None, datetime | None]:
     """[from 当天 00:00, to+1天 00:00) 半开区间，按北京时区解释后转 UTC。"""
     bj = timezone(timedelta(hours=8))
-    from_dt = (
-        datetime.combine(from_d, time.min, tzinfo=bj).astimezone(UTC) if from_d else None
-    )
+    from_dt = datetime.combine(from_d, time.min, tzinfo=bj).astimezone(UTC) if from_d else None
     to_dt = (
         datetime.combine(to_d + timedelta(days=1), time.min, tzinfo=bj).astimezone(UTC)
         if to_d
@@ -357,7 +354,11 @@ def author_reply_endpoint(
     """Author/replace the Operation reply. Cascades to linked tickets'
     cached_reply and enqueues sync_outbox rows for source write-back."""
     hub_before = db.get(HubIssue, hub_issue_id)
-    if hub_before is not None and hub_before.type == "Operation" and hub_before.op_status == OP_CLOSED:
+    if (
+        hub_before is not None
+        and hub_before.type == "Operation"
+        and hub_before.op_status == OP_CLOSED
+    ):
         raise HTTPException(
             status_code=409,
             detail=f"hub_issue {hub_before.short_code} 已关单（op_status=closed），不允许再写答复",
@@ -422,6 +423,12 @@ def request_supply_endpoint(
     """Ask the customer for more info (补料). Enqueues a supply sync_outbox row
     per linked sourced ticket; the KSM sender drains them into supplyKsmOrder."""
     _authorize_hub_handler(db, hub_issue_id, user)
+    hub_pre = db.get(HubIssue, hub_issue_id)
+    if hub_pre is not None and hub_pre.type == "Operation" and hub_pre.op_status == OP_CLOSED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"hub_issue {hub_pre.short_code} 已关单（op_status=closed），不允许再补料",
+        )
     try:
         result = request_supply(db, hub_issue_id, note=body.note, requested_by=f"user:{user.name}")
     except SupplySyncError as e:

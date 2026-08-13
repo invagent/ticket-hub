@@ -26,7 +26,6 @@ from app.services.hub_issues.op_status import (
     OP_EXCEPTION,
     OP_PROCESSING,
     OP_REVIEWING,
-    OP_SUPPLEMENTING,
     apply_op_status,
     resolve_op_handler,
 )
@@ -341,20 +340,24 @@ def auto_answer_operation(
         return True
 
     if route.branch == "C":
-        # 需补料：不再打回客户。转兜底主管线下联系客户收集资料，主管拿到后
-        # 人工 POST /reply 答复。supply_note 写审计供主管参考「缺什么」。
+        # 需补料：不再直接置补料中。留处理中 + 把需补内容写进处理说明草稿
+        # （reply_content + draft）。前端据此展示，处理人可改后「提交答复」或
+        # （KSM）点「补充资料」。handler 用人工名（非 agent），避免 drain 口径
+        # （processing+agent）把它当刚毕业未处理再次重答。补料中只在人工点
+        # 「补充资料」后由 request_supply 置。supply_note 仍写审计（供详情兼容回填）。
         note = (route.supply_note or "").strip()
         if not note:
             return _transfer("需补料但 supply_note 为空，降级留主管")
+        _save_draft_reply(db, hub, content=note)
         apply_op_status(
             db,
             hub,
-            to_status=OP_SUPPLEMENTING,
+            to_status=OP_PROCESSING,
             handler=resolve_op_handler(db, hub, settings),
-            reason="需补料，转主管线下收集",
+            reason="需补料，AI 建议写入处理说明待人工处理",
         )
         _record_decision(db, hub.id, branch="C", question=question, answer=answer, supply_note=note)
-        logger.info("operation_auto_supply_transfer", hub_issue_id=hub.id)
+        logger.info("operation_auto_supply_draft", hub_issue_id=hub.id)
         return True
 
     # transfer → 留主管。仍记 auto_reply 审计（branch=transfer），标记「已自动处理过」，

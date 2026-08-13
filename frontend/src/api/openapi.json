@@ -2804,6 +2804,11 @@
             "title": "Reply Content Version",
             "type": "integer"
           },
+          "reply_is_draft": {
+            "default": false,
+            "title": "Reply Is Draft",
+            "type": "boolean"
+          },
           "reply_updated_at": {
             "anyOf": [
               {
@@ -11448,7 +11453,7 @@
     },
     "/api/hub-issues/{hub_issue_id}/re-answer": {
       "post": {
-        "description": "主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。\n\n前置：hub 存在 + type=Operation + op_status ∈ (processing, exception) 且\nop_handler != 'agent'。processing 是人工介入中；exception 是 replay 系统\n故障时置的转人工态——drain 不会自动重扫 exception（系统故障不该无限自动\n重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能\n点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、\n补料中等——这些场景走各自专属流程，不该被重答抢跑）。",
+        "description": "主管/知识运营改完 KB 或 skill 后手动重答一次（同步，非 drain 异步）。\n\n前置：hub 存在 + type=Operation + op_status ∈ (processing, exception) 且\nop_handler != 'agent'。processing 是人工介入中；exception 是 replay 系统\n故障时置的转人工态——drain 不会自动重扫 exception（系统故障不该无限自动\n重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能\n点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、\n补料中等——这些场景走各自专属流程，不该被重答抢跑）。\n\n权限：supervisor/admin/knowledge_op，或本工单的处理人（op_handler_user_id）。",
         "operationId": "re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post",
         "parameters": [
           {
@@ -11491,7 +11496,6 @@
     },
     "/api/hub-issues/{hub_issue_id}/reply": {
       "post": {
-        "description": "Author/replace the Operation reply. Cascades to linked tickets'\ncached_reply and enqueues sync_outbox rows for source write-back.",
         "operationId": "author_reply_endpoint_api_hub_issues__hub_issue_id__reply_post",
         "parameters": [
           {

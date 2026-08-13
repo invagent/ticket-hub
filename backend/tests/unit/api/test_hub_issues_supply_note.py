@@ -96,3 +96,46 @@ def test_supply_note_none_when_no_decision(app_client: TestClient, db_session: S
     r = app_client.get("/api/hub-issues/97", headers=_bearer())
     assert r.status_code == 200, r.text
     assert r.json()["supply_note"] is None
+
+
+def test_detail_exposes_reply_is_draft(app_client: TestClient, db_session: Session) -> None:
+    """详情响应暴露 reply_is_draft，前端据此区分「AI 草稿待处理」与「已发答复」。"""
+    db_session.add(
+        HubIssue(
+            id=98,
+            short_code="HUB-000098",
+            type="Operation",
+            title="需补料草稿",
+            canonical_body="信息不足",
+            status="created",
+            op_status="processing",
+            reply_content="请提供完整报错截图",
+            reply_is_draft=True,
+        )
+    )
+    db_session.commit()
+    r = app_client.get("/api/hub-issues/98", headers=_bearer())
+    assert r.status_code == 200, r.text
+    assert r.json()["reply_is_draft"] is True
+    assert r.json()["reply_content"] == "请提供完整报错截图"
+
+
+def test_request_supply_rejected_on_closed(app_client: TestClient, db_session: Session) -> None:
+    """已关闭（closed）Operation hub 不允许再补料 → 409。"""
+    db_session.add(
+        HubIssue(
+            id=99,
+            short_code="HUB-000099",
+            type="Operation",
+            title="已关闭",
+            status="created",
+            op_status="closed",
+        )
+    )
+    db_session.commit()
+    r = app_client.post(
+        "/api/hub-issues/99/request-supply",
+        json={"note": "请补充"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 409, r.text

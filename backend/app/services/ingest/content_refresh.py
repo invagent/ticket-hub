@@ -16,7 +16,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models import HubIssue, Ticket
+from app.core.storage.minio_store import classify_attachment_kind, filename_from_url
+from app.models import Attachment, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.sla.workday import BEIJING
 
@@ -31,8 +32,10 @@ def apply_content_refresh(db: Session, ticket: Ticket, new_payload: dict[str, An
     步骤：
       1. source_payload 覆盖为 new_payload（含新内容/附件/节点）
       2. body 追加 [内容更新 北京时间] 段（新 content）
-      3. 写 ticket status_history（from/to 均为当前 status，仅留痕内容更新事件）
-      4. 关联 hub 存在且未删 → canonical_body 同步追加同一段
+      3. new_payload 带 attachment_urls → 追加建新 Attachment 行（保留历史批次，
+         不去重不覆盖；走附件流水线 vision_status='queued'）
+      4. 写 ticket status_history（from/to 均为当前 status，仅留痕内容更新事件）
+      5. 关联 hub 存在且未删 → canonical_body 同步追加同一段
     返回 True。不改 op_status（由调用方决定）。
     """
     history = StatusHistoryRepository(db)
@@ -43,6 +46,19 @@ def apply_content_refresh(db: Session, ticket: Ticket, new_payload: dict[str, An
     if new_content:
         prev_body = ticket.body or ""
         ticket.body = f"{prev_body}\n\n[内容更新 {stamp}]\n{new_content}".strip()
+
+    # 补料重推带的新附件：追加建行（保留历史批次，可对比客户前后交了什么）。
+    # 仅建行不下载——下载+OCR 由异步附件流水线按 vision_status='queued' 处理。
+    for url in new_payload.get("attachment_urls", []) or []:
+        db.add(
+            Attachment(
+                ticket_id=ticket.id,
+                source_url=url,
+                filename=filename_from_url(url),
+                kind=classify_attachment_kind(url),
+                vision_status="queued",
+            )
+        )
 
     history.record(
         entity_type="ticket",

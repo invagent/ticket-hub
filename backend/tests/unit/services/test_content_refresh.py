@@ -66,6 +66,52 @@ def test_refresh_no_hub_only_updates_ticket(db_session: Session) -> None:
     assert t.status == "received"
 
 
+def test_refresh_appends_new_attachments(db_session: Session) -> None:
+    """补料重推带的新附件 URL → 建成新 Attachment 行（追加保留，不覆盖历史）。"""
+    from app.models import Attachment
+
+    t, _ = _seed(db_session)
+    # 首次已有 1 张附件
+    db_session.add(
+        Attachment(
+            ticket_id=t.id, source_url="http://x/old.png", kind="image", vision_status="queued"
+        )
+    )
+    db_session.commit()
+
+    apply_content_refresh(
+        db_session,
+        t,
+        {
+            "billId": "bill-1",
+            "content": "补充截图",
+            "attachment_urls": ["http://x/new1.png", "http://x/new2.jpg"],
+        },
+    )
+    db_session.commit()
+
+    atts = db_session.query(Attachment).filter(Attachment.ticket_id == t.id).all()
+    urls = {a.source_url for a in atts}
+    assert "http://x/new1.png" in urls and "http://x/new2.jpg" in urls  # 新附件已建
+    assert "http://x/old.png" in urls  # 旧附件保留（追加不覆盖）
+    assert len(atts) == 3
+    # 新建行走附件流水线（queued 待下载/OCR）
+    new_row = next(a for a in atts if a.source_url == "http://x/new1.png")
+    assert new_row.vision_status == "queued"
+    assert new_row.kind == "image"
+
+
+def test_refresh_no_attachment_urls_builds_nothing(db_session: Session) -> None:
+    """new_payload 无 attachment_urls → 不建附件行（幂等：重复重推不堆空行）。"""
+    from app.models import Attachment
+
+    t, _ = _seed(db_session)
+    db_session.commit()
+    apply_content_refresh(db_session, t, {"billId": "bill-1", "content": "纯文字补充"})
+    db_session.commit()
+    assert db_session.query(Attachment).filter(Attachment.ticket_id == t.id).count() == 0
+
+
 def test_refresh_empty_content_skips_body_append(db_session: Session) -> None:
     """new_payload 无 content → 不追加 body/canonical_body 段，但 source_payload 仍覆盖。"""
     t, hub = _seed(db_session)

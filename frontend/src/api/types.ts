@@ -1038,6 +1038,8 @@ export interface paths {
          *     重试，要人工介入），所以重答是它唯一的恢复出路，主管修完系统故障后应能
          *     点重答把它拉回处理流程。非以上组合一律 409（含刚毕业未处理过、已答复、
          *     补料中等——这些场景走各自专属流程，不该被重答抢跑）。
+         *
+         *     权限：supervisor/admin/knowledge_op，或本工单的处理人（op_handler_user_id）。
          */
         post: operations["re_answer_endpoint_api_hub_issues__hub_issue_id__re_answer_post"];
         delete?: never;
@@ -1055,11 +1057,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Author Reply Endpoint
-         * @description Author/replace the Operation reply. Cascades to linked tickets'
-         *     cached_reply and enqueues sync_outbox rows for source write-back.
-         */
+        /** Author Reply Endpoint */
         post: operations["author_reply_endpoint_api_hub_issues__hub_issue_id__reply_post"];
         delete?: never;
         options?: never;
@@ -3215,6 +3213,11 @@ export interface components {
             reply_content: string | null;
             /** Reply Content Version */
             reply_content_version: number;
+            /**
+             * Reply Is Draft
+             * @default false
+             */
+            reply_is_draft: boolean;
             /** Reply Updated At */
             reply_updated_at: string | null;
             /** Scheduled Iteration */
