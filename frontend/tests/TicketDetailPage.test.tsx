@@ -315,6 +315,9 @@ describe("TicketDetailPage", () => {
             short_code: `HUB-${hubIssueId}`,
             type: "Bug_fix",
             status: "created",
+            // 已推送 Linear（有 identifier）——「已推送 Linear」显示要求 linear_identifier 有值
+            // （human_gates 推 Linear 闸门后：真推过才算已推送，pending 不算）
+            linear_identifier: `ENG-${hubIssueId}`,
           }),
         ),
       );
@@ -640,7 +643,13 @@ describe("TicketDetailPage", () => {
     stubTicket(332, 93); // predicted_type=Bug_fix
     server.use(
       http.get("*/api/hub-issues/93", () =>
-        HttpResponse.json({ id: 93, short_code: "HUB-93", type: "Bug_fix", status: "created" }),
+        HttpResponse.json({
+          id: 93,
+          short_code: "HUB-93",
+          type: "Bug_fix",
+          status: "created",
+          linear_identifier: "ENG-93", // 真推过 Linear 才显示「已推送」
+        }),
       ),
     );
     renderPage(332);
