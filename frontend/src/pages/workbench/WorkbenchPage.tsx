@@ -18,6 +18,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, ApiError } from "@/api/client";
 import { OpsPanel } from "@/pages/workbench/OpsPanel";
+import { UserSelect } from "@/components/selectors";
 
 type RangeKey = "today" | "week" | "month";
 
@@ -256,12 +257,49 @@ export function WorkbenchPage() {
         </div>
       )}
 
-      {/* ③ 待审核答复队列（D_review 低置信自动答复草稿，仅主管） */}
-      {isSupervisor && <ReviewingQueue />}
-
-      {/* ④ 待确认分类队列（研发类推 Linear 前人工确认，仅主管） */}
-      {isSupervisor && <PendingClassificationQueue />}
+      {/* ③ 人工确认闸门：三个固定 tab（闸门关时对应队列为空但 tab 仍展示），仅主管 */}
+      {isSupervisor && <GateTabsSection />}
     </div>
+  );
+}
+
+/* ═══════════ ③ 人工确认闸门：三固定 tab ═══════════ */
+
+const GATE_TABS = [
+  { key: "classify", label: "待确认分类" },
+  { key: "reply", label: "待确认答复" },
+  { key: "linear", label: "待推 Linear" },
+] as const;
+type GateTab = (typeof GATE_TABS)[number]["key"];
+
+function GateTabsSection() {
+  const [tab, setTab] = useState<GateTab>("classify");
+  return (
+    <>
+      <SectionHeader
+        n={3}
+        title="人工确认闸门"
+        note="三个闸门固定展示，闸门关闭时对应队列为空"
+      />
+      <div className="flex gap-1 border-b border-hub-border mb-3">
+        {GATE_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-3.5 py-1.5 text-[12.5px] border-b-2 -mb-px ${
+              tab === t.key
+                ? "border-hub-teal text-hub-teal-deep font-semibold"
+                : "border-transparent text-hub-textMuted hover:text-hub-textSecondary"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "classify" && <PendingClassificationQueue />}
+      {tab === "reply" && <ReviewingQueue />}
+      {tab === "linear" && <PendingLinearReviewQueue />}
+    </>
   );
 }
 
@@ -301,9 +339,7 @@ function ReviewingQueue() {
 
   return (
     <>
-      <SectionHeader
-        n={3}
-        title="待审核答复"
+      <TabQueueHeader
         note="AI 生成的答复草稿，人工确认/编辑后发送客户"
         right={
           <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
@@ -420,7 +456,7 @@ function ReviewingCard({
   );
 }
 
-/* ═══════════ 待确认分类队列（研发类推 Linear 前人工确认闸门） ═══════════ */
+/* ═══════════ 待确认分类队列（闸门①，全类型毕业前人工确认） ═══════════ */
 
 const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
 
@@ -482,10 +518,8 @@ function PendingClassificationQueue() {
 
   return (
     <>
-      <SectionHeader
-        n={4}
-        title="待确认分类"
-        note="研发类推 Linear 前人工确认，可改判/关闭"
+      <TabQueueHeader
+        note="毕业出口前人工确认分类（全类型），可改判/关闭"
         right={
           <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
             {items.length} 项待确认
@@ -623,6 +657,165 @@ function PendingClassificationCard({
   );
 }
 
+/* ═══════════ 待推 Linear 队列（闸门③，研发类推 Linear 前确认处理人） ═══════════ */
+
+function PendingLinearReviewQueue() {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const pending = useQuery({
+    queryKey: ["supervisor", "pending-linear-review"],
+    queryFn: () => api.get("/api/supervisor/pending-linear-review"),
+  });
+
+  const invalidate = () => {
+    setError(null);
+    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-linear-review"] });
+  };
+  const onErr = (e: unknown) => setError(errMsg(e));
+
+  const confirmPush = useMutation({
+    mutationFn: (v: { hubIssueId: number; assigneeUserId?: number }) =>
+      api.post("/api/supervisor/confirm-linear-push", {
+        hub_issue_id: v.hubIssueId,
+        assignee_user_id: v.assigneeUserId ?? null,
+      }),
+    onSuccess: () => {
+      setFlash("已确认，推送 Linear 中");
+      invalidate();
+    },
+    onError: onErr,
+  });
+
+  const items = pending.data?.items ?? [];
+
+  return (
+    <>
+      <TabQueueHeader
+        note="研发类推 Linear 前确认处理人，可改选后再推送"
+        right={
+          <div className="bg-hub-blue-light border border-hub-blue-border text-hub-blue-deep rounded-full text-[10.5px] font-bold px-2.5 py-0.5">
+            {items.length} 项待推送
+          </div>
+        }
+      />
+
+      {flash && (
+        <div className="mb-2 text-xs text-hub-green font-semibold">
+          {flash}{" "}
+          <button className="text-hub-textFaint" onClick={() => setFlash(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="mb-2 text-xs text-hub-rose">
+          {error}{" "}
+          <button className="text-hub-textFaint" onClick={() => setError(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {pending.isLoading ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          队列加载中…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="bg-white border border-hub-border rounded-[10px] p-5 text-xs text-hub-textFaint">
+          暂无待推 Linear。
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {items.map((item) => (
+            <PendingLinearReviewCard
+              key={item.hub_issue_id}
+              item={item}
+              busy={confirmPush.isPending}
+              onConfirm={(assigneeUserId) =>
+                confirmPush.mutate({ hubIssueId: item.hub_issue_id, assigneeUserId })
+              }
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PendingLinearReviewCard({
+  item,
+  busy,
+  onConfirm,
+}: {
+  item: {
+    hub_issue_id: number;
+    short_code: string;
+    title: string;
+    type: string;
+    product_line_code: string | null;
+    module: string | null;
+    default_assignee_user_id: number | null;
+    default_assignee_name: string | null;
+    default_assignee_in_linear: boolean;
+  };
+  busy: boolean;
+  onConfirm: (assigneeUserId?: number) => void;
+}) {
+  const [assigneeUserId, setAssigneeUserId] = useState<number | undefined>(
+    item.default_assignee_user_id ?? undefined,
+  );
+
+  return (
+    <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-xs text-hub-textSecondary">{item.short_code}</span>
+        <span className="text-[13px] font-semibold truncate">{item.title}</span>
+        <div className="flex-1" />
+        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full flex-none bg-hub-blue-light text-hub-blue-deep">
+          {item.type}
+        </span>
+      </div>
+      <div className="text-[11.5px] text-hub-textMuted">
+        模块：{item.product_line_code ?? "—"}
+        {item.module ? ` / ${item.module}` : ""}
+      </div>
+      <div className="text-[11.5px] text-hub-textMuted flex items-center gap-1.5">
+        默认负责人：{item.default_assignee_name ?? "（未配置）"}
+        {item.default_assignee_name && (
+          <span
+            className="text-[10px] font-bold px-1.5 py-[1px] rounded-full"
+            style={{
+              background: item.default_assignee_in_linear ? "#e6f4ed" : "#fbf1ef",
+              color: item.default_assignee_in_linear ? "#1e8a63" : "#b04a4a",
+            }}
+          >
+            {item.default_assignee_in_linear ? "在 Linear" : "不在 Linear"}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11.5px] text-hub-textSecondary">处理人</span>
+        <UserSelect
+          value={assigneeUserId}
+          onChange={setAssigneeUserId}
+          placeholder="选择处理人"
+          disabled={busy}
+        />
+        <div className="flex-1" />
+        <button
+          onClick={() => onConfirm(assigneeUserId)}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
+        >
+          确认推送
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 7 日趋势线（每日快照真实积累；<2 点不画，显示「趋势积累中」）。 */
 function Sparkline({
   points,
@@ -667,6 +860,16 @@ function SectionHeader({ n, title, note, right }: { n: number; title: string; no
         {n}
       </div>
       <div className="text-sm font-bold">{title}</div>
+      {note && <div className="text-[11.5px] text-hub-textFaint">{note}</div>}
+      {right}
+    </div>
+  );
+}
+
+/** 无编号小标题，用于 tab 内子队列（外层 tab 已承担 SectionHeader 的编号职责）。 */
+function TabQueueHeader({ note, right }: { note?: string; right?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 mb-2.5">
       {note && <div className="text-[11.5px] text-hub-textFaint">{note}</div>}
       {right}
     </div>
