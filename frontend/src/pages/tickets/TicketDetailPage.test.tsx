@@ -93,7 +93,7 @@ describe("TicketDetailPage 工单参数编辑", () => {
 });
 
 describe("TicketDetailPage 已毕业单参数编辑", () => {
-  it("pending_review 选研发有确认推送、选运营隐藏；未改动保存禁用", async () => {
+  it("pending_review 选研发显示确认推送、选运营显示确认分类（始终有确认按钮）", async () => {
     const { fireEvent } = await import("@testing-library/react");
     renderTicket(
       { hub_issue_id: 55, predicted_type: "Bug_fix", product_line_code: "pl-1", module: null },
@@ -113,10 +113,35 @@ describe("TicketDetailPage 已毕业单参数编辑", () => {
       },
     );
     expect(await screen.findByRole("button", { name: "保存" })).toBeDisabled();
+    // 研发类 → 确认推送
     expect(screen.getByRole("button", { name: "确认推送" })).toBeInTheDocument();
+    // 改选运营 → 确认按钮仍在，文案变「确认分类」（不再隐藏，避免运营单卡死）
     const sel = screen.getByLabelText("工单类型");
     fireEvent.change(sel, { target: { value: "Operation" } });
     expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认分类" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+  });
+
+  it("运营类 pending_review 单显示「确认分类」按钮（不卡死）", async () => {
+    renderTicket(
+      { hub_issue_id: 56, predicted_type: "Operation", product_line_code: "pl-1", module: null },
+      {
+        id: 56,
+        short_code: "HUB-000056",
+        type: "Operation",
+        status: "pending_review",
+        title: "开票咨询",
+        product_line_code: "pl-1",
+        module: null,
+        op_status: "processing",
+        op_handler: "agent",
+        linear_identifier: null,
+        linked_tickets: [],
+        sub_issues: [],
+      },
+    );
+    expect(await screen.findByRole("button", { name: "确认分类" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
   });
 });
