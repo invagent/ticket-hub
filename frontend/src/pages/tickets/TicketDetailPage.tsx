@@ -971,14 +971,21 @@ function TicketAttributesEditor({
             >
               {save.isPending ? "保存中…" : "保存"}
             </button>
-            {pendingReview && type !== "Operation" && (
+            {/* pending_review 始终显示确认按钮，文案随选中类型：研发=确认推送(推Linear)，
+                运营/内部任务=确认分类(走答复链/无外部动作)。都调 confirm-classification
+                后端按类型自动分流——否则运营单藏了按钮会卡在 pending_review 出不去。 */}
+            {pendingReview && (
               <button
                 type="button"
                 onClick={() => confirm.mutate()}
                 disabled={busy}
                 className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40"
               >
-                {confirm.isPending ? "推送中…" : "确认推送"}
+                {confirm.isPending
+                  ? "确认中…"
+                  : type === "Bug_fix" || type === "Demand"
+                    ? "确认推送"
+                    : "确认分类"}
               </button>
             )}
           </>
