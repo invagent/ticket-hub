@@ -20,3 +20,13 @@ export function isSupervisor(): boolean {
 export function isAdmin(): boolean {
   return currentRole() === "admin";
 }
+
+/** 当前用户 id（localStorage.auth_user.id），未登录返回 null。 */
+export function currentUserId(): number | null {
+  try {
+    const u = JSON.parse(localStorage.getItem("auth_user") ?? "null") as { id?: number } | null;
+    return typeof u?.id === "number" ? u.id : null;
+  } catch {
+    return null;
+  }
+}
