@@ -9,8 +9,8 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getByPath, postByPath } from "@/api/client";
-import { isSupervisor } from "@/api/auth";
+import { api, ApiError, getByPath, patchByPath, postByPath } from "@/api/client";
+import { currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
@@ -464,38 +464,9 @@ export function TicketDetailPage() {
                   />
                 )}
 
-                {/* 分类未明确（未毕业 hub_issue）：改判 + 确认分类（走 create-hub-issue） */}
+                {/* 分类未明确（未毕业 hub_issue）：工单参数编辑 + 确认分类一步毕业 */}
                 {!classified && d.hub_issue_id == null && (
-                  <div>
-                    <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
-                      分类改判
-                    </div>
-                    <select
-                      value={classifyType}
-                      onChange={(e) => setClassifyType(e.target.value)}
-                      className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white"
-                    >
-                      {HUB_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {HUB_TYPE_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        onClick={() => graduate.mutate()}
-                        disabled={graduate.isPending}
-                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {graduate.isPending ? "确认中…" : "确认分类"}
-                      </button>
-                      {gradErr && <span className="ml-2 text-[11px] text-hub-rose">{gradErr}</span>}
-                    </div>
-                    <div className="mt-1 text-[10.5px] text-hub-textFaint">
-                      人工确认分类后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
-                    </div>
-                  </div>
+                  <TicketAttributesEditor ticket={d} hub={null} />
                 )}
 
                 {/* 明确分类且为运营类：处理建议 + 处理说明 + 处理附件（研发类/内部任务见下方分流） */}
@@ -789,6 +760,250 @@ export function TicketDetailPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- 工单参数编辑（类型/产品线/模块）------------------------------------------
+// 按毕业状态分流：未毕业改 ticket → 点「确认分类」一步毕业（create-hub-issue 带产品线/
+// 模块）；已毕业改 hub（PATCH /attributes 只改数据不联动）+ pending_review「确认推送」。
+type HubDetailData =
+  paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
+type ProductLineOut = { code: string; name: string };
+type CatalogModuleOut = { code: string; name: string };
+
+function TicketAttributesEditor({
+  ticket,
+  hub,
+}: {
+  ticket: TicketDetailData;
+  hub: HubDetailData | null;
+}) {
+  const qc = useQueryClient();
+  const graduated = hub != null;
+  // 初始值：已毕业取 hub，未毕业取 ticket
+  const initType = graduated
+    ? hub.type
+    : HUB_TYPES.includes((ticket.predicted_type ?? "") as (typeof HUB_TYPES)[number])
+      ? (ticket.predicted_type as string)
+      : "Operation";
+  const initPlc = (graduated ? hub.product_line_code : ticket.product_line_code) ?? "";
+  const initModule = (graduated ? hub.module : ticket.module) ?? "";
+
+  const [type, setType] = useState<string>(initType);
+  const [plc, setPlc] = useState<string>(initPlc);
+  const [module, setModule] = useState<string>(initModule);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const ticketClosed = ["closed", "done", "resolved", "rejected", "superseded"].includes(
+    ticket.status,
+  );
+  const canEdit =
+    !ticketClosed &&
+    (isSupervisor() ||
+      (ticket.handler_user_id != null && currentUserId() === ticket.handler_user_id));
+
+  const productLines = useQuery({
+    queryKey: ["admin", "product-lines"],
+    queryFn: () => api.get("/api/admin/product-lines") as Promise<ProductLineOut[]>,
+    staleTime: 60_000,
+    enabled: canEdit,
+  });
+  const modules = useQuery({
+    queryKey: ["catalog-modules", plc],
+    queryFn: () =>
+      api.get("/api/hub-issues/catalog/modules", { product_line_code: plc }) as Promise<
+        CatalogModuleOut[]
+      >,
+    staleTime: 30_000,
+    enabled: canEdit && !!plc,
+  });
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["ticket-detail", ticket.id] });
+    void qc.invalidateQueries({ queryKey: ["ticket-history", ticket.id] });
+    void qc.invalidateQueries({ queryKey: ["tickets"] });
+    void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+    if (graduated) void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hub.id] });
+    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
+  };
+  const onErr = (e: unknown) => setError(e instanceof ApiError ? e.message : String(e));
+
+  const dirty = type !== initType || plc !== initPlc || module !== initModule;
+
+  // 已毕业：保存改 hub 参数（只改数据不联动）
+  const save = useMutation({
+    mutationFn: () =>
+      patchByPath(
+        "/api/hub-issues/{hub_issue_id}/attributes",
+        { hub_issue_id: hub!.id },
+        { type, product_line_code: plc || null, module: module || null },
+      ),
+    onSuccess: () => {
+      setNotice("已保存工单参数");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  // 已毕业 pending_review：确认推送（脏则先保存再确认）
+  const confirm = useMutation({
+    mutationFn: async () => {
+      if (dirty) await save.mutateAsync();
+      return api.post("/api/supervisor/confirm-classification", { hub_issue_id: hub!.id });
+    },
+    onSuccess: () => {
+      setNotice("已确认并推送研发");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  // 未毕业：确认分类一步毕业（带上改后的类型/产品线/模块）
+  const graduate = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/create-hub-issue", {
+        ticket_id: ticket.id,
+        type,
+        product_line_code: plc || null,
+        module: module || null,
+      }),
+    onSuccess: () => {
+      setNotice("已确认分类");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  const busy = save.isPending || confirm.isPending || graduate.isPending;
+  const pendingReview = graduated && hub.status === "pending_review";
+
+  if (!canEdit) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 text-[12.5px]">
+        <div>
+          <span className="text-hub-textFaint">类型：</span>
+          {HUB_TYPE_LABELS[initType] ?? initType}
+        </div>
+        <div>
+          <span className="text-hub-textFaint">产品线：</span>
+          {initPlc || "—"}
+        </div>
+        <div>
+          <span className="text-hub-textFaint">模块：</span>
+          {initModule || "—"}
+        </div>
+      </div>
+    );
+  }
+
+  const selCls =
+    "text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white";
+  return (
+    <div className="space-y-2.5">
+      <div className="text-[11px] font-bold text-hub-textMuted tracking-wide">工单参数</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-hub-textMuted">工单类型</span>
+          <select
+            aria-label="工单类型"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            disabled={busy}
+            className={selCls}
+          >
+            {HUB_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {HUB_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-hub-textMuted">产品线</span>
+          <select
+            aria-label="产品线"
+            value={plc}
+            onChange={(e) => {
+              setPlc(e.target.value);
+              setModule("");
+            }}
+            disabled={busy}
+            className={selCls}
+          >
+            <option value="">—</option>
+            {(productLines.data ?? []).map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.name}
+              </option>
+            ))}
+            {plc && !(productLines.data ?? []).some((p) => p.code === plc) && (
+              <option value={plc}>{plc}</option>
+            )}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-hub-textMuted">模块</span>
+          <select
+            aria-label="模块"
+            value={module}
+            onChange={(e) => setModule(e.target.value)}
+            disabled={busy || !plc}
+            className={selCls}
+          >
+            <option value="">—</option>
+            {(modules.data ?? []).map((m) => (
+              <option key={m.code} value={m.code}>
+                {m.name}
+              </option>
+            ))}
+            {module && !(modules.data ?? []).some((m) => m.code === module) && (
+              <option value={module}>{module}</option>
+            )}
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {graduated ? (
+          <>
+            <button
+              type="button"
+              onClick={() => save.mutate()}
+              disabled={!dirty || busy}
+              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {save.isPending ? "保存中…" : "保存"}
+            </button>
+            {pendingReview && type !== "Operation" && (
+              <button
+                type="button"
+                onClick={() => confirm.mutate()}
+                disabled={busy}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40"
+              >
+                {confirm.isPending ? "推送中…" : "确认推送"}
+              </button>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => graduate.mutate()}
+            disabled={busy}
+            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {graduate.isPending ? "确认中…" : "确认分类"}
+          </button>
+        )}
+      </div>
+      {!graduated && (
+        <div className="text-[10.5px] text-hub-textFaint">
+          确认分类后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
+        </div>
+      )}
+      {notice && <div className="text-[11px] text-hub-green font-semibold">{notice}</div>}
+      {error && <div className="text-[11px] text-hub-rose">{error}</div>}
     </div>
   );
 }
