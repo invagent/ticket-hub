@@ -45,7 +45,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
-from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor
+from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor, require_user
+from app.api.hub_issues import _authorize_hub_handler
 from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
 from app.db import get_session
@@ -1857,10 +1858,10 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
 def confirm_classification(
     body: ConfirmClassificationBody,
     background_tasks: BackgroundTasks,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
-    """主管确认分类无误 → 按 hub.type 分流：
+    """确认分类无误 → 按 hub.type 分流。权限放宽到处理人本人（_authorize_hub_handler）：
 
     - Operation → created + op_status=processing/agent（回到自动答复链，由
       Celery drain 扫描触发，此处不直接调答复）。
@@ -1870,6 +1871,7 @@ def confirm_classification(
     """
     from app.config import get_settings
 
+    _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     prev = hub.status
     settings = get_settings()
