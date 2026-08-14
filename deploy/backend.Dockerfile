@@ -6,7 +6,13 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_INPUT=1 \
     PIP_PROGRESS_BAR=off \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    # 国内源 + 超时/重试：官方 pypi.org 从国内拉大 wheel 反复 stall，
+    # 冷构建（缓存未命中重装依赖）会卡死。aliyun 镜像稳定可达。
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com \
+    PIP_DEFAULT_TIMEOUT=60 \
+    PIP_RETRIES=5
 
 WORKDIR /app
 
