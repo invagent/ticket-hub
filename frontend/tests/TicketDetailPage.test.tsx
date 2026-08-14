@@ -609,12 +609,12 @@ describe("TicketDetailPage", () => {
     stubPendingReviewTicket(330, 91, "Demand");
     renderPage(330);
     expect(await screen.findByRole("heading", { name: "TKT-330" })).toBeInTheDocument();
-    // 待确认分类面板出现（与工作台一致的三动作）
+    // 工单参数编辑 + 确认推送（改判/误报关闭已移除，改判并入类型下拉）
     expect(await screen.findByRole("button", { name: "确认推送" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "改判" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "误报关闭" })).toBeInTheDocument();
-    // 改判下拉默认 = AI 判定分类（Demand→需求），不是写死的运营
-    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("Demand");
+    expect(screen.queryByRole("button", { name: "改判" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "误报关闭" })).not.toBeInTheDocument();
+    // 类型下拉默认 = hub 类型（Demand→需求）
+    expect((screen.getByLabelText("工单类型") as HTMLSelectElement).value).toBe("Demand");
     // 关键：不能因为 hub_issue_id 非空就当作已确认显示「已推送 Linear」
     expect(screen.queryByText(/已推送 Linear/)).not.toBeInTheDocument();
     localStorage.clear();
