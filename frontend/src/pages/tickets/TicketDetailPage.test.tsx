@@ -91,3 +91,32 @@ describe("TicketDetailPage 工单参数编辑", () => {
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
   });
 });
+
+describe("TicketDetailPage 已毕业单参数编辑", () => {
+  it("pending_review 选研发有确认推送、选运营隐藏；未改动保存禁用", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    renderTicket(
+      { hub_issue_id: 55, predicted_type: "Bug_fix", product_line_code: "pl-1", module: null },
+      {
+        id: 55,
+        short_code: "HUB-000055",
+        type: "Bug_fix",
+        status: "pending_review",
+        title: "开票失败",
+        product_line_code: "pl-1",
+        module: null,
+        op_status: null,
+        op_handler: null,
+        linear_identifier: null,
+        linked_tickets: [],
+        sub_issues: [],
+      },
+    );
+    expect(await screen.findByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "确认推送" })).toBeInTheDocument();
+    const sel = screen.getByLabelText("工单类型");
+    fireEvent.change(sel, { target: { value: "Operation" } });
+    expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+  });
+});

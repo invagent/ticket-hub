@@ -455,13 +455,9 @@ export function TicketDetailPage() {
                   <p className="text-[11px] text-hub-textFaint">分类状态加载中…</p>
                 )}
 
-                {/* 待确认分类（研发类自动毕业 pending_review）：复用工作台三动作，确认后与队列一致 */}
+                {/* 待确认分类（研发类自动毕业 pending_review）：工单参数编辑 + 确认推送 */}
                 {pendingReview && hub.data && (
-                  <ClassificationReviewInline
-                    hubId={hub.data.id}
-                    aiType={hub.data.type}
-                    ticketId={id}
-                  />
+                  <TicketAttributesEditor ticket={d} hub={hub.data} />
                 )}
 
                 {/* 分类未明确（未毕业 hub_issue）：工单参数编辑 + 确认分类一步毕业 */}
@@ -1008,133 +1004,6 @@ function TicketAttributesEditor({
   );
 }
 
-// ---- 待确认分类三动作（研发类自动毕业 pending_review）------------------------
-// 与主管工作台「待确认分类」队列 / hub 详情页 ClassificationReviewPanel 打同样三端点，
-// 确认/改判/误报后双向一致：工单详情确认 → 工作台队列该项消失。
-const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
-
-function ClassificationReviewInline({
-  hubId,
-  aiType,
-  ticketId,
-}: {
-  hubId: number;
-  aiType: string;
-  ticketId: number;
-}) {
-  const qc = useQueryClient();
-  // 改判下拉默认 = AI 判定的分类（aiType），非法值才回落 Operation
-  const [newType, setNewType] = useState<string>(() =>
-    (_RECLASSIFY_TYPES as readonly string[]).includes(aiType) ? aiType : "Operation",
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  // 三视图缓存全部作废：本页(ticket-detail/hub-detail)、工作台待确认队列、工单/hub 列表
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
-    void qc.invalidateQueries({ queryKey: ["ticket-history", ticketId] });
-    void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
-    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
-    void qc.invalidateQueries({ queryKey: ["tickets"] });
-    void qc.invalidateQueries({ queryKey: ["hub-issues"] });
-  };
-  const onErr = (e: unknown) => setError(e instanceof ApiError ? e.message : String(e));
-
-  const confirm = useMutation({
-    mutationFn: () => api.post("/api/supervisor/confirm-classification", { hub_issue_id: hubId }),
-    onSuccess: () => {
-      setNotice("已确认并推送 Linear");
-      refresh();
-    },
-    onError: onErr,
-  });
-  const reclassify = useMutation({
-    mutationFn: () =>
-      api.post("/api/supervisor/reclassify", {
-        hub_issue_id: hubId,
-        new_type: newType,
-        reason: "工单详情页改判",
-      }),
-    onSuccess: () => {
-      setNotice(`已改判为 ${newType}`);
-      refresh();
-    },
-    onError: onErr,
-  });
-  const dismiss = useMutation({
-    mutationFn: () =>
-      api.post("/api/supervisor/dismiss-classification", {
-        hub_issue_id: hubId,
-        reason: "工单详情页误报关闭",
-      }),
-    onSuccess: () => {
-      setNotice("已关闭（误报）");
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  if (!isSupervisor()) {
-    return (
-      <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3 text-[11.5px] text-hub-blue-deep">
-        该工单 AI 判为 {HUB_TYPE_LABELS[aiType] ?? aiType}，待主管确认分类后才会推送研发（Linear）。
-      </div>
-    );
-  }
-
-  const busy = confirm.isPending || reclassify.isPending || dismiss.isPending;
-
-  return (
-    <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
-      <div className="text-[12px] font-semibold text-hub-blue-deep">
-        待确认分类：AI 判为 {HUB_TYPE_LABELS[aiType] ?? aiType}，确认后推送研发（Linear），或改判 / 关闭
-      </div>
-      {notice && <div className="text-xs text-hub-green font-semibold">{notice}</div>}
-      {error && <div className="text-xs text-hub-rose">{error}</div>}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => confirm.mutate()}
-          disabled={busy}
-          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
-        >
-          确认推送
-        </button>
-        <div className="flex items-center gap-1">
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value)}
-            disabled={busy}
-            className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px]"
-          >
-            {_RECLASSIFY_TYPES.map((tp) => (
-              <option key={tp} value={tp}>
-                {HUB_TYPE_LABELS[tp] ?? tp}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => reclassify.mutate()}
-            disabled={busy}
-            className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border disabled:opacity-50 hover:bg-hub-panel"
-          >
-            改判
-          </button>
-        </div>
-        <div className="flex-1" />
-        <button
-          onClick={() => dismiss.mutate()}
-          disabled={busy}
-          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-border disabled:opacity-50 hover:bg-hub-panel"
-        >
-          误报关闭
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---- 容器：灰色边框 + 阴影 + 容器标题 -------------------------------------
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="bg-white border border-hub-border rounded-[10px] shadow-sm">
