@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getByPath, patchByPath, postByPath, type HubIssueSummary } from "@/api/client";
-import { currentUserId, isSupervisor } from "@/api/auth";
+import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/api/client";
+import { isSupervisor } from "@/api/auth";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { HubCollabActions } from "@/components/hubActions";
 import { useTabTitle } from "@/tabs/useTabTitle";
@@ -87,8 +87,11 @@ export function HubIssueDetailPage() {
             />
           </div>
 
-          {/* 工单参数编辑（类型/产品线/模块）+ pending_review 确认推送闸门 */}
-          <HubAttributesEditor data={detail.data} />
+          {/* pending_review 研发类：待确认分类面板 */}
+          {(detail.data.type === "Bug_fix" || detail.data.type === "Demand") &&
+            detail.data.status === "pending_review" && (
+              <ClassificationReviewPanel data={detail.data} />
+            )}
 
           {/* 任务信息容器（替换原「基本信息」两容器之一） */}
           <TaskInfoCard data={detail.data} />
@@ -268,196 +271,113 @@ function TaskInfoCard({ data }: { data: HubIssueDetail }) {
   );
 }
 
-const _TYPE_OPTIONS = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
+const _RECLASSIFY_TYPES = ["Operation", "Demand", "Bug_fix", "Internal_task", "Complaint"] as const;
 
-type ProductLineOut = { code: string; name: string };
-type CatalogModuleOut = { code: string; name: string };
-
-/** 工单参数编辑（类型/产品线/模块，只改数据不联动）+ pending_review 闸门确认推送。
- * A（参数表单）与 B（确认推送）共享选中类型 state：选运营隐藏确认推送。 */
-function HubAttributesEditor({ data }: { data: HubIssueDetail }) {
+/** 待确认分类面板：pending_review 的研发类 hub 在详情页直接确认/改判/误报关闭。 */
+function ClassificationReviewPanel({ data }: { data: HubIssueDetail }) {
   const qc = useQueryClient();
-  const [type, setType] = useState<string>(data.type);
-  const [plc, setPlc] = useState<string>(data.product_line_code ?? "");
-  const [module, setModule] = useState<string>(data.module ?? "");
+  const [newType, setNewType] = useState<string>("Operation");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const closed =
-    data.status === "closed" || (data.type === "Operation" && data.op_status === "closed");
-  const canEdit =
-    !closed &&
-    (isSupervisor() ||
-      (data.op_handler_user_id != null && currentUserId() === data.op_handler_user_id));
-
-  const productLines = useQuery({
-    queryKey: ["admin", "product-lines"],
-    queryFn: () => api.get("/api/admin/product-lines") as Promise<ProductLineOut[]>,
-    staleTime: 60_000,
-    enabled: canEdit,
-  });
-  const modules = useQuery({
-    queryKey: ["catalog-modules", plc],
-    queryFn: () =>
-      api.get("/api/hub-issues/catalog/modules", { product_line_code: plc }) as Promise<
-        CatalogModuleOut[]
-      >,
-    staleTime: 30_000,
-    enabled: canEdit && !!plc,
-  });
-
   const refresh = () => qc.invalidateQueries({ queryKey: ["hub-issue-detail", data.id] });
-  const onErr = (e: unknown) => setError(e instanceof ApiError ? e.message : String(e));
-
-  const dirty =
-    type !== data.type ||
-    plc !== (data.product_line_code ?? "") ||
-    module !== (data.module ?? "");
-
-  const save = useMutation({
-    mutationFn: () =>
-      patchByPath(
-        "/api/hub-issues/{hub_issue_id}/attributes",
-        { hub_issue_id: data.id },
-        { type, product_line_code: plc || null, module: module || null },
-      ),
-    onSuccess: () => {
-      setNotice("已保存工单参数");
-      refresh();
-    },
-    onError: onErr,
-  });
+  const onErr = (e: unknown) =>
+    setError(e instanceof ApiError ? e.message : String(e));
 
   const confirm = useMutation({
-    mutationFn: async () => {
-      // 未保存改动 → 先保存再确认推送（spec 决策：确认时自动先保存）
-      if (dirty) await save.mutateAsync();
-      return api.post("/api/supervisor/confirm-classification", { hub_issue_id: data.id });
-    },
+    mutationFn: () =>
+      api.post("/api/supervisor/confirm-classification", { hub_issue_id: data.id }),
     onSuccess: () => {
-      setNotice("已确认并推送研发");
+      setNotice("已确认并推送 Linear");
+      refresh();
+    },
+    onError: onErr,
+  });
+  const reclassify = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/reclassify", {
+        hub_issue_id: data.id,
+        new_type: newType,
+        reason: "详情页改判",
+      }),
+    onSuccess: () => {
+      setNotice(`已改判为 ${newType}`);
+      refresh();
+    },
+    onError: onErr,
+  });
+  const dismiss = useMutation({
+    mutationFn: () =>
+      api.post("/api/supervisor/dismiss-classification", {
+        hub_issue_id: data.id,
+        reason: "详情页误报关闭",
+      }),
+    onSuccess: () => {
+      setNotice("已关闭（误报）");
       refresh();
     },
     onError: onErr,
   });
 
-  const isPendingReview =
-    (data.type === "Bug_fix" || data.type === "Demand") && data.status === "pending_review";
-  const busy = save.isPending || confirm.isPending;
-
-  // 只读展示（无权限或已关闭）
-  const readonlyView = (
-    <Card title="工单参数">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
-        <Field label="工单类型">{TYPE_LABEL[data.type] ?? data.type}</Field>
-        <Field label="产品线">{data.product_line_code ?? "—"}</Field>
-        <Field label="模块">{data.module ?? "—"}</Field>
+  if (!isSupervisor()) {
+    return (
+      <div className="mb-3 bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3 text-[11.5px] text-hub-blue-deep">
+        该工单待主管确认分类后才会推送研发（Linear）。
       </div>
-    </Card>
-  );
-  if (!canEdit) {
-    // pending_review 但无权限：给只读提示（保留原文案语义）
-    if (isPendingReview) {
-      return (
-        <>
-          {readonlyView}
-          <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3 text-[11.5px] text-hub-blue-deep">
-            该工单待处理人/主管确认分类后才会推送研发（Linear）。
-          </div>
-        </>
-      );
-    }
-    return readonlyView;
+    );
   }
 
+  const busy = confirm.isPending || reclassify.isPending || dismiss.isPending;
+
   return (
-    <Card title="工单参数">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-hub-textMuted">工单类型</span>
-          <select
-            aria-label="工单类型"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            disabled={busy}
-            className="text-xs rounded-md border border-hub-border bg-white px-2 py-[5px]"
-          >
-            {_TYPE_OPTIONS.map((tp) => (
-              <option key={tp} value={tp}>
-                {TYPE_LABEL[tp] ?? tp}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-hub-textMuted">产品线</span>
-          <select
-            aria-label="产品线"
-            value={plc}
-            onChange={(e) => {
-              setPlc(e.target.value);
-              setModule(""); // 改产品线清空已选模块
-            }}
-            disabled={busy}
-            className="text-xs rounded-md border border-hub-border bg-white px-2 py-[5px]"
-          >
-            <option value="">—</option>
-            {(productLines.data ?? []).map((p) => (
-              <option key={p.code} value={p.code}>
-                {p.name}
-              </option>
-            ))}
-            {/* 当前值不在列表（历史数据）时兜底可见 */}
-            {plc && !(productLines.data ?? []).some((p) => p.code === plc) && (
-              <option value={plc}>{plc}</option>
-            )}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-hub-textMuted">模块</span>
-          <select
-            aria-label="模块"
-            value={module}
-            onChange={(e) => setModule(e.target.value)}
-            disabled={busy || !plc}
-            className="text-xs rounded-md border border-hub-border bg-white px-2 py-[5px]"
-          >
-            <option value="">—</option>
-            {(modules.data ?? []).map((m) => (
-              <option key={m.code} value={m.code}>
-                {m.name}
-              </option>
-            ))}
-            {module && !(modules.data ?? []).some((m) => m.code === module) && (
-              <option value={module}>{module}</option>
-            )}
-          </select>
-        </label>
+    <div className="mb-3 bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
+      <div className="text-[12px] font-semibold text-hub-blue-deep">
+        待确认分类：AI 判为 {data.type}，确认后推送研发，或改判 / 关闭
       </div>
-      {notice && <div className="text-xs text-hub-green font-semibold mt-2">{notice}</div>}
-      {error && <div className="text-xs text-hub-rose mt-2">{error}</div>}
-      <div className="flex items-center gap-2 flex-wrap mt-3">
+      {notice && <div className="text-xs text-hub-green font-semibold">{notice}</div>}
+      {error && <div className="text-xs text-hub-rose">{error}</div>}
+      <div className="flex items-center gap-2 flex-wrap">
         <button
-          onClick={() => save.mutate()}
-          disabled={!dirty || busy}
-          className="text-xs font-semibold px-3.5 py-1.5 rounded-md bg-hub-teal text-white disabled:opacity-50 hover:brightness-95"
+          onClick={() => confirm.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
         >
-          {save.isPending ? "保存中…" : "保存"}
+          确认推送
         </button>
-        {/* pending_review 研发类 + 当前选中类型非运营 → 确认推送 */}
-        {isPendingReview && type !== "Operation" && (
-          <button
-            onClick={() => confirm.mutate()}
+        <div className="flex items-center gap-1">
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
             disabled={busy}
-            className="text-xs font-semibold px-3.5 py-1.5 rounded-md bg-white text-hub-teal-deep border border-hub-teal-border disabled:opacity-50 hover:bg-hub-teal-light"
+            className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px]"
           >
-            {confirm.isPending ? "推送中…" : "确认推送"}
+            {_RECLASSIFY_TYPES.map((tp) => (
+              <option key={tp} value={tp}>
+                {tp}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => reclassify.mutate()}
+            disabled={busy}
+            className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-textSecondary border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+          >
+            改判
           </button>
-        )}
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={() => dismiss.mutate()}
+          disabled={busy}
+          className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-white text-hub-rose border border-hub-border disabled:opacity-50 hover:bg-hub-bg"
+        >
+          误报关闭
+        </button>
       </div>
-    </Card>
+    </div>
   );
 }
+
 
 /* ---- 任务进度容器：横向时间轴（工单调整 V1.0 §4.3） ---- */
 
