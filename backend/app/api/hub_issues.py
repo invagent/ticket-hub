@@ -19,6 +19,7 @@ from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
 from app.models import AgentDecision, HubIssue, Ticket
+from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
@@ -32,6 +33,7 @@ from app.services.hub_issues.op_status import (
     record_ticket_action,
     set_hub_tickets_handler,
 )
+from app.services.ingest.catalog_upsert import upsert_catalog
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -454,6 +456,105 @@ def request_supply_endpoint(
         hub_issue_id=result.hub_issue_id,
         ticket_count=len(result.ticket_ids),
         outbox_count=len(result.outbox_ids),
+    )
+
+
+# ---- 工单参数编辑（类型/产品线/模块，只改数据不联动）----------------------------
+
+
+class UpdateAttributesBody(BaseModel):
+    type: str | None = Field(None, pattern="^(Operation|Bug_fix|Demand|Internal_task|Complaint)$")
+    product_line_code: str | None = Field(None, max_length=64)
+    module: str | None = Field(None, max_length=128)
+
+
+class UpdateAttributesResponse(BaseModel):
+    hub_issue_id: int
+    type: str
+    product_line_code: str | None
+    module: str | None
+    updated_ticket_count: int
+
+
+@router.patch("/{hub_issue_id}/attributes", response_model=UpdateAttributesResponse)
+def update_hub_attributes(
+    hub_issue_id: int,
+    body: UpdateAttributesBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> UpdateAttributesResponse:
+    """只改数据（type/product_line_code/module），不联动下游（不推 Linear/不重分派/
+    不重答/不改 hub.status/op_status）。处理人本人/主管/管理员可改；已关闭 409。"""
+    _authorize_hub_handler(db, hub_issue_id, user)
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+    if hub.status == "closed" or (hub.type == "Operation" and hub.op_status == OP_CLOSED):
+        raise HTTPException(
+            status_code=409, detail=f"hub_issue {hub.short_code} 已关闭，不可修改参数"
+        )
+
+    changes: list[str] = []
+    updated_tickets = 0
+    if body.type is not None and body.type != hub.type:
+        old = hub.type
+        hub.type = body.type
+        linked = (
+            db.query(Ticket)
+            .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+            .all()
+        )
+        for tk in linked:
+            tk.predicted_type = body.type
+            db.add(
+                AgentDecision(
+                    decision_type="classify_type",
+                    subject_type="ticket",
+                    subject_id=tk.id,
+                    proposal={
+                        "predicted_type": body.type,
+                        "reason": f"手动修改 {old}→{body.type}",
+                        "skill": "manual",
+                        "human_confirmed": True,
+                        "changed_by": f"user:{user.name}",
+                    },
+                )
+            )
+        updated_tickets = len(linked)
+        changes.append(f"类型 {old}→{body.type}")
+    if body.product_line_code is not None and body.product_line_code != hub.product_line_code:
+        changes.append(f"产品线 {hub.product_line_code}→{body.product_line_code}")
+        hub.product_line_code = body.product_line_code
+    if body.module is not None and body.module != hub.module:
+        changes.append(f"模块 {hub.module}→{body.module}")
+        hub.module = body.module
+
+    if body.product_line_code or body.module:
+        upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)
+
+    if changes:
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status=hub.status,
+            to_status=hub.status,
+            changed_by=f"user:{user.name}",
+            reason="修改工单参数: " + "; ".join(changes),
+        )
+        record_ticket_action(
+            db,
+            hub,
+            action="edit_attributes",
+            changed_by=f"user:{user.name}",
+            reason="; ".join(changes),
+        )
+    db.commit()
+    return UpdateAttributesResponse(
+        hub_issue_id=hub.id,
+        type=hub.type,
+        product_line_code=hub.product_line_code,
+        module=hub.module,
+        updated_ticket_count=updated_tickets,
     )
 
 
