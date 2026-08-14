@@ -579,6 +579,9 @@ class CreateHubIssueBody(BaseModel):
     ticket_id: int
     # Optional supervisor override; defaults to the ticket's predicted_type.
     type: str | None = Field(default=None, pattern="^(Operation|Bug_fix|Demand|Internal_task)$")
+    # 确认分类时可覆盖产品线/模块（否则继承 ticket 原值）。
+    product_line_code: str | None = Field(default=None, max_length=64)
+    module: str | None = Field(default=None, max_length=128)
 
 
 class CreateHubIssueResponse(BaseModel):
@@ -593,19 +596,28 @@ class CreateHubIssueResponse(BaseModel):
 def create_hub_issue_endpoint(
     body: CreateHubIssueBody,
     background_tasks: BackgroundTasks,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> CreateHubIssueResponse:
     """Graduate a ticket to a hub_issue (manual path, no confidence gate).
 
+    权限：主管/管理员，或该 ticket 的处理人本人（ticket.handler_user_id）。
     Bug_fix/Demand issues are pushed to Linear asynchronously when
     LINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).
     """
+    if user.role not in ("supervisor", "admin"):
+        t = db.get(Ticket, body.ticket_id)
+        if t is None or t.handler_user_id != user.user_id:
+            raise HTTPException(
+                status_code=403, detail="需要主管/管理员，或本工单处理人才能确认分类"
+            )
     try:
         result = ensure_hub_issue_for_ticket(
             body.ticket_id,
             created_by=f"user:{user.name}",
             type_override=body.type,
+            product_line_code=body.product_line_code,
+            module=body.module,
             db=db,
         )
     except HubIssueCreateError as e:

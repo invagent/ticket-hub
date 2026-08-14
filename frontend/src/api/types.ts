@@ -1430,7 +1430,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm Classification
-         * @description 主管确认分类无误 → 按 hub.type 分流：
+         * @description 确认分类无误 → 按 hub.type 分流。权限放宽到处理人本人（_authorize_hub_handler）：
          *
          *     - Operation → created + op_status=processing/agent（回到自动答复链，由
          *       Celery drain 扫描触发，此处不直接调答复）。
@@ -1478,6 +1478,7 @@ export interface paths {
          * Create Hub Issue Endpoint
          * @description Graduate a ticket to a hub_issue (manual path, no confidence gate).
          *
+         *     权限：主管/管理员，或该 ticket 的处理人本人（ticket.handler_user_id）。
          *     Bug_fix/Demand issues are pushed to Linear asynchronously when
          *     LINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).
          */
@@ -2602,6 +2603,10 @@ export interface components {
         };
         /** CreateHubIssueBody */
         CreateHubIssueBody: {
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
             /** Ticket Id */
             ticket_id: number;
             /** Type */

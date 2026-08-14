@@ -61,6 +61,8 @@ def ensure_hub_issue_for_ticket(
     *,
     created_by: str,
     type_override: str | None = None,
+    product_line_code: str | None = None,
+    module: str | None = None,
     db: Session,
 ) -> HubIssueResult:
     """Create a hub_issue from a ticket and link them. Commits on success.
@@ -100,13 +102,24 @@ def ensure_hub_issue_for_ticket(
     if not (ticket.title or "").strip():
         raise HubIssueCreateError(f"ticket {ticket_id} has no title")
 
+    # 主管/处理人确认分类时可覆盖产品线/模块（否则继承 ticket 原值）。覆盖时同步回
+    # ticket 并 upsert_catalog 自动建目录，保持 ticket/hub 一致。
+    eff_plc = product_line_code if product_line_code is not None else ticket.product_line_code
+    eff_module = module if module is not None else ticket.module
+    if product_line_code is not None or module is not None:
+        from app.services.ingest.catalog_upsert import upsert_catalog
+
+        upsert_catalog(db, product_line_code=eff_plc, module=eff_module)
+        ticket.product_line_code = eff_plc
+        ticket.module = eff_module
+
     hub = HubIssue(
         short_code=_next_hub_short_code(db),
         type=issue_type,
         title=(ticket.title or "").strip(),
         canonical_body=ticket.body,
-        product_line_code=ticket.product_line_code,
-        module=ticket.module,
+        product_line_code=eff_plc,
+        module=eff_module,
         status="created",
         op_status=OP_PROCESSING if issue_type == "Operation" else None,
         op_handler="agent" if issue_type == "Operation" else None,
