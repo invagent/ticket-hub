@@ -391,3 +391,40 @@ def test_reclassify_to_demand_gate_off_pushes(
         push.assert_called_once_with(82)
     finally:
         get_settings.cache_clear()
+
+
+def test_confirm_by_handler_allowed(app_client: TestClient, act_world: Session) -> None:
+    """确认推送放宽到处理人本人：hub 的 op_handler_user_id==当前用户 → 放行。"""
+    from app.models import HubIssue, User
+
+    act_world.add(User(id=7, feishu_uid="ou_h7", name="handler7", role="assignee"))
+    act_world.add(
+        HubIssue(id=75, short_code="HUB-000075", type="Bug_fix", title="t",
+                 canonical_body="b", status="pending_review", op_handler_user_id=7)
+    )
+    act_world.commit()
+    with patch("app.api.supervisor.push_hub_issue_to_linear"):
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 75},
+            headers=_bearer(7, name="handler7", role="assignee"),
+        )
+    assert r.status_code == 200, r.text
+
+
+def test_confirm_by_stranger_403(app_client: TestClient, act_world: Session) -> None:
+    """路人（非处理人非主管）确认推送 → 403。"""
+    from app.models import HubIssue, User
+
+    act_world.add(User(id=8, feishu_uid="ou_s8", name="stranger8", role="member"))
+    act_world.add(
+        HubIssue(id=76, short_code="HUB-000076", type="Bug_fix", title="t",
+                 canonical_body="b", status="pending_review", op_handler_user_id=7)
+    )
+    act_world.commit()
+    r = app_client.post(
+        "/api/supervisor/confirm-classification",
+        json={"hub_issue_id": 76},
+        headers=_bearer(8, name="stranger8", role="member"),
+    )
+    assert r.status_code == 403, r.text

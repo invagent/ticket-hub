@@ -490,6 +490,24 @@
         "title": "BatchSupplyResponse",
         "type": "object"
       },
+      "CatalogModuleOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "CatalogModuleOut",
+        "type": "object"
+      },
       "CheckOut": {
         "properties": {
           "error": {
@@ -2704,6 +2722,17 @@
               }
             ],
             "title": "Op Handler"
+          },
+          "op_handler_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Op Handler User Id"
           },
           "op_status": {
             "anyOf": [
@@ -7369,6 +7398,95 @@
         "title": "TicketSummary",
         "type": "object"
       },
+      "UpdateAttributesBody": {
+        "properties": {
+          "module": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "pattern": "^(Operation|Bug_fix|Demand|Internal_task|Complaint)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "UpdateAttributesBody",
+        "type": "object"
+      },
+      "UpdateAttributesResponse": {
+        "properties": {
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_ticket_count": {
+            "title": "Updated Ticket Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "type",
+          "product_line_code",
+          "module",
+          "updated_ticket_count"
+        ],
+        "title": "UpdateAttributesResponse",
+        "type": "object"
+      },
       "UpsertBody": {
         "properties": {
           "items": {
@@ -10934,6 +11052,60 @@
         ]
       }
     },
+    "/api/hub-issues/catalog/modules": {
+      "get": {
+        "description": "处理人可读的模块下拉（require_user）。按 product_line_code 过滤，仅 active。\n\n工单参数编辑区的模块下拉数据源；admin_catalog 的同类端点是 require_admin，\n处理人够不到，故在此另开一个只读端点。Module 无独立 code 列，用 name 兼作 code。",
+        "operationId": "list_catalog_modules_api_hub_issues_catalog_modules_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product_line_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Product Line Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogModuleOut"
+                  },
+                  "title": "Response List Catalog Modules Api Hub Issues Catalog Modules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Catalog Modules",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
     "/api/hub-issues/dev-status-options": {
       "get": {
         "description": "研发状态筛选下拉的实际可选值（数据驱动的 linear_status；工单推 Linear 后有值）。",
@@ -11287,6 +11459,59 @@
           }
         },
         "summary": "Get Hub Issue",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/attributes": {
+      "patch": {
+        "description": "只改数据（type/product_line_code/module），不联动下游（不推 Linear/不重分派/\n不重答/不改 hub.status/op_status）。处理人本人/主管/管理员可改；已关闭 409。",
+        "operationId": "update_hub_attributes_api_hub_issues__hub_issue_id__attributes_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAttributesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateAttributesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Hub Attributes",
         "tags": [
           "hub-issues"
         ]
