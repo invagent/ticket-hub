@@ -880,6 +880,30 @@
       },
       "CreateHubIssueBody": {
         "properties": {
+          "module": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
           "ticket_id": {
             "title": "Ticket Id",
             "type": "integer"
@@ -12437,7 +12461,7 @@
     },
     "/api/supervisor/confirm-classification": {
       "post": {
-        "description": "主管确认分类无误 → 按 hub.type 分流：\n\n- Operation → created + op_status=processing/agent（回到自动答复链，由\n  Celery drain 扫描触发，此处不直接调答复）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。\n- Internal_task → created（无外部动作）。",
+        "description": "确认分类无误 → 按 hub.type 分流。权限放宽到处理人本人（_authorize_hub_handler）：\n\n- Operation → created + op_status=processing/agent（回到自动答复链，由\n  Celery drain 扫描触发，此处不直接调答复）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。\n- Internal_task → created（无外部动作）。",
         "operationId": "confirm_classification_api_supervisor_confirm_classification_post",
         "requestBody": {
           "content": {
@@ -12521,7 +12545,7 @@
     },
     "/api/supervisor/create-hub-issue": {
       "post": {
-        "description": "Graduate a ticket to a hub_issue (manual path, no confidence gate).\n\nBug_fix/Demand issues are pushed to Linear asynchronously when\nLINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).",
+        "description": "Graduate a ticket to a hub_issue (manual path, no confidence gate).\n\n权限：主管/管理员，或该 ticket 的处理人本人（ticket.handler_user_id）。\nBug_fix/Demand issues are pushed to Linear asynchronously when\nLINEAR_PUSH_ENABLED is on (the push itself re-checks all gates).",
         "operationId": "create_hub_issue_endpoint_api_supervisor_create_hub_issue_post",
         "requestBody": {
           "content": {

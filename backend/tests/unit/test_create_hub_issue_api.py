@@ -117,3 +117,49 @@ def test_create_unclassified_returns_409(app_client: TestClient, hub_world: Sess
     )
     assert resp.status_code == 409
     assert "no valid type" in resp.json()["detail"]
+
+
+def test_create_with_product_line_and_module_override(app_client: TestClient, hub_world: Session) -> None:
+    resp = app_client.post(
+        "/api/supervisor/create-hub-issue",
+        json={"ticket_id": 300, "type": "Bug_fix", "product_line_code": "cloud-fapiao", "module": "开票管理"},
+        headers=_bearer(2),
+    )
+    assert resp.status_code == 200, resp.text
+    from app.models import Module, ProductLine
+
+    hub = hub_world.get(HubIssue, resp.json()["hub_issue_id"])
+    assert hub.product_line_code == "cloud-fapiao" and hub.module == "开票管理"
+    assert hub_world.query(ProductLine).filter_by(code="cloud-fapiao").first() is not None
+    assert (
+        hub_world.query(Module).filter_by(product_line_code="cloud-fapiao", name="开票管理").first()
+        is not None
+    )
+
+
+def test_create_by_handler_allowed(app_client: TestClient, db_session: Session) -> None:
+    from app.models import Source, Ticket, User
+
+    db_session.add(Source(code="ksm", name="KSM"))
+    db_session.add(User(id=7, feishu_uid="ou_h7", name="h7", role="assignee"))
+    db_session.add(
+        Ticket(
+            id=301,
+            short_code="TKT-000301",
+            source_code="ksm",
+            source_ticket_id="c-301",
+            type="Raw",
+            status="received",
+            title="t",
+            body="b",
+            predicted_type="Bug_fix",
+            handler_user_id=7,
+        )
+    )
+    db_session.commit()
+    resp = app_client.post(
+        "/api/supervisor/create-hub-issue",
+        json={"ticket_id": 301},
+        headers=_bearer(7, name="h7", role="assignee"),
+    )
+    assert resp.status_code == 200, resp.text
