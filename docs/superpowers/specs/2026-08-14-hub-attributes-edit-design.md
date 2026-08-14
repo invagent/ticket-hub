@@ -31,6 +31,9 @@ reclassify 改类型时会**自动分流**（改运营→回答复链、改研�
 7. **确认推送时自动保存**：点「确认推送」时若表单有未保存改动，先自动保存当前参数再推
    （一步到位，confirm-classification 读到的是最新落库值）。
 8. **模块下拉联动**：模块下拉随产品线过滤（只列该产品线下模块）；改产品线时清空已选模块。
+9. **确认推送放宽到处理人**（2026-08-14 更新）：处理人本人也能点「确认推送」推 Linear，
+   不再是主管专属。confirm-classification 权限从 require_supervisor 放宽到
+   `_authorize_hub_handler`（主管/管理员/op_handler 本人）。
 
 ## 架构：拆分「参数编辑 A」与「闸门确认 B」
 
@@ -116,12 +119,20 @@ A、B 放同一父组件，共享「当前选中类型」state，B 才能实时�
 - 点「确认推送」：若 A 有未保存改动 → 先 `await` 保存（PATCH attributes）→ 再调
   `confirm-classification`。confirm 逻辑不变（研发走推 Linear 闸门/运营回答复链）。
 - 移除原「改判」下拉+按钮、「误报关闭」按钮。
-- 无权限（非主管——注：confirm-classification 仍 require_supervisor）→ 保留原「待主管确认」
-  只读提示。
+- 无权限（非主管非处理人）→ 保留原「待确认分类」只读提示。
 
-**权限注记**：参数编辑 A 放宽到处理人；但闸门确认 B（confirm-classification）保持
-`require_supervisor` 不变（推 Linear 是主管职能）。处理人能改 pending_review 单的参数，
-但确认推送仍需主管。
+**权限注记**：参数编辑 A 和闸门确认 B（confirm-classification）**都放宽到处理人**
+（主管/管理员/op_handler 本人）。处理人能改 pending_review 单的参数，也能确认推送 Linear。
+
+### confirm-classification 权限放宽
+
+现状 `POST /api/supervisor/confirm-classification` 是 `require_supervisor`。改为
+`_authorize_hub_handler(db, body.hub_issue_id, user)`（主管/管理员/op_handler 本人）：
+- 端点依赖从 `require_supervisor` 改为 `require_user`，函数体内先 `_authorize_hub_handler`
+  校验（非授权 403）。
+- `_authorize_hub_handler` 在 `app/api/hub_issues.py`，supervisor.py import 复用（避免重复
+  逻辑）。
+- reclassify / dismiss-classification 权限**不动**（前端不再用，保持主管专属）。
 
 ## 错误处理与边界
 
@@ -138,6 +149,7 @@ A、B 放同一父组件，共享「当前选中类型」state，B 才能实时�
 - attributes 改产品线/模块 → 落库 + upsert_catalog 建目录。
 - 已关闭工单 → 409。
 - 无权限（非处理人非主管）→ 403；处理人本人 → 放行。
+- confirm-classification：处理人本人可确认推送（放行）；路人 403；主管/管理员仍放行。
 - **不联动**断言：改 type 后 hub.status/op_status 不变、无 Linear push、无 outbox。
 - 新模块只读端点：require_user 可读、带 product_line_code 过滤。
 
@@ -155,7 +167,9 @@ A、B 放同一父组件，共享「当前选中类型」state，B 才能实时�
 后端：
 1. `api/hub_issues.py`：新增 `PATCH /{id}/attributes`（只改数据端点）。
 2. `api/hub_issues.py`：新增 `GET /catalog/modules?product_line_code=`（require_user 只读）。
-3. gen-types。
+3. `api/supervisor.py`：`confirm-classification` 权限 require_supervisor → require_user +
+   `_authorize_hub_handler`（import 自 hub_issues.py）。
+4. gen-types。
 
 前端：
 4. `pages/hub-issues/HubIssueDetailPage.tsx`：新增「工单参数」编辑区（A）；改造
