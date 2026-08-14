@@ -111,6 +111,7 @@ class HubIssueDetail(HubIssueSummary):
     reply_content: str | None
     reply_authored_by: str | None
     reply_is_draft: bool = False  # True=AI 草稿（处理说明待人工审核/发送），前端据此提示
+    op_handler_user_id: int | None = None  # 运营处理人 uid，前端据此判「处理人本人」可编辑
     # Bug_fix / Demand（identifier/status 已在 Summary）
     linear_uuid: str | None
     scheduled_iteration: str | None
@@ -264,6 +265,31 @@ def hub_issue_dev_status_options(
 ) -> DevStatusOptionsResponse:
     """研发状态筛选下拉的实际可选值（数据驱动的 linear_status；工单推 Linear 后有值）。"""
     return DevStatusOptionsResponse(statuses=HubIssueRepository(db).distinct_linear_statuses())
+
+
+class CatalogModuleOut(BaseModel):
+    code: str
+    name: str
+
+
+@router.get("/catalog/modules", response_model=list[CatalogModuleOut])
+def list_catalog_modules(
+    product_line_code: str | None = Query(None),
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> list[CatalogModuleOut]:
+    """处理人可读的模块下拉（require_user）。按 product_line_code 过滤，仅 active。
+
+    工单参数编辑区的模块下拉数据源；admin_catalog 的同类端点是 require_admin，
+    处理人够不到，故在此另开一个只读端点。Module 无独立 code 列，用 name 兼作 code。
+    """
+    from app.models import Module
+
+    q = db.query(Module).filter(Module.is_active.is_(True))
+    if product_line_code:
+        q = q.filter(Module.product_line_code == product_line_code)
+    rows = q.order_by(Module.name).all()
+    return [CatalogModuleOut(code=m.name, name=m.name) for m in rows]
 
 
 @router.get("/{hub_issue_id}", response_model=HubIssueDetail)

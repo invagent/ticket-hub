@@ -861,6 +861,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/catalog/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catalog Modules
+         * @description 处理人可读的模块下拉（require_user）。按 product_line_code 过滤，仅 active。
+         *
+         *     工单参数编辑区的模块下拉数据源；admin_catalog 的同类端点是 require_admin，
+         *     处理人够不到，故在此另开一个只读端点。Module 无独立 code 列，用 name 兼作 code。
+         */
+        get: operations["list_catalog_modules_api_hub_issues_catalog_modules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/dev-status-options": {
         parameters: {
             query?: never;
@@ -956,6 +979,27 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues/{hub_issue_id}/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Hub Attributes
+         * @description 只改数据（type/product_line_code/module），不联动下游（不推 Linear/不重分派/
+         *     不重答/不改 hub.status/op_status）。处理人本人/主管/管理员可改；已关闭 409。
+         */
+        patch: operations["update_hub_attributes_api_hub_issues__hub_issue_id__attributes_patch"];
         trace?: never;
     };
     "/api/hub-issues/{hub_issue_id}/feedback": {
@@ -2428,6 +2472,13 @@ export interface components {
             /** Skipped Count */
             skipped_count: number;
         };
+        /** CatalogModuleOut */
+        CatalogModuleOut: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
         /** CheckOut */
         CheckOut: {
             /** Error */
@@ -3190,6 +3241,8 @@ export interface components {
             occurrence_count: number;
             /** Op Handler */
             op_handler?: string | null;
+            /** Op Handler User Id */
+            op_handler_user_id?: number | null;
             /** Op Status */
             op_status?: string | null;
             /** Op Status Changed At */
@@ -4613,6 +4666,28 @@ export interface components {
             type: string;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /** UpdateAttributesBody */
+        UpdateAttributesBody: {
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** Type */
+            type?: string | null;
+        };
+        /** UpdateAttributesResponse */
+        UpdateAttributesResponse: {
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Type */
+            type: string;
+            /** Updated Ticket Count */
+            updated_ticket_count: number;
         };
         /** UpsertBody */
         UpsertBody: {
@@ -6732,6 +6807,37 @@ export interface operations {
             };
         };
     };
+    list_catalog_modules_api_hub_issues_catalog_modules_get: {
+        parameters: {
+            query?: {
+                product_line_code?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogModuleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     hub_issue_dev_status_options_api_hub_issues_dev_status_options_get: {
         parameters: {
             query?: never;
@@ -6865,6 +6971,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubIssueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_hub_attributes_api_hub_issues__hub_issue_id__attributes_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAttributesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateAttributesResponse"];
                 };
             };
             /** @description Validation Error */

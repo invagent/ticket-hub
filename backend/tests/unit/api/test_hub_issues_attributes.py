@@ -119,3 +119,26 @@ def test_attributes_handler_allowed_stranger_403(app_client: TestClient, db_sess
         f"/api/hub-issues/{hid}/attributes", json={"module": "y"}, headers=_bearer(8, name="stranger", role="member")
     )
     assert r_no.status_code == 403, r_no.text
+
+
+def test_catalog_modules_readable_by_user(app_client: TestClient, db_session: Session):
+    from app.models import Module, ProductLine
+
+    db_session.add(ProductLine(code="pl-1", name="产品线1", is_active=True))
+    db_session.add(Module(product_line_code="pl-1", name="模块A", is_active=True))
+    db_session.add(Module(product_line_code="pl-2", name="模块B", is_active=True))
+    db_session.commit()
+    r = app_client.get(
+        "/api/hub-issues/catalog/modules?product_line_code=pl-1",
+        headers=_bearer(9, name="u", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    names = [m["name"] for m in r.json()]
+    assert "模块A" in names and "模块B" not in names  # 按产品线过滤
+
+
+def test_detail_exposes_op_handler_user_id(app_client: TestClient, db_session: Session):
+    hid = _mk(db_session, hub_id=205, type_="Operation", status="created", op_status="processing", handler_uid=42)
+    r = app_client.get(f"/api/hub-issues/{hid}", headers=_bearer())
+    assert r.status_code == 200, r.text
+    assert r.json()["op_handler_user_id"] == 42
