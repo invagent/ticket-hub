@@ -3101,6 +3101,8 @@ export interface components {
          *     frontend reverses for display.
          */
         HistoryEvent: {
+            /** Actor Display */
+            actor_display?: string | null;
             /** Change Reason */
             change_reason?: string | null;
             /** Changed By */
@@ -3109,6 +3111,8 @@ export interface components {
             effective_to?: string | null;
             /** From Status */
             from_status?: string | null;
+            /** From Status Zh */
+            from_status_zh?: string | null;
             /** Hub Issue Id */
             hub_issue_id?: number | null;
             /** Human Confirmed */
@@ -3129,8 +3133,12 @@ export interface components {
             occurred_at: string;
             /** Reason */
             reason?: string | null;
+            /** Reason Display */
+            reason_display?: string | null;
             /** To Status */
             to_status?: string | null;
+            /** To Status Zh */
+            to_status_zh?: string | null;
         };
         /** HistoryItem */
         HistoryItem: {

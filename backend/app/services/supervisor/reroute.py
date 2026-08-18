@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
+from app.repositories.user import UserRepository
 from app.services.routing.router import Router, RouteRequest
 from app.services.system_settings import get_default_pool_user_id
 
@@ -59,6 +60,9 @@ class RerouteService:
         router = Router(self._db, default_pool_user_id=get_default_pool_user_id(self._db))
         ticket_repo = TicketRepository(self._db)
         history_repo = StatusHistoryRepository(self._db)
+        # 操作人姓名（写进 history reason，避免存裸 user_id）；查不到回落 id。
+        operator = UserRepository(self._db).get(req.operator_user_id)
+        operator_name = operator.name if operator else f"user_id={req.operator_user_id}"
 
         tickets = ticket_repo.list_by_ids(req.ticket_ids)
         found = {t.id: t for t in tickets}
@@ -126,7 +130,7 @@ class RerouteService:
                 from_status=ticket.status,
                 to_status=ticket.status,
                 changed_by="system:reroute",
-                reason=f"supervisor reroute by user_id={req.operator_user_id}",
+                reason=f"主管重新分派（操作人 {operator_name}）",
                 metadata={
                     "decision": result_decision,
                     "assigned_user_ids": decision.assigned_user_ids,

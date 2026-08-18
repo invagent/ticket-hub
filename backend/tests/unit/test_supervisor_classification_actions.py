@@ -85,7 +85,8 @@ def test_reclassify_records_ticket_action(app_client: TestClient, act_world: Ses
     assert r.status_code == 200, r.text
     rows = _action_rows(act_world, 710, "reclassify")
     assert len(rows) == 1
-    assert rows[0].reason == "改判为 Operation"
+    # 改判 reason 写中文类型（时间轴人性化，不再显示英文枚举 Operation）
+    assert rows[0].reason == "改判为 运营"
 
 
 def test_dismiss_records_ticket_action(app_client: TestClient, act_world: Session) -> None:

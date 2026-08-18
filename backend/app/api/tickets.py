@@ -19,6 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_user
+from app.api.history_labels import (
+    collect_user_ids,
+    humanize_actor,
+    humanize_reason,
+    humanize_status,
+    load_user_names,
+)
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.storage.minio_store import (
@@ -510,6 +517,12 @@ class HistoryEvent(BaseModel):
     changed_by: str | None = None
     reason: str | None = None
     metadata_: dict[str, Any] | None = None
+    # 人性化展示字段（读取层翻译，覆盖历史存量；前端优先用这些）：
+    # 中文类型/姓名替换后的 reason、处理人姓名/角色、状态枚举中文。
+    reason_display: str | None = None
+    actor_display: str | None = None
+    from_status_zh: str | None = None
+    to_status_zh: str | None = None
     # hub_issue_link fields (None when kind != 'hub_issue_link')
     hub_issue_id: int | None = None
     effective_to: datetime | None = None
@@ -540,6 +553,9 @@ def get_ticket_history(
     )
     relink_rows = TicketHubIssueHistoryRepository(db).find_for_ticket(ticket_id)
 
+    # 处理节点文本人性化（读取层翻译，覆盖历史存量）：先批量查 reason 里 user_id 对应姓名，避免 N+1。
+    name_by_id = load_user_names(db, collect_user_ids([s.reason for s in status_rows]))
+
     events: list[HistoryEvent] = []
     for s in status_rows:
         events.append(
@@ -551,6 +567,10 @@ def get_ticket_history(
                 changed_by=s.changed_by,
                 reason=s.reason,
                 metadata_=s.metadata_,
+                reason_display=humanize_reason(s.reason, name_by_id),
+                actor_display=humanize_actor(s.changed_by, name_by_id),
+                from_status_zh=humanize_status(s.from_status),
+                to_status_zh=humanize_status(s.to_status),
             )
         )
     for h in relink_rows:

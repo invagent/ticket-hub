@@ -62,6 +62,9 @@ class ManualAssignService:
         target = user_repo.get(req.assigned_user_id)
         if target is None or not target.is_active:
             raise TargetUserInvalidError(f"目标用户 {req.assigned_user_id} 不存在或已停用")
+        # 操作人姓名（写进 history reason，避免存裸 user_id）；查不到回落 id。
+        operator = user_repo.get(req.operator_user_id)
+        operator_name = operator.name if operator else f"user_id={req.operator_user_id}"
         # 不限角色：真实处理人大量是 member（分派/转交均无角色限制），只要 active 即可作为处理人
 
         ticket_repo = TicketRepository(self._db)
@@ -96,7 +99,7 @@ class ManualAssignService:
                 from_status=ticket.status,
                 to_status=ticket.status,
                 changed_by="system:manual_assign",
-                reason=f"转交处理人 to user_id={req.assigned_user_id} by user_id={req.operator_user_id}",
+                reason=f"转交处理人给 {target.name}（操作人 {operator_name}）",
                 metadata={
                     "operator_user_id": req.operator_user_id,
                     "handler_user_id": req.assigned_user_id,

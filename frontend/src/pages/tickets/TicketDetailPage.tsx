@@ -1046,18 +1046,19 @@ function VerticalTimeline({
       {events.map((ev, idx) => {
         const isCurrent = idx === 0 && !terminal; // 倒序后最上=当前节点（终态则无进行中节点）
         const isSel = idx === selectedIdx;
+        // 处理人：优先后端人性化 actor_display（姓名/中文角色），回落原 changed_by。
         const actor =
           ev.kind === "status"
-            ? (ev.changed_by ?? "—")
+            ? (ev.actor_display ?? ev.changed_by ?? "—")
             : (ev.change_reason ?? "system"); // link 事件：优先展示变更原因
         const ts = fmtDateTime(ev.occurred_at);
         const label =
           ev.kind === "status"
             ? // 操作审计事件（不改状态 from==to）优先用 reason 作为操作说明；
-              // 真实状态流转仍显示 "from → to"
-              ev.from_status === ev.to_status && ev.reason
-              ? ev.reason
-              : `${ev.from_status ?? "∅"} → ${ev.to_status ?? ""}`
+              // 真实状态流转显示 "from → to"。均优先后端中文化字段。
+              ev.from_status === ev.to_status && (ev.reason_display ?? ev.reason)
+              ? (ev.reason_display ?? ev.reason ?? "")
+              : `${ev.from_status_zh ?? ev.from_status ?? "∅"} → ${ev.to_status_zh ?? ev.to_status ?? ""}`
             : ev.effective_to !== null
               ? `关联关闭 HUB-${ev.hub_issue_id}`
               : `关联建立 HUB-${ev.hub_issue_id}`;

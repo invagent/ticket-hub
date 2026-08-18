@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
 from app.api.deps.auth import AuthedUser, require_knowledge_op, require_supervisor, require_user
+from app.api.history_labels import HUB_TYPE_ZH
 from app.api.hub_issues import _authorize_hub_handler
 from app.core.llm_router import LLMRouterError
 from app.core.logging import get_logger
@@ -1961,6 +1962,9 @@ def reclassify(
     settings = get_settings()
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     old_type = hub.type
+    # 中文类型（写进用户可见的 reason，避免英文枚举 Bug_fix 直显）
+    old_zh = HUB_TYPE_ZH.get(old_type, old_type)
+    new_zh = HUB_TYPE_ZH.get(body.new_type, body.new_type)
     hub.type = body.new_type
     # 同步改判所有关联 ticket 的 predicted_type + 写修正审计（human_confirmed）。
     # 一个 hub 可能挂多条 ticket（dedup 合并），全部更新——否则工单列表「AI 分类」
@@ -1977,7 +1981,7 @@ def reclassify(
                 subject_id=tk.id,
                 proposal={
                     "predicted_type": body.new_type,
-                    "reason": body.reason or f"主管改判 {old_type}→{body.new_type}",
+                    "reason": body.reason or f"主管改判 {old_zh}→{new_zh}",
                     "skill": "manual",
                     "human_confirmed": True,
                     "changed_by": f"user:{user.name}",
@@ -1991,7 +1995,7 @@ def reclassify(
             hub,
             to_status=OP_PROCESSING,
             handler="agent",
-            reason=f"主管改判 {old_type}→Operation，回炉答复链",
+            reason=f"主管改判 {old_zh}→运营，回炉答复链",
         )
         # 与自动/手动毕业的 Operation 路径一致：按规则预分配运营处理人。
         # 否则改判进 Operation 的 hub 的 op_handler_user_id 恒 NULL，转人工永远
@@ -2015,14 +2019,14 @@ def reclassify(
         from_status="pending_review",
         to_status=hub.status,
         changed_by=f"user:{user.name}",
-        reason=f"改判 {old_type}→{body.new_type}: {body.reason}",
+        reason=f"改判 {old_zh}→{new_zh}: {body.reason}",
     )
     record_ticket_action(
         db,
         hub,
         action="reclassify",
         changed_by=f"user:{user.name}",
-        reason=f"改判为 {body.new_type}",
+        reason=f"改判为 {new_zh}",
     )
     db.commit()
 

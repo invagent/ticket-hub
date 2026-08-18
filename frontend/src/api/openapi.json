@@ -2229,6 +2229,17 @@
       "HistoryEvent": {
         "description": "One row in the merged ticket timeline.\n\nTwo `kind` values are emitted:\n  - 'status'        — a status_history transition (from→to)\n  - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start\n                       of an association; effective_to non-null = closed)\n\nSorted by `occurred_at` ascending in the response (oldest → newest); the\nfrontend reverses for display.",
         "properties": {
+          "actor_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Display"
+          },
           "change_reason": {
             "anyOf": [
               {
@@ -2273,6 +2284,17 @@
               }
             ],
             "title": "From Status"
+          },
+          "from_status_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status Zh"
           },
           "hub_issue_id": {
             "anyOf": [
@@ -2332,6 +2354,17 @@
             ],
             "title": "Reason"
           },
+          "reason_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Display"
+          },
           "to_status": {
             "anyOf": [
               {
@@ -2342,6 +2375,17 @@
               }
             ],
             "title": "To Status"
+          },
+          "to_status_zh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Status Zh"
           }
         },
         "required": [
