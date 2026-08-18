@@ -1525,11 +1525,28 @@ function useAuthedBlob(url: string, enabled: boolean): { blobUrl: string | null;
   return { blobUrl, error };
 }
 
-// 单张图片缩略图：proxied 走 blob，直链原样加载。点击在新窗口打开（blob URL 也可直接开）。
+// 单张图片：列表加载缩略图（?size=thumb，字节小/快），点击时按需取原图在新窗口打开。
+// proxied 走带鉴权 blob；直链（历史/外部）原样加载。
 function AttachmentImage({ a }: { a: AttachmentRef }) {
-  const { blobUrl, error } = useAuthedBlob(a.url, !!a.proxied);
+  // 列表缩略图：proxied 附件请求 thumb 尺寸；直链无 thumb 概念，原样。
+  const thumbUrl = a.proxied ? `${a.url}?size=thumb` : a.url;
+  const { blobUrl, error } = useAuthedBlob(thumbUrl, !!a.proxied);
   const src = a.proxied ? blobUrl : a.url;
   const title = a.ocr ? `${a.name}\n[识别] ${a.ocr}` : a.name;
+
+  // 点击看原图：proxied 走带鉴权 fetch 取原图 blob 后 window.open；直链直接开。
+  const openFull = (e: React.MouseEvent) => {
+    if (!a.proxied) return; // 直链让 <a href> 原生打开
+    e.preventDefault();
+    const token = localStorage.getItem("auth_token");
+    fetch(`${API_BASE}${a.url}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => window.open(URL.createObjectURL(b), "_blank", "noopener,noreferrer"))
+      .catch(() => {});
+  };
+
   if (a.proxied && error) {
     return (
       <span
@@ -1549,7 +1566,8 @@ function AttachmentImage({ a }: { a: AttachmentRef }) {
   }
   return (
     <a
-      href={src}
+      href={a.url}
+      onClick={openFull}
       target="_blank"
       rel="noopener noreferrer"
       className="block border border-hub-border rounded-[8px] overflow-hidden hover:border-hub-teal-border"

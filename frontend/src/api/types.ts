@@ -2097,6 +2097,8 @@ export interface paths {
          *
          *     统一经此端点，前端不直接暴露 MinIO 内网地址（storage_key）或需鉴权的
          *     上游 source_url（KSM）。任何一路都拿不到 → 404。
+         *
+         *     size="thumb" 时对图片返回缩略图（缓存回 MinIO，下次直接命中），大幅降低列表加载字节。
          */
         get: operations["download_attachment_api_tickets__ticket_id__attachments__attachment_id__download_get"];
         put?: never;
@@ -8665,7 +8667,9 @@ export interface operations {
     };
     download_attachment_api_tickets__ticket_id__attachments__attachment_id__download_get: {
         parameters: {
-            query?: never;
+            query?: {
+                size?: string | null;
+            };
             header?: never;
             path: {
                 ticket_id: number;

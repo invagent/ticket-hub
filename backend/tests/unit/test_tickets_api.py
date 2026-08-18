@@ -672,3 +672,93 @@ def test_get_hub_issue_no_linked_tickets(app_client: TestClient, world: Session)
 
 def test_get_hub_issue_unknown_returns_404(app_client: TestClient, world: Session) -> None:
     assert app_client.get("/api/hub-issues/9999", headers=_bearer()).status_code == 404
+
+
+# ============================================================================
+# 附件下载端点：缩略图 + 缓存头（2026-08-18）
+# ============================================================================
+
+
+def _png(w: int, h: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (w, h), (10, 120, 200)).save(out, format="PNG")
+    return out.getvalue()
+
+
+@pytest.fixture
+def att_world(db_session: Session) -> Session:
+    """一张图片附件，storage_key 为空 → 走回落 source_url 路径（测试 monkeypatch 该函数）。"""
+    from app.models import Attachment, Source
+
+    db_session.add(Source(code="ksm", name="KSM"))
+    db_session.add(
+        Ticket(
+            id=500,
+            short_code="TKT-ATT",
+            source_code="ksm",
+            source_ticket_id="att-1",
+            type="Raw",
+            status="received",
+            title="has attachment",
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        Attachment(
+            id=900,
+            ticket_id=500,
+            source_url="https://example.com/shot.png",
+            kind="image",
+            mime="image/png",
+            vision_status="pending",
+        )
+    )
+    db_session.commit()
+    return db_session
+
+
+def test_download_full_has_cache_headers(
+    app_client: TestClient, att_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """原图下载带 Cache-Control + ETag（重开工单走浏览器缓存，不重复全量下载）。"""
+    big = _png(1000, 800)
+    monkeypatch.setattr("app.api.tickets._fetch_source_bytes", lambda url, settings: big)
+    r = app_client.get("/api/tickets/500/attachments/900/download", headers=_bearer())
+    assert r.status_code == 200
+    assert r.content == big
+    assert "immutable" in r.headers["cache-control"]
+    assert r.headers["etag"]  # 存在即可
+
+
+def test_download_thumb_is_smaller_jpeg(
+    app_client: TestClient, att_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """?size=thumb 对图片返回缩略图：JPEG、字节更小、带缓存头。"""
+    big = _png(1000, 800)
+    monkeypatch.setattr("app.api.tickets._fetch_source_bytes", lambda url, settings: big)
+    r = app_client.get(
+        "/api/tickets/500/attachments/900/download?size=thumb", headers=_bearer()
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert len(r.content) < len(big)  # 缩略图远小于原图
+    assert "immutable" in r.headers["cache-control"]
+    # 缩到最长边 <= 240
+    import io
+
+    from PIL import Image
+
+    assert max(Image.open(io.BytesIO(r.content)).size) <= 240
+
+
+def test_download_unknown_attachment_404(app_client: TestClient, att_world: Session) -> None:
+    assert (
+        app_client.get(
+            "/api/tickets/500/attachments/9999/download", headers=_bearer()
+        ).status_code
+        == 404
+    )

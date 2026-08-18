@@ -31,6 +31,7 @@ from app.models import Attachment, Customer, CustomerIdentity, HubIssue, Product
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
+from app.services.attachments.thumbnail import THUMB_MIME, make_thumbnail
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -346,10 +347,25 @@ def get_ticket(
     return detail
 
 
+# 附件不可变（storage_key 确定性 key，内容不变）→ 长缓存，重开工单/复现同图走浏览器缓存。
+_ATTACHMENT_CACHE_CONTROL = "private, max-age=86400, immutable"
+
+
+def _attachment_response(data: bytes, media_type: str, *, att_id: int, size: str | None) -> Response:
+    """统一构造附件响应：带 Cache-Control + ETag（重开不重复全量下载）。"""
+    etag = f'"{att_id}-{size or "full"}-{len(data)}"'
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Cache-Control": _ATTACHMENT_CACHE_CONTROL, "ETag": etag},
+    )
+
+
 @router.get("/{ticket_id}/attachments/{attachment_id}/download")
 def download_attachment(
     ticket_id: int,
     attachment_id: int,
+    size: str | None = Query(None),  # "thumb"=列表缩略图（图片缩到 ~240px），否则原图
     _user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> Response:
@@ -357,12 +373,15 @@ def download_attachment(
 
     统一经此端点，前端不直接暴露 MinIO 内网地址（storage_key）或需鉴权的
     上游 source_url（KSM）。任何一路都拿不到 → 404。
+
+    size="thumb" 时对图片返回缩略图（缓存回 MinIO，下次直接命中），大幅降低列表加载字节。
     """
     att = db.get(Attachment, attachment_id)
     if att is None or att.ticket_id != ticket_id:
         raise HTTPException(status_code=404, detail="attachment not found")
 
     settings = get_settings()
+    want_thumb = size == "thumb" and att.kind == "image"
 
     # 1) 已存档：从 MinIO 按对象 key 读回（浏览器无法直连内网 MinIO，故走后端代理）。
     if att.storage_key:
@@ -370,8 +389,17 @@ def download_attachment(
             store = MinioStore(settings)
             key = store.key_from_storage_url(att.storage_key)
             if key is not None:
+                # 缩略图：先查缓存对象命中，否则取原图缩放后缓存回 MinIO。
+                if want_thumb:
+                    thumb = _get_or_make_thumbnail(store, key)
+                    if thumb is not None:
+                        return _attachment_response(
+                            thumb, THUMB_MIME, att_id=attachment_id, size="thumb"
+                        )
                 data = store.get_bytes(key)
-                return Response(content=data, media_type=_content_type(att, data))
+                return _attachment_response(
+                    data, _content_type(att, data), att_id=attachment_id, size=size
+                )
         except MinioNotConfiguredError:
             pass  # 未配 MinIO → 回落 source_url
         except Exception as e:  # MinIO 读失败（对象丢失等）→ 回落 source_url
@@ -381,11 +409,47 @@ def download_attachment(
     if att.source_url:
         try:
             data = _fetch_source_bytes(att.source_url, settings)
-            return Response(content=data, media_type=_content_type(att, data))
+            if want_thumb:
+                made = make_thumbnail(data)
+                if made is not None:
+                    return _attachment_response(
+                        made[0], made[1], att_id=attachment_id, size="thumb"
+                    )
+            return _attachment_response(
+                data, _content_type(att, data), att_id=attachment_id, size=size
+            )
         except Exception as e:
             logger.warning("attachment_download_source_failed", att_id=attachment_id, error=str(e))
 
     raise HTTPException(status_code=404, detail="attachment content unavailable")
+
+
+def _thumb_key(key: str) -> str:
+    """原图对象 key → 缩略图 key（同前缀加 .thumb.jpg，与原图并存于 MinIO）。"""
+    return f"{key}.thumb.jpg"
+
+
+def _get_or_make_thumbnail(store: MinioStore, key: str) -> bytes | None:
+    """取缩略图：MinIO 缓存命中直接返回；否则取原图缩放 + 缓存回 MinIO。
+
+    缩图失败（非图/损坏）返回 None，调用方回落原图。
+    """
+    tkey = _thumb_key(key)
+    if store.object_exists(tkey):
+        try:
+            return store.get_bytes(tkey)
+        except Exception:
+            pass  # 缓存对象读失败 → 重新生成
+    data = store.get_bytes(key)
+    made = make_thumbnail(data)
+    if made is None:
+        return None
+    thumb_bytes, thumb_mime = made
+    try:
+        store.put_bytes(tkey, thumb_bytes, thumb_mime)  # 缓存回 MinIO，下次命中
+    except Exception as e:
+        logger.warning("thumbnail_cache_put_failed", key=tkey, error=str(e))
+    return thumb_bytes
 
 
 def _content_type(att: Attachment, data: bytes) -> str:

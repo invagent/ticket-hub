@@ -174,6 +174,14 @@ class MinioStore:
             resp.close()
             resp.release_conn()
 
+    def object_exists(self, key: str) -> bool:
+        """对象是否存在（缩略图缓存命中判断；任何异常都当不存在）。"""
+        try:
+            self._client.stat_object(self._bucket, key)
+            return True
+        except Exception:
+            return False
+
     def key_from_storage_url(self, storage_key: str) -> str | None:
         """从落库的 storage_key（put_bytes 返回的完整 URL）还原 MinIO 对象 key。
 
