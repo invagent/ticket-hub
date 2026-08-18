@@ -131,9 +131,9 @@ describe("HubIssueDetailPage", () => {
     // 工单调整 V1.0：改为「任务信息」+「任务进度」容器
     expect(screen.getByText("任务信息")).toBeInTheDocument();
     expect(screen.getByText("任务进度")).toBeInTheDocument();
-    // Linear 标识与状态在任务信息容器中
+    // Linear 标识与状态在任务信息容器中（研发工程状态显示中文：In Progress → 开发中）
     expect(screen.getByText("ENG-123")).toBeInTheDocument();
-    expect(screen.getByText("In Progress")).toBeInTheDocument();
+    expect(screen.getByText("开发中")).toBeInTheDocument();
     // Operation reply heading must NOT appear
     expect(screen.queryByText(/^回复 v/)).not.toBeInTheDocument();
     // Empty linked tickets

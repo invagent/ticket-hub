@@ -6,6 +6,7 @@ import { api, ApiError, getByPath, postByPath, type HubIssueSummary } from "@/ap
 import { isSupervisor } from "@/api/auth";
 import { OpStatusBadge } from "@/components/OpStatusBadge";
 import { HubCollabActions } from "@/components/hubActions";
+import { linearStatusToCN, LINEAR_STAGE_IDX } from "@/api/processStage";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import type { paths } from "@/api/types";
 import { StatusBadge } from "../tickets/ticketStatus";
@@ -242,7 +243,9 @@ function TaskInfoCard({ data }: { data: HubIssueDetail }) {
         <Field label="产品分类">
           {[data.product_line_code, data.product, data.module].filter(Boolean).join(" / ") || "—"}
         </Field>
-        <Field label="研发工程状态">{data.linear_status ?? "—"}</Field>
+        <Field label="研发工程状态">
+          {data.linear_status ? linearStatusToCN(data.linear_status) : "—"}
+        </Field>
         <Field label="任务处理人">{assignee}</Field>
         <Field label="任务创建时间">{fmtDateTime(data.first_seen_at)}</Field>
         <Field label="任务关闭时间">{fmtDateTime(data.closed_at)}</Field>
@@ -412,18 +415,8 @@ function buildNodes(data: HubIssueDetail): ProgressNode[] {
   // 研发类：创建-待处理-计划-开发-测试-发版，用 linear_status 对齐当前阶段
   const stages = ["创建", "待处理", "计划", "开发", "测试", "发版"];
   const lin = (data.linear_status ?? "").toLowerCase();
-  const linToIdx: Record<string, number> = {
-    backlog: 1,
-    unstarted: 2,
-    started: 3,
-    "in progress": 3,
-    "in review": 4,
-    done: 5,
-    completed: 5,
-    released: 5,
-  };
   const released = ["done", "completed", "released"].includes(lin) || !!data.actual_released_at;
-  const curIdx = released ? 5 : (linToIdx[lin] ?? 1);
+  const curIdx = released ? 5 : (LINEAR_STAGE_IDX[lin] ?? 1);
   const ends: (string | null | undefined)[] = [
     data.first_seen_at,
     undefined,

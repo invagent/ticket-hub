@@ -25,7 +25,11 @@ const DEV_TYPES = new Set(["Bug_fix", "Demand"]);
 
 export function isDone(h: HubIssueSummary): boolean {
   const lin = (h.linear_status ?? "").toLowerCase();
-  return ["done", "completed", "released"].includes(lin) || ["released", "done"].includes(h.status);
+  // hub 终态含 resolved（源系统关单回写）/ closed（主管关闭），此前漏判导致已关单工单显示"进行中"。
+  return (
+    ["done", "completed", "released"].includes(lin) ||
+    ["released", "done", "resolved", "closed"].includes(h.status)
+  );
 }
 
 export function urgedRecently(h: HubIssueSummary): boolean {

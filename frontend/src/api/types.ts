@@ -4513,6 +4513,8 @@ export interface components {
             hub_status?: string | null;
             /** Id */
             id: number;
+            /** Linear Status */
+            linear_status?: string | null;
             /** Module */
             module: string | null;
             /** Op Status */
@@ -4621,6 +4623,8 @@ export interface components {
             hub_status?: string | null;
             /** Id */
             id: number;
+            /** Linear Status */
+            linear_status?: string | null;
             /** Module */
             module: string | null;
             /** Op Status */

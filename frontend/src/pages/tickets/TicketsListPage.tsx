@@ -24,6 +24,7 @@ import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
 import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
+import { devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -470,6 +471,34 @@ export function TicketsListPage() {
               ticketStatus={t.status}
               ticketStatusLabel={ticketStatusLabel}
             />
+          );
+        },
+      },
+      {
+        // 研发进度（方案 B）：独立列，仅研发类已毕业工单显示 Linear 细粒度中文阶段
+        // （待处理/开发中/测试中/已发版/已取消）；运营类/未毕业显示 "—"。
+        id: "dev_progress",
+        header: "研发进度",
+        accessorKey: "linear_status",
+        size: 92,
+        cell: ({ row }) => {
+          const t = row.original;
+          const label = devProgressLabel({
+            predictedType: t.predicted_type,
+            hubIssueId: t.hub_issue_id,
+            linearStatus: t.linear_status,
+          });
+          if (label == null) {
+            return <span className="text-hub-textFaint text-[10.5px]">—</span>;
+          }
+          const c = STAGE_TONE_STYLE[devProgressTone(t.linear_status)];
+          return (
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+              style={{ background: c.bg, color: c.fg, borderColor: c.bd }}
+            >
+              {label}
+            </span>
           );
         },
       },

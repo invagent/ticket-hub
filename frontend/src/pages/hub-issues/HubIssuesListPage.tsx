@@ -12,6 +12,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, type HubIssueSummary } from "@/api/client";
 import { OpStatusBadge, OP_STATUS_LABEL } from "@/components/OpStatusBadge";
+import { linearStatusToCN } from "@/api/processStage";
 import {
   Modal,
   ModalHeader,
@@ -537,7 +538,7 @@ export function HubIssuesListPage() {
                             className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
                             style={{ background: lin.bg, color: lin.fg, borderColor: lin.bd }}
                           >
-                            {h.linear_status ?? "未推送"}
+                            {linearStatusToCN(h.linear_status)}
                           </span>
                         ) : (
                           <span className="text-hub-textFaint">—</span>

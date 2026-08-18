@@ -6732,6 +6732,17 @@
             "title": "Id",
             "type": "integer"
           },
+          "linear_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Status"
+          },
           "module": {
             "anyOf": [
               {
@@ -7181,6 +7192,17 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "linear_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Status"
           },
           "module": {
             "anyOf": [

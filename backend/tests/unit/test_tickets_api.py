@@ -523,6 +523,47 @@ def test_summary_ungraduated_uses_ticket_product_and_module(
     assert by["TKT-A"]["product_name"] == "发票云"
 
 
+def test_summary_exposes_linear_status_for_dev(app_client: TestClient, world2: Session) -> None:
+    """研发类工单「研发进度」列数据源：Summary 带出所挂 hub 的 linear_status（镜像 Linear 列名）。
+    未挂 hub / 无 linear_status 时为 None。"""
+    from app.models import HubIssue, Ticket
+
+    world2.add(
+        HubIssue(
+            id=70,
+            short_code="HUB-DEV",
+            type="Bug_fix",
+            title="dev",
+            status="in_progress",
+            linear_status="In Progress",
+            linear_uuid="lin-uuid-dev",
+            linear_identifier="ENG-42",
+        )
+    )
+    world2.flush()
+    world2.add(
+        Ticket(
+            id=220,
+            short_code="TKT-DEV",
+            source_code="ksm",
+            source_ticket_id="dev-1",
+            type="Raw",
+            status="in_progress",
+            title="dev ticket",
+            predicted_type="Bug_fix",
+            hub_issue_id=70,
+            received_at=datetime(2026, 5, 6, 14, 0, tzinfo=UTC),
+        )
+    )
+    world2.commit()
+
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-DEV"]["linear_status"] == "In Progress"
+    # 未挂 hub 的工单 linear_status 为 None
+    assert by["TKT-B"]["linear_status"] is None
+
+
 def test_summary_reject_count(app_client: TestClient, world2: Session) -> None:
     """驳回次数：挂 reject_count=2 的 hub → 2；无 hub → 0。"""
     r = app_client.get("/api/tickets", headers=_bearer())

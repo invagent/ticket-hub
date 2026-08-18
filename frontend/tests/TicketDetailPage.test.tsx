@@ -774,7 +774,7 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("研发类：顶部状态与处理区处理状态一致(released→都显示处理完成)", async () => {
+  it("研发类：顶部状态与处理区处理状态一致(released→都显示已发版)", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubPendingReviewTicket(360, 96, "Bug_fix");
     // 覆盖 hub 为已完成（released）
@@ -790,8 +790,8 @@ describe("TicketDetailPage", () => {
     );
     renderPage(360);
     await screen.findByRole("heading", { name: "TKT-360" });
-    // 顶部 + 处理区两处「处理完成」（研发类 released 统一口径）
-    expect(await screen.findAllByText("处理完成")).toHaveLength(2);
+    // 顶部 + 处理区两处「已发版」（研发类 released 统一口径；区别于运营"已答复"）
+    expect(await screen.findAllByText("已发版")).toHaveLength(2);
     localStorage.clear();
   });
 

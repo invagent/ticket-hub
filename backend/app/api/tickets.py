@@ -60,6 +60,9 @@ class TicketSummary(BaseModel):
     hub_status: str | None = (
         None  # 所挂 hub_issue 的 status（研发类处理状态判定：released=处理完成，其余=处理中）
     )
+    linear_status: str | None = (
+        None  # 研发类所挂 hub 的 linear_status（镜像 Linear 列名）；「研发进度」列译中文展示
+    )
     product_name: str | None = None  # 主产品名称（product_line_code → product_lines.name）
     reject_count: int = 0  # 客户驳回次数（所挂 hub_issue 的 reject_count；研发类/无 hub 为 0）
     children_count: int = 1  # 关联任务数（拆分子单数；单问题=1，Parent=children_ticket_ids 长度）
@@ -181,6 +184,9 @@ def list_tickets(
     # 列表读 ticket.* 会读到毕业时的旧快照，故这里带出 hub 的值，_to_summary 覆盖。
     hub_plc_map: dict[int, str | None] = {}
     hub_module_map: dict[int, str | None] = {}
+    # 研发类（Bug_fix/Demand）所挂 hub 的 linear_status（镜像 Linear 列名，展示层）；
+    # 工单列表「研发进度」列据此显示细粒度阶段（前端 linearStatusToCN 译中文）。
+    hub_linear_status_map: dict[int, str | None] = {}
     if hub_ids:
         hrows = db.execute(
             select(
@@ -190,6 +196,7 @@ def list_tickets(
                 HubIssue.status,
                 HubIssue.product_line_code,
                 HubIssue.module,
+                HubIssue.linear_status,
             ).where(HubIssue.id.in_(hub_ids))
         ).all()
         hub_op_map = {r.id: r.op_status for r in hrows}
@@ -197,6 +204,7 @@ def list_tickets(
         hub_status_map = {r.id: r.status for r in hrows}
         hub_plc_map = {r.id: r.product_line_code for r in hrows}
         hub_module_map = {r.id: r.module for r in hrows}
+        hub_linear_status_map = {r.id: r.linear_status for r in hrows}
 
     # batch-load 主产品名称 + SLA 解决时限（product_line_code → name / sla_resolve_hours）
     # 已毕业工单以 hub 的 product_line_code 为准，故两处 code 都要并入名字查询集合
@@ -244,6 +252,7 @@ def list_tickets(
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
             s.hub_status = hub_status_map.get(t.hub_issue_id)
+            s.linear_status = hub_linear_status_map.get(t.hub_issue_id)
             # 已毕业：产品线/模块以 hub 为准（与详情页 graduated ? hub.* : ticket.* 对齐）。
             # 编辑参数只改 hub，ticket.* 停留在毕业时快照，故这里覆盖为 hub 的最新值。
             hub_plc = hub_plc_map.get(t.hub_issue_id)

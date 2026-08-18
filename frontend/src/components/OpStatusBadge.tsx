@@ -3,6 +3,7 @@
  *
  * 仅 Operation 工单展示；研发类 op_status 恒 NULL，调用方应先判空。
  */
+import { computeProcessStage, STAGE_TONE_STYLE } from "../api/processStage";
 
 export const OP_STATUS_LABEL: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
   processing: { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
@@ -39,10 +40,12 @@ export function OpStatusBadge({ status }: { status: string | null | undefined })
 
 /**
  * 统一「处理状态」徽标（工单详情顶部 / 详情处理区 / 工单列表三处共用）。
- * 口径一致：
- * - Operation（op_status 非空）→ op_status 中文态（处理中/处理完成/…）
- * - 研发类（Bug_fix/Demand，已毕业 hub）→ hub_status==="released"=处理完成，否则=处理中
- * - 其余（未毕业/无 hub）→ 回落 ticket 底层状态（ticketStatusLabel）
+ * 口径收敛到单一事实源 computeProcessStage（api/processStage.ts）：
+ * - hub 终态（resolved/closed）→ 已关闭
+ * - pending 系列 → 待确认分类/待确认推送/待人工处理
+ * - Operation（op_status 非空）→ 运营处理机中文态
+ * - 研发类通用态（处理中/已发版）；细粒度 Linear 进度另见工单列表「研发进度」列
+ * - 其余（未毕业/无 hub）→ 回落 ticket 底层状态
  */
 export function ProcessStatusBadge({
   opStatus,
@@ -59,17 +62,21 @@ export function ProcessStatusBadge({
   ticketStatus: string;
   ticketStatusLabel: (s: string) => string;
 }) {
-  // Operation：运营状态机
-  if (opStatus) return <OpStatusBadge status={opStatus} />;
-  // 研发类已毕业：按 Linear 同步状态（released=处理完成，其余=处理中）
-  const isDev = predictedType === "Bug_fix" || predictedType === "Demand";
-  if (isDev && hubIssueId != null) {
-    return _badge(hubStatus === "released" ? OP_STATUS_LABEL.answered : OP_STATUS_LABEL.processing);
-  }
-  // 回落工单底层状态（中性色）
+  const stage = computeProcessStage({
+    predictedType,
+    hubIssueId,
+    hubStatus,
+    opStatus,
+    ticketStatus,
+    ticketStatusLabel,
+  });
+  const c = STAGE_TONE_STYLE[stage.tone];
   return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap bg-hub-neutral-light text-hub-textMuted border-hub-border">
-      {ticketStatusLabel(ticketStatus)}
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+      style={{ background: c.bg, color: c.fg, borderColor: c.bd }}
+    >
+      {stage.label}
     </span>
   );
 }

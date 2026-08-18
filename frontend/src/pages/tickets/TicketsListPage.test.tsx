@@ -199,7 +199,7 @@ describe("TicketsListPage", () => {
       Array.from(table.querySelectorAll("tbody td")).some((td) =>
         (td.textContent ?? "").includes(kw),
       );
-    expect(cellText("处理中")).toBe(true); // Bug_fix hub_status=in_progress
-    expect(cellText("处理完成")).toBe(true); // Demand hub_status=released
+    expect(cellText("处理中")).toBe(true); // Bug_fix hub_status=in_progress → 处理状态列
+    expect(cellText("已发版")).toBe(true); // Demand hub_status=released → 处理状态列(研发用"已发版"，区别于运营"已答复")
   });
 });
