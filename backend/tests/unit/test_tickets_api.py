@@ -463,6 +463,66 @@ def test_summary_product_name(app_client: TestClient, world2: Session) -> None:
     assert by["TKT-B"]["product_name"] is None  # 无产品线
 
 
+def test_summary_graduated_uses_hub_product_and_module(
+    app_client: TestClient, world2: Session
+) -> None:
+    """已毕业工单：产品线/模块以 hub 为准（编辑只改 hub，不回写 ticket）。
+    ticket.* 停留在毕业时旧快照，列表应显示 hub 编辑后的新值。"""
+    from app.models import HubIssue, ProductLine, Ticket
+
+    # 新产品线（编辑后的目标）+ 旧产品线 cloud-fapiao 已由 world2 建
+    world2.add(ProductLine(code="cloud-bill", name="票据云"))
+    # hub 存编辑后的新值；ticket 存毕业时的旧快照
+    world2.add(
+        HubIssue(
+            id=60,
+            short_code="HUB-EDIT",
+            type="Operation",
+            title="edited",
+            status="waiting_reply",
+            op_status="processing",
+            product_line_code="cloud-bill",
+            module="票据管理",
+        )
+    )
+    world2.flush()
+    world2.add(
+        Ticket(
+            id=210,
+            short_code="TKT-EDIT",
+            source_code="ksm",
+            source_ticket_id="edit-1",
+            type="Raw",
+            status="linked",
+            title="edited ticket",
+            hub_issue_id=60,
+            product_line_code="cloud-fapiao",  # 毕业时旧快照
+            module="发票管理",  # 毕业时旧快照
+            received_at=datetime(2026, 5, 6, 13, 0, tzinfo=UTC),
+        )
+    )
+    world2.commit()
+
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    edit = by["TKT-EDIT"]
+    # 列表返回 hub 的新值，而非 ticket 的旧快照
+    assert edit["product_line_code"] == "cloud-bill"
+    assert edit["product_name"] == "票据云"
+    assert edit["module"] == "票据管理"
+
+
+def test_summary_ungraduated_uses_ticket_product_and_module(
+    app_client: TestClient, world2: Session
+) -> None:
+    """未毕业工单（无 hub）：产品线/模块仍读 ticket 本身，不受 hub 覆盖逻辑影响。"""
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    # TKT-A 挂的 hub 50 没有 product_line_code/module → 不覆盖，保留 ticket 值
+    assert by["TKT-A"]["product_line_code"] == "cloud-fapiao"
+    assert by["TKT-A"]["product_name"] == "发票云"
+
+
 def test_summary_reject_count(app_client: TestClient, world2: Session) -> None:
     """驳回次数：挂 reject_count=2 的 hub → 2；无 hub → 0。"""
     r = app_client.get("/api/tickets", headers=_bearer())

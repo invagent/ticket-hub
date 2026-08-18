@@ -177,18 +177,31 @@ def list_tickets(
     hub_op_map: dict[int, str | None] = {}
     hub_reject_map: dict[int, int] = {}
     hub_status_map: dict[int, str | None] = {}
+    # 已毕业工单的产品线/模块以 hub 为准（编辑只改 hub，见 update_hub_attributes）；
+    # 列表读 ticket.* 会读到毕业时的旧快照，故这里带出 hub 的值，_to_summary 覆盖。
+    hub_plc_map: dict[int, str | None] = {}
+    hub_module_map: dict[int, str | None] = {}
     if hub_ids:
         hrows = db.execute(
             select(
-                HubIssue.id, HubIssue.op_status, HubIssue.reject_count, HubIssue.status
+                HubIssue.id,
+                HubIssue.op_status,
+                HubIssue.reject_count,
+                HubIssue.status,
+                HubIssue.product_line_code,
+                HubIssue.module,
             ).where(HubIssue.id.in_(hub_ids))
         ).all()
         hub_op_map = {r.id: r.op_status for r in hrows}
         hub_reject_map = {r.id: r.reject_count for r in hrows}
         hub_status_map = {r.id: r.status for r in hrows}
+        hub_plc_map = {r.id: r.product_line_code for r in hrows}
+        hub_module_map = {r.id: r.module for r in hrows}
 
     # batch-load 主产品名称 + SLA 解决时限（product_line_code → name / sla_resolve_hours）
+    # 已毕业工单以 hub 的 product_line_code 为准，故两处 code 都要并入名字查询集合
     pl_codes = {t.product_line_code for t in p.items if t.product_line_code}
+    pl_codes |= {code for code in hub_plc_map.values() if code}
     product_name_map: dict[str, str] = {}
     pl_resolve_hours_map: dict[str, int | None] = {}
     if pl_codes:
@@ -231,8 +244,16 @@ def list_tickets(
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
             s.hub_status = hub_status_map.get(t.hub_issue_id)
-        if t.product_line_code:
-            s.product_name = product_name_map.get(t.product_line_code)
+            # 已毕业：产品线/模块以 hub 为准（与详情页 graduated ? hub.* : ticket.* 对齐）。
+            # 编辑参数只改 hub，ticket.* 停留在毕业时快照，故这里覆盖为 hub 的最新值。
+            hub_plc = hub_plc_map.get(t.hub_issue_id)
+            if hub_plc is not None:
+                s.product_line_code = hub_plc
+            hub_module = hub_module_map.get(t.hub_issue_id)
+            if hub_module is not None:
+                s.module = hub_module
+        if s.product_line_code:
+            s.product_name = product_name_map.get(s.product_line_code)
         # 关联任务数：拆分子单数（Parent 持有 children_ticket_ids）；单问题工单=1
         s.children_count = len(t.children_ticket_ids or []) or 1
         # 提单人信息从 reporter JSON 解析（入库写的是 name/mobile/email）
