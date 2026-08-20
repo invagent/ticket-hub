@@ -187,14 +187,23 @@ class KSMIngester:
         self._db.flush()
 
         # 4b. 建附件行（仅建行，不下载；下载+OCR 由异步流水线处理）。
-        # 按扩展名判定 kind——只 image 进 OCR，其余（pdf/video/other）仅下载存档。
-        for url in payload.get("attachment_urls", []) or []:
+        # KSM 附件真实文件名在 name（url 是下载动作端点，尾段是 accessory!download.action，
+        # 不能当文件名）；kind 用真实文件名判扩展名——只 image 进 OCR。
+        # 新格式 attachments=[{url,name}]；兼容 full-payload 旧格式 attachment_urls=[str]。
+        atts = payload.get("attachments")
+        if not atts:
+            atts = [{"url": u, "name": None} for u in (payload.get("attachment_urls") or [])]
+        for a in atts:
+            url = a.get("url")
+            if not url:
+                continue
+            name = a.get("name")
             self._db.add(
                 Attachment(
                     ticket_id=ticket.id,
                     source_url=url,
-                    filename=filename_from_url(url),
-                    kind=classify_attachment_kind(url),
+                    filename=name or filename_from_url(url),
+                    kind=classify_attachment_kind(name or url),
                     vision_status="queued",
                 )
             )

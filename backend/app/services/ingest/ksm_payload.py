@@ -46,22 +46,29 @@ PRODUCT_NAME_TO_CODE: dict[str, str] = {
 }
 
 
-def parse_attachment_urls(data: dict[str, Any]) -> list[str]:
-    """从 KSM subscribeCallback data 块提取附件 url 列表。
+def parse_attachments(data: dict[str, Any]) -> list[dict[str, str | None]]:
+    """从 KSM subscribeCallback data 块提取附件 [{url, name}] 列表。
 
-    KSM `attachment` 是对象数组，每项含 `url`。容错：缺失/非数组/项无 url
-    → 返回空列表，绝不抛（附件字段名按参考旧项目，当前 KSM 版本未确证）。
+    KSM `attachment` 是对象数组，每项形如 {name, type, url, desc}。**真实文件名在
+    `name`**（url 是下载动作端点 accessory!download.action?id=xxx，路径尾段不是文件名）。
+    容错：缺失/非数组/项无 url → 空列表，绝不抛（字段名按 KSM 实际返回，已用真实数据确证）。
     """
     raw = data.get("attachment")
     if not isinstance(raw, list):
         return []
-    urls: list[str] = []
+    out: list[dict[str, str | None]] = []
     for item in raw:
         if isinstance(item, dict):
             url = item.get("url")
             if isinstance(url, str) and url.strip():
-                urls.append(url.strip())
-    return urls
+                name = item.get("name")
+                out.append(
+                    {
+                        "url": url.strip(),
+                        "name": name.strip() if isinstance(name, str) and name.strip() else None,
+                    }
+                )
+    return out
 
 
 def _resolve_product_line_code(data: dict[str, Any]) -> str | None:
@@ -111,7 +118,7 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         "mobile": data.get("feedbackPhone"),
         "tel": data.get("feedbackTel"),
         "erpUid": customer.get("customerNumber"),
-        "attachment_urls": parse_attachment_urls(data),
+        "attachments": parse_attachments(data),
         # Pass through full original payload for source_payload audit trail.
         "_subscribe_callback": data,
     }
