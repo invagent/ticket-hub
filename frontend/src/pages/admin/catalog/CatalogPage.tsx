@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as XLSX from "xlsx";
 import { ApiError, api, rawRequest } from "@/api/client";
 import { AdminTabs } from "../AdminTabs";
 
@@ -199,7 +200,10 @@ function ProductLineModulesSection() {
 
       {/* 新增模块 */}
       <section className="space-y-1.5">
-        <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增模块</div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增模块</span>
+          <BatchImportButton productLines={lines.data ?? []} onImported={invalidate} />
+        </div>
         <ModuleAddForm productLines={lines.data ?? []} modules={modules.data ?? []} onAdded={invalidate} />
       </section>
 
@@ -394,6 +398,171 @@ function ProductLineModal({
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- 批量导入按钮 -------------------------------------------------------
+
+function downloadTemplate() {
+  const headers = ["产品线编码", "模块名", "产品责任人", "研发责任人"];
+  const example = ["PROLINE0001", "数电开票", "张三", "李四, 王五"];
+  const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+  // 列宽
+  ws["!cols"] = [{ wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 24 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "批量导入模块");
+  XLSX.writeFile(wb, "批量导入新增模块的模板.xlsx");
+}
+
+function BatchImportButton({
+  productLines,
+  onImported,
+}: {
+  productLines: ProductLine[];
+  onImported: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{ ok: number; fail: { row: number; reason: string }[] } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setResult(null);
+      }
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  async function handleFile(file: File) {
+    setImporting(true);
+    setResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
+
+      let ok = 0;
+      const fail: { row: number; reason: string }[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const plCode = (row["产品线编码"] ?? "").trim();
+        const name = (row["模块名"] ?? "").trim();
+        const productOwner = (row["产品责任人"] ?? "").trim() || null;
+        const devOwners = (row["研发责任人"] ?? "").trim() || null;
+        const rowNum = i + 2; // 1-based + header
+
+        if (!plCode || !name) {
+          fail.push({ row: rowNum, reason: "产品线编码或模块名为空" });
+          continue;
+        }
+        const pl = productLines.find((p) => p.code === plCode);
+        if (!pl) {
+          fail.push({ row: rowNum, reason: `产品线编码「${plCode}」不存在` });
+          continue;
+        }
+        try {
+          await api.post("/api/admin/modules", {
+            product_line_code: plCode,
+            name,
+            product_owner: productOwner,
+            dev_owners: devOwners,
+          });
+          ok++;
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) {
+            fail.push({ row: rowNum, reason: `「${pl.name}」下模块「${name}」已存在` });
+          } else {
+            fail.push({ row: rowNum, reason: String(e) });
+          }
+        }
+      }
+
+      setResult({ ok, fail });
+      if (ok > 0) {
+        qc.invalidateQueries({ queryKey: ["admin", "modules"] });
+        onImported();
+      }
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <div ref={boxRef} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((v) => !v); setResult(null); }}
+        className={GHOST_BTN}
+      >
+        批量导入 ▾
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-72 bg-white border border-hub-border rounded-[10px] shadow-lg p-4 space-y-3">
+          {/* 下载模板 */}
+          <div>
+            <p className="text-[11.5px] text-hub-textSecondary mb-1.5 font-semibold">第一步：下载模板</p>
+            <button
+              type="button"
+              onClick={downloadTemplate}
+              className="w-full flex items-center gap-2 px-3 py-2 border border-hub-teal-border bg-hub-teal-light/50 rounded-[7px] text-[12.5px] text-hub-teal-deep font-semibold hover:bg-hub-teal-light"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M7 1v8M4 6l3 3 3-3M2 11h10" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              下载批量导入模板
+            </button>
+          </div>
+
+          {/* 上传文件 */}
+          <div>
+            <p className="text-[11.5px] text-hub-textSecondary mb-1.5 font-semibold">第二步：上传填写好的文件</p>
+            <label className={`w-full flex items-center gap-2 px-3 py-2 border border-hub-border rounded-[7px] text-[12.5px] cursor-pointer hover:bg-hub-panel ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M7 9V1M4 4l3-3 3 3M2 11h10" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              {importing ? "导入中…" : "选择 Excel 文件"}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+              />
+            </label>
+          </div>
+
+          {/* 导入结果 */}
+          {result && (
+            <div className="border border-hub-border rounded-[7px] p-2.5 space-y-1 text-[12px]">
+              <p className="font-semibold text-hub-green">成功导入 {result.ok} 条</p>
+              {result.fail.length > 0 && (
+                <div>
+                  <p className="font-semibold text-hub-rose mb-1">失败 {result.fail.length} 条：</p>
+                  <div className="max-h-32 overflow-y-auto space-y-0.5">
+                    {result.fail.map((f) => (
+                      <p key={f.row} className="text-[11px] text-hub-textMuted">
+                        第 {f.row} 行：{f.reason}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
