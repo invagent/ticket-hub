@@ -319,7 +319,15 @@ function ProductLineModal({
       rawRequest(`/api/admin/product-lines/${encodeURIComponent(code)}`, { method: "DELETE" }),
     onSuccess: onChanged,
   });
-  const [delErr, setDelErr] = useState<string | null>(null);
+  const toggleActive = useMutation({
+    mutationFn: ({ code, is_active }: { code: string; is_active: boolean }) =>
+      rawRequest(`/api/admin/product-lines/${encodeURIComponent(code)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active }),
+      }),
+    onSuccess: onChanged,
+  });
+  const [opErr, setOpErr] = useState<string | null>(null);
 
   function fmtDate(s: string | null) {
     if (!s) return "—";
@@ -328,19 +336,20 @@ function ProductLineModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-[12px] shadow-xl w-[780px] max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-[12px] shadow-xl w-[900px] max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-hub-border">
           <span className="font-bold text-[14px]">产品线列表</span>
           <button onClick={onClose} className="text-hub-textMuted hover:text-hub-rose text-lg leading-none">×</button>
         </div>
         <div className="overflow-auto flex-1 px-5 py-4">
-          {delErr && <p className="text-[11px] text-hub-rose mb-2">{delErr}</p>}
+          {opErr && <p className="text-[11px] text-hub-rose mb-2">{opErr}</p>}
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="bg-hub-panel text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
                 <th className="text-left p-2.5 border-b border-hub-border">产品线编码</th>
                 <th className="text-left p-2.5 border-b border-hub-border">产品线</th>
                 <th className="text-left p-2.5 border-b border-hub-border">产品线分类</th>
+                <th className="text-left p-2.5 border-b border-hub-border">状态</th>
                 <th className="text-left p-2.5 border-b border-hub-border">添加时间</th>
                 <th className="text-left p-2.5 border-b border-hub-border">包含模块数</th>
                 <th className="text-right p-2.5 border-b border-hub-border">操作</th>
@@ -348,7 +357,7 @@ function ProductLineModal({
             </thead>
             <tbody>
               {productLines.length === 0 ? (
-                <tr><td colSpan={6} className="p-4 text-center text-xs text-hub-textFaint">暂无产品线</td></tr>
+                <tr><td colSpan={7} className="p-4 text-center text-xs text-hub-textFaint">暂无产品线</td></tr>
               ) : (
                 productLines.map((pl) => (
                   <tr key={pl.code} className="border-b border-hub-borderLight hover:bg-hub-panel">
@@ -361,35 +370,59 @@ function ProductLineModal({
                         </span>
                       ) : "—"}
                     </td>
+                    <td className="p-2.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        pl.is_active
+                          ? "bg-hub-green-light text-hub-green border-hub-green-border"
+                          : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
+                      }`}>
+                        {pl.is_active ? "启用" : "禁用"}
+                      </span>
+                    </td>
                     <td className="p-2.5 text-hub-textFaint font-mono text-[11px]">{fmtDate(pl.created_at)}</td>
                     <td className="p-2.5 text-center">
                       <span className={`font-bold ${pl.module_count > 0 ? "text-hub-teal" : "text-hub-textFaint"}`}>
                         {pl.module_count}
                       </span>
                     </td>
-                    <td className="p-2.5 text-right">
-                      <button
-                        disabled={del.isPending}
-                        onClick={() => {
-                          if (pl.module_count > 0) {
-                            setDelErr(`产品线「${pl.name}」下还有 ${pl.module_count} 个模块，请先删除模块`);
-                            return;
-                          }
-                          setDelErr(null);
-                          if (confirm(`确认删除产品线「${pl.name}」？`)) {
-                            del.mutate(pl.code, {
-                              onError: (e) => {
-                                if (e instanceof ApiError && e.status === 409)
-                                  setDelErr("该产品线仍有关联数据，无法删除");
-                                else setDelErr(String(e));
-                              },
-                            });
-                          }
-                        }}
-                        className="text-[11px] text-hub-rose hover:underline disabled:opacity-50"
-                      >
-                        删除
-                      </button>
+                    <td className="p-2.5 text-right whitespace-nowrap">
+                      <span className="flex items-center justify-end gap-2 text-[11.5px]">
+                        {/* 禁用/启用 */}
+                        <button
+                          disabled={toggleActive.isPending}
+                          onClick={() => {
+                            setOpErr(null);
+                            toggleActive.mutate(
+                              { code: pl.code, is_active: !pl.is_active },
+                              { onError: (e) => setOpErr(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)) }
+                            );
+                          }}
+                          className={`font-semibold disabled:opacity-50 ${pl.is_active ? "text-orange-500 hover:text-orange-600" : "text-hub-green hover:text-green-700"}`}
+                        >
+                          {pl.is_active ? "禁用" : "启用"}
+                        </button>
+                        <span className="text-hub-border">|</span>
+                        {/* 删除：模块数为0才可删 */}
+                        <button
+                          disabled={del.isPending || pl.module_count > 0}
+                          onClick={() => {
+                            setOpErr(null);
+                            if (confirm(`确认删除产品线「${pl.name}」？此操作不可恢复。`)) {
+                              del.mutate(pl.code, {
+                                onError: (e) => {
+                                  if (e instanceof ApiError && e.status === 409)
+                                    setOpErr("该产品线仍有关联数据，无法删除");
+                                  else setOpErr(String(e));
+                                },
+                              });
+                            }
+                          }}
+                          title={pl.module_count > 0 ? `还有 ${pl.module_count} 个模块，请先删除模块` : "删除产品线"}
+                          className="text-hub-rose hover:underline disabled:opacity-30 disabled:cursor-not-allowed font-semibold"
+                        >
+                          删除
+                        </button>
+                      </span>
                     </td>
                   </tr>
                 ))
