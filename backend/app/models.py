@@ -74,6 +74,8 @@ class ProductLine(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 产品线分类（固定值：开票/收票/影像/基础/EOP/档案）
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # D2-C: per-product-line SLA threshold overrides. NULL = use SLAWatcher
     # built-in defaults (4h ticket reply / 4-24h hub_issue by type).
     sla_reply_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -876,6 +878,14 @@ class Module(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 状态：enabled=启用，disabled=禁用
+    status: Mapped[str] = mapped_column(String(16), default="enabled", nullable=False)
+    # 产品责任人（逗号分隔多人）
+    product_owner: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # 研发责任人（逗号分隔多人）
+    dev_owners: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # 最后操作人
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

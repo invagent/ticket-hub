@@ -6,12 +6,15 @@ D2: scopes in admin_scopes.py (full CRUD).
 D2-C: per-product-line SLA threshold PATCH.
 D2-G2: product_lines POST + DELETE so admin can add/remove product_lines
        directly from the catalog UI alongside modules.
+0031: category field + auto-generated PROLINE code + module_count in listing.
 """
+
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +25,8 @@ from app.models import Module, ProductLine, Source
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案"]
 
 
 class SourceOut(BaseModel):
@@ -38,32 +43,38 @@ class ProductLineOut(BaseModel):
     code: str
     name: str
     is_active: bool
+    category: str | None = None
     sla_reply_hours: int | None = None
     sla_resolve_hours: int | None = None
+    created_at: str | None = None
+    module_count: int = 0
 
     model_config = {"from_attributes": True}
 
 
 class ProductLinePatch(BaseModel):
-    """PATCH body for /api/admin/product-lines/{code}.
-
-    NULL on SLA fields clears the override (falls back to SLAWatcher
-    defaults). Pass `0` is rejected — use `null` to clear.
-    """
+    """PATCH body for /api/admin/product-lines/{code}."""
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
+    category: str | None = None
     sla_reply_hours: int | None = Field(default=None, ge=1, le=168)
     sla_resolve_hours: int | None = Field(default=None, ge=1, le=168)
     is_active: bool | None = None
 
 
 class ProductLineIn(BaseModel):
-    """POST body for /api/admin/product-lines."""
+    """POST body for /api/admin/product-lines. code is auto-generated."""
 
-    code: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=128)
+    category: str = Field(..., min_length=1, max_length=64)
     sla_reply_hours: int | None = Field(default=None, ge=1, le=168)
     sla_resolve_hours: int | None = Field(default=None, ge=1, le=168)
+
+
+def _generate_code(db: Session) -> str:
+    """Generate next PROLINE code: PROLINE0001, PROLINE0002, ..."""
+    max_id = db.execute(select(func.max(ProductLine.id))).scalar() or 0
+    return f"PROLINE{(max_id + 1):04d}"
 
 
 @router.get("/sources", response_model=list[SourceOut])
@@ -75,7 +86,28 @@ def list_sources(db: Session = Depends(get_session)) -> list[SourceOut]:
 @router.get("/product-lines", response_model=list[ProductLineOut])
 def list_product_lines(db: Session = Depends(get_session)) -> list[ProductLineOut]:
     rows = db.execute(select(ProductLine).order_by(ProductLine.id)).scalars().all()
-    return [ProductLineOut.model_validate(r) for r in rows]
+    # batch count modules per product line
+    counts_q = db.execute(
+        select(Module.product_line_code, func.count(Module.id))
+        .group_by(Module.product_line_code)
+    ).all()
+    counts = {code: cnt for code, cnt in counts_q}
+
+    result = []
+    for r in rows:
+        out = ProductLineOut(
+            id=r.id,
+            code=r.code,
+            name=r.name,
+            is_active=r.is_active,
+            category=r.category,
+            sla_reply_hours=r.sla_reply_hours,
+            sla_resolve_hours=r.sla_resolve_hours,
+            created_at=r.created_at.isoformat() if r.created_at else None,
+            module_count=counts.get(r.code, 0),
+        )
+        result.append(out)
+    return result
 
 
 @router.post("/product-lines", response_model=ProductLineOut, status_code=201)
@@ -84,11 +116,16 @@ def add_product_line(
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> ProductLineOut:
-    """Create a new product_line. UNIQUE on `code` → 409 on duplicate."""
+    """Create a new product_line with auto-generated PROLINE code."""
+    if body.category not in CATEGORY_OPTIONS:
+        raise HTTPException(status_code=422, detail=f"category must be one of {CATEGORY_OPTIONS}")
+
+    code = _generate_code(db)
     pl = ProductLine(
-        code=body.code,
+        code=code,
         name=body.name,
         is_active=True,
+        category=body.category,
         sla_reply_hours=body.sla_reply_hours,
         sla_resolve_hours=body.sla_resolve_hours,
     )
@@ -98,17 +135,21 @@ def add_product_line(
     except IntegrityError as e:
         db.rollback()
         raise HTTPException(
-            status_code=409, detail=f"product_line already exists: {body.code}"
+            status_code=409, detail=f"product_line already exists: {code}"
         ) from e
     db.refresh(pl)
-    logger.info(
-        "admin_product_line_added",
-        code=body.code,
-        by=admin.user_id,
-        sla_reply_hours=body.sla_reply_hours,
-        sla_resolve_hours=body.sla_resolve_hours,
+    logger.info("admin_product_line_added", code=code, by=admin.user_id)
+    return ProductLineOut(
+        id=pl.id,
+        code=pl.code,
+        name=pl.name,
+        is_active=pl.is_active,
+        category=pl.category,
+        sla_reply_hours=pl.sla_reply_hours,
+        sla_resolve_hours=pl.sla_resolve_hours,
+        created_at=pl.created_at.isoformat() if pl.created_at else None,
+        module_count=0,
     )
-    return ProductLineOut.model_validate(pl)
 
 
 @router.delete("/product-lines/{code}", status_code=204)
@@ -117,9 +158,6 @@ def delete_product_line(
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> Response:
-    """Hard delete. Refuses if the product_line still has modules registered
-    (catalog FK) — admin must clean up first to prevent orphaned scopes /
-    tickets pointing at a vanished product_line."""
     pl = db.execute(select(ProductLine).where(ProductLine.code == code)).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404, detail="product_line not found")
@@ -154,26 +192,29 @@ def patch_product_line(
     admin: AuthedUser = Depends(require_admin),
     db: Session = Depends(get_session),
 ) -> ProductLineOut:
-    """Update SLA overrides (and is_active) for a product line.
-
-    Send `null` to a field to clear the override (revert to SLAWatcher
-    builtin default).
-    """
     pl = db.execute(select(ProductLine).where(ProductLine.code == code)).scalar_one_or_none()
     if pl is None:
         raise HTTPException(status_code=404, detail="product_line not found")
 
     patch = body.model_dump(exclude_unset=True)
+    if "category" in patch and patch["category"] not in CATEGORY_OPTIONS:
+        raise HTTPException(status_code=422, detail=f"category must be one of {CATEGORY_OPTIONS}")
     for field, value in patch.items():
         setattr(pl, field, value)
     db.commit()
     db.refresh(pl)
-    logger.info(
-        "admin_product_line_updated",
-        code=code,
-        by=admin.user_id,
-        fields=list(patch.keys()),
+    module_count = db.execute(
+        select(func.count(Module.id)).where(Module.product_line_code == code)
+    ).scalar() or 0
+    logger.info("admin_product_line_updated", code=code, by=admin.user_id, fields=list(patch.keys()))
+    return ProductLineOut(
+        id=pl.id,
+        code=pl.code,
+        name=pl.name,
+        is_active=pl.is_active,
+        category=pl.category,
         sla_reply_hours=pl.sla_reply_hours,
         sla_resolve_hours=pl.sla_resolve_hours,
+        created_at=pl.created_at.isoformat() if pl.created_at else None,
+        module_count=module_count,
     )
-    return ProductLineOut.model_validate(pl)
