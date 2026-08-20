@@ -76,10 +76,10 @@ function OwnerInput({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex-none px-2 py-1 border border-hub-border rounded-[7px] bg-hub-panel text-hub-textMuted hover:bg-white text-[11px]"
+          className="flex-none px-3 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel text-hub-textSecondary hover:bg-white hover:border-hub-teal text-[12px] font-semibold"
           title="从在岗用户中选择"
         >
-          ▾
+          选择 ▾
         </button>
       </div>
       {open && (
@@ -93,7 +93,7 @@ function OwnerInput({
               className="w-full text-[12px] px-2 py-1 border border-hub-border rounded-[5px] outline-none focus:border-hub-teal"
             />
           </div>
-          <div className="max-h-40 overflow-y-auto">
+          <div className="max-h-[480px] overflow-y-auto">
             {opts.length === 0 ? (
               <div className="p-2 text-[11.5px] text-hub-textFaint text-center">无匹配</div>
             ) : (
