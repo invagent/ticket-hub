@@ -12,7 +12,7 @@ export function AdminTabs() {
     { to: "/admin/users", label: "人员与分工" },
     ...(adminOnly
       ? [
-          { to: "/admin/catalog", label: "目录管理" },
+          { to: "/admin/catalog", label: "产品模块管理" },
           { to: "/admin/skills", label: "Skill 配置" },
           { to: "/admin/holidays", label: "节假日" },
           { to: "/admin/dispatch", label: "运营分派" },

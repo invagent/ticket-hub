@@ -107,7 +107,7 @@ const navItems: {
     roles: ["knowledge_op", "supervisor", "admin"],
   },
   { to: "/analytics", label: "统计看板", icon: ChartIcon, roles: ["supervisor", "admin"] },
-  { to: "/admin/users", label: "管理", icon: AdminIcon, roles: ["supervisor", "admin"] },
+  { to: "/admin/users", label: "系统基础配置", icon: AdminIcon, roles: ["supervisor", "admin"] },
 ];
 
 export function Layout() {
