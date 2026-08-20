@@ -90,13 +90,8 @@ function ProductLineModulesSection() {
     <div className="space-y-6">
       {/* 新增产品线 */}
       <section className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增产品线</span>
-          <button onClick={() => setShowPLModal(true)} className={GHOST_BTN}>
-            查看产品线列表
-          </button>
-        </div>
-        <ProductLineAddForm onAdded={invalidate} />
+        <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px]">➕ 新增产品线</div>
+        <ProductLineAddForm onAdded={invalidate} onShowList={() => setShowPLModal(true)} />
       </section>
 
       {/* 新增模块 */}
@@ -134,7 +129,7 @@ function ProductLineModulesSection() {
 
 // ---- 新增产品线表单 -----------------------------------------------------
 
-function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
+function ProductLineAddForm({ onAdded, onShowList }: { onAdded: () => void; onShowList: () => void }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [errors, setErrors] = useState<{ name?: string; category?: string; api?: string }>({});
@@ -192,6 +187,9 @@ function ProductLineAddForm({ onAdded }: { onAdded: () => void }) {
       </div>
       <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start mt-0.5`}>
         {add.isPending ? "提交中…" : "添加"}
+      </button>
+      <button type="button" onClick={onShowList} className={`${GHOST_BTN} self-start mt-0.5`}>
+        查看产品线列表
       </button>
       {errors.api && <p className="text-[11px] text-hub-rose self-center">{errors.api}</p>}
     </form>
@@ -359,12 +357,11 @@ function ModuleAddForm({
 
   return (
     <div className="space-y-2">
-      <form onSubmit={submit} className={ADD_FORM_CLS}>
+      <form onSubmit={submit} className={ADD_FORM_CLS} style={{ flexWrap: "nowrap" }}>
         <select
           value={pl}
           onChange={(e) => { setPl(e.target.value); setError(null); setDupModules([]); }}
-          className={`${INPUT_CLS}`}
-          style={{ width: 200 }}
+          className={`${INPUT_CLS} flex-1 min-w-0`}
         >
           <option value="">选择产品线</option>
           {productLines.filter((p) => p.is_active).map((p) => (
@@ -375,24 +372,21 @@ function ModuleAddForm({
           placeholder="模块名"
           value={name}
           onChange={(e) => { setName(e.target.value); setError(null); setDupModules([]); }}
-          className={`${INPUT_CLS}`}
-          style={{ width: 200 }}
+          className={`${INPUT_CLS} flex-1 min-w-0`}
         />
         <input
           placeholder="产品责任人（非必填）"
           value={productOwner}
           onChange={(e) => setProductOwner(e.target.value)}
-          className={`${INPUT_CLS}`}
-          style={{ width: 200 }}
+          className={`${INPUT_CLS} flex-1 min-w-0`}
         />
         <input
           placeholder="研发责任人（非必填，多人逗号分隔）"
           value={devOwners}
           onChange={(e) => setDevOwners(e.target.value)}
-          className={`${INPUT_CLS}`}
-          style={{ width: 240 }}
+          className={`${INPUT_CLS} flex-1 min-w-0`}
         />
-        <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start`}>
+        <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start flex-none`}>
           {add.isPending ? "提交中…" : "添加"}
         </button>
       </form>
@@ -454,24 +448,28 @@ function FilterPopover({
   void colId;
 
   return (
-    <div className="absolute z-50 top-full left-0 mt-1 w-52 bg-white border border-hub-border rounded-[8px] shadow-lg p-3 space-y-2">
-      <select
-        value={op}
-        onChange={(e) => setOp(e.target.value as FilterOp)}
-        className="w-full text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none"
-      >
-        {(Object.keys(OP_LABELS) as FilterOp[]).map((k) => (
-          <option key={k} value={k}>{OP_LABELS[k]}</option>
-        ))}
-      </select>
-      <input
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") { onSet({ op, value }); onClose(); } if (e.key === "Escape") onClose(); }}
-        placeholder="筛选值"
-        className="w-full text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal"
-      />
+    <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-hub-border rounded-[8px] shadow-lg p-3 space-y-2" style={{ width: 400 }}>
+      <div className="flex gap-2">
+        <select
+          value={op}
+          onChange={(e) => setOp(e.target.value as FilterOp)}
+          className="text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none flex-none"
+          style={{ width: 100 }}
+        >
+          {(Object.keys(OP_LABELS) as FilterOp[]).map((k) => (
+            <option key={k} value={k}>{OP_LABELS[k]}</option>
+          ))}
+        </select>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { onSet({ op, value }); onClose(); } if (e.key === "Escape") onClose(); }}
+          placeholder="筛选值"
+          className="text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal flex-none"
+          style={{ width: 300 }}
+        />
+      </div>
       <div className="flex gap-2">
         <button
           onClick={() => { onSet({ op, value }); onClose(); }}
@@ -489,15 +487,15 @@ function FilterPopover({
 type ColKey = "product_line_code" | "product_line_name" | "product_line_category" | "name" | "status" | "product_owner" | "dev_owners" | "updated_by" | "updated_at";
 
 const COL_HEADERS: { key: ColKey; label: string; width: number; sticky?: boolean }[] = [
-  { key: "product_line_code", label: "产品线编码", width: 130, sticky: true },
-  { key: "product_line_name", label: "产品线", width: 120, sticky: true },
-  { key: "product_line_category", label: "产品线分类", width: 100 },
-  { key: "name", label: "模块", width: 140 },
+  { key: "product_line_code", label: "产品线编码", width: 140, sticky: true },
+  { key: "product_line_name", label: "产品线", width: 130, sticky: true },
+  { key: "product_line_category", label: "产品线分类", width: 110 },
+  { key: "name", label: "模块", width: 160 },
   { key: "status", label: "状态", width: 72 },
-  { key: "product_owner", label: "产品责任人", width: 130 },
-  { key: "dev_owners", label: "研发责任人", width: 160 },
-  { key: "updated_at", label: "最后操作时间", width: 130 },
-  { key: "updated_by", label: "最后操作人", width: 100 },
+  { key: "product_owner", label: "产品责任人", width: 140 },
+  { key: "dev_owners", label: "研发责任人", width: 180 },
+  { key: "updated_at", label: "最后操作时间", width: 140 },
+  { key: "updated_by", label: "最后操作人", width: 110 },
 ];
 
 function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () => void }) {
@@ -570,7 +568,7 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
       </div>
       <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="border-collapse text-[12.5px]" style={{ minWidth: COL_HEADERS.reduce((s, c) => s + c.width, 0) + 140 }}>
+          <table className="border-collapse w-full text-[12.5px]" style={{ minWidth: COL_HEADERS.reduce((s, c) => s + c.width, 0) + 140 }}>
             <thead>
               <tr className="bg-hub-panel border-b border-hub-border">
                 {COL_HEADERS.map((col) => (
@@ -692,7 +690,7 @@ function ModuleRow({
         {m.product_line_category}
       </span>
     ) : <span className="text-hub-textFaint">—</span>,
-    name: <span>{m.name}</span>,
+    name: <span className="whitespace-nowrap">{m.name}</span>,
     status: (
       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
         m.status === "enabled"
