@@ -118,7 +118,7 @@ function OwnerInput({
 
 // ---- 常量 ---------------------------------------------------------------
 
-const CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案"];
+const CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案", "其他"];
 
 const INPUT_CLS =
   "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px]";
@@ -271,16 +271,6 @@ function ProductLineAddForm({ onAdded, onShowList }: { onAdded: () => void; onSh
   return (
     <form onSubmit={submit} className={ADD_FORM_CLS}>
       <div className="flex flex-col gap-0.5">
-        <input
-          placeholder="产品线名称"
-          value={name}
-          onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: undefined })); }}
-          className={`${INPUT_CLS} ${errors.name ? "border-hub-rose" : ""}`}
-          style={{ width: 200 }}
-        />
-        {errors.name && <span className="text-[11px] text-hub-rose">{errors.name}</span>}
-      </div>
-      <div className="flex flex-col gap-0.5">
         <select
           value={category}
           onChange={(e) => { setCategory(e.target.value); setErrors((p) => ({ ...p, category: undefined })); }}
@@ -291,6 +281,16 @@ function ProductLineAddForm({ onAdded, onShowList }: { onAdded: () => void; onSh
           {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         {errors.category && <span className="text-[11px] text-hub-rose">{errors.category}</span>}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        <input
+          placeholder="产品线名称"
+          value={name}
+          onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: undefined })); }}
+          className={`${INPUT_CLS} ${errors.name ? "border-hub-rose" : ""}`}
+          style={{ width: 200 }}
+        />
+        {errors.name && <span className="text-[11px] text-hub-rose">{errors.name}</span>}
       </div>
       <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start mt-0.5`}>
         {add.isPending ? "提交中…" : "添加"}
@@ -928,7 +928,9 @@ const COL_HEADERS: { key: ColKey; label: string; width: number; sticky?: boolean
 ];
 
 function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () => void }) {
-  const [filters, setFilters] = useState<Partial<Record<ColKey, ColFilter>>>({});
+  const [filters, setFilters] = useState<Partial<Record<ColKey, ColFilter>>>({
+    status: { op: "eq", value: "启用" },
+  });
   const [openFilter, setOpenFilter] = useState<ColKey | null>(null);
   const filterRefs = useRef<Partial<Record<ColKey, HTMLDivElement | null>>>({});
 
@@ -990,8 +992,8 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
           </span>
         </span>
         {Object.values(filters).some((f) => f?.value) && (
-          <button onClick={() => setFilters({})} className="text-[11.5px] text-hub-rose hover:underline">
-            清除筛选
+          <button onClick={() => setFilters({ status: { op: "eq", value: "启用" } })} className="text-[11.5px] text-hub-rose hover:underline">
+            重置筛选
           </button>
         )}
       </div>
