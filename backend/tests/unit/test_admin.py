@@ -158,33 +158,36 @@ def test_post_product_line_creates(app_client, db_session) -> None:
     db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
     db_session.commit()
 
+    # 0031：code 自动生成（PROLINE 序号），category 必填且须在 CATEGORY_OPTIONS 内。
     r = app_client.post(
         "/api/admin/product-lines",
         headers=_admin_bearer(),
-        json={"code": "cloud-new", "name": "New Cloud", "sla_reply_hours": 8},
+        json={"name": "New Cloud", "category": "开票", "sla_reply_hours": 8},
     )
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["code"] == "cloud-new"
+    assert body["code"].startswith("PROLINE")
+    assert body["category"] == "开票"
     assert body["sla_reply_hours"] == 8
 
     r2 = app_client.get("/api/admin/product-lines")
-    assert any(p["code"] == "cloud-new" for p in r2.json())
+    assert any(p["code"] == body["code"] for p in r2.json())
 
 
-def test_post_product_line_duplicate_409(app_client, db_session) -> None:
-    from app.models import ProductLine, User
+def test_post_product_line_invalid_category_422(app_client, db_session) -> None:
+    """0031：code 自动生成不再有重复冲突；改测 category 非法值返回 422。"""
+    from app.models import User
 
     db_session.add(User(id=1, feishu_uid="ou_admin", name="admin", role="admin"))
-    db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
     db_session.commit()
 
     r = app_client.post(
         "/api/admin/product-lines",
         headers=_admin_bearer(),
-        json={"code": "cloud-erp", "name": "Cloud ERP"},
+        json={"name": "Cloud X", "category": "不存在的分类"},
     )
-    assert r.status_code == 409
+    assert r.status_code == 422
+    assert "category" in r.text
 
 
 def test_post_product_line_requires_admin(app_client, db_session) -> None:
@@ -225,7 +228,8 @@ def test_delete_product_line_with_modules_409(app_client, db_session) -> None:
 
     r = app_client.delete("/api/admin/product-lines/busy-pl", headers=_admin_bearer())
     assert r.status_code == 409
-    assert "modules" in r.json()["detail"].lower()
+    # 0031 改造后错误消息中文化：产品线「X」下还有模块，请先删除所有模块
+    assert "模块" in r.json()["detail"]
 
 
 def test_delete_product_line_404(app_client, db_session) -> None:

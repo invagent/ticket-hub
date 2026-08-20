@@ -108,8 +108,13 @@ function mergeAttachments(
       proxied: true,
     });
   }
-  // 2) source_payload 解析兜底（历史工单未进表的）
-  for (const a of extractAttachments(payload)) add(a);
+  // 2) source_payload 解析兜底——仅当后端表【完全没有】附件行时才用（真·历史工单未进表）。
+  // 否则会与表来源重复：表来源 url 是代理端点 download_url，兜底 url 是原始 url（KSM 的
+  // accessory!download.action?id=），二者不同 → seen 去重判不出 → 同一附件显示两次
+  // （一次正常名、一次 accessory 名）。表已有附件即视为权威，不再刨 source_payload。
+  if (out.length === 0) {
+    for (const a of extractAttachments(payload)) add(a);
+  }
   return out;
 }
 
