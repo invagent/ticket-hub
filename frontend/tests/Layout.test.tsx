@@ -35,14 +35,14 @@ describe("Layout", () => {
     expect(n.getByText("工作台")).toBeInTheDocument();
     expect(n.getByText("工单任务表")).toBeInTheDocument();
     expect(n.getByText("反思诊断")).toBeInTheDocument();
-    expect(n.getByText("管理")).toBeInTheDocument();
+    expect(n.getByText("系统基础配置")).toBeInTheDocument();
   });
 
   it("knowledge_op sees 反思诊断 but not 管理 (ADR-0016 P5)", () => {
     renderAs("knowledge_op");
     const n = nav();
     expect(n.getByText("反思诊断")).toBeInTheDocument();
-    expect(n.queryByText("管理")).not.toBeInTheDocument();
+    expect(n.queryByText("系统基础配置")).not.toBeInTheDocument();
   });
 
   it("assignee sees neither 反思诊断 nor 管理", () => {
@@ -50,6 +50,6 @@ describe("Layout", () => {
     const n = nav();
     expect(n.getByText("工作台")).toBeInTheDocument();
     expect(n.queryByText("反思诊断")).not.toBeInTheDocument();
-    expect(n.queryByText("管理")).not.toBeInTheDocument();
+    expect(n.queryByText("系统基础配置")).not.toBeInTheDocument();
   });
 });
