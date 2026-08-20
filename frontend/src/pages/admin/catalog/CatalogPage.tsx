@@ -314,6 +314,25 @@ function ProductLineModal({
   onChanged: () => void;
   onClose: () => void;
 }) {
+  const [rowErrs, setRowErrs] = useState<Record<string, string>>({});
+  type PLFilterOp = "eq" | "neq" | "contains" | "not_contains";
+  type PLFilter = { op: PLFilterOp; value: string };
+  const [plFilters, setPlFilters] = useState<Partial<Record<string, PLFilter>>>({
+    status: { op: "eq", value: "启用" },
+  });
+  const [openPlFilter, setOpenPlFilter] = useState<string | null>(null);
+  const plFilterRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!openPlFilter) return;
+    function onDoc(e: MouseEvent) {
+      const el = plFilterRefs.current[openPlFilter!];
+      if (el && !el.contains(e.target as Node)) setOpenPlFilter(null);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [openPlFilter]);
+
   const del = useMutation({
     mutationFn: (code: string) =>
       rawRequest(`/api/admin/product-lines/${encodeURIComponent(code)}`, { method: "DELETE" }),
@@ -327,104 +346,184 @@ function ProductLineModal({
       }),
     onSuccess: onChanged,
   });
-  const [opErr, setOpErr] = useState<string | null>(null);
+
+  function setErr(code: string, msg: string) {
+    setRowErrs((p) => ({ ...p, [code]: msg }));
+  }
+  function clearErr(code: string) {
+    setRowErrs((p) => { const n = { ...p }; delete n[code]; return n; });
+  }
 
   function fmtDate(s: string | null) {
     if (!s) return "—";
-    return new Date(s).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const d = new Date(s);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function getCellStr(pl: ProductLine, key: string): string {
+    switch (key) {
+      case "code": return pl.code ?? "";
+      case "name": return pl.name ?? "";
+      case "category": return pl.category ?? "";
+      case "status": return pl.is_active ? "启用" : "禁用";
+      case "created_at": return fmtDate(pl.created_at);
+      case "module_count": return String(pl.module_count);
+      default: return "";
+    }
+  }
+
+  function matchFilter(val: string, f: PLFilter): boolean {
+    const v = f.value.toLowerCase();
+    const c = val.toLowerCase();
+    if (!v) return true;
+    switch (f.op) {
+      case "eq": return c === v;
+      case "neq": return c !== v;
+      case "contains": return c.includes(v);
+      case "not_contains": return !c.includes(v);
+    }
+  }
+
+  const sorted = [...productLines].sort((a, b) => {
+    if (!a.created_at) return 1;
+    if (!b.created_at) return -1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  const filtered = sorted.filter((pl) =>
+    Object.entries(plFilters).every(([key, f]) => {
+      if (!f || !f.value) return true;
+      return matchFilter(getCellStr(pl, key), f);
+    })
+  );
+
+  const PL_COLS: { key: string; label: string }[] = [
+    { key: "code", label: "产品线编码" },
+    { key: "name", label: "产品线" },
+    { key: "category", label: "产品线分类" },
+    { key: "status", label: "状态" },
+    { key: "created_at", label: "添加时间" },
+    { key: "module_count", label: "包含模块数" },
+  ];
+
+  const PL_OP_LABELS: Record<PLFilterOp, string> = { eq: "等于", neq: "不等于", contains: "包含", not_contains: "不包含" };
+
+  function PLFilterPopover({ colKey, onClose: closePopover }: { colKey: string; onClose: () => void }) {
+    const cur = plFilters[colKey];
+    const [op, setOp] = useState<PLFilterOp>(cur?.op ?? "contains");
+    const [value, setValue] = useState(cur?.value ?? "");
+    return (
+      <div className="absolute z-[60] top-full left-0 mt-1 bg-white border border-hub-border rounded-[8px] shadow-lg p-3 space-y-2" style={{ width: 360 }}>
+        <div className="flex gap-2">
+          <select value={op} onChange={(e) => setOp(e.target.value as PLFilterOp)}
+            className="text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none flex-none" style={{ width: 90 }}>
+            {(Object.keys(PL_OP_LABELS) as PLFilterOp[]).map((k) => <option key={k} value={k}>{PL_OP_LABELS[k]}</option>)}
+          </select>
+          <input autoFocus value={value} onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { setPlFilters((p) => ({ ...p, [colKey]: { op, value } })); closePopover(); }
+              if (e.key === "Escape") closePopover();
+            }}
+            placeholder="筛选值" className="text-[12px] px-2 py-1 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal flex-none" style={{ width: 260 }} />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setPlFilters((p) => ({ ...p, [colKey]: { op, value } })); closePopover(); }}
+            className="flex-1 py-1 text-[11.5px] bg-hub-teal text-white rounded-md font-semibold hover:brightness-95">确认</button>
+          <button onClick={() => { setPlFilters((p) => { const n = { ...p }; delete n[colKey]; return n; }); closePopover(); }}
+            className="flex-1 py-1 text-[11.5px] border border-hub-border rounded-md text-hub-textSecondary hover:bg-hub-panel">清除</button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-[12px] shadow-xl w-[900px] max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-[12px] shadow-xl w-[980px] max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-hub-border">
-          <span className="font-bold text-[14px]">产品线列表</span>
-          <button onClick={onClose} className="text-hub-textMuted hover:text-hub-rose text-lg leading-none">×</button>
+          <span className="font-bold text-[14px]">
+            产品线列表
+            <span className="ml-2 text-[11.5px] font-normal text-hub-textFaint">
+              {filtered.length !== sorted.length ? `${filtered.length} / ${sorted.length} 条` : `共 ${sorted.length} 条`}
+            </span>
+          </span>
+          <div className="flex items-center gap-3">
+            {Object.values(plFilters).some((f) => f?.value) && (
+              <button onClick={() => setPlFilters({ status: { op: "eq", value: "启用" } })}
+                className="text-[11.5px] text-hub-rose hover:underline">重置筛选</button>
+            )}
+            <button onClick={onClose} className="text-hub-textMuted hover:text-hub-rose text-lg leading-none">×</button>
+          </div>
         </div>
         <div className="overflow-auto flex-1 px-5 py-4">
-          {opErr && <p className="text-[11px] text-hub-rose mb-2">{opErr}</p>}
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="bg-hub-panel text-[10.5px] font-bold text-hub-textMuted tracking-[.4px]">
-                <th className="text-left p-2.5 border-b border-hub-border">产品线编码</th>
-                <th className="text-left p-2.5 border-b border-hub-border">产品线</th>
-                <th className="text-left p-2.5 border-b border-hub-border">产品线分类</th>
-                <th className="text-left p-2.5 border-b border-hub-border">状态</th>
-                <th className="text-left p-2.5 border-b border-hub-border">添加时间</th>
-                <th className="text-left p-2.5 border-b border-hub-border">包含模块数</th>
-                <th className="text-right p-2.5 border-b border-hub-border">操作</th>
+                {PL_COLS.map((col) => (
+                  <th key={col.key} className="text-left p-2.5 border-b border-hub-border">
+                    <div ref={(el) => { plFilterRefs.current[col.key] = el; }} className="relative flex items-center gap-1 group whitespace-nowrap">
+                      {col.label}
+                      <button
+                        onClick={() => setOpenPlFilter(openPlFilter === col.key ? null : col.key)}
+                        className={`ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${plFilters[col.key]?.value ? "opacity-100 text-hub-teal" : "text-hub-textFaint"}`}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M1 2h10l-4 5v3l-2-1V7L1 2z"/></svg>
+                      </button>
+                      {openPlFilter === col.key && (
+                        <PLFilterPopover colKey={col.key} onClose={() => setOpenPlFilter(null)} />
+                      )}
+                    </div>
+                  </th>
+                ))}
+                <th className="text-right p-2.5 border-b border-hub-border whitespace-nowrap">操作</th>
               </tr>
             </thead>
             <tbody>
-              {productLines.length === 0 ? (
-                <tr><td colSpan={7} className="p-4 text-center text-xs text-hub-textFaint">暂无产品线</td></tr>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={7} className="p-4 text-center text-xs text-hub-textFaint">无匹配数据</td></tr>
               ) : (
-                productLines.map((pl) => (
-                  <tr key={pl.code} className="border-b border-hub-borderLight hover:bg-hub-panel">
-                    <td className="p-2.5 font-mono text-[11px] text-hub-textMuted">{pl.code}</td>
-                    <td className="p-2.5 font-semibold">{pl.name}</td>
-                    <td className="p-2.5">
-                      {pl.category ? (
-                        <span className="px-2 py-0.5 rounded-full bg-hub-teal-light text-hub-teal-deep text-[10.5px] font-semibold border border-hub-teal-border">
-                          {pl.category}
+                filtered.map((pl) => (
+                  <>
+                    <tr key={pl.code} className="border-b border-hub-borderLight hover:bg-hub-panel/50">
+                      <td className="p-2.5 font-mono text-[11px] text-hub-textMuted">{pl.code}</td>
+                      <td className="p-2.5 font-semibold">{pl.name}</td>
+                      <td className="p-2.5">
+                        {pl.category ? (
+                          <span className="px-2 py-0.5 rounded-full bg-hub-teal-light text-hub-teal-deep text-[10.5px] font-semibold border border-hub-teal-border">{pl.category}</span>
+                        ) : "—"}
+                      </td>
+                      <td className="p-2.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${pl.is_active ? "bg-hub-green-light text-hub-green border-hub-green-border" : "bg-hub-neutral-light text-hub-textMuted border-hub-border"}`}>
+                          {pl.is_active ? "启用" : "禁用"}
                         </span>
-                      ) : "—"}
-                    </td>
-                    <td className="p-2.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                        pl.is_active
-                          ? "bg-hub-green-light text-hub-green border-hub-green-border"
-                          : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
-                      }`}>
-                        {pl.is_active ? "启用" : "禁用"}
-                      </span>
-                    </td>
-                    <td className="p-2.5 text-hub-textFaint font-mono text-[11px]">{fmtDate(pl.created_at)}</td>
-                    <td className="p-2.5 text-center">
-                      <span className={`font-bold ${pl.module_count > 0 ? "text-hub-teal" : "text-hub-textFaint"}`}>
-                        {pl.module_count}
-                      </span>
-                    </td>
-                    <td className="p-2.5 text-right whitespace-nowrap">
-                      <span className="flex items-center justify-end gap-2 text-[11.5px]">
-                        {/* 禁用/启用 */}
-                        <button
-                          disabled={toggleActive.isPending}
-                          onClick={() => {
-                            setOpErr(null);
-                            toggleActive.mutate(
-                              { code: pl.code, is_active: !pl.is_active },
-                              { onError: (e) => setOpErr(e instanceof ApiError ? `${e.status} ${e.message}` : String(e)) }
-                            );
-                          }}
-                          className={`font-semibold disabled:opacity-50 ${pl.is_active ? "text-orange-500 hover:text-orange-600" : "text-hub-green hover:text-green-700"}`}
-                        >
-                          {pl.is_active ? "禁用" : "启用"}
-                        </button>
-                        <span className="text-hub-border">|</span>
-                        {/* 删除：模块数为0才可删 */}
-                        <button
-                          disabled={del.isPending || pl.module_count > 0}
-                          onClick={() => {
-                            setOpErr(null);
-                            if (confirm(`确认删除产品线「${pl.name}」？此操作不可恢复。`)) {
-                              del.mutate(pl.code, {
-                                onError: (e) => {
-                                  if (e instanceof ApiError && e.status === 409)
-                                    setOpErr("该产品线仍有关联数据，无法删除");
-                                  else setOpErr(String(e));
-                                },
-                              });
-                            }
-                          }}
-                          title={pl.module_count > 0 ? `还有 ${pl.module_count} 个模块，请先删除模块` : "删除产品线"}
-                          className="text-hub-rose hover:underline disabled:opacity-30 disabled:cursor-not-allowed font-semibold"
-                        >
-                          删除
-                        </button>
-                      </span>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="p-2.5 text-hub-textFaint font-mono text-[11px]">{fmtDate(pl.created_at)}</td>
+                      <td className="p-2.5 text-center">
+                        <span className={`font-bold ${pl.module_count > 0 ? "text-hub-teal" : "text-hub-textFaint"}`}>{pl.module_count}</span>
+                      </td>
+                      <td className="p-2.5 text-right whitespace-nowrap">
+                        <span className="flex items-center justify-end gap-2 text-[11.5px]">
+                          <button disabled={toggleActive.isPending}
+                            onClick={() => { clearErr(pl.code); toggleActive.mutate({ code: pl.code, is_active: !pl.is_active }, { onError: (e) => setErr(pl.code, e instanceof ApiError ? e.message : String(e)) }); }}
+                            className={`font-semibold disabled:opacity-50 ${pl.is_active ? "text-orange-500 hover:text-orange-600" : "text-hub-green hover:text-green-700"}`}>
+                            {pl.is_active ? "禁用" : "启用"}
+                          </button>
+                          <span className="text-hub-border">|</span>
+                          <button disabled={del.isPending || pl.module_count > 0}
+                            onClick={() => { clearErr(pl.code); if (confirm(`确认删除产品线「${pl.name}」？此操作不可恢复。`)) { del.mutate(pl.code, { onError: (e) => setErr(pl.code, e instanceof ApiError ? e.message : String(e)) }); } }}
+                            title={pl.module_count > 0 ? `还有 ${pl.module_count} 个模块，请先删除模块` : "删除产品线"}
+                            className="text-hub-rose hover:underline disabled:opacity-30 disabled:cursor-not-allowed font-semibold">
+                            删除
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                    {rowErrs[pl.code] && (
+                      <tr key={`${pl.code}-err`} className="bg-red-50">
+                        <td colSpan={7} className="px-3 py-1.5 text-[11px] text-hub-rose">⚠️ {rowErrs[pl.code]}</td>
+                      </tr>
+                    )}
+                  </>
                 ))
               )}
             </tbody>

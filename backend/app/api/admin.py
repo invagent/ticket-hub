@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_admin
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import Module, ProductLine, Source
+from app.models import Module, ProductLine, Source, Ticket
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -167,7 +167,16 @@ def delete_product_line(
     if has_modules is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"product_line {code} still has modules; delete those first",
+            detail=f"产品线「{pl.name}」下还有模块，请先删除所有模块",
+        )
+    # check tickets reference
+    ticket_count = db.execute(
+        select(func.count()).select_from(Ticket).where(Ticket.product_line_code == code)
+    ).scalar() or 0
+    if ticket_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"产品线「{pl.name}」关联了 {ticket_count} 条工单，无法删除",
         )
     db.delete(pl)
     try:
@@ -176,10 +185,7 @@ def delete_product_line(
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"product_line {code} is referenced by existing scopes / tickets; "
-                "remove those before deleting"
-            ),
+            detail=f"产品线「{pl.name}」仍有关联数据，无法删除",
         ) from e
     logger.info("admin_product_line_deleted", code=code, by=admin.user_id)
     return Response(status_code=204)
