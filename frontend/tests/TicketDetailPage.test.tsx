@@ -49,8 +49,9 @@ describe("TicketDetailPage", () => {
         HttpResponse.json({
           id: 100,
           short_code: "TKT-100",
-          source_code: "ksm",
-          source_ticket_id: "ksm-1",
+          // 通用时间轴（status+relink 合并）用非 KSM 源测；KSM 工单走 handleSteps 另一套。
+          source_code: "zhichi",
+          source_ticket_id: "z-1",
           type: "Raw",
           status: "linked",
           title: "应付审核报错",
@@ -116,11 +117,12 @@ describe("TicketDetailPage", () => {
     // 处理节点时间轴（工单调整 V1.0 重排）
     await screen.findByText("处理节点");
 
-    // 倒序：3 个历史事件全部渲染为节点行
-    // status 事件渲染 "from → to" 文案
-    expect(await screen.findByText(/received → linked/)).toBeInTheDocument();
+    // 倒序：3 个历史事件全部渲染为节点行。
+    // 注意：同一事件现在同时出现在「处理节点」时间轴和「工单操作记录」表格，故用 getAllByText。
+    // status 事件渲染 "from → to" 文案（中文化后为 已接收 → 已关联）
+    expect((await screen.findAllByText(/received → linked|已接收 → 已关联/)).length).toBeGreaterThanOrEqual(1);
     // hub_issue_link 事件渲染 "关联建立 HUB-10"
-    expect(screen.getByText(/关联建立 HUB-10/)).toBeInTheDocument();
+    expect(screen.getAllByText(/关联建立 HUB-10/).length).toBeGreaterThanOrEqual(1);
     // 处理人（changed_by）渲染
     expect(screen.getAllByText(/处理人：/).length).toBeGreaterThanOrEqual(1);
   });
@@ -205,8 +207,8 @@ describe("TicketDetailPage", () => {
         HttpResponse.json({
           id: 600,
           short_code: "TKT-600",
-          source_code: "ksm",
-          source_ticket_id: "ksm-600",
+          source_code: "zhichi",
+          source_ticket_id: "z-600",
           type: "Raw",
           status: "done", // 终态
           title: "已完成工单",
@@ -241,8 +243,8 @@ describe("TicketDetailPage", () => {
         HttpResponse.json({
           id: 610,
           short_code: "TKT-610",
-          source_code: "ksm",
-          source_ticket_id: "ksm-610",
+          source_code: "zhichi",
+          source_ticket_id: "z-610",
           type: "Raw",
           status: "in_progress", // 非终态 → 当前节点可编辑
           title: "进行中工单",
@@ -797,7 +799,9 @@ describe("TicketDetailPage", () => {
 
   it("点退回转单在时间轴插入本地占位节点", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubOperationTicket(351);
+    // 本地占位节点是本系统时间轴（VerticalTimeline）能力，KSM 工单走 handleSteps 无此逻辑，
+    // 故用非 KSM 源测通用时间轴。
+    stubOperationTicket(351, { source_code: "zhichi", source_ticket_id: "z-351" });
     server.use(
       http.get("*/api/hub-issues/88", () =>
         HttpResponse.json({

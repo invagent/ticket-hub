@@ -2492,6 +2492,14 @@
             "title": "Items",
             "type": "array"
           },
+          "ksm_nodes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KsmNode"
+            },
+            "title": "Ksm Nodes",
+            "type": "array"
+          },
           "ticket_id": {
             "title": "Ticket Id",
             "type": "integer"
@@ -3837,6 +3845,54 @@
         "title": "KpiOut",
         "type": "object"
       },
+      "KsmNode": {
+        "description": "一个 KSM 处理节点（前端处理节点时间轴用）。",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "handled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handled At"
+          },
+          "handler_name": {
+            "title": "Handler Name",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_name",
+          "handler_name",
+          "handled_at",
+          "content",
+          "done"
+        ],
+        "title": "KsmNode",
+        "type": "object"
+      },
       "LinearSyncReportOut": {
         "properties": {
           "cleared_count": {
@@ -3997,6 +4053,17 @@
       },
       "ModuleIn": {
         "properties": {
+          "dev_owners": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owners"
+          },
           "name": {
             "maxLength": 128,
             "minLength": 1,
@@ -4008,6 +4075,17 @@
             "minLength": 1,
             "title": "Product Line Code",
             "type": "string"
+          },
+          "product_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Owner"
           }
         },
         "required": [
@@ -4024,6 +4102,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "dev_owners": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owners"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -4036,9 +4125,70 @@
             "title": "Name",
             "type": "string"
           },
+          "product_line_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Category"
+          },
           "product_line_code": {
             "title": "Product Line Code",
             "type": "string"
+          },
+          "product_line_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Name"
+          },
+          "product_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Owner"
+          },
+          "status": {
+            "default": "enabled",
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           }
         },
         "required": [
@@ -4049,6 +4199,56 @@
           "created_at"
         ],
         "title": "ModuleOut",
+        "type": "object"
+      },
+      "ModulePatch": {
+        "properties": {
+          "dev_owners": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owners"
+          },
+          "product_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Owner"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "title": "ModulePatch",
         "type": "object"
       },
       "ModuleScopeIn": {
@@ -4561,12 +4761,12 @@
         "type": "object"
       },
       "ProductLineIn": {
-        "description": "POST body for /api/admin/product-lines.",
+        "description": "POST body for /api/admin/product-lines. code is auto-generated.",
         "properties": {
-          "code": {
+          "category": {
             "maxLength": 64,
             "minLength": 1,
-            "title": "Code",
+            "title": "Category",
             "type": "string"
           },
           "name": {
@@ -4603,17 +4803,39 @@
           }
         },
         "required": [
-          "code",
-          "name"
+          "name",
+          "category"
         ],
         "title": "ProductLineIn",
         "type": "object"
       },
       "ProductLineOut": {
         "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           },
           "id": {
             "title": "Id",
@@ -4622,6 +4844,11 @@
           "is_active": {
             "title": "Is Active",
             "type": "boolean"
+          },
+          "module_count": {
+            "default": 0,
+            "title": "Module Count",
+            "type": "integer"
           },
           "name": {
             "title": "Name",
@@ -4660,8 +4887,19 @@
         "type": "object"
       },
       "ProductLinePatch": {
-        "description": "PATCH body for /api/admin/product-lines/{code}.\n\nNULL on SLA fields clears the override (falls back to SLAWatcher\ndefaults). Pass `0` is rejected — use `null` to clear.",
+        "description": "PATCH body for /api/admin/product-lines/{code}.",
         "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
           "is_active": {
             "anyOf": [
               {
@@ -9030,6 +9268,56 @@
         "tags": [
           "admin-catalog"
         ]
+      },
+      "patch": {
+        "operationId": "patch_module_api_admin_modules__module_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModulePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Module",
+        "tags": [
+          "admin-catalog"
+        ]
       }
     },
     "/api/admin/product-lines": {
@@ -9057,7 +9345,7 @@
         ]
       },
       "post": {
-        "description": "Create a new product_line. UNIQUE on `code` → 409 on duplicate.",
+        "description": "Create a new product_line with auto-generated PROLINE code.",
         "operationId": "add_product_line_api_admin_product_lines_post",
         "requestBody": {
           "content": {
@@ -9099,7 +9387,6 @@
     },
     "/api/admin/product-lines/{code}": {
       "delete": {
-        "description": "Hard delete. Refuses if the product_line still has modules registered\n(catalog FK) — admin must clean up first to prevent orphaned scopes /\ntickets pointing at a vanished product_line.",
         "operationId": "delete_product_line_api_admin_product_lines__code__delete",
         "parameters": [
           {
@@ -9133,7 +9420,6 @@
         ]
       },
       "patch": {
-        "description": "Update SLA overrides (and is_active) for a product line.\n\nSend `null` to a field to clear the override (revert to SLAWatcher\nbuiltin default).",
         "operationId": "patch_product_line_api_admin_product_lines__code__patch",
         "parameters": [
           {

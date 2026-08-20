@@ -26,6 +26,7 @@ from app.api.history_labels import (
     humanize_status,
     load_user_names,
 )
+from app.api.ksm_nodes import KsmNode, parse_ksm_nodes
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.storage.minio_store import (
@@ -533,6 +534,9 @@ class HistoryEvent(BaseModel):
 class HistoryResponse(BaseModel):
     ticket_id: int
     items: list[HistoryEvent]
+    # KSM 工单的源系统流转节点（handleSteps，按时间升序）；非 KSM / 无数据为空。
+    # 前端「处理节点」区块：KSM 工单渲染此列表，非 KSM 从 items 映射接收/处理/关闭。
+    ksm_nodes: list[KsmNode] = []
 
 
 @router.get("/{ticket_id}/history", response_model=HistoryResponse)
@@ -587,4 +591,6 @@ def get_ticket_history(
     # Stable merge sort: status and relink with the same timestamp keep
     # status-first (status is the cause; relink is often the effect).
     events.sort(key=lambda e: (e.occurred_at, 0 if e.kind == "status" else 1))
-    return HistoryResponse(ticket_id=ticket_id, items=events)
+    # KSM 工单：解析源系统流转节点（handleSteps）供前端处理节点区块展示。
+    ksm_nodes = parse_ksm_nodes(ticket.source_payload) if ticket.source_code == "ksm" else []
+    return HistoryResponse(ticket_id=ticket_id, items=events, ksm_nodes=ksm_nodes)

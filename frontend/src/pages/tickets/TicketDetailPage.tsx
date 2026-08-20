@@ -385,10 +385,11 @@ export function TicketDetailPage() {
           </Card>
 
 
-          {/* 5. 工单处理容器：左=处理节点时间轴，右=节点处理详情 */}
+          {/* 5. 工单处理容器：左=处理节点（KSM 展示源系统 handleSteps 流转；非 KSM 走本系统时间轴），
+                右=节点处理详情（编辑说明/回复/转派等能力，两类工单共用） */}
           <Card title="工单处理">
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-4">
-              {/* 5.1 左：处理节点时间轴（倒序，最新在最上；固定高度约 4 节点，超出滚动） */}
+              {/* 5.1 左：处理节点时间轴 */}
               <div>
                 <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px] mb-2">
                   处理节点
@@ -401,7 +402,11 @@ export function TicketDetailPage() {
                     时间线加载失败：{String(history.error)}
                   </p>
                 )}
-                {(() => {
+                {/* KSM 工单：源系统流转节点（handleSteps）；非 KSM：本系统 status_history 时间轴 */}
+                {history.data && d.source_code === "ksm" ? (
+                  <KsmProcessNodes nodes={history.data.ksm_nodes ?? []} />
+                ) : (
+                (() => {
                   if (!history.data) return null;
                   // 后端历史（倒序，最新在上）+ 前端本地占位节点（退回/拆分，插最上）
                   const backendEvents = [...history.data.items].reverse();
@@ -432,7 +437,8 @@ export function TicketDetailPage() {
                       onSelect={setNodeIdx}
                     />
                   );
-                })()}
+                })()
+                )}
               </div>
 
               {/* 5.2 右：节点处理详情 */}
@@ -705,7 +711,7 @@ export function TicketDetailPage() {
           {/* Phase 1 知识反哺：仅 ai_cs escalation 工单 + 主管可见（组件内部自判） */}
           <KnowledgeReflectPanel ticketId={id} />
 
-          {/* 6. 工单操作记录容器：操作时间/操作人/操作内容/处理状态/处理结果 → 占位，待后端支持 */}
+          {/* 6. 工单操作记录：每次操作的时间/人/内容/状态变更/结果，取自 status_history（倒序，最新在上） */}
           <Card title="工单操作记录">
             <div className="overflow-x-auto border border-hub-border rounded-[7px]">
               <table className="min-w-full text-[11.5px]">
@@ -719,11 +725,53 @@ export function TicketDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={5} className="px-2.5 py-3 text-center text-hub-textFaint">
-                      暂无操作记录（agent_decisions 审计 — 待后端支持）
-                    </td>
-                  </tr>
+                  {(() => {
+                    const rows = history.data ? [...history.data.items].reverse() : [];
+                    if (rows.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="px-2.5 py-3 text-center text-hub-textFaint">
+                            {history.isLoading ? "加载中…" : "暂无操作记录"}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    // 处理结果：仅终态事件展示工单最终答复/关单结论（其余留 —）。
+                    const finalResult = d.cached_reply_content || hub.data?.reply_content || "";
+                    return rows.map((ev, i) => {
+                      const isStatus = ev.kind === "status";
+                      const content = isStatus
+                        ? (ev.reason_display ??
+                          ev.reason ??
+                          (ev.from_status_zh || ev.to_status_zh
+                            ? `${ev.from_status_zh ?? "∅"} → ${ev.to_status_zh ?? ""}`
+                            : "—"))
+                        : ev.effective_to != null
+                          ? `关联关闭 HUB-${ev.hub_issue_id}`
+                          : `关联建立 HUB-${ev.hub_issue_id}`;
+                      const statusZh = ev.to_status_zh ?? ev.to_status ?? "—";
+                      const isTerminal = ["closed", "resolved", "done"].includes(
+                        ev.to_status ?? "",
+                      );
+                      return (
+                        <tr key={i} className="border-t border-hub-borderLight align-top">
+                          <td className="px-2.5 py-1.5 whitespace-nowrap font-mono text-hub-textMuted">
+                            {ev.occurred_at ? fmtDateTime(ev.occurred_at) : "—"}
+                          </td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap">
+                            {isStatus ? (ev.actor_display ?? ev.changed_by ?? "—") : "系统"}
+                          </td>
+                          <td className="px-2.5 py-1.5 max-w-[360px] break-words">{content}</td>
+                          <td className="px-2.5 py-1.5 whitespace-nowrap">
+                            {isStatus ? statusZh : "—"}
+                          </td>
+                          <td className="px-2.5 py-1.5 max-w-[280px] break-words text-hub-textMuted">
+                            {isTerminal && finalResult ? finalResult : "—"}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1113,6 +1161,94 @@ function VerticalTimeline({
             {/* 连接符：非末节点显示居中 ▾ */}
             {idx < events.length - 1 && (
               <div className="text-center text-hub-textFaint text-[11px] leading-none py-1" aria-hidden>
+                ▾
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ---- KSM 处理节点（源系统 handleSteps 流转，只读；左时间轴 + 右节点详情）----------
+// KSM 工单的处理节点展示 KSM 侧各流转节点（受理/协同处理/…），每节点带处理人 + 处理内容
+// （dealopinion）。与本系统操作记录（底部表格）分离：这里是源系统怎么流转的只读视图。
+type KsmNodeT = NonNullable<
+  paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["ksm_nodes"]
+>[number];
+
+function KsmProcessNodes({ nodes }: { nodes: KsmNodeT[] }) {
+  // 默认展开最后一个（最新流转节点）。点击节点展开/收起，看该节点处理内容（dealopinion）。
+  const [sel, setSel] = useState(nodes.length > 0 ? nodes.length - 1 : 0);
+  if (nodes.length === 0) {
+    return <p className="text-[11px] text-hub-textFaint">暂无处理节点</p>;
+  }
+  return (
+    <ol className="overflow-y-auto pr-1 m-0 list-none p-0" style={{ maxHeight: 460 }}>
+      {nodes.map((n, idx) => {
+        const isSel = idx === sel;
+        const isLast = idx === nodes.length - 1;
+        return (
+          <li key={idx}>
+            <div
+              onClick={() => setSel(isSel ? -1 : idx)}
+              className={
+                "relative flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors " +
+                (isSel
+                  ? "border-hub-teal-border bg-hub-teal-light"
+                  : "border-hub-border bg-white hover:bg-hub-panel")
+              }
+            >
+              {isSel && (
+                <span
+                  className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-hub-teal"
+                  aria-hidden
+                />
+              )}
+              <span
+                className={
+                  "mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
+                  (n.done
+                    ? "bg-hub-green text-white border-hub-green"
+                    : isLast
+                      ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
+                      : "bg-hub-neutral text-white border-hub-neutral")
+                }
+              >
+                {n.done ? "✓" : ""}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={
+                      "text-[12px] truncate " +
+                      (isSel ? "font-semibold text-hub-teal-deep" : "text-hub-text font-medium")
+                    }
+                    title={n.node_name}
+                  >
+                    {n.node_name}
+                  </span>
+                  <span className="flex-none text-[10px] text-hub-textFaint">
+                    {n.done ? "处理完成" : "处理中"}
+                  </span>
+                </div>
+                <div className="text-[10.5px] text-hub-textMuted font-mono">{n.handled_at ?? "—"}</div>
+                <div className="text-[10.5px] text-hub-textFaint">处理人：{n.handler_name}</div>
+                {/* 展开：该节点处理内容（dealopinion） */}
+                {isSel && (
+                  <div className="mt-2 text-[12px] text-hub-text whitespace-pre-wrap break-words bg-white border border-hub-border rounded-[6px] px-2.5 py-2">
+                    <span className="text-[10.5px] font-bold text-hub-textMuted">处理内容</span>
+                    <div className="mt-1">{n.content ?? "（无处理内容）"}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+            {idx < nodes.length - 1 && (
+              <div
+                className="text-center text-hub-textFaint text-[11px] leading-none py-1"
+                aria-hidden
+              >
                 ▾
               </div>
             )}

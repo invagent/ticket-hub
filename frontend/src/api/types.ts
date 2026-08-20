@@ -212,7 +212,8 @@ export interface paths {
         delete: operations["delete_module_api_admin_modules__module_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Module */
+        patch: operations["patch_module_api_admin_modules__module_id__patch"];
         trace?: never;
     };
     "/api/admin/product-lines": {
@@ -227,7 +228,7 @@ export interface paths {
         put?: never;
         /**
          * Add Product Line
-         * @description Create a new product_line. UNIQUE on `code` → 409 on duplicate.
+         * @description Create a new product_line with auto-generated PROLINE code.
          */
         post: operations["add_product_line_api_admin_product_lines_post"];
         delete?: never;
@@ -246,22 +247,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete Product Line
-         * @description Hard delete. Refuses if the product_line still has modules registered
-         *     (catalog FK) — admin must clean up first to prevent orphaned scopes /
-         *     tickets pointing at a vanished product_line.
-         */
+        /** Delete Product Line */
         delete: operations["delete_product_line_api_admin_product_lines__code__delete"];
         options?: never;
         head?: never;
-        /**
-         * Patch Product Line
-         * @description Update SLA overrides (and is_active) for a product line.
-         *
-         *     Send `null` to a field to clear the override (revert to SLAWatcher
-         *     builtin default).
-         */
+        /** Patch Product Line */
         patch: operations["patch_product_line_api_admin_product_lines__code__patch"];
         trace?: never;
     };
@@ -3180,6 +3170,11 @@ export interface components {
         HistoryResponse: {
             /** Items */
             items: components["schemas"]["HistoryEvent"][];
+            /**
+             * Ksm Nodes
+             * @default []
+             */
+            ksm_nodes: components["schemas"]["KsmNode"][];
             /** Ticket Id */
             ticket_id: number;
         };
@@ -3571,6 +3566,22 @@ export interface components {
             /** Unassigned Count */
             unassigned_count: number;
         };
+        /**
+         * KsmNode
+         * @description 一个 KSM 处理节点（前端处理节点时间轴用）。
+         */
+        KsmNode: {
+            /** Content */
+            content: string | null;
+            /** Done */
+            done: boolean;
+            /** Handled At */
+            handled_at: string | null;
+            /** Handler Name */
+            handler_name: string;
+            /** Node Name */
+            node_name: string;
+        };
         /** LinearSyncReportOut */
         LinearSyncReportOut: {
             /** Cleared Count */
@@ -3625,10 +3636,14 @@ export interface components {
         };
         /** ModuleIn */
         ModuleIn: {
+            /** Dev Owners */
+            dev_owners?: string | null;
             /** Name */
             name: string;
             /** Product Line Code */
             product_line_code: string;
+            /** Product Owner */
+            product_owner?: string | null;
         };
         /** ModuleOut */
         ModuleOut: {
@@ -3637,14 +3652,42 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Dev Owners */
+            dev_owners?: string | null;
             /** Id */
             id: number;
             /** Is Active */
             is_active: boolean;
             /** Name */
             name: string;
+            /** Product Line Category */
+            product_line_category?: string | null;
             /** Product Line Code */
             product_line_code: string;
+            /** Product Line Name */
+            product_line_name?: string | null;
+            /** Product Owner */
+            product_owner?: string | null;
+            /**
+             * Status
+             * @default enabled
+             */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /** ModulePatch */
+        ModulePatch: {
+            /** Dev Owners */
+            dev_owners?: string | null;
+            /** Product Owner */
+            product_owner?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
         };
         /** ModuleScopeIn */
         ModuleScopeIn: {
@@ -3803,11 +3846,11 @@ export interface components {
         };
         /**
          * ProductLineIn
-         * @description POST body for /api/admin/product-lines.
+         * @description POST body for /api/admin/product-lines. code is auto-generated.
          */
         ProductLineIn: {
-            /** Code */
-            code: string;
+            /** Category */
+            category: string;
             /** Name */
             name: string;
             /** Sla Reply Hours */
@@ -3817,12 +3860,21 @@ export interface components {
         };
         /** ProductLineOut */
         ProductLineOut: {
+            /** Category */
+            category?: string | null;
             /** Code */
             code: string;
+            /** Created At */
+            created_at?: string | null;
             /** Id */
             id: number;
             /** Is Active */
             is_active: boolean;
+            /**
+             * Module Count
+             * @default 0
+             */
+            module_count: number;
             /** Name */
             name: string;
             /** Sla Reply Hours */
@@ -3833,11 +3885,10 @@ export interface components {
         /**
          * ProductLinePatch
          * @description PATCH body for /api/admin/product-lines/{code}.
-         *
-         *     NULL on SLA fields clears the override (falls back to SLAWatcher
-         *     defaults). Pass `0` is rejected — use `null` to clear.
          */
         ProductLinePatch: {
+            /** Category */
+            category?: string | null;
             /** Is Active */
             is_active?: boolean | null;
             /** Name */
@@ -5480,6 +5531,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_module_api_admin_modules__module_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModulePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOut"];
+                };
             };
             /** @description Validation Error */
             422: {
