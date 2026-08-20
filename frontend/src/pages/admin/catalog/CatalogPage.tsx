@@ -12,6 +12,109 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, rawRequest } from "@/api/client";
 import { AdminTabs } from "../AdminTabs";
 
+// ---- 在岗用户 hook -------------------------------------------------------
+
+interface UserOpt { id: number; name: string; }
+
+function useActiveUsers() {
+  return useQuery<UserOpt[]>({
+    queryKey: ["admin", "users", "active-list"],
+    queryFn: () => api.get("/api/admin/users", { active_only: true, limit: 500 }) as Promise<UserOpt[]>,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * OwnerInput — 支持下拉选择在岗用户 + 手动录入，逗号分隔多人。
+ * 下拉选中的名字追加到输入框，输入框可直接手动编辑。
+ */
+function OwnerInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const users = useActiveUsers();
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const opts = (users.data ?? []).filter((u) =>
+    !kw.trim() || u.name.toLowerCase().includes(kw.trim().toLowerCase())
+  );
+
+  function selectUser(name: string) {
+    const parts = value.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!parts.includes(name)) parts.push(name);
+    onChange(parts.join(", "));
+    setKw("");
+  }
+
+  return (
+    <div ref={boxRef} className={`relative ${className ?? ""}`}>
+      <div className="flex gap-1">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] flex-1 min-w-0"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex-none px-2 py-1 border border-hub-border rounded-[7px] bg-hub-panel text-hub-textMuted hover:bg-white text-[11px]"
+          title="从在岗用户中选择"
+        >
+          ▾
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-full bg-white border border-hub-border rounded-[8px] shadow-lg">
+          <div className="p-1.5 border-b border-hub-border">
+            <input
+              autoFocus
+              value={kw}
+              onChange={(e) => setKw(e.target.value)}
+              placeholder="搜索姓名…"
+              className="w-full text-[12px] px-2 py-1 border border-hub-border rounded-[5px] outline-none focus:border-hub-teal"
+            />
+          </div>
+          <div className="max-h-40 overflow-y-auto">
+            {opts.length === 0 ? (
+              <div className="p-2 text-[11.5px] text-hub-textFaint text-center">无匹配</div>
+            ) : (
+              opts.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => { selectUser(u.name); setOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-hub-panel"
+                >
+                  {u.name}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- 常量 ---------------------------------------------------------------
 
 const CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案"];
@@ -374,17 +477,17 @@ function ModuleAddForm({
           onChange={(e) => { setName(e.target.value); setError(null); setDupModules([]); }}
           className={`${INPUT_CLS} flex-1 min-w-0`}
         />
-        <input
-          placeholder="产品责任人（非必填）"
+        <OwnerInput
           value={productOwner}
-          onChange={(e) => setProductOwner(e.target.value)}
-          className={`${INPUT_CLS} flex-1 min-w-0`}
+          onChange={setProductOwner}
+          placeholder="产品责任人（非必填）"
+          className="flex-1 min-w-0"
         />
-        <input
-          placeholder="研发责任人（非必填，多人逗号分隔）"
+        <OwnerInput
           value={devOwners}
-          onChange={(e) => setDevOwners(e.target.value)}
-          className={`${INPUT_CLS} flex-1 min-w-0`}
+          onChange={setDevOwners}
+          placeholder="研发责任人（非必填，多人逗号分隔）"
+          className="flex-1 min-w-0"
         />
         <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start flex-none`}>
           {add.isPending ? "提交中…" : "添加"}
@@ -701,19 +804,19 @@ function ModuleRow({
       </span>
     ),
     product_owner: editing ? (
-      <input
+      <OwnerInput
         value={productOwner}
-        onChange={(e) => setProductOwner(e.target.value)}
-        className="px-1.5 py-1 border border-hub-teal rounded-[5px] text-[12px] outline-none w-full"
+        onChange={setProductOwner}
         placeholder="产品责任人"
+        className="w-full"
       />
     ) : <span className="text-hub-textSecondary">{m.product_owner || "—"}</span>,
     dev_owners: editing ? (
-      <input
+      <OwnerInput
         value={devOwners}
-        onChange={(e) => setDevOwners(e.target.value)}
-        className="px-1.5 py-1 border border-hub-teal rounded-[5px] text-[12px] outline-none w-full"
+        onChange={setDevOwners}
         placeholder="多人逗号分隔"
+        className="w-full"
       />
     ) : <span className="text-hub-textSecondary">{m.dev_owners || "—"}</span>,
     updated_at: <span className="font-mono text-[11px] text-hub-textFaint">{fmtDate(m.updated_at)}</span>,
@@ -745,7 +848,7 @@ function ModuleRow({
           <button
             onClick={toggleStatus}
             disabled={patch.isPending}
-            className="text-hub-textSecondary hover:text-hub-teal disabled:opacity-50"
+            className={`disabled:opacity-50 font-semibold ${m.status === "enabled" ? "text-orange-500 hover:text-orange-600" : "text-hub-green hover:text-green-700"}`}
           >
             {m.status === "enabled" ? "禁用" : "启用"}
           </button>
@@ -761,7 +864,7 @@ function ModuleRow({
           ) : (
             <button
               onClick={() => { setProductOwner(m.product_owner ?? ""); setDevOwners(m.dev_owners ?? ""); setEditing(true); }}
-              className="text-hub-textSecondary hover:text-hub-teal"
+              className="text-blue-500 hover:text-blue-600 font-semibold"
             >
               修改
             </button>
@@ -769,7 +872,7 @@ function ModuleRow({
           {editing && (
             <>
               <span className="text-hub-border">|</span>
-              <button onClick={() => setEditing(false)} className="text-hub-textMuted hover:text-hub-rose">取消</button>
+              <button onClick={() => setEditing(false)} className="text-hub-rose hover:underline font-semibold">取消</button>
             </>
           )}
         </span>
