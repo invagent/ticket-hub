@@ -1867,6 +1867,26 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
     return hub
 
 
+def _get_reclassifiable_hub(db: Session, hub_issue_id: int) -> HubIssue:
+    """reclassify 可作用的 hub：待确认分类（pending_review），或【处理中的 Operation】
+    （运营处理中发现是需求/Bug 需转研发推 Linear）。已答复/已关闭 Operation = 处理完成，
+    不可转（业务规则：已答复不转 Linear）。其他状态一律拒。"""
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
+    if hub.status == "pending_review":
+        return hub
+    if hub.type == "Operation" and hub.op_status == OP_PROCESSING:
+        return hub
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"hub {hub.short_code} status={hub.status!r} op_status={hub.op_status!r} "
+            "不可改判（仅待确认分类、或处理中的运营工单可改判转研发）"
+        ),
+    )
+
+
 @router.post("/confirm-classification", response_model=ClassificationActionResponse)
 def confirm_classification(
     body: ConfirmClassificationBody,
@@ -1960,12 +1980,27 @@ def reclassify(
     from app.services.hub_issues.op_status import set_hub_tickets_handler
 
     settings = get_settings()
-    hub = _get_pending_review_hub(db, body.hub_issue_id)
+    hub = _get_reclassifiable_hub(db, body.hub_issue_id)
     old_type = hub.type
+    old_status = hub.status
+    # 来源：处理中的 Operation 转研发类（非 pending_review）→ 直推 Linear（用户决策），
+    # 不走 pending_linear_review 二次确认。pending_review 原路径行为不变。
+    from_processing_op = old_status != "pending_review" and old_type == "Operation"
     # 中文类型（写进用户可见的 reason，避免英文枚举 Bug_fix 直显）
     old_zh = HUB_TYPE_ZH.get(old_type, old_type)
     new_zh = HUB_TYPE_ZH.get(body.new_type, body.new_type)
     hub.type = body.new_type
+    # Operation → 研发类：清 Operation 专属字段。处理中(processing)本无 reply_content，
+    # 但显式清 op_status/op_handler 等，避免研发类残留运营态（违反字段契约），
+    # 且满足 ck_hub_issues_operation_fields（研发类要求 reply_content/authored_by 为 NULL）。
+    if old_type == "Operation" and body.new_type in ("Bug_fix", "Demand"):
+        hub.reply_content = None
+        hub.reply_authored_by = None
+        hub.reply_updated_at = None
+        hub.op_status = None
+        hub.op_handler = None
+        hub.op_status_changed_at = None
+        hub.op_handler_user_id = None
     # 同步改判所有关联 ticket 的 predicted_type + 写修正审计（human_confirmed）。
     # 一个 hub 可能挂多条 ticket（dedup 合并），全部更新——否则工单列表「AI 分类」
     # 列（读 ticket.predicted_type）仍显示旧类型，与 hub.type 不一致。
@@ -2007,16 +2042,18 @@ def reclassify(
             hub.op_handler_user_id = dr.user_id
             set_hub_tickets_handler(db, hub, dr.user_id)
     elif body.new_type in ("Bug_fix", "Demand"):
-        if settings.gate_linear_push_enabled:
-            hub.status = "pending_linear_review"  # 待处理人确认后推 Linear
-        else:
+        # 处理中 Operation 转研发：直推 Linear（created + 下方 BackgroundTask），不二次确认。
+        # pending_review 原路径：尊重闸门③（gate_linear_push_enabled 开则停 pending_linear_review）。
+        if from_processing_op or not settings.gate_linear_push_enabled:
             hub.status = "created"
+        else:
+            hub.status = "pending_linear_review"  # 待处理人确认后推 Linear
     else:  # Internal_task / Complaint：不推 Linear、不走答复
         hub.status = "created"
     StatusHistoryRepository(db).record(
         entity_type="hub_issue",
         entity_id=hub.id,
-        from_status="pending_review",
+        from_status=old_status,
         to_status=hub.status,
         changed_by=f"user:{user.name}",
         reason=f"改判 {old_zh}→{new_zh}: {body.reason}",
@@ -2030,7 +2067,9 @@ def reclassify(
     )
     db.commit()
 
-    if body.new_type in ("Bug_fix", "Demand") and not settings.gate_linear_push_enabled:
+    # 直推 Linear：处理中 Operation 转研发（用户决策直推），或闸门③关的 pending_review 路径。
+    # status='created' 即已定为直推分支，据此触发（与上方 status 分流一致）。
+    if body.new_type in ("Bug_fix", "Demand") and hub.status == "created":
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
     logger.info(

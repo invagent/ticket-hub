@@ -479,12 +479,18 @@ export function TicketDetailPage() {
                 {/* 明确分类且为运营类：处理建议 + 处理说明 + 处理附件（研发类/内部任务见下方分流） */}
                 {classified && isOperation && (
                 <div className="space-y-5">
+                {/* 处理中(processing)可改判转研发：运营沟通中发现是需求/Bug → 改类型 →「转研发并推送」。
+                    已答复/已关闭不显示（处理完成，不转 Linear）。 */}
+                {opStatus === "processing" && hub.data && (
+                  <TicketAttributesEditor ticket={d} hub={hub.data} />
+                )}
                 <div>
                   <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
                     处理建议
                   </div>
                   {/* 可选，前端记录选择；第一版本默认「正常跟进」；提交动作待后端接口 */}
                   <select
+                    aria-label="处理建议"
                     value={suggestion}
                     onChange={(e) => setSuggestion(e.target.value)}
                     disabled={opDone}
@@ -925,8 +931,32 @@ function TicketAttributesEditor({
     onError: onErr,
   });
 
-  const busy = save.isPending || confirm.isPending || graduate.isPending;
+  // 处理中的 Operation 转研发类并直推 Linear（运营处理中发现是需求/Bug）。
+  // 已答复/已关闭=处理完成，不可转（后端也校验）。改判即清 op 字段 + 直推 Linear。
+  const reclassifyToDev = useMutation({
+    mutationFn: async () => {
+      if (dirty) await save.mutateAsync(); // 先落产品线/模块改动
+      return api.post("/api/supervisor/reclassify", {
+        hub_issue_id: hub!.id,
+        new_type: type,
+        reason: "运营处理中改判转研发",
+      });
+    },
+    onSuccess: () => {
+      setNotice("已转研发并推送 Linear");
+      refresh();
+    },
+    onError: onErr,
+  });
+
+  const busy =
+    save.isPending || confirm.isPending || graduate.isPending || reclassifyToDev.isPending;
   const pendingReview = graduated && hub.status === "pending_review";
+  // 处理中的 Operation（可转研发）：已毕业 + 类型 Operation + op_status=processing
+  const isProcessingOp =
+    graduated && hub.type === "Operation" && hub.op_status === "processing";
+  // 当前选中的是研发类
+  const devTypeSelected = type === "Bug_fix" || type === "Demand";
 
   if (!canEdit) {
     return (
@@ -1039,6 +1069,18 @@ function TicketAttributesEditor({
                   : type === "Bug_fix" || type === "Demand"
                     ? "确认推送"
                     : "确认分类"}
+              </button>
+            )}
+            {/* 处理中 Operation 改选研发类 → 转研发并直推 Linear（运营处理中发现是需求/Bug）。
+                非 pending_review、不与上方确认按钮共存。 */}
+            {isProcessingOp && devTypeSelected && (
+              <button
+                type="button"
+                onClick={() => reclassifyToDev.mutate()}
+                disabled={busy}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {reclassifyToDev.isPending ? "转研发中…" : "转研发并推送"}
               </button>
             )}
           </>

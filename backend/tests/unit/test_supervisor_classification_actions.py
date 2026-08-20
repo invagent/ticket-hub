@@ -400,8 +400,15 @@ def test_confirm_by_handler_allowed(app_client: TestClient, act_world: Session) 
 
     act_world.add(User(id=7, feishu_uid="ou_h7", name="handler7", role="assignee"))
     act_world.add(
-        HubIssue(id=75, short_code="HUB-000075", type="Bug_fix", title="t",
-                 canonical_body="b", status="pending_review", op_handler_user_id=7)
+        HubIssue(
+            id=75,
+            short_code="HUB-000075",
+            type="Bug_fix",
+            title="t",
+            canonical_body="b",
+            status="pending_review",
+            op_handler_user_id=7,
+        )
     )
     act_world.commit()
     with patch("app.api.supervisor.push_hub_issue_to_linear"):
@@ -419,8 +426,15 @@ def test_confirm_by_stranger_403(app_client: TestClient, act_world: Session) -> 
 
     act_world.add(User(id=8, feishu_uid="ou_s8", name="stranger8", role="member"))
     act_world.add(
-        HubIssue(id=76, short_code="HUB-000076", type="Bug_fix", title="t",
-                 canonical_body="b", status="pending_review", op_handler_user_id=7)
+        HubIssue(
+            id=76,
+            short_code="HUB-000076",
+            type="Bug_fix",
+            title="t",
+            canonical_body="b",
+            status="pending_review",
+            op_handler_user_id=7,
+        )
     )
     act_world.commit()
     r = app_client.post(
@@ -429,3 +443,81 @@ def test_confirm_by_stranger_403(app_client: TestClient, act_world: Session) -> 
         headers=_bearer(8, name="stranger8", role="member"),
     )
     assert r.status_code == 403, r.text
+
+
+# ---- 处理中 Operation 转研发类并直推 Linear（2026-08-20）----------------------
+
+
+@pytest.fixture
+def op_world(db_session: Session) -> Session:
+    """一个处理中(op_status=processing)的已确认 Operation hub + 关联 ticket。"""
+    db_session.add(User(id=2, feishu_uid="ou_c", name="carol", role="supervisor"))
+    db_session.add(
+        HubIssue(
+            id=80,
+            short_code="HUB-000080",
+            type="Operation",
+            title="t",
+            canonical_body="b",
+            status="created",
+            op_status="processing",
+            op_handler="agent",
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        Ticket(
+            id=800,
+            short_code="TKT-000800",
+            source_code="ksm",
+            source_ticket_id="k-800",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=80,
+            predicted_type="Operation",
+        )
+    )
+    db_session.commit()
+    return db_session
+
+
+def test_processing_operation_reclassify_to_dev_pushes_linear(
+    app_client: TestClient, op_world: Session
+) -> None:
+    """处理中 Operation 改判 Demand：直推 Linear（即使闸门③开）、op 字段清空、type 翻转。"""
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 80, "new_type": "Demand", "reason": "客户沟通后确认是需求"},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = op_world.get(HubIssue, 80)
+    op_world.refresh(hub)
+    assert hub.type == "Demand"
+    assert hub.status == "created"  # 直推分支，不是 pending_linear_review
+    # Operation 专属字段清空（满足 ck_hub_issues_operation_fields + 契约）
+    assert hub.op_status is None
+    assert hub.op_handler is None
+    assert hub.op_handler_user_id is None
+    assert hub.reply_content is None
+    push.assert_called_once_with(80)
+    # 关联 ticket 的 predicted_type 同步
+    tk = op_world.get(Ticket, 800)
+    op_world.refresh(tk)
+    assert tk.predicted_type == "Demand"
+
+
+def test_answered_operation_cannot_reclassify(app_client: TestClient, op_world: Session) -> None:
+    """已答复(answered)Operation = 处理完成，不可转研发（409）。"""
+    hub = op_world.get(HubIssue, 80)
+    hub.op_status = "answered"
+    op_world.commit()
+    r = app_client.post(
+        "/api/supervisor/reclassify",
+        json={"hub_issue_id": 80, "new_type": "Bug_fix", "reason": "x"},
+        headers=_bearer(2),
+    )
+    assert r.status_code == 409, r.text
+    assert "不可改判" in r.text

@@ -815,11 +815,71 @@ describe("TicketDetailPage", () => {
     );
     renderPage(351);
     await screen.findByRole("heading", { name: "TKT-351" });
-    await userEvent.selectOptions(screen.getByRole("combobox"), "return");
+    // 处理中 Operation 现在也渲染「工单参数」编辑器（多个 combobox），故用 aria-label 精确定位处理建议下拉
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "处理建议" }), "return");
     await userEvent.click(screen.getByRole("button", { name: "退回转单" }));
     // 时间轴出现本地占位节点
     expect(await screen.findByText("退回转单（待后端）")).toBeInTheDocument();
     expect(screen.getByText(/本地操作·待后端/)).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("处理中 Operation 改选研发类 → 显示「转研发并推送」，点击调 reclassify", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(352);
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "processing",
+        }),
+      ),
+      http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
+    );
+    let reclassifyBody: unknown = null;
+    server.use(
+      // 转研发前会先 PATCH attributes 落产品线/模块（dirty 时）
+      http.patch("*/api/hub-issues/88/attributes", () =>
+        HttpResponse.json({ hub_issue_id: 88, type: "Demand" }),
+      ),
+      http.post("*/api/supervisor/reclassify", async ({ request }) => {
+        reclassifyBody = await request.json();
+        return HttpResponse.json({ hub_issue_id: 88, status: "created", type: "Demand" });
+      }),
+    );
+    renderPage(352);
+    await screen.findByRole("heading", { name: "TKT-352" });
+    // 处理中 Operation 渲染「工单参数」编辑器；改类型为需求 → 出现「转研发并推送」
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "工单类型" }), "Demand");
+    const btn = await screen.findByRole("button", { name: "转研发并推送" });
+    await userEvent.click(btn);
+    await screen.findByText("已转研发并推送 Linear");
+    expect(reclassifyBody).toMatchObject({ hub_issue_id: 88, new_type: "Demand" });
+    localStorage.clear();
+  });
+
+  it("已答复 Operation 不显示转研发入口（处理完成不转 Linear）", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(353, { op_status: "answered" });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "answered",
+        }),
+      ),
+    );
+    renderPage(353);
+    await screen.findByRole("heading", { name: "TKT-353" });
+    // 已答复不渲染工单参数编辑器 → 无「工单类型」下拉、无转研发按钮
+    expect(screen.queryByRole("combobox", { name: "工单类型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转研发并推送" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 });
