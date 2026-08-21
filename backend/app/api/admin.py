@@ -26,7 +26,7 @@ from app.models import Module, ProductLine, Source, Ticket
 router = APIRouter()
 logger = get_logger(__name__)
 
-CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案"]
+CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案", "其他"]
 
 
 class SourceOut(BaseModel):
