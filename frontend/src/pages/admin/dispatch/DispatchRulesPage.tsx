@@ -7,17 +7,18 @@
  *   - 编辑弹窗：1.8× 宽 / 1.5× 高；SLA 多选；产品线×模块联动；人员表格行；
  *              溢出复选+溢出人员表；兜底人员单选
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import {
   MultiCheckSelect,
-  UserSelect,
+  MultiUserSelect,
   useAllModuleOptions,
   useProductLineOptions,
   useSourceOptions,
   useUserName,
+  useUserOptions,
   type AllModuleOpt,
   type SourceOpt,
 } from "@/components/selectors";
@@ -156,6 +157,72 @@ function ProductLineCellItems({ codes, plMap }: { codes: string[]; plMap: Map<st
 // strip employee_no in parentheses and role suffix — keep only the name part
 function nameOnly(full: string): string {
   return full.replace(/\s*\([^)]*\).*$/, "").replace(/\s*·.*$/, "").trim();
+}
+
+// ---- UserSearchSelect: single-select with search (for 兜底人员) -------------
+function UserSearchSelect({ value, onChange, placeholder = "选择用户" }: {
+  value: number | undefined;
+  onChange: (id: number | undefined) => void;
+  placeholder?: string;
+}) {
+  const q = useUserOptions();
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const all = (q.data ?? []) as { id: number; name: string; employee_no: string | null; role: string }[];
+  const kwLower = kw.trim().toLowerCase();
+  const opts = kwLower ? all.filter((u) => u.name.toLowerCase().includes(kwLower)) : all;
+  const selected = all.find((u) => u.id === value);
+
+  return (
+    <div ref={boxRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-[12.5px] px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-left flex items-center gap-1 min-w-[12rem]"
+      >
+        <span className={`truncate flex-1 ${selected ? "text-hub-text" : "text-hub-textMuted"}`}>
+          {selected ? selected.name : placeholder}
+        </span>
+        {selected && (
+          <span onClick={(e) => { e.stopPropagation(); onChange(undefined); }} className="text-hub-textMuted hover:text-hub-rose text-[13px] leading-none">×</span>
+        )}
+        <span className="text-hub-textFaint text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-[15rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
+          <input
+            autoFocus
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder="输入姓名查找"
+            className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
+          />
+          <div className="max-h-[220px] overflow-y-auto">
+            {opts.length === 0 && <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>}
+            {opts.map((u) => (
+              <div
+                key={u.id}
+                onClick={() => { onChange(u.id); setOpen(false); setKw(""); }}
+                className={`px-2 py-1 rounded-[5px] cursor-pointer text-[12px] hover:bg-hub-panel ${value === u.id ? "bg-hub-teal-light font-semibold" : ""}`}
+              >
+                {u.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---- assignee summary cell -------------------------------------------------
@@ -649,10 +716,10 @@ function RuleEditorDialog({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-end z-50">
       <div
-        className="bg-white rounded-[12px] overflow-y-auto p-6 font-hub text-[13px]"
-        style={{ width: "min(1296px, 95vw)", maxHeight: "min(127.5vh, 90vh)" }}
+        className="bg-white rounded-l-[16px] overflow-y-auto p-6 font-hub text-[13px] h-full"
+        style={{ width: "min(1296px, 80vw)", maxHeight: "100vh" }}
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[16px] font-bold m-0">
@@ -818,7 +885,7 @@ function RuleEditorDialog({
         <div className="mb-4">
           <label className="flex flex-col gap-1 max-w-xs">
             <span className="text-[11px] text-hub-textMuted font-semibold">兜底人员（可选，单选）</span>
-            <UserSelect value={poolUserId} onChange={setPoolUserId} />
+            <UserSearchSelect value={poolUserId} onChange={setPoolUserId} placeholder="输入姓名查找" />
           </label>
         </div>
 
@@ -854,34 +921,61 @@ function DraftAssigneeTable({
   onChange: (next: DraftAssignee[]) => void;
   tier: "main" | "overflow";
 }) {
-  const userName = useUserName();
-  const [addUserId, setAddUserId] = useState<number | undefined>(undefined);
-  const [addValue, setAddValue] = useState("");
+  const q = useUserOptions();
+  const allUsers = (q.data ?? []) as { id: number; name: string }[];
+  const [addIds, setAddIds] = useState<number[]>([]);
+
+  const existingIds = new Set(draft.map((a) => a.user_id));
 
   const handleAdd = () => {
-    if (!addUserId) return;
-    onChange([
-      ...draft,
-      {
-        user_id: addUserId,
-        alloc_value: mode === "ratio" ? Number(addValue || 1) : 1,
-        daily_cap: mode === "count" ? (addValue ? Number(addValue) : null) : null,
+    const newEntries = addIds
+      .filter((id) => !existingIds.has(id))
+      .map((id) => ({
+        user_id: id,
+        alloc_value: mode === "ratio" ? 1 : 1,
+        daily_cap: mode === "count" ? null : null,
         tier,
-      },
-    ]);
-    setAddUserId(undefined);
-    setAddValue("");
+      } as DraftAssignee));
+    if (newEntries.length) onChange([...draft, ...newEntries]);
+    setAddIds([]);
   };
+
+  const updateValue = (i: number, raw: string) => {
+    const num = raw === "" ? null : Number(raw);
+    const next = draft.map((a, j) =>
+      j !== i ? a : mode === "count"
+        ? { ...a, daily_cap: num }
+        : { ...a, alloc_value: num ?? 1 }
+    );
+    onChange(next);
+  };
+
+  const getName = (id: number) => allUsers.find((u) => u.id === id)?.name ?? `#${id}`;
 
   return (
     <div>
+      {/* 添加区域：始终显示在标题下方 */}
+      <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" />
+        </div>
+        <button
+          onClick={handleAdd}
+          disabled={addIds.length === 0}
+          className={`${PRIMARY_BTN} self-end`}
+        >
+          添加 {addIds.length > 0 ? `(${addIds.length})` : ""}
+        </button>
+      </div>
+
       {draft.length > 0 && (
-        <table className="w-full text-[12px] mb-2">
+        <table className="w-full text-[12px]">
           <thead>
             <tr className="text-hub-textMuted text-[11px]">
               <th className="text-left font-semibold pb-1 w-40">人员</th>
-              <th className="text-left font-semibold pb-1 w-32">
-                {mode === "count" ? "当日上限（0=不分）" : "相对权重"}
+              <th className="text-left font-semibold pb-1 w-36">
+                {mode === "count" ? "当日上限（空=不限，0=不分）" : "相对权重"}
               </th>
               <th className="pb-1 w-12" />
             </tr>
@@ -889,9 +983,18 @@ function DraftAssigneeTable({
           <tbody>
             {draft.map((a, i) => (
               <tr key={i} className="border-t border-hub-borderLight">
-                <td className="py-1.5 pr-2">{userName(a.user_id)}</td>
-                <td className="py-1.5 pr-2 tabular-nums">
-                  {mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
+                <td className="py-1.5 pr-2">{getName(a.user_id)}</td>
+                <td className="py-1.5 pr-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={mode === "count"
+                      ? (a.daily_cap === null ? "" : a.daily_cap)
+                      : a.alloc_value}
+                    onChange={(e) => updateValue(i, e.target.value)}
+                    className={`${INPUT_CLS} w-28`}
+                    placeholder={mode === "count" ? "空=不限" : "1"}
+                  />
                 </td>
                 <td className="py-1.5">
                   <button
@@ -906,32 +1009,9 @@ function DraftAssigneeTable({
           </tbody>
         </table>
       )}
-      <div className="flex items-end gap-2 flex-wrap pt-2">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">选择人员</span>
-          <UserSelect value={addUserId} onChange={setAddUserId} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">
-            {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
-          </span>
-          <input
-            type="number"
-            min={0}
-            value={addValue}
-            onChange={(e) => setAddValue(e.target.value)}
-            className={`${INPUT_CLS} w-28`}
-            placeholder={mode === "count" ? "空=不限" : "1"}
-          />
-        </div>
-        <button
-          onClick={handleAdd}
-          disabled={!addUserId}
-          className={`${PRIMARY_BTN} self-end`}
-        >
-          添加
-        </button>
-      </div>
+      {draft.length === 0 && (
+        <p className="text-xs text-hub-textFaint">暂无人员，请在上方添加</p>
+      )}
     </div>
   );
 }
@@ -949,11 +1029,15 @@ function AssigneeTableSection({
 }) {
   const qc = useQueryClient();
   const qk = ["admin", "dispatch", "assignees", ruleId] as const;
-  const assignees = useQuery({ queryKey: qk, queryFn: () => dispatchApi.listAssignees(ruleId) });
+  const assigneesQ = useQuery({ queryKey: qk, queryFn: () => dispatchApi.listAssignees(ruleId) });
   const [error, setError] = useState<string | null>(null);
+  const [addIds, setAddIds] = useState<number[]>([]);
+  // inline edit values keyed by assignee id
+  const [editVals, setEditVals] = useState<Record<number, string>>({});
 
-  const [addUserId, setAddUserId] = useState<number | undefined>(undefined);
-  const [addValue, setAddValue] = useState("");
+  const q = useUserOptions();
+  const allUsers = (q.data ?? []) as { id: number; name: string }[];
+  const getName = (id: number) => allUsers.find((u) => u.id === id)?.name ?? `#${id}`;
 
   const invalidate = () => {
     setError(null);
@@ -961,20 +1045,19 @@ function AssigneeTableSection({
     void qc.invalidateQueries({ queryKey: ["admin", "dispatch", "all-assignees"] });
   };
 
-  const add = useMutation({
-    mutationFn: () =>
-      dispatchApi.addAssignee(ruleId, {
-        user_id: addUserId!,
-        alloc_value: mode === "ratio" ? Number(addValue || 1) : 1,
-        daily_cap: mode === "count" ? (addValue ? Number(addValue) : null) : null,
-        tier,
-        is_active: true,
-      }),
-    onSuccess: () => {
-      setAddUserId(undefined);
-      setAddValue("");
-      invalidate();
+  const addMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      for (const uid of ids) {
+        await dispatchApi.addAssignee(ruleId, {
+          user_id: uid,
+          alloc_value: 1,
+          daily_cap: null,
+          tier,
+          is_active: true,
+        });
+      }
     },
+    onSuccess: () => { setAddIds([]); invalidate(); },
     onError: (e) => setError(errMsg(e)),
   });
 
@@ -984,73 +1067,102 @@ function AssigneeTableSection({
     onError: (e) => setError(errMsg(e)),
   });
 
-  const userName = useUserName();
-  const list = ((assignees.data ?? []) as AssigneeOut[]).filter((a) => a.tier === tier);
+  // update value: delete + re-add with new value
+  const updateMut = useMutation({
+    mutationFn: async ({ a, raw }: { a: AssigneeOut; raw: string }) => {
+      await dispatchApi.deleteAssignee(ruleId, a.id);
+      const num = raw === "" ? null : Number(raw);
+      await dispatchApi.addAssignee(ruleId, {
+        user_id: a.user_id,
+        alloc_value: mode === "ratio" ? (num ?? 1) : 1,
+        daily_cap: mode === "count" ? num : null,
+        tier,
+        is_active: true,
+      });
+    },
+    onSuccess: invalidate,
+    onError: (e) => setError(errMsg(e)),
+  });
+
+  const list = ((assigneesQ.data ?? []) as AssigneeOut[]).filter((a) => a.tier === tier);
+  const existingIds = new Set(list.map((a) => a.user_id));
 
   return (
     <div>
-      {assignees.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
+      {/* 添加区域：始终显示在标题下方 */}
+      <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" />
+        </div>
+        <button
+          onClick={() => addMut.mutate(addIds.filter((id) => !existingIds.has(id)))}
+          disabled={addIds.length === 0 || addMut.isPending}
+          className={`${PRIMARY_BTN} self-end`}
+        >
+          {addMut.isPending ? "添加中…" : `添加${addIds.length > 0 ? ` (${addIds.length})` : ""}`}
+        </button>
+      </div>
+
+      {assigneesQ.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
       {list.length > 0 && (
-        <table className="w-full text-[12px] mb-2">
+        <table className="w-full text-[12px]">
           <thead>
             <tr className="text-hub-textMuted text-[11px]">
               <th className="text-left font-semibold pb-1 w-40">人员</th>
-              <th className="text-left font-semibold pb-1 w-32">
-                {mode === "count" ? "当日上限（0=不分）" : "相对权重"}
+              <th className="text-left font-semibold pb-1 w-36">
+                {mode === "count" ? "当日上限（空=不限，0=不分）" : "相对权重"}
               </th>
               <th className="pb-1 w-12" />
             </tr>
           </thead>
           <tbody>
-            {list.map((a) => (
-              <tr key={a.id} className="border-t border-hub-borderLight">
-                <td className="py-1.5 pr-2">{userName(a.user_id)}</td>
-                <td className="py-1.5 pr-2 tabular-nums">
-                  {mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
-                </td>
-                <td className="py-1.5">
-                  <button
-                    onClick={() => remove.mutate(a.id)}
-                    disabled={remove.isPending}
-                    className="text-xs text-hub-rose hover:underline disabled:opacity-50"
-                  >
-                    移除
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {list.map((a) => {
+              const curVal = editVals[a.id] !== undefined
+                ? editVals[a.id]
+                : mode === "count"
+                  ? (a.daily_cap === null ? "" : String(a.daily_cap))
+                  : String(a.alloc_value);
+              return (
+                <tr key={a.id} className="border-t border-hub-borderLight">
+                  <td className="py-1.5 pr-2">{getName(a.user_id)}</td>
+                  <td className="py-1.5 pr-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={curVal}
+                      onChange={(e) => setEditVals((v) => ({ ...v, [a.id]: e.target.value }))}
+                      onBlur={(e) => {
+                        const orig = mode === "count"
+                          ? (a.daily_cap === null ? "" : String(a.daily_cap))
+                          : String(a.alloc_value);
+                        if (e.target.value !== orig) {
+                          updateMut.mutate({ a, raw: e.target.value });
+                          setEditVals((v) => { const n = { ...v }; delete n[a.id]; return n; });
+                        }
+                      }}
+                      className={`${INPUT_CLS} w-28`}
+                      placeholder={mode === "count" ? "空=不限" : "1"}
+                    />
+                  </td>
+                  <td className="py-1.5">
+                    <button
+                      onClick={() => remove.mutate(a.id)}
+                      disabled={remove.isPending}
+                      className="text-xs text-hub-rose hover:underline disabled:opacity-50"
+                    >
+                      移除
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
-      {list.length === 0 && !assignees.isLoading && (
-        <p className="text-xs text-hub-textFaint mb-2">暂无人员</p>
+      {list.length === 0 && !assigneesQ.isLoading && (
+        <p className="text-xs text-hub-textFaint">暂无人员，请在上方添加</p>
       )}
-      <div className="flex items-end gap-2 flex-wrap pt-1">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">选择人员</span>
-          <UserSelect value={addUserId} onChange={setAddUserId} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10.5px] text-hub-textMuted">
-            {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
-          </span>
-          <input
-            type="number"
-            min={0}
-            value={addValue}
-            onChange={(e) => setAddValue(e.target.value)}
-            className={`${INPUT_CLS} w-28`}
-            placeholder={mode === "count" ? "空=不限" : "1"}
-          />
-        </div>
-        <button
-          onClick={() => add.mutate()}
-          disabled={!addUserId || add.isPending}
-          className={`${PRIMARY_BTN} self-end`}
-        >
-          {add.isPending ? "添加中…" : "添加"}
-        </button>
-      </div>
       {error && <div className="text-xs text-hub-rose mt-1">{error}</div>}
     </div>
   );

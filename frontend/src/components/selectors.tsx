@@ -38,7 +38,7 @@ interface UserOpt {
 
 const USER_QK = ["admin", "users", "select-list"] as const;
 
-function useUserOptions() {
+export function useUserOptions() {
   return useQuery({
     queryKey: USER_QK,
     queryFn: () =>
