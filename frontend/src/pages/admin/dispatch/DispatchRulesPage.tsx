@@ -7,7 +7,8 @@
  *   - 编辑弹窗：1.8× 宽 / 1.5× 高；SLA 多选；产品线×模块联动；人员表格行；
  *              溢出复选+溢出人员表；兜底人员单选
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
+import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import {
@@ -56,17 +57,39 @@ function fmtDate(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// ---- overflow tooltip cell -------------------------------------------------
-function OverflowCell({ items, maxChars, renderItem }: {
+// ---- click-to-show tooltip (fixed position, no occlusion) ------------------
+function TooltipPopup({ anchor, children, onClose }: {
+  anchor: HTMLElement | null;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  if (!anchor) return null;
+  const rect = anchor.getBoundingClientRect();
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const top = spaceBelow > 160 ? rect.bottom + 6 : rect.top - 6;
+  const translateY = spaceBelow > 160 ? "0" : "-100%";
+  return (
+    <div
+      className="fixed z-[9999] bg-white border border-hub-border rounded-lg shadow-xl p-3 min-w-[200px] max-w-[420px] text-[11.5px] text-hub-text leading-relaxed whitespace-normal"
+      style={{ top, left: Math.min(rect.left, window.innerWidth - 440), transform: `translateY(${translateY})` }}
+      onMouseLeave={onClose}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---- overflow cell: char-based cutoff, click to show full tooltip ----------
+function OverflowCell({ items, maxChars, renderItem, emptyLabel = "全部" }: {
   items: string[];
   maxChars: number;
   renderItem?: (s: string) => string;
+  emptyLabel?: string;
 }) {
-  const [show, setShow] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const fmt = renderItem ?? ((s) => s);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const fmt = renderItem ?? ((s: string) => s);
 
-  if (!items.length) return <span className="text-hub-textFaint">—</span>;
+  if (!items.length) return <span className="text-hub-textFaint">{emptyLabel}</span>;
 
   let visible = "";
   let hiddenCount = 0;
@@ -81,34 +104,33 @@ function OverflowCell({ items, maxChars, renderItem }: {
   }
 
   return (
-    <div ref={ref} className="relative inline-flex items-center gap-1 whitespace-nowrap">
+    <div className="inline-flex items-center gap-1 whitespace-nowrap">
       <span>{visible}</span>
       {hiddenCount > 0 && (
         <span
-          className="text-hub-teal cursor-pointer select-none"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
+          className="text-hub-teal cursor-pointer select-none font-semibold"
+          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         >
           +{hiddenCount}
         </span>
       )}
-      {show && hiddenCount > 0 && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[160px] max-w-[320px] text-[11.5px] text-hub-text leading-relaxed whitespace-normal">
+      {anchor && hiddenCount > 0 && (
+        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
           {items.map(fmt).join("、")}
-        </div>
+        </TooltipPopup>
       )}
     </div>
   );
 }
 
-// max 4 product lines in cell, rest as +N
+// max 10 product line tags in cell, rest as +N, click to show all
 function ProductLineCellItems({ codes, plMap }: { codes: string[]; plMap: Map<string, string> }) {
-  const [show, setShow] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (!codes.length) return <span className="text-hub-textFaint">全部</span>;
-  const visible = codes.slice(0, 4);
-  const hidden = codes.slice(4);
+  const visible = codes.slice(0, 10);
+  const hidden = codes.slice(10);
   return (
-    <div className="relative inline-flex items-center gap-1 flex-wrap">
+    <div className="inline-flex items-center gap-1 whitespace-nowrap flex-wrap">
       {visible.map((c) => (
         <span key={c} className="bg-hub-teal-light text-hub-teal-deep text-[10.5px] px-1.5 py-px rounded-full border border-hub-teal-border whitespace-nowrap">
           {plMap.get(c) ?? c}
@@ -116,60 +138,63 @@ function ProductLineCellItems({ codes, plMap }: { codes: string[]; plMap: Map<st
       ))}
       {hidden.length > 0 && (
         <span
-          className="text-hub-teal text-[11px] cursor-pointer select-none"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
+          className="text-hub-teal text-[11px] cursor-pointer select-none font-semibold"
+          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         >
           +{hidden.length}
         </span>
       )}
-      {show && hidden.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[180px] max-w-[360px] text-[11.5px] leading-relaxed whitespace-normal">
+      {anchor && hidden.length > 0 && (
+        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
           {codes.map((c) => plMap.get(c) ?? c).join("、")}
-        </div>
+        </TooltipPopup>
       )}
     </div>
   );
 }
 
+// strip employee_no in parentheses and role suffix — keep only the name part
+function nameOnly(full: string): string {
+  return full.replace(/\s*\([^)]*\).*$/, "").replace(/\s*·.*$/, "").trim();
+}
+
 // ---- assignee summary cell -------------------------------------------------
 function AssigneeSummaryCell({ assignees, mode }: { assignees: AssigneeOut[]; mode: string }) {
-  const [show, setShow] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const userName = useUserName();
   const main = assignees.filter((a) => a.tier === "main");
   if (!main.length) return <span className="text-hub-textFaint">—</span>;
 
   const parts = main.slice(0, 3).map((a) => {
     const val = mode === "count" ? (a.daily_cap ?? "不限") : a.alloc_value;
-    return `${userName(a.user_id)}:${val}`;
+    return `${nameOnly(userName(a.user_id))}:${val}`;
   });
   const hidden = Math.max(0, main.length - 3);
   const summary = parts.join("、") + (hidden > 0 ? `+${hidden}` : "");
 
   return (
-    <div className="relative inline-flex items-center gap-1 whitespace-nowrap">
+    <div className="inline-flex items-center gap-1 whitespace-nowrap">
       <span className="text-[11.5px]">{summary}</span>
       {(hidden > 0 || assignees.length > 3) && (
         <span
-          className="text-hub-teal text-[10.5px] cursor-pointer"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
+          className="text-hub-teal text-[10.5px] cursor-pointer font-semibold"
+          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         >
           …
         </span>
       )}
-      {show && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[200px] text-[11.5px] whitespace-normal">
+      {anchor && (
+        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
           {assignees.map((a) => {
             const tier = a.tier === "overflow" ? "【溢出】" : "";
             const val = mode === "count" ? `上限${a.daily_cap ?? "不限"}` : `权重${a.alloc_value}`;
             return (
               <div key={a.id} className="py-0.5">
-                {tier}{userName(a.user_id)} · {val}
+                {tier}{nameOnly(userName(a.user_id))} · {val}
               </div>
             );
           })}
-        </div>
+        </TooltipPopup>
       )}
     </div>
   );
@@ -259,67 +284,60 @@ export function DispatchRulesPage() {
       )}
       {list.length > 0 && (
         <div className="border border-hub-border rounded-[10px] overflow-x-auto bg-white">
-          <table className="w-full text-[12px] min-w-[1400px]">
+          {/* 规则编码(left:40px)、规则名称(left:152px)、操作列(right:0) sticky；其他列横向滚动 */}
+          <table className="text-[12px]" style={{ minWidth: 1600, borderCollapse: "separate", borderSpacing: 0 }}>
             <thead>
               <tr className="bg-hub-page text-hub-textMuted text-[11px]">
-                <th className="text-center font-semibold px-2 py-2 w-10">序号</th>
-                <th className="text-left font-semibold px-2 py-2 w-28">规则编码</th>
-                <th className="text-left font-semibold px-2 py-2 w-32">规则名称</th>
-                <th className="text-left font-semibold px-2 py-2 w-40">适配产品线</th>
-                <th className="text-left font-semibold px-2 py-2 w-36">适配模块</th>
-                <th className="text-left font-semibold px-2 py-2 w-28">适配来源系统</th>
-                <th className="text-left font-semibold px-2 py-2 w-28">适配服务等级</th>
-                <th className="text-left font-semibold px-2 py-2 w-20">派单规则</th>
-                <th className="text-left font-semibold px-2 py-2 w-14">状态</th>
-                <th className="text-left font-semibold px-2 py-2 w-14">优先级</th>
-                <th className="text-left font-semibold px-2 py-2 w-44">人员和数量</th>
-                <th className="text-left font-semibold px-2 py-2 w-20">溢出关联</th>
-                <th className="text-left font-semibold px-2 py-2 w-24">兜底人员</th>
-                <th className="text-left font-semibold px-2 py-2 w-32">最后更新时间</th>
-                <th className="text-left font-semibold px-2 py-2 w-24">最后更新操作人</th>
-                <th className="text-right font-semibold px-2 py-2 w-32">操作</th>
+                <th className="text-center font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 40, minWidth: 40 }}>序号</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky left-[40px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112 }}>规则编码</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky left-[152px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128 }}>规则名称</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 200, minWidth: 200 }}>适配产品线</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 160, minWidth: 160 }}>适配模块</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配来源系统</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配服务等级</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>派单规则</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 56, minWidth: 56 }}>状态</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 56, minWidth: 56 }}>优先级</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 180, minWidth: 180 }}>人员和数量</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>溢出关联</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>兜底人员</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 128, minWidth: 128 }}>最后更新时间</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>最后更新操作人</th>
+                <th className="text-right font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky right-0 z-10 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 136, minWidth: 136 }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {list.map((r, idx) => {
                 const overflow = list.find((x) => x.id === r.overflow_rule_id);
                 const assignees = (allAssigneesQ.data?.[r.id] ?? []) as AssigneeOut[];
-                // fallback pool from config not available per-rule here, skip
+                const rowBg = "bg-white";
                 return (
-                  <tr key={r.id} className="border-t border-hub-border hover:bg-hub-page/40">
-                    <td className="px-2 py-2 text-center text-hub-textMuted">{idx + 1}</td>
-                    <td className="px-2 py-2 text-hub-textMuted font-mono text-[11px]">
+                  <tr key={r.id} className="border-t border-hub-border hover:bg-hub-page/40 group">
+                    <td className="px-2 py-2 text-center text-hub-textMuted whitespace-nowrap">{idx + 1}</td>
+                    <td className={`px-2 py-2 text-hub-textMuted font-mono text-[11px] whitespace-nowrap sticky left-[40px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
                       {r.rule_code ?? "—"}
                     </td>
-                    <td className="px-2 py-2 font-semibold">{r.name}</td>
-                    <td className="px-2 py-2">
-                      {r.match_product_lines.length === 0 ? (
-                        <span className="text-hub-textFaint">全部</span>
-                      ) : (
-                        <ProductLineCellItems codes={r.match_product_lines} plMap={plMap} />
-                      )}
+                    <td className={`px-2 py-2 font-semibold whitespace-nowrap sticky left-[152px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
+                      {r.name}
                     </td>
-                    <td className="px-2 py-2">
-                      <OverflowCell
-                        items={r.match_modules}
-                        maxChars={50}
-                      />
-                      {r.match_modules.length === 0 && <span className="text-hub-textFaint">全部</span>}
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      <ProductLineCellItems codes={r.match_product_lines} plMap={plMap} />
                     </td>
-                    <td className="px-2 py-2">
-                      <OverflowCell items={r.match_sources} maxChars={30} />
-                      {r.match_sources.length === 0 && <span className="text-hub-textFaint">全部</span>}
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      <OverflowCell items={r.match_modules} maxChars={20} />
                     </td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      <OverflowCell items={r.match_sources} maxChars={10} />
+                    </td>
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <OverflowCell
                         items={r.match_sla}
-                        maxChars={30}
+                        maxChars={10}
                         renderItem={(code) => slaMap.get(code) ?? code}
                       />
-                      {r.match_sla.length === 0 && <span className="text-hub-textFaint">全部</span>}
                     </td>
-                    <td className="px-2 py-2">{MODE_LABELS[r.dispatch_mode] ?? r.dispatch_mode}</td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 whitespace-nowrap">{MODE_LABELS[r.dispatch_mode] ?? r.dispatch_mode}</td>
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                         r.is_active
                           ? "bg-hub-green-light text-hub-green border-hub-green-border"
@@ -328,27 +346,27 @@ export function DispatchRulesPage() {
                         {r.is_active ? "启用" : "禁用"}
                       </span>
                     </td>
-                    <td className="px-2 py-2 tabular-nums">{r.priority}</td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 tabular-nums whitespace-nowrap">{r.priority}</td>
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <AssigneeSummaryCell assignees={assignees} mode={r.dispatch_mode} />
                     </td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 whitespace-nowrap">
                       {overflow ? (
                         <span className="text-hub-teal-deep text-[11px]">已关联</span>
                       ) : (
                         <span className="text-hub-textFaint">未关联</span>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-[11.5px]">
+                    <td className="px-2 py-2 text-[11.5px] whitespace-nowrap">
                       <DefaultPoolCell ruleId={r.id} />
                     </td>
                     <td className="px-2 py-2 text-hub-textMuted text-[11px] whitespace-nowrap">
                       {fmtDate(r.updated_at)}
                     </td>
-                    <td className="px-2 py-2 text-hub-textMuted text-[11.5px]">
+                    <td className="px-2 py-2 text-hub-textMuted text-[11.5px] whitespace-nowrap">
                       {r.updated_by ?? "—"}
                     </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                    <td className={`px-2 py-2 text-right whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
                       <button
                         onClick={() => setLogsRuleId(r.id)}
                         className="text-[11px] text-hub-teal hover:underline mr-2"
