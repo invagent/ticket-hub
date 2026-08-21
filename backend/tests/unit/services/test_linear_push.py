@@ -37,6 +37,8 @@ def world(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> Session:
     monkeypatch.setenv("LINEAR_PUSH_ENABLED", "true")
     monkeypatch.setenv("LINEAR_API_KEY", "lk")
     monkeypatch.setenv("LINEAR_TEAM_ID", "team-1")
+    # 这些用例覆盖直连 Linear GraphQL 分支；显式关 webhook 出口以保持回归。
+    monkeypatch.setenv("LINEAR_WEBHOOK_ENABLED", "false")
     get_settings.cache_clear()
     db_session.add(Source(code="ksm", name="KSM"))
     db_session.commit()

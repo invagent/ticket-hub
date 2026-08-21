@@ -39,6 +39,7 @@ from app.db import make_session
 from app.models import HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
+from app.services.hub_issues.webhook_push import push_hub_issue_to_webhook
 
 logger = get_logger(__name__)
 
@@ -87,6 +88,43 @@ def _build_description(db: Session, hub: HubIssue) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
+def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
+    """转研发 webhook 分支。成功回写占位 identifier + linear_status（供展示/幂等）。
+
+    webhook 不返回 Linear UUID —— linear_uuid 保持 NULL，避免 linear_status_sync
+    拿假 UUID 去查 Linear。幂等靠 linear_identifier 非空（占位 WEBHOOK-{short_code}）。
+    """
+    try:
+        push_hub_issue_to_webhook(db, hub)
+    except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
+        logger.warning("linear_webhook_push_failed", hub_issue_id=hub.id, error=str(e))
+        _mark_pending(db, hub, reason=f"转研发 webhook 推送失败：{e}")
+        return None
+
+    placeholder = f"WEBHOOK-{hub.short_code}"
+    hub.linear_identifier = placeholder
+    hub.linear_status = "已转产研"
+    hub.linear_status_synced_at = datetime.now(UTC)
+    if hub.status == "pending":
+        StatusHistoryRepository(db).record(
+            entity_type="hub_issue",
+            entity_id=hub.id,
+            from_status="pending",
+            to_status="created",
+            changed_by="agent:linear_webhook",
+            reason="转研发 webhook 重推成功，pending 解除",
+        )
+        hub.status = "created"
+    db.commit()
+    logger.info("linear_webhook_push_committed", hub_issue_id=hub.id, identifier=placeholder)
+    return LinearPushResult(
+        hub_issue_id=hub.id,
+        linear_uuid="",
+        linear_identifier=placeholder,
+        linear_url="",
+    )
+
+
 def push_hub_issue_to_linear(
     hub_issue_id: int,
     db: Session | None = None,
@@ -102,11 +140,7 @@ def push_hub_issue_to_linear(
     assert db is not None
 
     try:
-        if not (
-            settings.linear_push_enabled and settings.linear_api_key and settings.linear_team_id
-        ):
-            logger.info("linear_push_disabled", hub_issue_id=hub_issue_id)
-            return None
+        # ---- 出口无关的共享前置检查（取 hub / 类型 / 幂等 / 去重）----
         hub = db.get(HubIssue, hub_issue_id)
         if hub is None or hub.deleted_at is not None:
             logger.warning("linear_push_hub_not_found", hub_issue_id=hub_issue_id)
@@ -114,7 +148,7 @@ def push_hub_issue_to_linear(
         if hub.type not in ("Bug_fix", "Demand"):
             logger.info("linear_push_skip_type", hub_issue_id=hub_issue_id, type=hub.type)
             return None
-        if hub.linear_uuid is not None:
+        if hub.linear_uuid is not None or hub.linear_identifier is not None:
             logger.info(
                 "linear_push_already_pushed",
                 hub_issue_id=hub_issue_id,
@@ -125,13 +159,22 @@ def push_hub_issue_to_linear(
         if hub.superseded_by_hub_issue_id is not None:
             logger.info("linear_push_skip_superseded", hub_issue_id=hub_issue_id)
             return None
-
-        # hub 级语义去重：与已推 Linear 的同产品线 hub 重复 → supersede，不重复建 issue
-        # （creator 毕业时通常已查过；此处作 Bug/Demand 推前兜底，幂等）
+        # hub 级语义去重：与已推的同产品线 hub 重复 → supersede，不重复建
         if settings.hub_dedup_enabled:
             dup_id = maybe_supersede_duplicate(db, hub)
             if dup_id is not None:
                 return None
+
+        # ---- 出口分流 ----
+        # 转研发默认走飞书 webhook；关闭时回落直连 Linear GraphQL（需 key+team+push_enabled）。
+        if settings.linear_webhook_enabled:
+            return _push_via_webhook(db, hub)
+
+        if not (
+            settings.linear_push_enabled and settings.linear_api_key and settings.linear_team_id
+        ):
+            logger.info("linear_push_disabled", hub_issue_id=hub_issue_id)
+            return None
 
         # Per-assignee team routing: land the issue on the assignee's Linear
         # team (and set them as assignee). Group assignees (no email) fall

@@ -166,6 +166,20 @@ class Settings(BaseSettings):
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in
+    # 转研发推送出口：默认走飞书 webhook（下面三项），而非直连 Linear GraphQL。
+    # linear_webhook_enabled=True 时 push_hub_issue_to_linear 走 webhook；
+    # False 回落直连 Linear（linear_api_key + linear_team_id + linear_push_enabled）。
+    linear_webhook_enabled: bool = True
+    linear_webhook_url: str = (
+        "http://123.57.100.193/linear-webhook/feishu-ticket"
+        "?access_token=cf23a80b86949372c2cddab05760a04309b4b6ec8e1ecc0a1fb58a167925bc3a"
+    )
+    linear_webhook_token: str = ""  # 备用：如需与 url 分离传 token（当前 token 内嵌于 url）
+    linear_webhook_timeout_seconds: float = 30.0
+    # feishuUrl / 工单详情链接前缀（拼 {base}/tickets/{ticket_id}）。空则该字段留空。
+    hub_public_base_url: str = ""
+    # productLine 顶级产品默认值（webhook payload 的 productLine 字段，可空时回落此值）
+    linear_webhook_default_product_line: str = "金蝶发票云"
     # 工单分类后自动创建 hub_issue（conf ≥ 阈值才建）。默认关 — 先灰度主管手动
     hub_issue_auto_enabled: bool = False
     hub_issue_auto_confidence: float = 0.80

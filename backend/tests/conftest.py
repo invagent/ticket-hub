@@ -44,6 +44,9 @@ def _isolate_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         "LINEAR_PUSH_ENABLED": "false",
         "LINEAR_API_KEY": "",
         "LINEAR_TEAM_ID": "",
+        # webhook 出口默认 True（生产转研发走 webhook），但单测基线两个出口都关，
+        # 想测 webhook 分支的用例自行 setenv 打开（见 test_webhook_push.py）。
+        "LINEAR_WEBHOOK_ENABLED": "false",
         # 自动化开关一律回到默认（本地 .env 灰度开了也不影响单测断言）。
         "HUB_ISSUE_AUTO_ENABLED": "false",
         "SPLIT_AUTO_ENABLED": "false",

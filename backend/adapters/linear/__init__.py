@@ -15,6 +15,7 @@ from .types import (
     LinearTeam,
     LinearUser,
 )
+from .webhook_client import LinearWebhookClient, LinearWebhookConfig
 
 __all__ = [
     "CreateIssueRequest",
@@ -28,4 +29,6 @@ __all__ = [
     "LinearNetworkError",
     "LinearTeam",
     "LinearUser",
+    "LinearWebhookClient",
+    "LinearWebhookConfig",
 ]
