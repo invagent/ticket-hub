@@ -1045,7 +1045,7 @@ function RuleEditorDialog({
               type="checkbox"
               checked={hasOverflow}
               onChange={(e) => setHasOverflow(e.target.checked)}
-              className="w-3.5 h-3.5 accent-hub-teal"
+              className="w-5 h-5 accent-hub-teal"
             />
             <span className="text-[12.5px] font-bold">溢出关联（勾选启用溢出方案）</span>
           </label>
@@ -1196,7 +1196,7 @@ function DraftAssigneeTable({
                       ? (a.daily_cap === null ? "" : a.daily_cap)
                       : a.alloc_value}
                     onChange={(e) => updateValue(i, e.target.value)}
-                    className={`${INPUT_CLS} w-28`}
+                    className={`${INPUT_CLS} w-44`}
                     placeholder={mode === "count" ? "空=不限" : "1"}
                   />
                 </td>
@@ -1345,7 +1345,7 @@ function AssigneeTableSection({
                           setEditVals((v) => { const n = { ...v }; delete n[a.id]; return n; });
                         }
                       }}
-                      className={`${INPUT_CLS} w-28`}
+                      className={`${INPUT_CLS} w-44`}
                       placeholder={mode === "count" ? "空=不限" : "1"}
                     />
                   </td>
