@@ -119,12 +119,16 @@ export function MultiUserSelect({
   const [kw, setKw] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
   const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const inBox = boxRef.current?.contains(target) ?? false;
+      const inDrop = dropRef.current?.contains(target) ?? false;
+      if (!inBox && !inDrop) setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -165,6 +169,7 @@ export function MultiUserSelect({
 
   const dropdown = open ? (
     <div
+      ref={dropRef}
       className="bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5 z-[9999]"
       style={useFixed && dropPos
         ? { position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width }
