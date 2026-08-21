@@ -1054,7 +1054,6 @@ function RuleEditorDialog({
                       onChange={(e) => setOverflowRuleId(e.target.value ? Number(e.target.value) : undefined)}
                       className={`${INPUT_CLS} max-w-xs`}
                     >
-                      <option value="">— 无（仅靠溢出人员兜底） —</option>
                       {overflowCandidates.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.name}
@@ -1156,7 +1155,7 @@ function DraftAssigneeTable({
       <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
         <div className="flex flex-col gap-1">
           <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
-          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly />
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly className="w-[150px]" />
         </div>
         <button
           onClick={handleAdd}
@@ -1291,7 +1290,7 @@ function AssigneeTableSection({
       <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
         <div className="flex flex-col gap-1">
           <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
-          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly />
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly className="w-[150px]" />
         </div>
         <button
           onClick={() => addMut.mutate(addIds.filter((id) => !existingIds.has(id)))}
