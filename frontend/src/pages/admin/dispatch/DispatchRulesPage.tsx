@@ -1045,7 +1045,7 @@ function RuleEditorDialog({
           </label>
           {hasOverflow && (
             <>
-              {mode === "count" && (
+              {false && mode === "count" && (
                 <div className="mb-3">
                   <label className="flex flex-col gap-1">
                     <span className="text-[11px] text-hub-textMuted">关联溢出规则（主力全达上限后转派）</span>
