@@ -921,8 +921,8 @@ const COL_HEADERS: { key: ColKey; label: string; width: number; sticky?: boolean
   { key: "product_line_category", label: "产品线分类", width: 110 },
   { key: "name", label: "模块", width: 160 },
   { key: "status", label: "状态", width: 72 },
-  { key: "product_owner", label: "产品责任人", width: 140 },
   { key: "dev_owners", label: "研发责任人", width: 180 },
+  { key: "product_owner", label: "产品责任人", width: 140 },
   { key: "updated_at", label: "最后操作时间", width: 140 },
   { key: "updated_by", label: "最后操作人", width: 110 },
 ];
@@ -955,7 +955,7 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
       case "product_owner": return m.product_owner ?? "";
       case "dev_owners": return m.dev_owners ?? "";
       case "updated_by": return m.updated_by ?? "";
-      case "updated_at": return m.updated_at ? new Date(m.updated_at).toLocaleString("zh-CN") : "";
+      case "updated_at": { if (!m.updated_at) return ""; const d = new Date(m.updated_at); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
     }
   }
 
