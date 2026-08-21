@@ -916,8 +916,8 @@ function FilterPopover({
 type ColKey = "product_line_code" | "product_line_name" | "product_line_category" | "name" | "status" | "product_owner" | "dev_owners" | "updated_by" | "updated_at";
 
 const COL_HEADERS: { key: ColKey; label: string; width: number; sticky?: boolean }[] = [
-  { key: "product_line_code", label: "产品线编码", width: 140, sticky: true },
-  { key: "product_line_name", label: "产品线", width: 130, sticky: true },
+  { key: "product_line_code", label: "产品线编码", width: 105, sticky: true },
+  { key: "product_line_name", label: "产品线", width: 180, sticky: true },
   { key: "product_line_category", label: "产品线分类", width: 110 },
   { key: "name", label: "模块", width: 160 },
   { key: "status", label: "状态", width: 72 },
