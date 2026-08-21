@@ -308,6 +308,7 @@ function ModuleCell({ items }: { items: string[] }) {
 export function DispatchRulesPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<RuleOut | "new" | null>(null);
+  const [viewing, setViewing] = useState<RuleOut | null>(null);
   const [logsRuleId, setLogsRuleId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -333,6 +334,12 @@ export function DispatchRulesPage() {
   const plQ = useProductLineOptions();
   const plMap = new Map<string, string>(
     ((plQ.data ?? []) as { code: string; name: string }[]).map((p) => [p.code, p.name])
+  );
+
+  // source name map for display
+  const sourceQ = useSourceOptions();
+  const sourceMap = new Map<string, string>(
+    ((sourceQ.data ?? []) as { code: string; name: string }[]).map((s) => [s.code, s.name])
   );
 
   // SLA name map
@@ -387,13 +394,13 @@ export function DispatchRulesPage() {
       )}
       {list.length > 0 && (
         <div className="border border-hub-border rounded-[10px] overflow-x-auto bg-white">
-          {/* 规则编码(left:40px)、规则名称(left:152px)、操作列(right:0) sticky 不透明背景防穿透 */}
+          {/* 序号(left:0)、规则编码(left:40px)、规则名称(left:152px)、操作列(right:0) sticky 实色背景防穿透 */}
           <table className="text-[12px]" style={{ minWidth: 1540, borderCollapse: "separate", borderSpacing: 0 }}>
             <thead>
-              <tr className="text-hub-textMuted text-[11px]" style={{ backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>
-                <th className="text-center font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 40, minWidth: 40 }}>序号</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[40px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>规则编码</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[152px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>规则名称</th>
+              <tr className="text-hub-textMuted text-[11px]" style={{ backgroundColor: "#f4f6f8" }}>
+                <th className="text-center font-semibold px-2 py-2 whitespace-nowrap sticky left-0 z-20" style={{ width: 40, minWidth: 40, backgroundColor: "#f4f6f8" }}>序号</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[40px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112, backgroundColor: "#f4f6f8" }}>规则编码</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[152px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128, backgroundColor: "#f4f6f8" }}>规则名称</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 200, minWidth: 200 }}>适配产品线</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 112, minWidth: 112 }}>适配模块</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配来源系统</th>
@@ -406,7 +413,7 @@ export function DispatchRulesPage() {
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>兜底人员</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 128, minWidth: 128 }}>最后更新时间</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>最后更新操作人</th>
-                <th className="text-right font-semibold px-2 py-2 whitespace-nowrap sticky right-0 z-20 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 136, minWidth: 136, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>操作</th>
+                <th className="text-right font-semibold px-2 py-2 whitespace-nowrap sticky right-0 z-20 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 136, minWidth: 136, backgroundColor: "#f4f6f8" }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -415,9 +422,14 @@ export function DispatchRulesPage() {
                 const assignees = (allAssigneesQ.data?.[r.id] ?? []) as AssigneeOut[];
                 return (
                   <tr key={r.id} className="border-t border-hub-border hover:bg-[#f4f6f8] group">
-                    <td className="px-2 py-2 text-center text-hub-textMuted whitespace-nowrap bg-white group-hover:bg-[#f4f6f8]">{idx + 1}</td>
-                    <td className="px-2 py-2 text-hub-textMuted font-mono text-[11px] whitespace-nowrap sticky left-[40px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
-                      {r.rule_code ?? "—"}
+                    <td className="px-2 py-2 text-center text-hub-textMuted whitespace-nowrap sticky left-0 z-10 bg-white group-hover:bg-[#f4f6f8]">{idx + 1}</td>
+                    <td className="px-2 py-2 text-hub-teal font-mono text-[11px] whitespace-nowrap sticky left-[40px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
+                      <button
+                        onClick={() => setViewing(r)}
+                        className="hover:underline cursor-pointer"
+                      >
+                        {r.rule_code ?? "—"}
+                      </button>
                     </td>
                     <td className="px-2 py-2 font-semibold whitespace-nowrap sticky left-[152px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
                       {r.name}
@@ -429,7 +441,11 @@ export function DispatchRulesPage() {
                       <ModuleCell items={r.match_modules} />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
-                      <OverflowCell items={r.match_sources} maxChars={10} />
+                      <OverflowCell
+                        items={r.match_sources}
+                        maxChars={10}
+                        renderItem={(code) => sourceMap.get(code) ?? code}
+                      />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
                       <OverflowCell
@@ -520,6 +536,18 @@ export function DispatchRulesPage() {
         />
       )}
 
+      {viewing !== null && (
+        <RuleViewDialog
+          rule={viewing}
+          assignees={(allAssigneesQ.data?.[viewing.id] ?? []) as AssigneeOut[]}
+          plMap={plMap}
+          sourceMap={sourceMap}
+          slaMap={slaMap}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setViewing(null); setEditing(viewing); }}
+        />
+      )}
+
       {logsRuleId !== null && (
         <LogsDialog
           ruleId={logsRuleId}
@@ -527,6 +555,172 @@ export function DispatchRulesPage() {
           onClose={() => setLogsRuleId(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ---- Rule View Dialog (read-only) ------------------------------------------
+
+function RuleViewDialog({
+  rule,
+  assignees,
+  plMap,
+  sourceMap,
+  slaMap,
+  onClose,
+  onEdit,
+}: {
+  rule: RuleOut;
+  assignees: AssigneeOut[];
+  plMap: Map<string, string>;
+  sourceMap: Map<string, string>;
+  slaMap: Map<string, string>;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const q = useUserOptions();
+  const allUsers = (q.data ?? []) as { id: number; name: string }[];
+  const getName = (id: number) => allUsers.find((u) => u.id === id)?.name ?? `#${id}`;
+  const main = assignees.filter((a) => a.tier === "main");
+  const overflow = assignees.filter((a) => a.tier === "overflow");
+
+  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] text-hub-textMuted font-semibold">{label}</span>
+      <div className="text-[12.5px] text-hub-text">{children}</div>
+    </div>
+  );
+
+  const TagList = ({ items, mapper }: { items: string[]; mapper?: (s: string) => string }) => {
+    const fmt = mapper ?? ((s) => s);
+    if (!items.length) return <span className="text-hub-textFaint">全部不限</span>;
+    return (
+      <div className="flex flex-wrap gap-1">
+        {items.map((s) => (
+          <span key={s} className="bg-hub-teal-light text-hub-teal-deep text-[10.5px] px-1.5 py-px rounded-full border border-hub-teal-border">
+            {fmt(s)}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-end z-50">
+      <div
+        className="bg-white rounded-l-[16px] overflow-y-auto p-6 font-hub text-[13px] h-full"
+        style={{
+          width: "min(900px, 70vw)",
+          maxHeight: "100vh",
+          animation: "slideInRight 0.25s cubic-bezier(0.4,0,0.2,1)",
+        }}
+      >
+        <style>{`
+          @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0.6; }
+            to   { transform: translateX(0);    opacity: 1; }
+          }
+        `}</style>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-[16px] font-bold m-0">{rule.name}</h3>
+            <span className="text-[11px] text-hub-textMuted font-mono">{rule.rule_code}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onEdit} className={PRIMARY_BTN}>编辑</button>
+            <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text text-xl leading-none">×</button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-5">
+          <Field label="规则名称">{rule.name}</Field>
+          <Field label="优先级">{rule.priority}</Field>
+          <Field label="派单规则">
+            <span className="bg-hub-teal-light text-hub-teal-deep text-[11px] px-2 py-0.5 rounded-full border border-hub-teal-border">
+              {MODE_LABELS[rule.dispatch_mode] ?? rule.dispatch_mode}
+            </span>
+          </Field>
+          <Field label="状态">
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+              rule.is_active
+                ? "bg-hub-green-light text-hub-green border-hub-green-border"
+                : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
+            }`}>
+              {rule.is_active ? "启用" : "禁用"}
+            </span>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-5 border-t border-hub-borderLight pt-4">
+          <Field label="适配来源系统">
+            <TagList items={rule.match_sources} mapper={(c) => sourceMap.get(c) ?? c} />
+          </Field>
+          <Field label="适配产品线">
+            <TagList items={rule.match_product_lines} mapper={(c) => plMap.get(c) ?? c} />
+          </Field>
+          <Field label="适配模块">
+            <TagList items={rule.match_modules} />
+          </Field>
+          <Field label="适配服务等级">
+            <TagList items={rule.match_sla} mapper={(c) => slaMap.get(c) ?? c} />
+          </Field>
+        </div>
+
+        <div className="mb-5 border-t border-hub-borderLight pt-4">
+          <div className="text-[12.5px] font-bold mb-2">人员和数量</div>
+          {main.length === 0 ? (
+            <p className="text-xs text-hub-textFaint">暂无</p>
+          ) : (
+            <table className="w-full text-[12px] mb-2">
+              <thead>
+                <tr className="text-hub-textMuted text-[11px]">
+                  <th className="text-left font-semibold pb-1 w-40">人员</th>
+                  <th className="text-left font-semibold pb-1">{rule.dispatch_mode === "count" ? "当日上限" : "相对权重"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {main.map((a) => (
+                  <tr key={a.id} className="border-t border-hub-borderLight">
+                    <td className="py-1.5 pr-2">{getName(a.user_id)}</td>
+                    <td className="py-1.5 tabular-nums">
+                      {rule.dispatch_mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="mb-5 border-t border-hub-borderLight pt-4">
+          <div className="text-[12.5px] font-bold mb-1">溢出关联</div>
+          <p className="text-[12px] text-hub-textMuted mb-2">
+            {rule.overflow_rule_id ? "已关联溢出规则" : "未关联"}
+          </p>
+          {overflow.length > 0 && (
+            <>
+              <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">溢出人员</div>
+              <table className="w-full text-[12px]">
+                <tbody>
+                  {overflow.map((a) => (
+                    <tr key={a.id} className="border-t border-hub-borderLight">
+                      <td className="py-1.5 pr-2 w-40">{getName(a.user_id)}</td>
+                      <td className="py-1.5 tabular-nums">
+                        {rule.dispatch_mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-hub-borderLight pt-4 text-[11.5px] text-hub-textMuted">
+          <span>最后更新：{fmtDate(rule.updated_at)}</span>
+          {rule.updated_by && <span className="ml-4">操作人：{rule.updated_by}</span>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -719,8 +913,18 @@ function RuleEditorDialog({
     <div className="fixed inset-0 bg-black/30 flex items-center justify-end z-50">
       <div
         className="bg-white rounded-l-[16px] overflow-y-auto p-6 font-hub text-[13px] h-full"
-        style={{ width: "min(1296px, 80vw)", maxHeight: "100vh" }}
+        style={{
+          width: "min(1296px, 80vw)",
+          maxHeight: "100vh",
+          animation: "slideInRight 0.25s cubic-bezier(0.4,0,0.2,1)",
+        }}
       >
+        <style>{`
+          @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0.6; }
+            to   { transform: translateX(0);    opacity: 1; }
+          }
+        `}</style>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-[16px] font-bold m-0">
             {isNew ? "新建规则" : `编辑规则 · ${rule.name}`}
