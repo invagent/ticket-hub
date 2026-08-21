@@ -200,7 +200,43 @@ function AssigneeSummaryCell({ assignees, mode }: { assignees: AssigneeOut[]; mo
   );
 }
 
-// ---- main page -------------------------------------------------------------
+// ---- module cell: each item on its own line, truncate at 10 chars, +N popup -
+function ModuleCell({ items }: { items: string[] }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const MAX_ROWS = 3; // show at most 3 rows before +N
+
+  if (!items.length) return <span className="text-hub-textFaint">全部</span>;
+
+  const visible = items.slice(0, MAX_ROWS);
+  const hidden = items.slice(MAX_ROWS);
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {visible.map((m, i) => (
+        <span key={i} className="block text-[11.5px] leading-snug" style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m}>
+          {m}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span
+          className="text-hub-teal text-[11px] cursor-pointer select-none font-semibold"
+          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        >
+          +{hidden.length}
+        </span>
+      )}
+      {anchor && hidden.length > 0 && (
+        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
+          <div className="flex flex-col gap-0.5">
+            {items.map((m, i) => <span key={i} className="block">{m}</span>)}
+          </div>
+        </TooltipPopup>
+      )}
+    </div>
+  );
+}
+
+
 
 export function DispatchRulesPage() {
   const qc = useQueryClient();
@@ -284,15 +320,15 @@ export function DispatchRulesPage() {
       )}
       {list.length > 0 && (
         <div className="border border-hub-border rounded-[10px] overflow-x-auto bg-white">
-          {/* 规则编码(left:40px)、规则名称(left:152px)、操作列(right:0) sticky；其他列横向滚动 */}
-          <table className="text-[12px]" style={{ minWidth: 1600, borderCollapse: "separate", borderSpacing: 0 }}>
+          {/* 规则编码(left:40px)、规则名称(left:152px)、操作列(right:0) sticky 不透明背景防穿透 */}
+          <table className="text-[12px]" style={{ minWidth: 1540, borderCollapse: "separate", borderSpacing: 0 }}>
             <thead>
-              <tr className="bg-hub-page text-hub-textMuted text-[11px]">
+              <tr className="text-hub-textMuted text-[11px]" style={{ backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>
                 <th className="text-center font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 40, minWidth: 40 }}>序号</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky left-[40px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112 }}>规则编码</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky left-[152px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128 }}>规则名称</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[40px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>规则编码</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[152px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>规则名称</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 200, minWidth: 200 }}>适配产品线</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 160, minWidth: 160 }}>适配模块</th>
+                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 112, minWidth: 112 }}>适配模块</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配来源系统</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配服务等级</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>派单规则</th>
@@ -303,28 +339,27 @@ export function DispatchRulesPage() {
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>兜底人员</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 128, minWidth: 128 }}>最后更新时间</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 96, minWidth: 96 }}>最后更新操作人</th>
-                <th className="text-right font-semibold px-2 py-2 whitespace-nowrap bg-hub-page sticky right-0 z-10 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 136, minWidth: 136 }}>操作</th>
+                <th className="text-right font-semibold px-2 py-2 whitespace-nowrap sticky right-0 z-20 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 136, minWidth: 136, backgroundColor: "var(--color-hub-page, #f4f6f8)" }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {list.map((r, idx) => {
                 const overflow = list.find((x) => x.id === r.overflow_rule_id);
                 const assignees = (allAssigneesQ.data?.[r.id] ?? []) as AssigneeOut[];
-                const rowBg = "bg-white";
                 return (
-                  <tr key={r.id} className="border-t border-hub-border hover:bg-hub-page/40 group">
-                    <td className="px-2 py-2 text-center text-hub-textMuted whitespace-nowrap">{idx + 1}</td>
-                    <td className={`px-2 py-2 text-hub-textMuted font-mono text-[11px] whitespace-nowrap sticky left-[40px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
+                  <tr key={r.id} className="border-t border-hub-border hover:bg-[#f4f6f8] group">
+                    <td className="px-2 py-2 text-center text-hub-textMuted whitespace-nowrap bg-white group-hover:bg-[#f4f6f8]">{idx + 1}</td>
+                    <td className="px-2 py-2 text-hub-textMuted font-mono text-[11px] whitespace-nowrap sticky left-[40px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
                       {r.rule_code ?? "—"}
                     </td>
-                    <td className={`px-2 py-2 font-semibold whitespace-nowrap sticky left-[152px] z-10 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
+                    <td className="px-2 py-2 font-semibold whitespace-nowrap sticky left-[152px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
                       {r.name}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
                       <ProductLineCellItems codes={r.match_product_lines} plMap={plMap} />
                     </td>
-                    <td className="px-2 py-2 whitespace-nowrap">
-                      <OverflowCell items={r.match_modules} maxChars={20} />
+                    <td className="px-2 py-2" style={{ wordBreak: "break-all", maxWidth: 112 }}>
+                      <ModuleCell items={r.match_modules} />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
                       <OverflowCell items={r.match_sources} maxChars={10} />
@@ -366,7 +401,7 @@ export function DispatchRulesPage() {
                     <td className="px-2 py-2 text-hub-textMuted text-[11.5px] whitespace-nowrap">
                       {r.updated_by ?? "—"}
                     </td>
-                    <td className={`px-2 py-2 text-right whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] ${rowBg} group-hover:bg-hub-page/40`}>
+                    <td className="px-2 py-2 text-right whitespace-nowrap sticky right-0 z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)]">
                       <button
                         onClick={() => setLogsRuleId(r.id)}
                         className="text-[11px] text-hub-teal hover:underline mr-2"
