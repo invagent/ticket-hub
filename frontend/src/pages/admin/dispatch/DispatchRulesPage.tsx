@@ -32,17 +32,6 @@ const PRIMARY_BTN =
   "px-3.5 py-1.5 text-[12.5px] font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95";
 const MODE_LABELS: Record<string, string> = { count: "按数量", ratio: "按比例" };
 
-// Fixed SLA level options (also fetched from backend for display names)
-const SLA_OPTIONS = [
-  { code: "22", name: "标准成功服务（2023版）" },
-  { code: "54", name: "高级成功服务（含定制开发维）" },
-  { code: "52", name: "高级成功服务（仅工单）" },
-  { code: "55", name: "高级成功服务（2023版）" },
-  { code: "50", name: "战略客户绿色通道" },
-  { code: "10", name: "服务期外" },
-  { code: "19", name: "标准成功服务" },
-];
-
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
     const d = (e.body as { detail?: string } | undefined)?.detail;
@@ -844,7 +833,12 @@ function RuleEditorDialog({
     (r) => r.rule_type === "overflow" && r.id !== rule?.id
   );
 
-  const slaOpts = SLA_OPTIONS.map((s) => ({ value: s.code, label: s.name }));
+  const slaLevelsQ = useQuery({
+    queryKey: ["admin", "dispatch", "sla-levels"],
+    queryFn: dispatchApi.listSlaLevels,
+    staleTime: 300_000,
+  });
+  const slaOpts = ((slaLevelsQ.data ?? []) as SlaLevelOut[]).map((s) => ({ value: s.code, label: s.name }));
 
   const qc = useQueryClient();
 
