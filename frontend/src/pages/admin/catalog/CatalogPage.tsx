@@ -578,9 +578,12 @@ function BatchImportButton({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
+
   async function handleFile(file: File) {
     setImporting(true);
     setResult(null);
+    setImportProgress(null);
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
@@ -590,58 +593,63 @@ function BatchImportButton({
       let ok = 0;
       const fail: { row: number; reason: string }[] = [];
 
+      // 预处理：校验基础字段
+      type Task = { rowNum: number; plCode: string; plName: string; name: string; productOwner: string | null; devOwners: string | null };
+      const tasks: Task[] = [];
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const plCode = (row["产品线编码*"] ?? row["产品线编码"] ?? "").trim();
         const name = (row["*产品模块"] ?? row["产品模块"] ?? row["模块名"] ?? "").trim();
         const productOwner = (row["产品责任人"] ?? "").trim() || null;
         const devOwners = (row["研发责任人"] ?? "").trim() || null;
-        const rowNum = i + 2; // 1-based + header
-
-        if (!plCode || !name) {
-          fail.push({ row: rowNum, reason: "产品线编码或产品模块为空" });
-          continue;
-        }
+        const rowNum = i + 2;
+        if (!plCode || !name) { fail.push({ row: rowNum, reason: "产品线编码或产品模块为空" }); continue; }
         const pl = productLines.find((p) => p.code === plCode);
-        if (!pl) {
-          fail.push({ row: rowNum, reason: `产品线编码「${plCode}」不存在` });
-          continue;
-        }
-        try {
-          await api.post("/api/admin/modules", {
-            product_line_code: plCode,
-            name,
-            product_owner: productOwner,
-            dev_owners: devOwners,
-          });
-          ok++;
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 409) {
-            // 已存在：找到该模块 id 做 PATCH（覆盖责任人，若禁用则恢复启用）
-            const existing = allModules.find(
-              (m) => m.product_line_code === plCode && m.name === name
-            );
-            if (existing) {
-              try {
-                await rawRequest(`/api/admin/modules/${existing.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({
-                    product_owner: productOwner,
-                    dev_owners: devOwners,
-                    ...(existing.status === "disabled" ? { status: "enabled" } : {}),
-                  }),
-                });
-                ok++;
-              } catch (e2) {
-                fail.push({ row: rowNum, reason: `更新失败：${String(e2)}` });
+        if (!pl) { fail.push({ row: rowNum, reason: `产品线编码「${plCode}」不存在` }); continue; }
+        tasks.push({ rowNum, plCode, plName: pl.name, name, productOwner, devOwners });
+      }
+
+      setImportProgress({ done: 0, total: tasks.length });
+
+      // 分批并发（每批10个），避免大量请求串行超时
+      const BATCH = 10;
+      for (let b = 0; b < tasks.length; b += BATCH) {
+        const batch = tasks.slice(b, b + BATCH);
+        await Promise.all(batch.map(async (t) => {
+          try {
+            await api.post("/api/admin/modules", {
+              product_line_code: t.plCode,
+              name: t.name,
+              product_owner: t.productOwner,
+              dev_owners: t.devOwners,
+            });
+            ok++;
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 409) {
+              const existing = allModules.find((m) => m.product_line_code === t.plCode && m.name === t.name);
+              if (existing) {
+                try {
+                  await rawRequest(`/api/admin/modules/${existing.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      product_owner: t.productOwner,
+                      dev_owners: t.devOwners,
+                      ...(existing.status === "disabled" ? { status: "enabled" } : {}),
+                    }),
+                  });
+                  ok++;
+                } catch (e2) {
+                  fail.push({ row: t.rowNum, reason: `更新失败：${String(e2)}` });
+                }
+              } else {
+                fail.push({ row: t.rowNum, reason: `「${t.plName}」下模块「${t.name}」已存在但未找到记录` });
               }
             } else {
-              fail.push({ row: rowNum, reason: `「${pl.name}」下模块「${name}」已存在但未找到记录` });
+              fail.push({ row: t.rowNum, reason: String(e) });
             }
-          } else {
-            fail.push({ row: rowNum, reason: String(e) });
           }
-        }
+        }));
+        setImportProgress({ done: Math.min(b + BATCH, tasks.length), total: tasks.length });
       }
 
       setResult({ ok, fail });
@@ -651,6 +659,7 @@ function BatchImportButton({
       }
     } finally {
       setImporting(false);
+      setImportProgress(null);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -689,7 +698,11 @@ function BatchImportButton({
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M7 9V1M4 4l3-3 3 3M2 11h10" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
-              {importing ? "导入中…" : "选择 Excel 文件"}
+              {importing
+                ? importProgress
+                  ? `导入中… ${importProgress.done}/${importProgress.total}`
+                  : "导入中…"
+                : "选择 Excel 文件"}
               <input
                 ref={fileRef}
                 type="file"
