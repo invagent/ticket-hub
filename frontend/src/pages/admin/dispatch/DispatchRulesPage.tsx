@@ -1,18 +1,13 @@
 /**
- * /admin/dispatch — Operation 运营分派规则管理页.
+ * /admin/dispatch — 派单规则配置页.
  *
- * 独立多维规则引擎（与研发责任田 assignment_scopes 正交），对齐设计
- * `docs/superpowers/specs/2026-08-06-operation-dispatch-engine-design.md`：
- *
- *   规则列表：匹配条件(来源/产品线/模块/SLA) + 模式(count/ratio) + 优先级
- *            + 溢出关联 + 启用开关
- *   规则编辑弹窗：匹配多选 + 模式切换(动态显示 daily_cap/alloc_value 语义)
- *            + 溢出规则下拉(仅 count) + 分派人子表(UserSelect + tier)
- *   查看今日派单：dispatch_log 按 rule_id 聚合今日各人已派数
- *
- * require_admin（与 AdminTabs 的 adminOnly 分组一致）。
+ * 0032 改版：
+ *   - 列表：序号/规则编码/规则名称/适配产品线/适配模块/适配来源/适配服务等级/
+ *           派单规则/状态/优先级/人员和数量/溢出关联/兜底人员/最后更新时间/最后更新人/操作
+ *   - 编辑弹窗：1.8× 宽 / 1.5× 高；SLA 多选；产品线×模块联动；人员表格行；
+ *              溢出复选+溢出人员表；兜底人员单选
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import {
@@ -26,14 +21,25 @@ import {
   type SourceOpt,
 } from "@/components/selectors";
 import { AdminTabs } from "../AdminTabs";
-import { dispatchApi, type AssigneeOut, type RuleBody, type RuleOut } from "./dispatchApi";
+import { dispatchApi, type AssigneeOut, type RuleBody, type RuleOut, type SlaLevelOut } from "./dispatchApi";
 
+// ---- style tokens ----------------------------------------------------------
 const INPUT_CLS =
   "px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px]";
 const PRIMARY_BTN =
   "px-3.5 py-1.5 text-[12.5px] font-semibold bg-hub-teal text-white rounded-md disabled:opacity-50 hover:brightness-95";
 const MODE_LABELS: Record<string, string> = { count: "按数量", ratio: "按比例" };
-const TIER_LABELS: Record<string, string> = { main: "主力", overflow: "溢出" };
+
+// Fixed SLA level options (also fetched from backend for display names)
+const SLA_OPTIONS = [
+  { code: "22", name: "标准成功服务（2023版）" },
+  { code: "54", name: "高级成功服务（含定制开发维）" },
+  { code: "52", name: "高级成功服务（仅工单）" },
+  { code: "55", name: "高级成功服务（2023版）" },
+  { code: "50", name: "战略客户绿色通道" },
+  { code: "10", name: "服务期外" },
+  { code: "19", name: "标准成功服务" },
+];
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) {
@@ -43,14 +49,133 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
-function matchSummary(r: RuleOut): string {
-  const parts: string[] = [];
-  if (r.match_product_lines?.length) parts.push(`产品线:${r.match_product_lines.join("/")}`);
-  if (r.match_modules?.length) parts.push(`模块:${r.match_modules.join("/")}`);
-  if (r.match_sources?.length) parts.push(`来源:${r.match_sources.join("/")}`);
-  if (r.match_sla?.length) parts.push(`SLA:${r.match_sla.join("/")}`);
-  return parts.length ? parts.join(" · ") : "不限（全匹配）";
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+// ---- overflow tooltip cell -------------------------------------------------
+function OverflowCell({ items, maxChars, renderItem }: {
+  items: string[];
+  maxChars: number;
+  renderItem?: (s: string) => string;
+}) {
+  const [show, setShow] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const fmt = renderItem ?? ((s) => s);
+
+  if (!items.length) return <span className="text-hub-textFaint">—</span>;
+
+  let visible = "";
+  let hiddenCount = 0;
+  for (let i = 0; i < items.length; i++) {
+    const label = fmt(items[i]);
+    if (visible.length + label.length + (visible ? 1 : 0) <= maxChars) {
+      visible += (visible ? "、" : "") + label;
+    } else {
+      hiddenCount = items.length - i;
+      break;
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative inline-flex items-center gap-1 whitespace-nowrap">
+      <span>{visible}</span>
+      {hiddenCount > 0 && (
+        <span
+          className="text-hub-teal cursor-pointer select-none"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          +{hiddenCount}
+        </span>
+      )}
+      {show && hiddenCount > 0 && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[160px] max-w-[320px] text-[11.5px] text-hub-text leading-relaxed whitespace-normal">
+          {items.map(fmt).join("、")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// max 4 product lines in cell, rest as +N
+function ProductLineCellItems({ codes, plMap }: { codes: string[]; plMap: Map<string, string> }) {
+  const [show, setShow] = useState(false);
+  if (!codes.length) return <span className="text-hub-textFaint">全部</span>;
+  const visible = codes.slice(0, 4);
+  const hidden = codes.slice(4);
+  return (
+    <div className="relative inline-flex items-center gap-1 flex-wrap">
+      {visible.map((c) => (
+        <span key={c} className="bg-hub-teal-light text-hub-teal-deep text-[10.5px] px-1.5 py-px rounded-full border border-hub-teal-border whitespace-nowrap">
+          {plMap.get(c) ?? c}
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span
+          className="text-hub-teal text-[11px] cursor-pointer select-none"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          +{hidden.length}
+        </span>
+      )}
+      {show && hidden.length > 0 && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[180px] max-w-[360px] text-[11.5px] leading-relaxed whitespace-normal">
+          {codes.map((c) => plMap.get(c) ?? c).join("、")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- assignee summary cell -------------------------------------------------
+function AssigneeSummaryCell({ assignees, mode }: { assignees: AssigneeOut[]; mode: string }) {
+  const [show, setShow] = useState(false);
+  const userName = useUserName();
+  const main = assignees.filter((a) => a.tier === "main");
+  if (!main.length) return <span className="text-hub-textFaint">—</span>;
+
+  const parts = main.slice(0, 3).map((a) => {
+    const val = mode === "count" ? (a.daily_cap ?? "不限") : a.alloc_value;
+    return `${userName(a.user_id)}:${val}`;
+  });
+  const hidden = Math.max(0, main.length - 3);
+  const summary = parts.join("、") + (hidden > 0 ? `+${hidden}` : "");
+
+  return (
+    <div className="relative inline-flex items-center gap-1 whitespace-nowrap">
+      <span className="text-[11.5px]">{summary}</span>
+      {(hidden > 0 || assignees.length > 3) && (
+        <span
+          className="text-hub-teal text-[10.5px] cursor-pointer"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+        >
+          …
+        </span>
+      )}
+      {show && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-hub-border rounded-lg shadow-lg p-2 min-w-[200px] text-[11.5px] whitespace-normal">
+          {assignees.map((a) => {
+            const tier = a.tier === "overflow" ? "【溢出】" : "";
+            const val = mode === "count" ? `上限${a.daily_cap ?? "不限"}` : `权重${a.alloc_value}`;
+            return (
+              <div key={a.id} className="py-0.5">
+                {tier}{userName(a.user_id)} · {val}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- main page -------------------------------------------------------------
 
 export function DispatchRulesPage() {
   const qc = useQueryClient();
@@ -62,6 +187,34 @@ export function DispatchRulesPage() {
     queryKey: ["admin", "dispatch", "rules"],
     queryFn: dispatchApi.listRules,
   });
+
+  // pre-fetch assignees for all rules for summary cells
+  const allAssigneesQ = useQuery({
+    queryKey: ["admin", "dispatch", "all-assignees"],
+    queryFn: async () => {
+      const rList = (rules.data ?? []) as RuleOut[];
+      const entries = await Promise.all(
+        rList.map(async (r) => [r.id, await dispatchApi.listAssignees(r.id)] as [number, AssigneeOut[]])
+      );
+      return Object.fromEntries(entries) as Record<number, AssigneeOut[]>;
+    },
+    enabled: (rules.data ?? []).length > 0,
+  });
+
+  // product line name map for display
+  const plQ = useProductLineOptions();
+  const plMap = new Map<string, string>(
+    ((plQ.data ?? []) as { code: string; name: string }[]).map((p) => [p.code, p.name])
+  );
+
+  // SLA name map
+  const slaQ = useQuery({
+    queryKey: ["admin", "dispatch", "sla-levels"],
+    queryFn: dispatchApi.listSlaLevels,
+  });
+  const slaMap = new Map<string, string>(
+    ((slaQ.data ?? []) as SlaLevelOut[]).map((s) => [s.code, s.name])
+  );
 
   const invalidate = () => {
     setError(null);
@@ -85,11 +238,11 @@ export function DispatchRulesPage() {
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-screen bg-hub-page px-7 pt-5 pb-10">
-      <h1 className="m-0 text-[17px] font-bold">管理</h1>
+      <h1 className="m-0 text-[17px] font-bold">系统基础配置</h1>
       <AdminTabs />
       <div className="flex items-center justify-between mb-3">
         <p className="text-[11.5px] text-hub-textMuted m-0">
-          运营分派规则 —— Operation 工单毕业时按来源/产品线/模块/SLA 匹配规则，
+          派单规则列表 —— Operation 工单毕业时按来源/产品线/模块/服务等级匹配规则，
           在多个运营处理人之间按数量或比例预分配。
         </p>
         <button onClick={() => setEditing("new")} className={PRIMARY_BTN}>
@@ -97,69 +250,132 @@ export function DispatchRulesPage() {
         </button>
       </div>
 
-      <h2 className="text-[15px] font-bold mt-4 mb-2">运营分派规则</h2>
+      <h2 className="text-[15px] font-bold mt-4 mb-2">派单规则列表</h2>
       {error && <div className="text-xs text-hub-rose mb-2">{error}</div>}
 
       {rules.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
       {!rules.isLoading && list.length === 0 && (
-        <p className="text-xs text-hub-textFaint">暂无分派规则 —— 转人工将回落主管兜底。</p>
+        <p className="text-xs text-hub-textFaint">暂无派单规则 —— 转人工将回落主管兜底。</p>
       )}
       {list.length > 0 && (
-        <div className="border border-hub-border rounded-[10px] overflow-hidden bg-white">
-          <table className="w-full text-[12.5px]">
+        <div className="border border-hub-border rounded-[10px] overflow-x-auto bg-white">
+          <table className="w-full text-[12px] min-w-[1400px]">
             <thead>
-              <tr className="bg-hub-page text-hub-textMuted text-[11.5px]">
-                <th className="text-left font-semibold px-3 py-2">规则名</th>
-                <th className="text-left font-semibold px-3 py-2">匹配条件</th>
-                <th className="text-left font-semibold px-3 py-2">模式</th>
-                <th className="text-left font-semibold px-3 py-2">优先级</th>
-                <th className="text-left font-semibold px-3 py-2">溢出关联</th>
-                <th className="text-left font-semibold px-3 py-2">启用</th>
-                <th className="px-3 py-2" />
+              <tr className="bg-hub-page text-hub-textMuted text-[11px]">
+                <th className="text-center font-semibold px-2 py-2 w-10">序号</th>
+                <th className="text-left font-semibold px-2 py-2 w-28">规则编码</th>
+                <th className="text-left font-semibold px-2 py-2 w-32">规则名称</th>
+                <th className="text-left font-semibold px-2 py-2 w-40">适配产品线</th>
+                <th className="text-left font-semibold px-2 py-2 w-36">适配模块</th>
+                <th className="text-left font-semibold px-2 py-2 w-28">适配来源系统</th>
+                <th className="text-left font-semibold px-2 py-2 w-28">适配服务等级</th>
+                <th className="text-left font-semibold px-2 py-2 w-20">派单规则</th>
+                <th className="text-left font-semibold px-2 py-2 w-14">状态</th>
+                <th className="text-left font-semibold px-2 py-2 w-14">优先级</th>
+                <th className="text-left font-semibold px-2 py-2 w-44">人员和数量</th>
+                <th className="text-left font-semibold px-2 py-2 w-20">溢出关联</th>
+                <th className="text-left font-semibold px-2 py-2 w-24">兜底人员</th>
+                <th className="text-left font-semibold px-2 py-2 w-32">最后更新时间</th>
+                <th className="text-left font-semibold px-2 py-2 w-24">最后更新操作人</th>
+                <th className="text-right font-semibold px-2 py-2 w-32">操作</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((r) => {
+              {list.map((r, idx) => {
                 const overflow = list.find((x) => x.id === r.overflow_rule_id);
+                const assignees = (allAssigneesQ.data?.[r.id] ?? []) as AssigneeOut[];
+                // fallback pool from config not available per-rule here, skip
                 return (
-                  <tr key={r.id} className="border-t border-hub-border">
-                    <td className="px-3 py-2 font-semibold">{r.name}</td>
-                    <td className="px-3 py-2 text-hub-textSecondary">{matchSummary(r)}</td>
-                    <td className="px-3 py-2">{MODE_LABELS[r.dispatch_mode] ?? r.dispatch_mode}</td>
-                    <td className="px-3 py-2 tabular-nums">{r.priority}</td>
-                    <td className="px-3 py-2 text-hub-textFaint">{overflow ? overflow.name : "—"}</td>
-                    <td className="px-3 py-2">
-                      <button
-                        onClick={() => toggleActive.mutate(r)}
-                        disabled={toggleActive.isPending}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border disabled:opacity-50 ${
-                          r.is_active
-                            ? "bg-hub-green-light text-hub-green border-hub-green-border"
-                            : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
-                        }`}
-                      >
-                        {r.is_active ? "启用" : "停用"}
-                      </button>
+                  <tr key={r.id} className="border-t border-hub-border hover:bg-hub-page/40">
+                    <td className="px-2 py-2 text-center text-hub-textMuted">{idx + 1}</td>
+                    <td className="px-2 py-2 text-hub-textMuted font-mono text-[11px]">
+                      {r.rule_code ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <td className="px-2 py-2 font-semibold">{r.name}</td>
+                    <td className="px-2 py-2">
+                      {r.match_product_lines.length === 0 ? (
+                        <span className="text-hub-textFaint">全部</span>
+                      ) : (
+                        <ProductLineCellItems codes={r.match_product_lines} plMap={plMap} />
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <OverflowCell
+                        items={r.match_modules}
+                        maxChars={50}
+                      />
+                      {r.match_modules.length === 0 && <span className="text-hub-textFaint">全部</span>}
+                    </td>
+                    <td className="px-2 py-2">
+                      <OverflowCell items={r.match_sources} maxChars={30} />
+                      {r.match_sources.length === 0 && <span className="text-hub-textFaint">全部</span>}
+                    </td>
+                    <td className="px-2 py-2">
+                      <OverflowCell
+                        items={r.match_sla}
+                        maxChars={30}
+                        renderItem={(code) => slaMap.get(code) ?? code}
+                      />
+                      {r.match_sla.length === 0 && <span className="text-hub-textFaint">全部</span>}
+                    </td>
+                    <td className="px-2 py-2">{MODE_LABELS[r.dispatch_mode] ?? r.dispatch_mode}</td>
+                    <td className="px-2 py-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        r.is_active
+                          ? "bg-hub-green-light text-hub-green border-hub-green-border"
+                          : "bg-hub-neutral-light text-hub-textMuted border-hub-border"
+                      }`}>
+                        {r.is_active ? "启用" : "禁用"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 tabular-nums">{r.priority}</td>
+                    <td className="px-2 py-2">
+                      <AssigneeSummaryCell assignees={assignees} mode={r.dispatch_mode} />
+                    </td>
+                    <td className="px-2 py-2">
+                      {overflow ? (
+                        <span className="text-hub-teal-deep text-[11px]">已关联</span>
+                      ) : (
+                        <span className="text-hub-textFaint">未关联</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-[11.5px]">
+                      <DefaultPoolCell ruleId={r.id} />
+                    </td>
+                    <td className="px-2 py-2 text-hub-textMuted text-[11px] whitespace-nowrap">
+                      {fmtDate(r.updated_at)}
+                    </td>
+                    <td className="px-2 py-2 text-hub-textMuted text-[11.5px]">
+                      {r.updated_by ?? "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
                       <button
                         onClick={() => setLogsRuleId(r.id)}
-                        className="text-[11.5px] text-hub-teal hover:underline mr-3"
+                        className="text-[11px] text-hub-teal hover:underline mr-2"
                       >
-                        今日派单
+                        查看统计
                       </button>
                       <button
                         onClick={() => setEditing(r)}
-                        className="text-[11.5px] text-hub-textSecondary hover:underline mr-3"
+                        className="text-[11px] text-hub-textSecondary hover:underline mr-2"
                       >
                         编辑
+                      </button>
+                      <button
+                        onClick={() => toggleActive.mutate(r)}
+                        disabled={toggleActive.isPending}
+                        className={`text-[11px] hover:underline mr-2 disabled:opacity-50 ${
+                          r.is_active ? "text-hub-amber-deep" : "text-hub-green"
+                        }`}
+                      >
+                        {r.is_active ? "禁用" : "启用"}
                       </button>
                       <button
                         onClick={() => {
                           if (confirm(`删除规则「${r.name}」？`)) removeRule.mutate(r.id);
                         }}
                         disabled={removeRule.isPending}
-                        className="text-[11.5px] text-hub-rose hover:underline disabled:opacity-50"
+                        className="text-[11px] text-hub-rose hover:underline disabled:opacity-50"
                       >
                         删除
                       </button>
@@ -195,6 +411,22 @@ export function DispatchRulesPage() {
   );
 }
 
+// show per-rule default pool assignee (stored in dispatch_config as default_op_assignee_{rule_id} or global)
+function DefaultPoolCell({ ruleId }: { ruleId: number }) {
+  const configQ = useQuery({
+    queryKey: ["admin", "dispatch", "config"],
+    queryFn: dispatchApi.getConfig,
+    staleTime: 60_000,
+  });
+  const userName = useUserName();
+  const config = (configQ.data ?? {}) as Record<string, string>;
+  // per-rule key first, then global
+  const val = config[`default_op_assignee_${ruleId}`] ?? config["default_operation_assignee"];
+  if (!val) return <span className="text-hub-textFaint">—</span>;
+  const uid = parseInt(val, 10);
+  return <span>{isNaN(uid) ? val : userName(uid)}</span>;
+}
+
 function ruleBodyOf(r: RuleOut): RuleBody {
   return {
     name: r.name,
@@ -210,7 +442,16 @@ function ruleBodyOf(r: RuleOut): RuleBody {
   };
 }
 
-/* ===== 规则编辑弹窗（匹配条件 + 模式 + 分派人子表） ===== */
+// ---- draft assignee type ---------------------------------------------------
+
+interface DraftAssignee {
+  user_id: number;
+  alloc_value: number;
+  daily_cap: number | null;
+  tier: "main" | "overflow";
+}
+
+// ---- Rule Editor Dialog ----------------------------------------------------
 
 function RuleEditorDialog({
   rule,
@@ -224,21 +465,74 @@ function RuleEditorDialog({
   onSaved: () => void;
 }) {
   const isNew = rule === null;
+
   const [name, setName] = useState(rule?.name ?? "");
-  // 匹配维度改多选：值为 code[]（来源/产品线）或 name[]（模块），从系统已有值里选避免手输错。
-  // SLA 未接线（engine 传 None）故不在 UI 暴露，编辑时原样保留已有值。
   const [sources, setSources] = useState<string[]>(rule?.match_sources ?? []);
   const [productLines, setProductLines] = useState<string[]>(rule?.match_product_lines ?? []);
   const [modules, setModules] = useState<string[]>(rule?.match_modules ?? []);
+  const [slaList, setSlaList] = useState<string[]>(rule?.match_sla ?? []);
   const [mode, setMode] = useState<"count" | "ratio">((rule?.dispatch_mode as "count" | "ratio") ?? "count");
   const [priority, setPriority] = useState(rule?.priority ?? 100);
+  const [hasOverflow, setHasOverflow] = useState(!!(rule?.overflow_rule_id));
   const [overflowRuleId, setOverflowRuleId] = useState<number | undefined>(rule?.overflow_rule_id ?? undefined);
   const [error, setError] = useState<string | null>(null);
 
+  // assignee drafts for new rule
+  const [mainDraft, setMainDraft] = useState<DraftAssignee[]>([]);
+  const [overflowDraft, setOverflowDraft] = useState<DraftAssignee[]>([]);
+
+  // default pool user per-rule
+  const [poolUserId, setPoolUserId] = useState<number | undefined>(undefined);
+
   const savedRuleId = rule?.id;
-  // 新建态：分派人先暂存本地，随规则一起保存（避免"先存规则→重开弹窗才能加人"的两步流程）。
-  // 编辑态：分派人走 AssigneesSection 即时增删，不用这份 draft。
-  const [draftAssignees, setDraftAssignees] = useState<DraftAssignee[]>([]);
+
+  // selector data
+  const sourceQ = useSourceOptions();
+  const plQ = useProductLineOptions();
+  const modQ = useAllModuleOptions();
+
+  const sourceOpts = ((sourceQ.data ?? []) as SourceOpt[])
+    .filter((s) => s.is_active)
+    .map((s) => ({ value: s.code, label: `${s.name}` }));
+
+  const allPls = ((plQ.data ?? []) as { code: string; name: string; is_active: boolean }[])
+    .filter((p) => p.is_active);
+  const plOpts = allPls.map((p) => ({ value: p.code, label: p.name }));
+
+  // module opts: if product lines selected, filter; else show all; if pl is empty (全部), all modules
+  const allMods = ((modQ.data ?? []) as AllModuleOpt[]);
+  const filteredMods = productLines.length > 0
+    ? allMods.filter((m) => productLines.includes(m.product_line_code))
+    : allMods;
+  const modOpts = filteredMods.map((m) => ({ value: m.name, label: m.name }));
+
+  // when product lines change and modules are empty-means-all, keep; if specific mods selected, prune invalid ones
+  const handleProductLinesChange = (next: string[]) => {
+    setProductLines(next);
+    if (modules.length > 0 && next.length > 0) {
+      const validMods = allMods
+        .filter((m) => next.includes(m.product_line_code))
+        .map((m) => m.name);
+      setModules(modules.filter((mod) => validMods.includes(mod)));
+    }
+  };
+
+  // when mode changes, clear draft values
+  const handleModeChange = (next: "count" | "ratio") => {
+    if (next !== mode) {
+      setMainDraft([]);
+      setOverflowDraft([]);
+    }
+    setMode(next);
+  };
+
+  const overflowCandidates = rules.filter(
+    (r) => r.rule_type === "overflow" && r.id !== rule?.id
+  );
+
+  const slaOpts = SLA_OPTIONS.map((s) => ({ value: s.code, label: s.name }));
+
+  const qc = useQueryClient();
 
   const save = useMutation({
     mutationFn: async () => {
@@ -247,62 +541,83 @@ function RuleEditorDialog({
         match_sources: sources,
         match_product_lines: productLines,
         match_modules: modules,
-        match_sla: rule?.match_sla ?? [],  // SLA 未接线，不在 UI 暴露；编辑时原样保留
+        match_sla: slaList,
         dispatch_mode: mode,
         rule_type: rule?.rule_type ?? "primary",
-        overflow_rule_id: mode === "count" ? (overflowRuleId ?? null) : null,
+        overflow_rule_id: hasOverflow ? (overflowRuleId ?? null) : null,
         priority,
         is_active: rule?.is_active ?? true,
       };
-      if (!isNew) return dispatchApi.updateRule(rule.id, body);
-      // 新建：先建规则拿 id，再逐条把暂存的分派人写进去（一次"保存"完成，无需重开弹窗）。
-      const created = (await dispatchApi.createRule(body)) as RuleOut;
-      for (const a of draftAssignees) {
+      if (!isNew) {
+        await dispatchApi.updateRule(rule.id, body);
+        // save default pool for this rule
+        if (poolUserId !== undefined) {
+          await dispatchApi.putConfig({
+            key: `default_op_assignee_${rule.id}`,
+            value: String(poolUserId),
+          });
+        }
+        return;
+      }
+      const created = await dispatchApi.createRule(body);
+      // add main assignees
+      for (const a of mainDraft) {
         await dispatchApi.addAssignee(created.id, {
           user_id: a.user_id,
           alloc_value: mode === "ratio" ? a.alloc_value : 1,
           daily_cap: mode === "count" ? a.daily_cap : null,
-          tier: a.tier,
+          tier: "main",
           is_active: true,
         });
       }
-      return created;
+      // add overflow assignees
+      for (const a of overflowDraft) {
+        await dispatchApi.addAssignee(created.id, {
+          user_id: a.user_id,
+          alloc_value: mode === "ratio" ? a.alloc_value : 1,
+          daily_cap: mode === "count" ? a.daily_cap : null,
+          tier: "overflow",
+          is_active: true,
+        });
+      }
+      // save default pool
+      if (poolUserId !== undefined) {
+        await dispatchApi.putConfig({
+          key: `default_op_assignee_${created.id}`,
+          value: String(poolUserId),
+        });
+      }
     },
-    onSuccess: onSaved,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "dispatch"] });
+      onSaved();
+    },
     onError: (e) => setError(errMsg(e)),
   });
 
-  const overflowCandidates = rules.filter((r) => r.rule_type === "overflow" && r.id !== rule?.id);
-
-  // 匹配维度的可选值（从系统已有数据拉，供多选）。
-  const sourceQ = useSourceOptions();
-  const plQ = useProductLineOptions();
-  const modQ = useAllModuleOptions();
-  const sourceOpts = ((sourceQ.data ?? []) as SourceOpt[])
-    .filter((s) => s.is_active)
-    .map((s) => ({ value: s.code, label: `${s.name} (${s.code})` }));
-  const plOpts = ((plQ.data ?? []) as { code: string; name: string; is_active: boolean }[])
-    .filter((p) => p.is_active)
-    .map((p) => ({ value: p.code, label: `${p.name} (${p.code})` }));
-  const modOpts = ((modQ.data ?? []) as AllModuleOpt[]).map((m) => ({ value: m.name, label: m.name }));
-
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-[12px] w-full max-w-[720px] max-h-[85vh] overflow-y-auto p-5 font-hub text-[13px]">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[15px] font-bold m-0">{isNew ? "新建规则" : `编辑规则 · ${rule.name}`}</h3>
-          <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text text-lg leading-none">
+      <div
+        className="bg-white rounded-[12px] overflow-y-auto p-6 font-hub text-[13px]"
+        style={{ width: "min(1296px, 95vw)", maxHeight: "min(127.5vh, 90vh)" }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[16px] font-bold m-0">
+            {isNew ? "新建规则" : `编辑规则 · ${rule.name}`}
+          </h3>
+          <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text text-xl leading-none">
             ×
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        {/* 基本信息 */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">规则名</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT_CLS} />
+            <span className="text-[11px] text-hub-textMuted font-semibold">规则名称 <span className="text-hub-rose">*</span></span>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT_CLS} placeholder="请输入规则名称" />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">优先级（数字小者优先）</span>
+            <span className="text-[11px] text-hub-textMuted font-semibold">优先级（数字越小越优先）<span className="text-hub-rose">*</span></span>
             <input
               type="number"
               value={priority}
@@ -312,9 +627,10 @@ function RuleEditorDialog({
           </label>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        {/* 适配条件 */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配来源（多选，空=不限）</span>
+            <span className="text-[11px] text-hub-textMuted font-semibold">适配来源系统（空=全部不限）</span>
             <MultiCheckSelect
               options={sourceOpts}
               value={sources}
@@ -323,322 +639,380 @@ function RuleEditorDialog({
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配产品线（多选，空=不限）</span>
+            <span className="text-[11px] text-hub-textMuted font-semibold">适配产品线（空=全部不限）</span>
             <MultiCheckSelect
               options={plOpts}
               value={productLines}
-              onChange={setProductLines}
+              onChange={handleProductLinesChange}
               loading={plQ.isLoading}
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">匹配模块（多选，空=不限）</span>
+            <span className="text-[11px] text-hub-textMuted font-semibold">
+              适配模块（空=全部不限）
+              {productLines.length === 0 && (
+                <span className="ml-1 text-hub-textFaint font-normal">产品线全选时模块也全选不限</span>
+              )}
+            </span>
             <MultiCheckSelect
               options={modOpts}
               value={modules}
               onChange={setModules}
               loading={modQ.isLoading}
+              disabled={productLines.length === 0}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-hub-textMuted font-semibold">适配服务等级（空=全部不限）</span>
+            <MultiCheckSelect
+              options={slaOpts}
+              value={slaList}
+              onChange={setSlaList}
             />
           </label>
         </div>
 
-        <div className="flex items-center gap-4 mb-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted">派单模式</span>
-            <div className="inline-flex bg-hub-segment border border-hub-border rounded-lg p-0.5 gap-0.5">
-              {(["count", "ratio"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`px-3 py-[3.5px] rounded-md text-[11.5px] ${
-                    mode === m ? "bg-white text-hub-teal-deep font-bold" : "text-hub-textSecondary"
-                  }`}
-                >
-                  {MODE_LABELS[m]}
-                </button>
-              ))}
-            </div>
-          </div>
-          {mode === "count" && (
-            <label className="flex flex-col gap-1 flex-1">
-              <span className="text-[11px] text-hub-textMuted">溢出规则（主力全达上限后转派）</span>
-              <select
-                value={overflowRuleId ?? ""}
-                onChange={(e) => setOverflowRuleId(e.target.value ? Number(e.target.value) : undefined)}
-                className={INPUT_CLS}
+        {/* 派单规则 */}
+        <div className="mb-4">
+          <span className="text-[11px] text-hub-textMuted font-semibold block mb-1.5">
+            派单规则 <span className="text-hub-rose">*</span>
+          </span>
+          <div className="inline-flex bg-hub-segment border border-hub-border rounded-lg p-0.5 gap-0.5">
+            {(["count", "ratio"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => handleModeChange(m)}
+                className={`px-4 py-1.5 rounded-md text-[12.5px] ${
+                  mode === m ? "bg-white text-hub-teal-deep font-bold shadow-sm" : "text-hub-textSecondary"
+                }`}
               >
-                <option value="">— 无（满则回落全局兜底） —</option>
-                {overflowCandidates.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {MODE_LABELS[m]}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10.5px] text-hub-textFaint mt-1">
+            {mode === "count"
+              ? "按数量：每个分派人有当日上限(daily_cap)，选今日已派最少者，全满则走溢出规则。"
+              : "按比例：按权重(alloc_value)分配占比，选实际占比与应得占比缺口最大者，不设溢出。"}
+          </p>
+        </div>
+
+        {/* 人员和数量 */}
+        <div className="mb-4 border border-hub-borderLight rounded-lg p-3 bg-hub-page/50">
+          <div className="text-[12.5px] font-bold mb-2">
+            人员和数量 <span className="text-hub-rose text-[10.5px]">* 必须配置</span>
+          </div>
+          {savedRuleId !== undefined ? (
+            <AssigneeTableSection ruleId={savedRuleId} mode={mode} tier="main" />
+          ) : (
+            <DraftAssigneeTable
+              mode={mode}
+              draft={mainDraft}
+              onChange={setMainDraft}
+              tier="main"
+            />
           )}
         </div>
-        <p className="text-[10.5px] text-hub-textFaint -mt-2 mb-3">
-          {mode === "count"
-            ? "按数量：每个分派人有当日上限(daily_cap)，选今日已派最少者，全满则走溢出规则。"
-            : "按比例：按权重(alloc_value)分配占比，选实际占比与应得占比缺口最大者，不设溢出。"}
-        </p>
 
-        {error && <div className="text-xs text-hub-rose mb-2">{error}</div>}
+        {/* 溢出关联 */}
+        <div className="mb-4 border border-hub-borderLight rounded-lg p-3 bg-hub-page/50">
+          <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={hasOverflow}
+              onChange={(e) => setHasOverflow(e.target.checked)}
+              className="w-3.5 h-3.5 accent-hub-teal"
+            />
+            <span className="text-[12.5px] font-bold">溢出关联（勾选启用溢出方案）</span>
+          </label>
+          {hasOverflow && (
+            <>
+              {mode === "count" && (
+                <div className="mb-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-hub-textMuted">关联溢出规则（主力全达上限后转派）</span>
+                    <select
+                      value={overflowRuleId ?? ""}
+                      onChange={(e) => setOverflowRuleId(e.target.value ? Number(e.target.value) : undefined)}
+                      className={`${INPUT_CLS} max-w-xs`}
+                    >
+                      <option value="">— 无（仅靠溢出人员兜底） —</option>
+                      {overflowCandidates.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+              <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-2">溢出人员和数量</div>
+              {savedRuleId !== undefined ? (
+                <AssigneeTableSection ruleId={savedRuleId} mode={mode} tier="overflow" />
+              ) : (
+                <DraftAssigneeTable
+                  mode={mode}
+                  draft={overflowDraft}
+                  onChange={setOverflowDraft}
+                  tier="overflow"
+                />
+              )}
+            </>
+          )}
+        </div>
 
-        <div className="flex justify-end gap-2 mb-4">
-          <button onClick={onClose} className="text-[12.5px] px-3.5 py-1.5 rounded-md border border-hub-border">
+        {/* 兜底人员 */}
+        <div className="mb-4">
+          <label className="flex flex-col gap-1 max-w-xs">
+            <span className="text-[11px] text-hub-textMuted font-semibold">兜底人员（可选，单选）</span>
+            <UserSelect value={poolUserId} onChange={setPoolUserId} />
+          </label>
+        </div>
+
+        {error && <div className="text-xs text-hub-rose mb-3">{error}</div>}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-hub-borderLight">
+          <button onClick={onClose} className="text-[12.5px] px-4 py-1.5 rounded-md border border-hub-border">
             取消
           </button>
-          <button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending} className={PRIMARY_BTN}>
+          <button
+            onClick={() => save.mutate()}
+            disabled={!name.trim() || save.isPending}
+            className={PRIMARY_BTN}
+          >
             {save.isPending ? "保存中…" : "保存"}
           </button>
         </div>
-
-        {savedRuleId !== undefined ? (
-          <AssigneesSection ruleId={savedRuleId} mode={mode} />
-        ) : (
-          <DraftAssigneesSection mode={mode} draft={draftAssignees} onChange={setDraftAssignees} />
-        )}
       </div>
     </div>
   );
 }
 
-/* ===== 分派人子表 ===== */
+// ---- Draft Assignee Table (new rule, not yet saved) ------------------------
 
-// 新建态本地暂存的分派人（还没有 assignee id / rule_id）。
-interface DraftAssignee {
-  user_id: number;
-  alloc_value: number;
-  daily_cap: number | null;
-  tier: "main" | "overflow";
-}
-
-// 一行已添加的分派人展示（新建/编辑态共用）。onRemove 为空则不显示删除按钮。
-function AssigneeRow({
-  userId,
-  tier,
-  dailyCap,
-  allocValue,
-  mode,
-  onRemove,
-  removing,
-}: {
-  userId: number;
-  tier: string;
-  dailyCap: number | null | undefined;
-  allocValue: number;
-  mode: "count" | "ratio";
-  onRemove: () => void;
-  removing?: boolean;
-}) {
-  const userName = useUserName();
-  return (
-    <div className="flex items-center gap-2.5 px-1 py-1.5 border-b border-hub-borderLight text-[12.5px]">
-      <span className="font-semibold">{userName(userId)}</span>
-      <span
-        className={`text-[9.5px] font-bold px-[7px] py-px rounded-full border ${
-          tier === "overflow"
-            ? "bg-hub-amber-light text-hub-amber-deep border-hub-amber-border"
-            : "bg-hub-teal-light text-hub-teal-deep border-hub-teal-border"
-        }`}
-      >
-        {TIER_LABELS[tier] ?? tier}
-      </span>
-      <span className="text-hub-textFaint">
-        {mode === "count" ? `上限 ${dailyCap ?? "不限"}/天` : `权重 ${allocValue}`}
-      </span>
-      <div className="flex-1" />
-      <button
-        onClick={onRemove}
-        disabled={removing}
-        className="text-xs text-hub-textFaint px-1.5 py-0.5 rounded hover:text-hub-rose hover:bg-hub-rose-light"
-      >
-        ✕
-      </button>
-    </div>
-  );
-}
-
-// 添加分派人的输入行（运营 + daily_cap/alloc_value + tier + 添加按钮），新建/编辑态共用。
-function AssigneeAddForm({
-  mode,
-  onAdd,
-  adding,
-}: {
-  mode: "count" | "ratio";
-  onAdd: (a: DraftAssignee) => void;
-  adding?: boolean;
-}) {
-  const [userId, setUserId] = useState<number | undefined>(undefined);
-  const [value, setValue] = useState<string>(mode === "count" ? "" : "1");
-  const [tier, setTier] = useState<"main" | "overflow">("main");
-
-  const submit = () => {
-    if (!userId) return;
-    onAdd({
-      user_id: userId,
-      alloc_value: mode === "ratio" ? Number(value || 1) : 1,
-      daily_cap: mode === "count" ? (value ? Number(value) : null) : null,
-      tier,
-    });
-    setUserId(undefined);
-    setValue(mode === "count" ? "" : "1");
-    setTier("main");
-  };
-
-  return (
-    <div className="flex items-end gap-2 flex-wrap p-2.5 bg-hub-panel border border-hub-borderLight rounded-lg">
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-hub-textMuted">运营</span>
-        <UserSelect value={userId} onChange={setUserId} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-hub-textMuted">
-          {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
-        </span>
-        <input
-          type="number"
-          min={mode === "ratio" ? 0.01 : 0}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className={`${INPUT_CLS} w-28`}
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-hub-textMuted">层级</span>
-        <select value={tier} onChange={(e) => setTier(e.target.value as "main" | "overflow")} className={INPUT_CLS}>
-          <option value="main">主力</option>
-          <option value="overflow">溢出</option>
-        </select>
-      </div>
-      <button
-        onClick={submit}
-        disabled={!userId || adding}
-        className={`${PRIMARY_BTN} ${userId ? "ring-2 ring-hub-teal ring-offset-1" : ""}`}
-      >
-        {adding ? "添加中…" : "添加"}
-      </button>
-      {userId && !adding && (
-        <span className="w-full text-[11px] text-hub-amber-deep">
-          已选择运营，请点「添加」确认加入分派人列表（仅选择不点添加不会生效）。
-        </span>
-      )}
-    </div>
-  );
-}
-
-// 新建态：分派人暂存本地数组，随规则一起保存（不调后端）。
-function DraftAssigneesSection({
+function DraftAssigneeTable({
   mode,
   draft,
   onChange,
+  tier,
 }: {
   mode: "count" | "ratio";
   draft: DraftAssignee[];
   onChange: (next: DraftAssignee[]) => void;
+  tier: "main" | "overflow";
 }) {
+  const userName = useUserName();
+  const [addUserId, setAddUserId] = useState<number | undefined>(undefined);
+  const [addValue, setAddValue] = useState("");
+
+  const handleAdd = () => {
+    if (!addUserId) return;
+    onChange([
+      ...draft,
+      {
+        user_id: addUserId,
+        alloc_value: mode === "ratio" ? Number(addValue || 1) : 1,
+        daily_cap: mode === "count" ? (addValue ? Number(addValue) : null) : null,
+        tier,
+      },
+    ]);
+    setAddUserId(undefined);
+    setAddValue("");
+  };
+
   return (
-    <div className="border-t border-hub-borderLight pt-3">
-      <div className="text-[12.5px] font-bold mb-2">分派人</div>
-      {draft.length === 0 && (
-        <p className="text-xs text-hub-textFaint mb-2">尚未添加分派人 —— 保存后该规则命中将无人可派（回落兜底/主管）。</p>
-      )}
+    <div>
       {draft.length > 0 && (
-        <div className="flex flex-col mb-2">
-          {draft.map((a, i) => (
-            <AssigneeRow
-              key={i}
-              userId={a.user_id}
-              tier={a.tier}
-              dailyCap={a.daily_cap}
-              allocValue={a.alloc_value}
-              mode={mode}
-              onRemove={() => onChange(draft.filter((_, j) => j !== i))}
-            />
-          ))}
-        </div>
+        <table className="w-full text-[12px] mb-2">
+          <thead>
+            <tr className="text-hub-textMuted text-[11px]">
+              <th className="text-left font-semibold pb-1 w-40">人员</th>
+              <th className="text-left font-semibold pb-1 w-32">
+                {mode === "count" ? "当日上限（0=不分）" : "相对权重"}
+              </th>
+              <th className="pb-1 w-12" />
+            </tr>
+          </thead>
+          <tbody>
+            {draft.map((a, i) => (
+              <tr key={i} className="border-t border-hub-borderLight">
+                <td className="py-1.5 pr-2">{userName(a.user_id)}</td>
+                <td className="py-1.5 pr-2 tabular-nums">
+                  {mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
+                </td>
+                <td className="py-1.5">
+                  <button
+                    onClick={() => onChange(draft.filter((_, j) => j !== i))}
+                    className="text-xs text-hub-rose hover:underline"
+                  >
+                    移除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-      <AssigneeAddForm mode={mode} onAdd={(a) => onChange([...draft, a])} />
+      <div className="flex items-end gap-2 flex-wrap pt-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">选择人员</span>
+          <UserSelect value={addUserId} onChange={setAddUserId} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">
+            {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={addValue}
+            onChange={(e) => setAddValue(e.target.value)}
+            className={`${INPUT_CLS} w-28`}
+            placeholder={mode === "count" ? "空=不限" : "1"}
+          />
+        </div>
+        <button
+          onClick={handleAdd}
+          disabled={!addUserId}
+          className={`${PRIMARY_BTN} self-end`}
+        >
+          添加
+        </button>
+      </div>
     </div>
   );
 }
 
-// 编辑态：分派人即时增删（点即调后端），复用 AssigneeRow / AssigneeAddForm 展示。
-function AssigneesSection({ ruleId, mode }: { ruleId: number; mode: "count" | "ratio" }) {
+// ---- Live Assignee Table (existing rule, calls API directly) ---------------
+
+function AssigneeTableSection({
+  ruleId,
+  mode,
+  tier,
+}: {
+  ruleId: number;
+  mode: "count" | "ratio";
+  tier: "main" | "overflow";
+}) {
   const qc = useQueryClient();
+  const qk = ["admin", "dispatch", "assignees", ruleId] as const;
+  const assignees = useQuery({ queryKey: qk, queryFn: () => dispatchApi.listAssignees(ruleId) });
   const [error, setError] = useState<string | null>(null);
 
-  const qk = ["admin", "dispatch", "assignees", ruleId] as const;
-  const assignees = useQuery({
-    queryKey: qk,
-    queryFn: () => dispatchApi.listAssignees(ruleId),
-  });
+  const [addUserId, setAddUserId] = useState<number | undefined>(undefined);
+  const [addValue, setAddValue] = useState("");
 
   const invalidate = () => {
     setError(null);
     void qc.invalidateQueries({ queryKey: qk });
+    void qc.invalidateQueries({ queryKey: ["admin", "dispatch", "all-assignees"] });
   };
 
   const add = useMutation({
-    mutationFn: (a: DraftAssignee) =>
+    mutationFn: () =>
       dispatchApi.addAssignee(ruleId, {
-        user_id: a.user_id,
-        alloc_value: mode === "ratio" ? a.alloc_value : 1,
-        daily_cap: mode === "count" ? a.daily_cap : null,
-        tier: a.tier,
+        user_id: addUserId!,
+        alloc_value: mode === "ratio" ? Number(addValue || 1) : 1,
+        daily_cap: mode === "count" ? (addValue ? Number(addValue) : null) : null,
+        tier,
         is_active: true,
       }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setAddUserId(undefined);
+      setAddValue("");
+      invalidate();
+    },
     onError: (e) => setError(errMsg(e)),
   });
 
   const remove = useMutation({
-    mutationFn: (assigneeId: number) => dispatchApi.deleteAssignee(ruleId, assigneeId),
+    mutationFn: (aid: number) => dispatchApi.deleteAssignee(ruleId, aid),
     onSuccess: invalidate,
     onError: (e) => setError(errMsg(e)),
   });
 
-  const list = (assignees.data ?? []) as AssigneeOut[];
+  const userName = useUserName();
+  const list = ((assignees.data ?? []) as AssigneeOut[]).filter((a) => a.tier === tier);
 
   return (
-    <div className="border-t border-hub-borderLight pt-3">
-      <div className="text-[12.5px] font-bold mb-2">分派人</div>
+    <div>
       {assignees.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
-      {!assignees.isLoading && list.length === 0 && (
-        <p className="text-xs text-hub-textFaint mb-2">尚未添加分派人 —— 该规则命中后无人可派。</p>
-      )}
       {list.length > 0 && (
-        <div className="flex flex-col mb-2">
-          {list.map((a) => (
-            <AssigneeRow
-              key={a.id}
-              userId={a.user_id}
-              tier={a.tier}
-              dailyCap={a.daily_cap}
-              allocValue={Number(a.alloc_value)}
-              mode={mode}
-              onRemove={() => remove.mutate(a.id)}
-              removing={remove.isPending}
-            />
-          ))}
-        </div>
+        <table className="w-full text-[12px] mb-2">
+          <thead>
+            <tr className="text-hub-textMuted text-[11px]">
+              <th className="text-left font-semibold pb-1 w-40">人员</th>
+              <th className="text-left font-semibold pb-1 w-32">
+                {mode === "count" ? "当日上限（0=不分）" : "相对权重"}
+              </th>
+              <th className="pb-1 w-12" />
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((a) => (
+              <tr key={a.id} className="border-t border-hub-borderLight">
+                <td className="py-1.5 pr-2">{userName(a.user_id)}</td>
+                <td className="py-1.5 pr-2 tabular-nums">
+                  {mode === "count" ? (a.daily_cap === null ? "不限" : a.daily_cap) : a.alloc_value}
+                </td>
+                <td className="py-1.5">
+                  <button
+                    onClick={() => remove.mutate(a.id)}
+                    disabled={remove.isPending}
+                    className="text-xs text-hub-rose hover:underline disabled:opacity-50"
+                  >
+                    移除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-      <AssigneeAddForm mode={mode} onAdd={(a) => add.mutate(a)} adding={add.isPending} />
-      {error && <div className="text-xs text-hub-rose mt-2">{error}</div>}
+      {list.length === 0 && !assignees.isLoading && (
+        <p className="text-xs text-hub-textFaint mb-2">暂无人员</p>
+      )}
+      <div className="flex items-end gap-2 flex-wrap pt-1">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">选择人员</span>
+          <UserSelect value={addUserId} onChange={setAddUserId} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10.5px] text-hub-textMuted">
+            {mode === "count" ? "当日上限（空=不限）" : "相对权重"}
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={addValue}
+            onChange={(e) => setAddValue(e.target.value)}
+            className={`${INPUT_CLS} w-28`}
+            placeholder={mode === "count" ? "空=不限" : "1"}
+          />
+        </div>
+        <button
+          onClick={() => add.mutate()}
+          disabled={!addUserId || add.isPending}
+          className={`${PRIMARY_BTN} self-end`}
+        >
+          {add.isPending ? "添加中…" : "添加"}
+        </button>
+      </div>
+      {error && <div className="text-xs text-hub-rose mt-1">{error}</div>}
     </div>
   );
 }
 
-/* ===== 查看今日派单 ===== */
+// ---- Logs Dialog -----------------------------------------------------------
 
 function LogsDialog({ ruleId, ruleName, onClose }: { ruleId: number; ruleName: string; onClose: () => void }) {
   const logs = useQuery({
     queryKey: ["admin", "dispatch", "logs", ruleId],
     queryFn: () => dispatchApi.listLogs(ruleId),
   });
+  const userName = useUserName();
 
-  const list = logs.data ?? [];
+  const list = (logs.data ?? []) as { id: number; assignee_user_id: number; created_at: string; tier_hit: string }[];
   const today = new Date().toDateString();
   const todays = list.filter((l) => new Date(l.created_at).toDateString() === today);
   const byAssignee = new Map<number, number>();
@@ -648,7 +1022,7 @@ function LogsDialog({ ruleId, ruleName, onClose }: { ruleId: number; ruleName: s
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-[12px] w-full max-w-[480px] max-h-[70vh] overflow-y-auto p-5 font-hub text-[13px]">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[15px] font-bold m-0">今日派单 · {ruleName}</h3>
+          <h3 className="text-[15px] font-bold m-0">今日派单统计 · {ruleName}</h3>
           <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text text-lg leading-none">
             ×
           </button>
@@ -658,15 +1032,22 @@ function LogsDialog({ ruleId, ruleName, onClose }: { ruleId: number; ruleName: s
           <p className="text-xs text-hub-textFaint">今日暂无派单记录。</p>
         )}
         {byAssignee.size > 0 && (
-          <div className="flex flex-col gap-1.5">
-            {Array.from(byAssignee.entries()).map(([uid, count]) => (
-              <div key={uid} className="flex items-center gap-2 text-[12.5px] border-b border-hub-borderLight pb-1.5">
-                <span className="font-semibold">运营 #{uid}</span>
-                <div className="flex-1" />
-                <span className="tabular-nums text-hub-teal-deep font-bold">{count} 单</span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="text-[12px] text-hub-textMuted mb-2">
+              今日派单总数：<span className="font-bold text-hub-text">{todays.length}</span> 单
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {Array.from(byAssignee.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([uid, count]) => (
+                  <div key={uid} className="flex items-center gap-2 text-[12.5px] border-b border-hub-borderLight pb-1.5">
+                    <span className="font-semibold">{userName(uid)}</span>
+                    <div className="flex-1" />
+                    <span className="tabular-nums text-hub-teal-deep font-bold">{count} 单</span>
+                  </div>
+                ))}
+            </div>
+          </>
         )}
         <p className="text-[10.5px] text-hub-textFaint mt-3">
           按当日 00:00（北京时间）起计，与分派算法计数窗口一致。

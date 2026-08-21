@@ -1189,12 +1189,23 @@ class AgentDecision(Base):
 # ---- Operation 运营分派引擎（dispatch）------------------------------------
 
 
+class SlaLevel(Base):
+    """KSM 服务等级编码 → 显示名称映射表。"""
+
+    __tablename__ = "sla_levels"
+
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class DispatchRule(Base):
     """运营处理人分派规则（多维匹配 + count/ratio）。与 routing 研发责任田正交。"""
 
     __tablename__ = "dispatch_rules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     match_sources: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     match_product_lines: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
@@ -1207,6 +1218,7 @@ class DispatchRule(Base):
     )
     priority: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

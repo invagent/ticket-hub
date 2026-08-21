@@ -13,6 +13,7 @@ const STATIC: Record<string, string> = {
   "/customers": "客户",
   "/admin/users": "人员与分工",
   "/admin/catalog": "产品模块管理",
+  "/admin/dispatch": "派单规则配置",
   "/admin/skills": "技能编排",
 };
 
