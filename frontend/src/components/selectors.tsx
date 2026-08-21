@@ -10,6 +10,7 @@
  *   <FeatureSelect value={...} onChange={...} />
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
@@ -102,17 +103,23 @@ export function MultiUserSelect({
   placeholder = "处理人",
   roles,
   className,
+  useFixed = false,
+  nameOnly = false,
 }: {
   value: number[];
   onChange: (next: number[]) => void;
   placeholder?: string;
   roles?: string[];
   className?: string;
+  useFixed?: boolean;
+  nameOnly?: boolean;
 }) {
   const q = useUserOptions();
   const [open, setOpen] = useState(false);
   const [kw, setKw] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -122,6 +129,14 @@ export function MultiUserSelect({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+
+  const handleToggleOpen = () => {
+    if (!open && useFixed && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 240) });
+    }
+    setOpen((v) => !v);
+  };
 
   const all = (q.data ?? []).filter((u: UserOpt) => !roles || roles.includes(u.role));
   const kwLower = kw.trim().toLowerCase();
@@ -148,11 +163,49 @@ export function MultiUserSelect({
         ? (all.find((u: UserOpt) => u.id === value[0])?.name ?? `#${value[0]}`)
         : `已选 ${value.length} 人`;
 
+  const dropdown = open ? (
+    <div
+      className="bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5 z-[9999]"
+      style={useFixed && dropPos
+        ? { position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width }
+        : { position: "absolute", marginTop: 4, width: "15rem" }}
+    >
+      <input
+        autoFocus
+        value={kw}
+        onChange={(e) => setKw(e.target.value)}
+        placeholder="搜索姓名"
+        className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
+      />
+      <div className="max-h-[220px] overflow-y-auto">
+        {q.isLoading && <div className="text-[11px] text-hub-textFaint px-2 py-1">加载中…</div>}
+        {!q.isLoading && opts.length === 0 && (
+          <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
+        )}
+        {opts.map((u: UserOpt) => (
+          <label
+            key={u.id}
+            className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(u.id)}
+              onChange={() => toggle(u.id)}
+              className="rounded"
+            />
+            <span className="truncate">{nameOnly ? u.name : labelForUser(u)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div ref={boxRef} className={`relative ${className ?? ""}`}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggleOpen}
         className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"
       >
         <span className={`truncate ${value.length ? "text-hub-text" : "text-hub-textMuted"}`}>{label}</span>
@@ -172,37 +225,7 @@ export function MultiUserSelect({
         )}
         <span className="text-hub-textFaint text-[9px]">▾</span>
       </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-[15rem] bg-white border border-hub-border rounded-[8px] shadow-lg p-1.5">
-          <input
-            autoFocus
-            value={kw}
-            onChange={(e) => setKw(e.target.value)}
-            placeholder="搜索姓名 / 工号"
-            className="w-full text-xs px-2 py-1.5 border border-hub-border rounded-[6px] outline-none focus:border-hub-teal mb-1.5"
-          />
-          <div className="max-h-[220px] overflow-y-auto">
-            {q.isLoading && <div className="text-[11px] text-hub-textFaint px-2 py-1">加载中…</div>}
-            {!q.isLoading && opts.length === 0 && (
-              <div className="text-[11px] text-hub-textFaint px-2 py-1">无匹配</div>
-            )}
-            {opts.map((u: UserOpt) => (
-              <label
-                key={u.id}
-                className="flex items-center gap-2 px-2 py-1 rounded-[5px] hover:bg-hub-panel cursor-pointer text-[12px]"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(u.id)}
-                  onChange={() => toggle(u.id)}
-                  className="rounded"
-                />
-                <span className="truncate">{labelForUser(u)}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
+      {useFixed ? createPortal(dropdown, document.body) : dropdown}
     </div>
   );
 }

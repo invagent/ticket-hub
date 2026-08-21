@@ -1162,7 +1162,7 @@ function DraftAssigneeTable({
       <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
         <div className="flex flex-col gap-1">
           <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
-          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" />
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly />
         </div>
         <button
           onClick={handleAdd}
@@ -1297,7 +1297,7 @@ function AssigneeTableSection({
       <div className="flex items-end gap-2 flex-wrap mb-3 pb-3 border-b border-hub-borderLight">
         <div className="flex flex-col gap-1">
           <span className="text-[10.5px] text-hub-textMuted">添加人员（支持多选）</span>
-          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" />
+          <MultiUserSelect value={addIds} onChange={setAddIds} placeholder="输入姓名查找" useFixed nameOnly />
         </div>
         <button
           onClick={() => addMut.mutate(addIds.filter((id) => !existingIds.has(id)))}
