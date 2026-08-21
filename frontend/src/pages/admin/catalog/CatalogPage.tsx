@@ -983,10 +983,10 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modules, filters]);
 
-  // sticky left offsets
+  // sticky left offsets（序号列固定在最左，占48px，后续 sticky 列偏移从48开始）
   const stickyKeys = COL_HEADERS.filter((c) => c.sticky).map((c) => c.key);
   const stickyOffsets: Partial<Record<ColKey, number>> = {};
-  let acc = 0;
+  let acc = 48; // 序号列宽度
   for (const col of COL_HEADERS) {
     if (col.sticky) { stickyOffsets[col.key] = acc; acc += col.width; }
   }
@@ -1012,9 +1012,14 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
       </div>
       <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="border-collapse w-full text-[12.5px]" style={{ minWidth: COL_HEADERS.reduce((s, c) => s + c.width, 0) + 140 }}>
+          <table className="border-collapse w-full text-[12.5px]" style={{ minWidth: COL_HEADERS.reduce((s, c) => s + c.width, 0) + 140 + 48 }}>
             <thead>
               <tr className="bg-hub-panel border-b border-hub-border">
+                {/* 序号列 */}
+                <th className="text-left px-3 py-2 text-[10.5px] font-bold text-hub-textMuted tracking-[.4px] bg-hub-panel whitespace-nowrap"
+                  style={{ width: 48, minWidth: 48, position: "sticky", left: 0, zIndex: 2 }}>
+                  序号
+                </th>
                 {COL_HEADERS.map((col) => (
                   <th
                     key={col.key}
@@ -1059,15 +1064,16 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={COL_HEADERS.length + 1} className="p-4 text-center text-xs text-hub-textFaint">
+                  <td colSpan={COL_HEADERS.length + 2} className="p-4 text-center text-xs text-hub-textFaint">
                     暂无数据
                   </td>
                 </tr>
               ) : (
-                filtered.map((m) => (
+                filtered.map((m, idx) => (
                   <ModuleRow
                     key={m.id}
                     module={m}
+                    index={idx + 1}
                     stickyKeys={stickyKeys}
                     stickyOffsets={stickyOffsets}
                     onChanged={onChanged}
@@ -1084,11 +1090,13 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
 
 function ModuleRow({
   module: m,
+  index,
   stickyKeys,
   stickyOffsets,
   onChanged,
 }: {
   module: Module;
+  index: number;
   stickyKeys: ColKey[];
   stickyOffsets: Partial<Record<ColKey, number>>;
   onChanged: () => void;
@@ -1166,6 +1174,11 @@ function ModuleRow({
 
   return (
     <tr className="border-b border-hub-borderLight hover:bg-hub-panel/50 align-middle">
+      {/* 序号列 */}
+      <td className="px-3 py-2 bg-white text-[11px] text-hub-textFaint font-mono"
+        style={{ position: "sticky", left: 0, zIndex: 1, minWidth: 48 }}>
+        {index}
+      </td>
       {COL_HEADERS.map((col) => {
         const isSticky = stickyKeys.includes(col.key);
         return (
