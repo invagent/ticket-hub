@@ -159,6 +159,7 @@ class KSMIngester:
                 "tel": payload.get("tel"),
                 "source_user_id": payload.get("account"),
             },
+            reporter_company=payload.get("reporterCompany"),
         )
         self._tickets.add(ticket)
 

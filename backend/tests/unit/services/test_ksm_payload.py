@@ -116,6 +116,8 @@ def test_full_field_mapping_from_doc_example() -> None:
     assert out["mobile"] == "13900139000"
     assert out["tel"] == "010-87654321"
     assert out["erpUid"] == "C001"
+    # 提单公司 = customerInfo.customerName（≠ feedbackUser 反馈人）
+    assert out["reporterCompany"] == "某某公司"
     # source_payload preserved for audit
     assert out["_subscribe_callback"] is data
 

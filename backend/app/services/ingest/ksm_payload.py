@@ -118,6 +118,9 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         "mobile": data.get("feedbackPhone"),
         "tel": data.get("feedbackTel"),
         "erpUid": customer.get("customerNumber"),
+        # 提单公司：KSM customerInfo.customerName（客户公司名，≠ feedbackUser 反馈人）。
+        # 税号/租户 KSM 不传，留空。
+        "reporterCompany": customer.get("customerName") or None,
         "attachments": parse_attachments(data),
         # Pass through full original payload for source_payload audit trail.
         "_subscribe_callback": data,
