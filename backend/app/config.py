@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     ksm_writeback_dry_run: bool = True  # 开 enabled 但 dry_run → 只组装+标 skipped，不真发
     ksm_writeback_batch: int = 20  # 每轮 drain 处理的 pending 行数上限
     ksm_writeback_max_attempts: int = 5  # 失败重试上限，超过标 failed 转人工
+    # 入库即接管受理：KSM 工单入库拉详情后主动 lock(+handle) 抢占锁定。默认关。
+    # 复用 ksm_writeback_dry_run 作试运行（开 enabled + dry_run → 只组装打日志不真发）。
+    # ⚠️ 生产 KSM 地址下一开就真接管每条新工单，务必先 dry_run 验证字段再放开。
+    ksm_auto_takeover_enabled: bool = False
 
     # ---- Zhichi ----
     zhichi_appid: str = ""

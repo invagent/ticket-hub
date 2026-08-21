@@ -240,6 +240,11 @@ class KSMWritebackSender:
         # 补料/接管/进度通知不关单，不动状态（supplementing 由主管线下收集补料时置，与此处无关）。
         if action in _CLOSING_ACTIONS:
             self._close_local(row, ticket)
+        # 补料真发成功 → 清接管状态回未接管（工单交还提单人，下次再进来需重新接管）。
+        # 入库即接管的生命周期闭环，见 services/ksm/takeover.py。
+        if action == "supply":
+            ticket.ksm_takeover_status = None
+            ticket.ksm_takeover_error = None
         self._db.commit()
         report.sent += 1
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)

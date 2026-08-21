@@ -211,7 +211,10 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         account_id=settings.ksm_account_id,
         user=settings.ksm_user,
     )
+    # client 生命周期覆盖到入库即接管（takeover 需在 detail 拉取后、同一 client 上
+    # lock→重拉→handle），故 close 延后到 finally 末尾。
     client = KSMClient(cfg)
+    ingested_ticket_id: int | None = None
     try:
         try:
             detail = client.get_order_detail(
@@ -222,46 +225,87 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         except KSMError as e:
             logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
             return
+
+        payload = from_subscribe_callback(detail)
+        if not payload.get("billId"):
+            logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
+            return
+
+        db = make_session()
+        try:
+            try:
+                result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
+                    payload
+                )
+            except KSMIngestError as e:
+                db.rollback()
+                logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
+                return
+            db.commit()
+            ingested_ticket_id = result.ticket_id if not result.deduped else None
+            logger.info(
+                "ksm_async_ingest_committed",
+                bill_id=bill_id,
+                ticket_id=result.ticket_id,
+                short_code=result.short_code,
+                deduped=result.deduped,
+                routing_decision=result.routing_decision,
+            )
+            # 入库即接管受理：新工单（非 dedup）完整受理，已存在工单（dedup）只接管。
+            # takeover 内部有灰度门/dry_run，失败只记 ticket 字段不抛。绝不阻塞入库/agents。
+            _run_ksm_takeover(
+                db,
+                ticket_id=result.ticket_id,
+                is_new=not result.deduped,
+                detail=detail,
+                client=client,
+                settings=settings,
+            )
+        except Exception:
+            db.rollback()
+            logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
+        finally:
+            db.close()
     finally:
         client.close()
-
-    payload = from_subscribe_callback(detail)
-    if not payload.get("billId"):
-        logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
-        return
-
-    db = make_session()
-    ingested_ticket_id: int | None = None
-    try:
-        try:
-            result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-                payload
-            )
-        except KSMIngestError as e:
-            db.rollback()
-            logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
-            return
-        db.commit()
-        ingested_ticket_id = result.ticket_id if not result.deduped else None
-        logger.info(
-            "ksm_async_ingest_committed",
-            bill_id=bill_id,
-            ticket_id=result.ticket_id,
-            short_code=result.short_code,
-            deduped=result.deduped,
-            routing_decision=result.routing_decision,
-        )
-    except Exception:
-        db.rollback()
-        logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
-    finally:
-        db.close()
 
     # D3-C/D: post-ingest agents (classify + conflict_detect). Skip on
     # dedupe (already processed) and on ingest failure. Errors swallowed
     # inside each agent.
     if ingested_ticket_id is not None:
         run_post_ingest_agents(ingested_ticket_id)
+
+
+def _run_ksm_takeover(
+    db: Session,
+    *,
+    ticket_id: int,
+    is_new: bool,
+    detail: dict[str, Any],
+    client: KSMClient,
+    settings: Any,
+) -> None:
+    """入库即接管，独立 try 保证接管失败不影响入库/后续 agents。commits。"""
+    from app.models import Ticket
+    from app.services.ksm.takeover import takeover_ksm_ticket
+
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return
+        takeover_ksm_ticket(
+            db,
+            ticket,
+            detail=detail,
+            is_new=is_new,
+            client=client,
+            notice_store=_get_notice_store(),  # type: ignore[arg-type]
+            settings=settings,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("ksm_takeover_unexpected_failure", ticket_id=ticket_id)
 
 
 @router.post("/ksm", response_model=KSMAck)

@@ -341,6 +341,30 @@ def test_supply_send_does_not_change_ticket_status(world: Session) -> None:
     assert t.status == "received"
 
 
+def test_supply_success_clears_takeover_status(world: Session) -> None:
+    """补料真发成功 → 清接管状态回 NULL（交还提单人，下次进来重新接管）。"""
+    hub = _hub(world)
+    t = _ticket(world, hub, ksm_takeover_status="handled", ksm_takeover_error=None)
+    _outbox(world, t, hub, kind="supply", payload={"supply_note": "请补充截图"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    world.refresh(t)
+    assert t.ksm_takeover_status is None  # 清回未接管
+
+
+def test_reply_close_does_not_clear_takeover_status(world: Session) -> None:
+    """答复关单是终态，不清接管状态（不会再进来）。"""
+    hub = _hub(world)
+    t = _ticket(world, hub, ksm_takeover_status="handled")
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "已处理"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    world.refresh(t)
+    assert t.ksm_takeover_status == "handled"  # 不动
+
+
 def test_supply_dry_run_does_not_change_ticket_status(world: Session) -> None:
     hub = _hub(world)
     t = _ticket(world, hub)
