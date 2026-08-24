@@ -257,6 +257,9 @@ export function TicketDetailPage() {
       setReplyErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      // 答复后 hub 的 op_status/status/reply_version 都变了——必须刷 hub 详情，
+      // 否则页面工单状态停留在旧值（用户反馈"状态没更新"）。
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
     },
     onError: (e) => setReplyErr(e instanceof ApiError ? e.message : String(e)),
