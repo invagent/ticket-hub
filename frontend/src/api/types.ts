@@ -110,6 +110,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/dispatch/sla-levels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sla Levels */
+        get: operations["list_sla_levels_api_admin_dispatch_sla_levels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/features": {
         parameters: {
             query?: never;
@@ -4174,6 +4191,8 @@ export interface components {
         };
         /** RuleOut */
         RuleOut: {
+            /** Created At */
+            created_at?: string | null;
             /** Dispatch Mode */
             dispatch_mode: string;
             /** Id */
@@ -4200,11 +4219,17 @@ export interface components {
              * @default 100
              */
             priority: number;
+            /** Rule Code */
+            rule_code?: string | null;
             /**
              * Rule Type
              * @default primary
              */
             rule_type: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
         };
         /** SLAOut */
         SLAOut: {
@@ -4354,6 +4379,15 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /** SlaLevelOut */
+        SlaLevelOut: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Sort Order */
+            sort_order: number;
         };
         /** SloItemOut */
         SloItemOut: {
@@ -4578,10 +4612,18 @@ export interface components {
             linear_status?: string | null;
             /** Module */
             module: string | null;
+            /** Module Classified At */
+            module_classified_at?: string | null;
             /** Op Status */
             op_status?: string | null;
             /** Parent Ticket Id */
             parent_ticket_id: number | null;
+            /** Predicted Module */
+            predicted_module?: string | null;
+            /** Predicted Module Confidence */
+            predicted_module_confidence?: number | null;
+            /** Predicted Product Line Code */
+            predicted_product_line_code?: string | null;
             /** Predicted Type */
             predicted_type?: string | null;
             /** Product Line Code */
@@ -5259,6 +5301,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sla_levels_api_admin_dispatch_sla_levels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlaLevelOut"][];
                 };
             };
         };

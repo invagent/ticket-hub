@@ -167,6 +167,15 @@ class Settings(BaseSettings):
     ai_cs_timeout_seconds: float = 180.0
     # 反思诊断工作台：LLM 反思推断（三步排查 → 病因判定），主管手动触发
 
+    # ---- AI 产品模块归类 ----
+    # 入库链 module_resolve：AI 判产品线/模块。默认关，先灰度。
+    module_classify_enabled: bool = False
+    # AI 置信度 ≥ 此值才采用 AI 结果；否则回退（按源系统分类找 → 相似 → 兜底）。
+    module_classify_confidence: float = 0.6
+    # 兜底产品线/模块（现有 active 目录里的「其他非发票云问题」）。
+    module_fallback_product_line_code: str = "PROLINE6067"
+    module_fallback_module: str = "其他非发票云问题"
+
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in

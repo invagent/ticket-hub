@@ -36,7 +36,7 @@ from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
-from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -167,7 +167,7 @@ class EscalationIngester:
             # + the knowledge-feedback reflect UI
             source_payload={"ai_cs": ai_cs_ctx},
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=p.product_line_code,
+            product_line_code=safe_product_line_code(self._db, p.product_line_code),
             module=p.module,
             title=p.original_question[:_TITLE_MAX],
             body=p.original_question,

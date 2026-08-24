@@ -25,7 +25,7 @@ from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
-from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -239,7 +239,9 @@ class ZhichiIngester:
             status="received",
             source_payload=payload.get("_envelope") or payload,
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=payload.get("productLineCode") or payload.get("product"),
+            product_line_code=safe_product_line_code(
+                self._db, payload.get("productLineCode") or payload.get("product")
+            ),
             module=payload.get("moduleName")
             or payload.get("category")
             or payload.get("subcategory"),

@@ -92,10 +92,59 @@ def _route_child(child_id: int) -> None:
     _route_by_type(child_id, ptype, pconf or 0.0, bar=settings.hub_issue_auto_confidence)
 
 
+def _resolve_module_and_route(ticket_id: int) -> None:
+    """AI 产品模块归类 + 按规范模块重新路由。
+
+    归类链把 ticket.product_line_code/module 覆盖成现有 active 目录内的规范值
+    （绝不自建），再复用 RerouteService 按规范模块重新分配处理人——入库时的路由
+    已推迟到此（ingester 不再即时分配）。归类失败/关闭时静默跳过，不阻塞分流。
+    """
+    settings = get_settings()
+    if not settings.module_classify_enabled:
+        return
+    from app.services.agents.module_resolve import resolve_module
+    from app.services.routing.router import Router, RouteRequest
+    from app.services.system_settings import get_default_pool_user_id
+
+    db = make_session()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return
+        resolve_module(db, ticket)
+        db.commit()
+        # 按归类后的规范模块路由分配（入库时路由已推迟到此）。直接调 Router，
+        # 复刻 ingester 的分配口径（单一命中才落人；multi_match 留 NULL 交人工）。
+        db.refresh(ticket)
+        route = Router(db, default_pool_user_id=get_default_pool_user_id(db)).route(
+            RouteRequest(
+                ticket_id=ticket.id,
+                source_code=ticket.source_code or "",
+                product_line_code=ticket.product_line_code,
+                raw_module=ticket.module,
+                raw_feature=ticket.feature,
+                customer_id=ticket.customer_identity_id,
+            )
+        )
+        if (route.decision == "assigned" and len(route.assigned_user_ids) == 1) or (
+            route.decision == "default_pool" and route.assigned_user_ids
+        ):
+            ticket.assigned_user_id = route.assigned_user_ids[0]
+            if ticket.handler_user_id is None:
+                ticket.handler_user_id = ticket.assigned_user_id
+            db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("module_resolve_and_route_failed", ticket_id=ticket_id)
+    finally:
+        db.close()
+
+
 def run_post_ingest_agents(ticket_id: int) -> None:
-    """入库后 LLM 链（ADR-0016 P2c 重排）：分诊 → 先原子化 → 按类型分流.
+    """入库后 LLM 链（ADR-0016 P2c 重排）：分诊 → 归类模块 → 先原子化 → 按类型分流.
 
     vision_extract(截图OCR) → triage(classify+conflict 合一：定型+是否混合) →
+      module_resolve(AI 判产品线/模块，覆盖生效值为现有目录规范值 + 重新路由) →
       混合: 自动拆开关开且过门槛 → split 原子化 → 每子单按继承类型分流；
             否则停摆进「待拆分」人工队列（split_ticket 审计已由 triage 写）。
       非混合: 按 type 分流（Complaint 停 ticket 层；其余毕业 hub_issue）。
@@ -108,6 +157,9 @@ def run_post_ingest_agents(ticket_id: int) -> None:
     tri = run_ticket_triage(ticket_id)
     if tri is None:
         return  # triage 失败：留 predicted_type=None，人工可见（不误分流）
+
+    # 产品模块归类（覆盖生效 plc/module + 重新路由）。在分流前——毕业 hub 要继承规范值。
+    _resolve_module_and_route(ticket_id)
 
     if tri.is_mixed:
         if settings.split_auto_enabled and tri.confidence >= settings.split_auto_confidence:

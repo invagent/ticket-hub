@@ -29,7 +29,7 @@ from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
-from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
@@ -110,7 +110,7 @@ class ZammadIngester:
             status="received",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=zt.product_line_code,
+            product_line_code=safe_product_line_code(self._db, zt.product_line_code),
             module=zt.group or None,
             feature=self._pick_feature(zt.tags),
             title=zt.title or None,

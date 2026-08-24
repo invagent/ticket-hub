@@ -1043,6 +1043,30 @@ function TicketAttributesEditor({
           </select>
         </label>
       </div>
+      {ticket.predicted_module && (
+        <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-hub-textMuted bg-hub-panel border border-hub-border rounded-[7px] px-2.5 py-1.5">
+          <span className="font-semibold text-hub-teal-deep">AI 建议</span>
+          <span>
+            {ticket.predicted_product_line_code || "—"} / {ticket.predicted_module}
+            {ticket.predicted_module_confidence != null &&
+              `（置信度 ${Math.round(ticket.predicted_module_confidence * 100)}%）`}
+          </span>
+          {(ticket.predicted_product_line_code !== plc ||
+            ticket.predicted_module !== module) && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlc(ticket.predicted_product_line_code ?? "");
+                setModule(ticket.predicted_module ?? "");
+              }}
+              disabled={busy}
+              className="px-2 py-0.5 text-[11px] font-semibold rounded bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40"
+            >
+              采纳
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-wrap">
         {graduated ? (
           <>

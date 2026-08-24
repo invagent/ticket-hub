@@ -5733,6 +5733,17 @@
       },
       "RuleOut": {
         "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
           "dispatch_mode": {
             "pattern": "^(count|ratio)$",
             "title": "Dispatch Mode",
@@ -5797,11 +5808,44 @@
             "title": "Priority",
             "type": "integer"
           },
+          "rule_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Code"
+          },
           "rule_type": {
             "default": "primary",
             "pattern": "^(primary|overflow)$",
             "title": "Rule Type",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           }
         },
         "required": [
@@ -6316,6 +6360,29 @@
           "created_at"
         ],
         "title": "SkillVersionModel",
+        "type": "object"
+      },
+      "SlaLevelOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "sort_order"
+        ],
+        "title": "SlaLevelOut",
         "type": "object"
       },
       "SloItemOut": {
@@ -7036,6 +7103,18 @@
             ],
             "title": "Module"
           },
+          "module_classified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module Classified At"
+          },
           "op_status": {
             "anyOf": [
               {
@@ -7057,6 +7136,39 @@
               }
             ],
             "title": "Parent Ticket Id"
+          },
+          "predicted_module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Module"
+          },
+          "predicted_module_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Module Confidence"
+          },
+          "predicted_product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Product Line Code"
           },
           "predicted_type": {
             "anyOf": [
@@ -8879,6 +8991,31 @@
           }
         },
         "summary": "Delete Assignee",
+        "tags": [
+          "admin-dispatch"
+        ]
+      }
+    },
+    "/api/admin/dispatch/sla-levels": {
+      "get": {
+        "operationId": "list_sla_levels_api_admin_dispatch_sla_levels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlaLevelOut"
+                  },
+                  "title": "Response List Sla Levels Api Admin Dispatch Sla Levels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sla Levels",
         "tags": [
           "admin-dispatch"
         ]

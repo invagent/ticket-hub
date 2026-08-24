@@ -124,6 +124,11 @@ class TicketDetail(TicketSummary):
     actual_replied_at: datetime | None
     cached_reply_content: str | None
     cached_reply_version: int | None
+    # AI 产品模块归类建议（留痕；生效值仍是 product_line_code/module）
+    predicted_product_line_code: str | None = None
+    predicted_module: str | None = None
+    predicted_module_confidence: float | None = None
+    module_classified_at: datetime | None = None
     # enriched display fields (not on ORM, set manually in get_ticket)
     assigned_user_name: str | None = None
     customer_display_name: str | None = None

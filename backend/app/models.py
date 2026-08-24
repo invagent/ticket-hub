@@ -450,6 +450,16 @@ class Ticket(Base):
     predicted_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # AI 产品模块归类（迁移 0034）：AI 原始判定留痕（审计/评测）。生效值仍写
+    # product_line_code/module（被归类链覆盖成现有 active 目录内的规范值）；
+    # 源系统原始分类另存 source_payload["_original_catalog"]。
+    predicted_product_line_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    predicted_module: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    predicted_module_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    module_classified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # 研发管理统计（handle_hours 回填自飞书耗时/未来由 SLA watcher 计算）
     handle_hours: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
     sla_standard_hours: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)

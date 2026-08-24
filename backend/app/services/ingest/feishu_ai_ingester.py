@@ -22,7 +22,7 @@ from app.models import Attachment, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.identity.resolver import IdentityInput, IdentityResolver
-from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 
 # 复用 ai_cs 的载荷解析层（参数形状完全一致）。IngestError 显式 re-export，
 # 供 webhook 层 catch（与 escalation_ingester.IngestError 是同一个异常类）。
@@ -102,7 +102,7 @@ class FeishuAiIngester:
             status="received",
             source_payload={"ai_cs": ai_cs_ctx},
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=p.product_line_code,
+            product_line_code=safe_product_line_code(self._db, p.product_line_code),
             module=p.module,
             title=p.original_question[:_TITLE_MAX],
             body=p.original_question,

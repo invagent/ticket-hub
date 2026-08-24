@@ -37,7 +37,7 @@ from app.services.hub_issues.op_status import (
     resolve_op_handler,
 )
 from app.services.identity.resolver import IdentityInput, IdentityResolver
-from app.services.ingest.catalog_upsert import upsert_catalog
+from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 from app.services.ingest.content_refresh import apply_content_refresh
 from app.services.routing.router import Router, RouteRequest
 
@@ -147,7 +147,9 @@ class KSMIngester:
             status="received",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
-            product_line_code=payload.get("productLineCode") or payload.get("product_line"),
+            product_line_code=safe_product_line_code(
+                self._db, payload.get("productLineCode") or payload.get("product_line")
+            ),
             module=payload.get("moduleName") or payload.get("module"),
             feature=payload.get("featureName") or payload.get("feature"),
             title=payload.get("title"),
