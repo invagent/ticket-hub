@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getByPath, patchByPath, postByPath } from "@/api/client";
 import { currentUserId, isSupervisor } from "@/api/auth";
@@ -16,6 +16,7 @@ import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
 import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
+import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
 import { ticketStatusLabel } from "./ticketStatus";
 
@@ -204,6 +205,15 @@ export function TicketDetailPage() {
 
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const tabs = useTabsOptional();
+  // 返回列表：刷新列表数据 → 导航回列表 → 关掉当前详情 tab 页签。
+  const handleBackToList = () => {
+    void qc.invalidateQueries({ queryKey: ["tickets"] });
+    const curKey = keyOf(location.pathname + location.search);
+    navigate("/tickets");
+    tabs?.closeTab(curKey);
+  };
   const [gradErr, setGradErr] = useState<string | null>(null);
   // 分类改判本地态：类型选择（默认 predicted_type，回落 Operation）
   const [classifyType, setClassifyType] = useState<string>("Operation");
@@ -335,7 +345,7 @@ export function TicketDetailPage() {
             <div className="flex items-center gap-2.5 flex-wrap justify-end">
               <button
                 type="button"
-                onClick={() => navigate("/tickets")}
+                onClick={handleBackToList}
                 className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
               >
                 返回列表
