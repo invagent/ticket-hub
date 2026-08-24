@@ -824,7 +824,7 @@ export function TicketDetailPage() {
 // 模块）；已毕业改 hub（PATCH /attributes 只改数据不联动）+ pending_review「确认推送」。
 type HubDetailData =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
-type ProductLineOut = { code: string; name: string };
+type ProductLineOut = { code: string; name: string; is_active?: boolean };
 type CatalogModuleOut = { code: string; name: string };
 
 function TicketAttributesEditor({
@@ -1012,14 +1012,18 @@ function TicketAttributesEditor({
             className={selCls}
           >
             <option value="">—</option>
-            {(productLines.data ?? []).map((p) => (
-              <option key={p.code} value={p.code}>
-                {p.name}
-              </option>
-            ))}
-            {plc && !(productLines.data ?? []).some((p) => p.code === plc) && (
-              <option value={plc}>{plc}</option>
-            )}
+            {(productLines.data ?? [])
+              .filter((p) => p.is_active !== false)
+              .map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.name}
+                </option>
+              ))}
+            {/* 当前值是停用/未知产品线（如旧码历史工单）→ 补一个 option 保证可见可选 */}
+            {plc &&
+              !(productLines.data ?? []).some((p) => p.code === plc && p.is_active !== false) && (
+                <option value={plc}>{plc}（停用）</option>
+              )}
           </select>
         </label>
         <label className="flex flex-col gap-1">
