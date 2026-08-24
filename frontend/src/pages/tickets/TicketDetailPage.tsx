@@ -875,6 +875,19 @@ function TicketAttributesEditor({
     enabled: canEdit && !!plc,
   });
 
+  // 产品线加载完后，若当前未选产品线（工单未归类/归类落 NULL），默认落「其他非发票云
+  // 问题」兜底线（语义=未分类，不误导），匹配不到再回落第一个 active。不留空。
+  // 工单已有产品线值不会被覆盖（plc 非空则跳过）。选中后下方模块 effect 链式补齐。
+  const activeLines = useMemo(
+    () => (productLines.data ?? []).filter((p) => p.is_active !== false),
+    [productLines.data],
+  );
+  useEffect(() => {
+    if (plc || activeLines.length === 0) return;
+    const fallback = activeLines.find((p) => p.name.includes("其他非发票云"));
+    setPlc((fallback ?? activeLines[0]).code);
+  }, [plc, activeLines]);
+
   // 模块列表加载完后，若当前未选模块（切换产品线清空、或工单本无模块），默认选第一个，
   // 不留空。工单已有模块值不会被覆盖（module 非空则跳过）。
   const moduleOptions = modules.data;
