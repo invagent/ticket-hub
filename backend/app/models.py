@@ -1165,7 +1165,7 @@ class AgentDecision(Base):
             "decision_type IN ("
             "'classify_type','split_ticket','no_split',"
             "'dedup_link','dedup_new','supersede',"
-            "'merge_identity','relink','auto_reply')",
+            "'merge_identity','relink','auto_reply','classify_module')",
             name="ck_agent_decisions_type",
         ),
         CheckConstraint(

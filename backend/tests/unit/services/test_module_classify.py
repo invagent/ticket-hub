@@ -122,6 +122,17 @@ def test_resolve_ai_hit(catalog: Session, monkeypatch) -> None:  # type: ignore[
     res = resolve_module(catalog, t)
     assert res.source == "ai"
     assert t.product_line_code == "PL_A" and t.module == "开票模块"
+    # commit 覆盖真实入库路径：classify_module 审计行须过 ck_agent_decisions_type 约束
+    # （否则 CheckViolation 回滚，归类值也存不进——曾漏改约束致 SIT 归类全失败）。
+    catalog.commit()
+    from app.models import AgentDecision
+
+    row = (
+        catalog.query(AgentDecision)
+        .filter_by(decision_type="classify_module", subject_id=t.id)
+        .one()
+    )
+    assert row.proposal["predicted_module"] == "开票模块"
     get_settings.cache_clear()
 
 
