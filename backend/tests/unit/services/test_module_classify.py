@@ -198,3 +198,60 @@ def test_resolve_original_catalog_kept(catalog: Session, monkeypatch) -> None:  
         "module": "旧模块xyz",
     }
     get_settings.cache_clear()
+
+
+# ---- 归类链修正：line_hint（智齿场景）+ 模块名匹配反推产品线 ----------------
+
+
+def test_resolve_zhichi_line_hint_ai_picks_module(catalog: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """智齿 module=产品线名（'产品线A'）→ line_hint=PL_A，AI 在该线下选模块。"""
+    monkeypatch.setenv("MODULE_CLASSIFY_ENABLED", "true")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    captured = {}
+
+    def _fake(db, *, title=None, body=None, line_hint=None, router=None):  # type: ignore[no-untyped-def]
+        captured["line_hint"] = line_hint
+        return mc.ModuleClassifyResult("PL_A", "开票模块", 0.9, "r", 0.0, "m")
+
+    monkeypatch.setattr("app.services.agents.module_resolve.classify_module", _fake)
+    # 智齿工单：module 填的是产品线名
+    t = _ticket(catalog, product_line_code=None, module="产品线A")
+    res = resolve_module(catalog, t)
+    assert captured["line_hint"] == "PL_A"  # module=产品线名 → 锁定该产品线
+    assert res.source == "ai"
+    assert res.product_line_code == "PL_A" and res.module == "开票模块"
+    get_settings.cache_clear()
+
+
+def test_resolve_exact_module_reverse_lookup_line(catalog: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """orig_plc=NULL（被 safe_ 抹掉）但 module 名精确命中 → 反推产品线。"""
+    monkeypatch.setenv("MODULE_CLASSIFY_ENABLED", "true")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.services.agents.module_resolve.classify_module", lambda db, **kw: None
+    )
+    t = _ticket(catalog, product_line_code=None, module="收票模块")
+    res = resolve_module(catalog, t)
+    assert res.source == "source_exact"
+    assert res.product_line_code == "PL_A" and res.module == "收票模块"  # 反推产品线
+    get_settings.cache_clear()
+
+
+def test_resolve_line_locked_fallback_module(catalog: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """智齿产品线锁定（PROLINE6067）但 AI 关/无模块命中 → 落该线兜底模块。"""
+    monkeypatch.setenv("MODULE_CLASSIFY_ENABLED", "true")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.services.agents.module_resolve.classify_module", lambda db, **kw: None
+    )
+    # module=产品线名"其他非发票云问题" → line_hint=PROLINE6067；该线下模块="其他非发票云问题"
+    t = _ticket(catalog, product_line_code=None, module="其他非发票云问题")
+    res = resolve_module(catalog, t)
+    assert res.product_line_code == "PROLINE6067"
+    assert res.module == "其他非发票云问题"

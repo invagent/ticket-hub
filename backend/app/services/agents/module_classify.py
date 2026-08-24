@@ -94,10 +94,13 @@ def classify_module(
     *,
     title: str | None,
     body: str | None,
+    line_hint: str | None = None,
     router: LLMRouter | None = None,
 ) -> ModuleClassifyResult | None:
-    """AI 两步判产品线+模块。永不抛，失败/无候选返回 None。
+    """AI 判产品线+模块。永不抛，失败/无候选返回 None。
 
+    line_hint：源系统已明确产品线（如智齿 module=产品线名）时传入其 code，
+    跳过 step1 直接在该产品线下选模块（省一次调用 + 更准）。None 则两步全判。
     confidence 取两步里较低的一个（整条链的信心受最弱环节约束）。
     """
     lines = db.execute(select(ProductLine).where(ProductLine.is_active.is_(True))).scalars().all()
@@ -110,17 +113,26 @@ def classify_module(
         prompt = _load_prompt()
         router = router or LLMRouter.from_settings()
 
-        # ---- step1 定产品线 ----
-        pl_cands = [{"code": pl.code, "name": pl.name} for pl in lines]
-        pl_code, pl_conf, pl_reason, pl_cost, model = _ask(
-            router,
-            prompt=prompt,
-            user_content=(
-                f"{text}\n\n场景 A：从以下产品线候选里选一个最匹配的 code：\n"
-                f"{json.dumps(pl_cands, ensure_ascii=False)}"
-            ),
-            candidates={pl.code for pl in lines},
-        )
+        # ---- step1 定产品线（line_hint 有值则跳过，直接锁定）----
+        if line_hint and any(pl.code == line_hint for pl in lines):
+            pl_code, pl_conf, pl_reason, pl_cost, model = (
+                line_hint,
+                1.0,
+                "源系统锁定产品线",
+                0.0,
+                "",
+            )
+        else:
+            pl_cands = [{"code": pl.code, "name": pl.name} for pl in lines]
+            pl_code, pl_conf, pl_reason, pl_cost, model = _ask(
+                router,
+                prompt=prompt,
+                user_content=(
+                    f"{text}\n\n场景 A：从以下产品线候选里选一个最匹配的 code：\n"
+                    f"{json.dumps(pl_cands, ensure_ascii=False)}"
+                ),
+                candidates={pl.code for pl in lines},
+            )
 
         # ---- step2 定模块（该产品线下 active 模块）----
         mods = (

@@ -35,6 +35,12 @@ from __future__ import annotations
 
 from typing import Any
 
+# ⚠️ DEPRECATED（2026-08）：这张硬编码表把 KSM 产品名映射到旧产品线码
+# （cloud-fapiao 等，均已 is_active=False）。module_classify_enabled 开启后，
+# 其输出会被 safe_product_line_code 抹成 NULL、由 module_resolve 归类链按现有
+# active 目录重判——即此表输出被丢弃、不再生效。仅在归类开关【关闭】时作为
+# 旧的入库落码路径保留（向后兼容）。归类稳定长开后可连同 _resolve_product_line_code
+# 一并删除。新产品线由目录管理维护，不要再往这张表加。
 # Keep in sync with backend/config/seeds/assignment_scopes.example.yaml
 PRODUCT_NAME_TO_CODE: dict[str, str] = {
     "金蝶发票云": "cloud-fapiao",

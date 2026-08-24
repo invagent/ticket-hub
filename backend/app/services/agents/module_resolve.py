@@ -60,6 +60,52 @@ def _active_line_exists(db: Session, plc: str) -> bool:
     return row is not None
 
 
+def _line_hint(db: Session, orig_plc: str | None, orig_module: str | None) -> str | None:
+    """源系统暗示的产品线 code。智齿 module=产品线 name → 该产品线；否则源产品线
+    原值若在 active 目录 → 用之；都不满足 → None。"""
+    if orig_module:
+        pl = db.execute(
+            select(ProductLine.code).where(
+                ProductLine.name == orig_module, ProductLine.is_active.is_(True)
+            )
+        ).first()
+        if pl is not None:
+            return str(pl[0])
+    if orig_plc and _active_line_exists(db, orig_plc):
+        return orig_plc
+    return None
+
+
+def _find_exact_module(db: Session, module: str) -> tuple[str, str] | None:
+    """全部 active 模块里 name 精确相等 → (plc, name)，反推产品线。"""
+    row = db.execute(
+        select(Module.product_line_code, Module.name).where(
+            Module.name == module, Module.is_active.is_(True)
+        )
+    ).first()
+    return (str(row[0]), str(row[1])) if row is not None else None
+
+
+def _line_default_module(db: Session, plc: str) -> str | None:
+    """产品线锁定但模块未定时，取该产品线下的兜底模块：优先名字含"其他"的，
+    否则第一个（按 name）。该线无 active 模块 → None。"""
+    mods = (
+        db.execute(
+            select(Module.name)
+            .where(Module.product_line_code == plc, Module.is_active.is_(True))
+            .order_by(Module.name)
+        )
+        .scalars()
+        .all()
+    )
+    if not mods:
+        return None
+    for m in mods:
+        if "其他" in m:
+            return str(m)
+    return str(mods[0])
+
+
 def _find_similar_module(db: Session, module: str | None) -> tuple[str, str] | None:
     """在全部 active 模块里按规范化 name 找相似（相等 / 互相包含）。命中返回 (plc, name)。"""
     if not module:
@@ -88,12 +134,16 @@ def resolve_module(
     orig_plc = ticket.product_line_code
     orig_module = ticket.module
 
-    # ---- ① AI 判定 ----
+    # line_hint：源系统暗示的产品线。智齿 module=产品线 name（如"标准版-收票"）→ 锁定
+    # 该产品线；否则源产品线原值若在 active 目录也可用。用于让 AI 只在该线下选模块。
+    line_hint = _line_hint(db, orig_plc, orig_module)
+
+    # ---- ① AI 判定（有 line_hint 则只在该线下选模块）----
     ai_plc: str | None = None
     ai_module: str | None = None
     ai_conf = 0.0
     if settings.module_classify_enabled:
-        ai = classify_module(db, title=ticket.title, body=ticket.body)
+        ai = classify_module(db, title=ticket.title, body=ticket.body, line_hint=line_hint)
         if ai is not None:
             ai_plc, ai_module, ai_conf = ai.product_line_code, ai.module, ai.confidence
             ticket.predicted_product_line_code = ai_plc
@@ -119,7 +169,7 @@ def resolve_module(
 
     result: ModuleResolveResult | None = None
 
-    # AI 够置信 + 结果在 active 目录内 → 用之
+    # ---- ① AI 够置信 + 结果在 active 目录内 → 用之 ----
     if (
         ai_conf >= settings.module_classify_confidence
         and ai_plc
@@ -128,20 +178,26 @@ def resolve_module(
     ):
         result = ModuleResolveResult(ai_plc, ai_module, "ai")
 
-    # ---- ② 按源系统原始分类精确找 ----
-    if (
-        result is None
-        and orig_plc
-        and orig_module
-        and _active_module_exists(db, orig_plc, orig_module)
-    ):
-        result = ModuleResolveResult(orig_plc, orig_module, "source_exact")
+    # ---- ② 按源系统模块名在全部 active 模块里精确匹配，反推产品线 ----
+    # （KSM 模块名如"开票管理"可能直接命中；不依赖被 safe_ 抹 NULL 的产品线码）
+    if result is None and orig_module:
+        exact = _find_exact_module(db, orig_module)
+        if exact is not None:
+            result = ModuleResolveResult(exact[0], exact[1], "source_exact")
 
-    # ---- ③ 相似匹配 ----
+    # ---- ③ 相似匹配（全 active 模块规范化 name 比对，反推产品线）----
     if result is None:
         sim = _find_similar_module(db, orig_module)
         if sim is not None:
             result = ModuleResolveResult(sim[0], sim[1], "similar")
+
+    # ---- ②b 产品线锁定但模块落到别的线（智齿：module=产品线名，无具体模块）----
+    # 源系统已明确产品线（line_hint），但 AI/精确/相似没在该线下定出模块（甚至跨线
+    # 命中了别的产品线）→ 以源系统的产品线为准，落该线下兜底模块。产品线可信优先。
+    if line_hint is not None and (result is None or result.product_line_code != line_hint):
+        dft = _line_default_module(db, line_hint)
+        if dft is not None:
+            result = ModuleResolveResult(line_hint, dft, "line_locked")
 
     # ---- ④ 兜底 ----
     if result is None:
