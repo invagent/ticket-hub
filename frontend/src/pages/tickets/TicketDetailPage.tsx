@@ -875,6 +875,14 @@ function TicketAttributesEditor({
     enabled: canEdit && !!plc,
   });
 
+  // 模块列表加载完后，若当前未选模块（切换产品线清空、或工单本无模块），默认选第一个，
+  // 不留空。工单已有模块值不会被覆盖（module 非空则跳过）。
+  const moduleOptions = modules.data;
+  useEffect(() => {
+    if (!plc || !moduleOptions || moduleOptions.length === 0) return;
+    if (!module) setModule(moduleOptions[0].code);
+  }, [plc, module, moduleOptions]);
+
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["ticket-detail", ticket.id] });
     void qc.invalidateQueries({ queryKey: ["ticket-history", ticket.id] });
