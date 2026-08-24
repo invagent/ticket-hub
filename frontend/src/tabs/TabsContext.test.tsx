@@ -58,6 +58,19 @@ describe("TabsContext", () => {
     expect(result.current.tabs).toHaveLength(1);
   });
 
+  it("closing a non-active tab keeps activeKey unchanged (返回列表不震荡)", () => {
+    // 复刻「返回列表」：多个详情 tab，先激活列表，再关当前详情 → activeKey 稳定在列表，
+    // 不会跳到前一个详情（此前手动 navigate + closeTab 激活相邻导致来回切换的 bug）。
+    const { result } = renderHook(() => useTabs(), { wrapper: wrapper("/tickets") });
+    act(() => result.current.openTab("/tickets/1", "TKT-1"));
+    act(() => result.current.openTab("/tickets/2", "TKT-2")); // 当前详情，活跃
+    act(() => result.current.openTab("/tickets", "全部工单", { activate: true }));
+    expect(result.current.activeKey).toBe("/tickets");
+    act(() => result.current.closeTab("/tickets/2")); // 关非活跃的当前详情
+    expect(result.current.activeKey).toBe("/tickets"); // 不跳到 /tickets/1
+    expect(result.current.tabs.map((t) => t.key)).toEqual(["/tickets", "/tickets/1"]);
+  });
+
   it("updates title", () => {
     const { result } = renderHook(() => useTabs(), { wrapper: wrapper("/tickets") });
     act(() => result.current.openTab("/tickets/1", "工单…"));

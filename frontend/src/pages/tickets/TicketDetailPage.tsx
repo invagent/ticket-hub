@@ -207,12 +207,20 @@ export function TicketDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const tabs = useTabsOptional();
-  // 返回列表：刷新列表数据 → 导航回列表 → 关掉当前详情 tab 页签。
+  // 返回列表：刷新列表数据 + 关闭当前详情 tab。
+  // 关键——只操作 tab 状态、不手动 navigate：先 openTab 明确激活「全部工单」（activeKey
+  // 切到列表），再 closeTab 当前详情（此时详情已非活跃，不会触发 closeTab 的“激活相邻”
+  // 逻辑）。URL 由 TabsSync 单向跟随 activeKey。手动 navigate + closeTab 激活相邻会让
+  // activeKey 在列表与前一个详情间来回震荡（双向同步 effect 打架）。
   const handleBackToList = () => {
     void qc.invalidateQueries({ queryKey: ["tickets"] });
     const curKey = keyOf(location.pathname + location.search);
-    navigate("/tickets");
-    tabs?.closeTab(curKey);
+    if (tabs) {
+      tabs.openTab("/tickets", "全部工单", { activate: true });
+      tabs.closeTab(curKey);
+    } else {
+      navigate("/tickets"); // 无 tab 环境（如测试）回退到普通导航
+    }
   };
   const [gradErr, setGradErr] = useState<string | null>(null);
   // 分类改判本地态：类型选择（默认 predicted_type，回落 Operation）
