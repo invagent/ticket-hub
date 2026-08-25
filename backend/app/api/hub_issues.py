@@ -202,6 +202,9 @@ def list_hub_issues(
 class FilterCountsResponse(BaseModel):
     op_status: dict[str, int]  # {processing, answered, ..., all} 运营处理状态各档
     dev_stage: dict[str, int]  # {实际 linear_status 值: 数}
+    status: dict[
+        str, int
+    ]  # {pending_review, in_progress, released, resolved, closed, all} 任务状态各档
 
 
 @router.get("/filter-counts", response_model=FilterCountsResponse)

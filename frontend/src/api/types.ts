@@ -3076,6 +3076,10 @@ export interface components {
             op_status: {
                 [key: string]: number;
             };
+            /** Status */
+            status: {
+                [key: string]: number;
+            };
         };
         /** FunnelOut */
         FunnelOut: {
