@@ -875,7 +875,7 @@ function FilterPanel({
           hub 原始状态下拉已隐藏（与「任务状态」重复；status 参数仍支持外部链接带入） */}
       <div className="flex items-center gap-3 flex-wrap pt-1">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px]">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[80px] flex-none whitespace-nowrap">
             任务处理人
           </span>
           <select
@@ -892,7 +892,9 @@ function FilterPanel({
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px]">关键字</span>
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[80px] flex-none whitespace-nowrap">
+            关键字
+          </span>
           <input
             type="text"
             value={searchDraft}
@@ -929,7 +931,7 @@ function TimeRangeRow({
   const isCustom = preset === "自定义";
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[70px] flex-none pt-1">
+      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[80px] flex-none pt-1 whitespace-nowrap">
         {label}
       </span>
       <div className="flex-1 flex flex-wrap items-center gap-2.5">
@@ -980,7 +982,7 @@ function FilterRow({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[70px] flex-none pt-1">
+      <span className="text-[12px] font-bold text-hub-text tracking-[.3px] w-[80px] flex-none pt-1 whitespace-nowrap">
         {label}
       </span>
       <div className="flex-1 flex flex-wrap items-center gap-2.5">{children}</div>
