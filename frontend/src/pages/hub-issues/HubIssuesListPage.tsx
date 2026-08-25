@@ -73,14 +73,6 @@ const TIME_PRESET_DAYS: Record<string, [number | null, number | null]> = {
   "10天以上": [10, null],
 };
 
-// 任务状态档位（HubIssue.status → 中文标签），与后端 STATUS_VALUES 对齐
-const STATUS_LABEL: Record<string, string> = {
-  pending_review: "待确认分类",
-  in_progress: "处理中",
-  released: "已发版",
-  resolved: "已解决",
-  closed: "已关闭",
-};
 // 本地日期 YYYY-MM-DD（今天偏移 offsetDays 天）
 function ymd(offsetDays = 0): string {
   const d = new Date();
@@ -255,10 +247,10 @@ export function HubIssuesListPage() {
     queryKey: ["hub-issue-filter-counts", serverFilters],
     queryFn: () => api.get("/api/hub-issues/filter-counts", serverFilters),
   });
-  // 工单状态(op_status)各档计数 + 研发状态(实际 linear_status)各值计数 + 任务状态(status)
+  // 工单状态(op_status)各档计数 + 研发状态(实际 linear_status)各值计数 + 任务类型(type)
   const opStatusCounts: Record<string, number> = filterCounts.data?.op_status ?? {};
   const devStageCounts: Record<string, number> = filterCounts.data?.dev_stage ?? {};
-  const statusCounts: Record<string, number> = filterCounts.data?.status ?? {};
+  const typeCounts: Record<string, number> = filterCounts.data?.type ?? {};
 
   // 批量催单：对选中的、可催办的研发类任务逐条调用 /urge
   const urgeTargets = useMemo(
@@ -349,9 +341,11 @@ export function HubIssuesListPage() {
       <FilterPanel
         opStatusCounts={opStatusCounts}
         devStageCounts={devStageCounts}
-        statusCounts={statusCounts}
+        typeCounts={typeCounts}
         opStatusFilter={opStatusFilter}
         onOpStatus={(v) => setFilter("op_status", v)}
+        type={type}
+        onType={(v) => setFilter("type", v)}
         product={product}
         onProduct={(v) => setFilter("product", v)}
         search={search}
@@ -375,11 +369,9 @@ export function HubIssuesListPage() {
         onCloseTime={(preset, from, to) =>
           setFilters({ close_time: preset, close_from: from ?? "", close_to: to ?? "" })
         }
-        status={status}
-        onStatus={(v) => setFilter("status", v)}
         selectCls={selectCls}
         activeCount={
-          [product, search, assignedUserId, opStatusFilter, devStage, createTime, closeTime, status].filter(
+          [product, search, assignedUserId, opStatusFilter, devStage, createTime, closeTime, type].filter(
             Boolean,
           ).length
         }
@@ -708,9 +700,11 @@ const FILTERS_COLLAPSED_KEY = "hub_filters_collapsed";
 function FilterPanel({
   opStatusCounts,
   devStageCounts,
-  statusCounts,
+  typeCounts,
   opStatusFilter,
   onOpStatus,
+  type,
+  onType,
   product,
   onProduct,
   search,
@@ -732,14 +726,14 @@ function FilterPanel({
   onCloseTime,
   selectCls,
   activeCount,
-  status,
-  onStatus,
 }: {
   opStatusCounts: Record<string, number>;
   devStageCounts: Record<string, number>;
-  statusCounts: Record<string, number>;
+  typeCounts: Record<string, number>;
   opStatusFilter: string;
   onOpStatus: (v: string) => void;
+  type: string;
+  onType: (v: string) => void;
   product: string;
   onProduct: (v: string) => void;
   search: string;
@@ -761,8 +755,6 @@ function FilterPanel({
   onCloseTime: (preset: string, from?: string, to?: string) => void;
   selectCls: string;
   activeCount: number;
-  status: string;
-  onStatus: (v: string) => void;
 }) {
   const [searchDraft, setSearchDraft] = useState(search);
   // 外部（URL / 浏览器前进后退 / 重置）改变 search 时，同步回输入框，避免草稿态残留
@@ -829,6 +821,23 @@ function FilterPanel({
         ))}
       </FilterRow>
 
+      {/* 任务类型 = hub.type 4 出口类型（服务端筛，跨页真实计数） */}
+      <FilterRow label="任务类型">
+        <Chip
+          active={!type}
+          label={`全部(${typeCounts.all ?? 0})`}
+          onClick={() => onType("")}
+        />
+        {Object.entries(TYPE_LABEL).map(([value, label]) => (
+          <Chip
+            key={value}
+            active={type === value}
+            label={`${label}(${typeCounts[value] ?? 0})`}
+            onClick={() => onType(type === value ? "" : value)}
+          />
+        ))}
+      </FilterRow>
+
       {/* 研发状态 = 实际 linear_status（数据驱动选项，服务端精确匹配；工单推 Linear 后有值） */}
       <FilterRow label="研发状态">
         <Chip active={!devStage} label="全部" onClick={() => onDevStage("")} />
@@ -861,23 +870,6 @@ function FilterPanel({
         to={closeTo}
         onChange={onCloseTime}
       />
-
-      {/* 任务状态 = hub.status 主要档位（服务端筛，跨页真实计数） */}
-      <FilterRow label="任务状态">
-        <Chip
-          active={!status}
-          label={`全部(${statusCounts.all ?? 0})`}
-          onClick={() => onStatus("")}
-        />
-        {Object.entries(STATUS_LABEL).map(([value, label]) => (
-          <Chip
-            key={value}
-            active={status === value}
-            label={`${label}(${statusCounts[value] ?? 0})`}
-            onClick={() => onStatus(status === value ? "" : value)}
-          />
-        ))}
-      </FilterRow>
 
       {/* 处理人下拉（→assigned_user_id）+ 关键字搜索(→search)，均真实生效。
           hub 原始状态下拉已隐藏（与「任务状态」重复；status 参数仍支持外部链接带入） */}

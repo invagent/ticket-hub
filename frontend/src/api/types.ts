@@ -3076,8 +3076,8 @@ export interface components {
             op_status: {
                 [key: string]: number;
             };
-            /** Status */
-            status: {
+            /** Type */
+            type: {
                 [key: string]: number;
             };
         };

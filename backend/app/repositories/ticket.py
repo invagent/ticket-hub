@@ -223,8 +223,8 @@ class TicketRepository:
 # 二者取代旧的进行中/已完成二分 + DEV_STAGE_MATCH 中文档位映射。
 OP_STATUS_VALUES = ["processing", "answered", "closed", "supplementing", "exception", "reviewing"]
 
-# 任务状态(hub.status)筛选档位——主状态机的主要态（排除 created 等内部过渡态，与前端 STATUS_LABEL 对齐）
-STATUS_VALUES = ["pending_review", "in_progress", "released", "resolved", "closed"]
+# 任务类型(hub.type)筛选档位——4 出口类型（与前端 TYPE_LABEL 对齐）
+TYPE_VALUES = ["Operation", "Bug_fix", "Demand", "Internal_task"]
 
 
 class HubIssueRepository:
@@ -426,9 +426,9 @@ class HubIssueRepository:
         )
         dev_counts: dict[str, int] = {r[0]: r[1] for r in self._db.execute(dev_stmt).all() if r[0]}
 
-        # 任务状态(status)：排除 status 自身，各主要档 + all
-        base_no_status = self._hub_filter_clauses(
-            type_=type_,
+        # 任务类型(type)：排除 type 自身，各类型 + all
+        base_no_type = self._hub_filter_clauses(
+            status=status,
             assigned_user_id=assigned_user_id,
             product=product,
             module=module,
@@ -440,11 +440,11 @@ class HubIssueRepository:
             closed_from=closed_from,
             closed_to=closed_to,
         )
-        status_counts: dict[str, int] = {"all": self._hub_count(base_no_status)}
-        for key in STATUS_VALUES:
-            status_counts[key] = self._hub_count([*base_no_status, HubIssue.status == key])
+        type_counts: dict[str, int] = {"all": self._hub_count(base_no_type)}
+        for key in TYPE_VALUES:
+            type_counts[key] = self._hub_count([*base_no_type, HubIssue.type == key])
 
-        return {"op_status": op_counts, "dev_stage": dev_counts, "status": status_counts}
+        return {"op_status": op_counts, "dev_stage": dev_counts, "type": type_counts}
 
     def find_overdue_by_type(
         self,

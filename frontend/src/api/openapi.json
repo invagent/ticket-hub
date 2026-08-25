@@ -2172,18 +2172,18 @@
             "title": "Op Status",
             "type": "object"
           },
-          "status": {
+          "type": {
             "additionalProperties": {
               "type": "integer"
             },
-            "title": "Status",
+            "title": "Type",
             "type": "object"
           }
         },
         "required": [
           "op_status",
           "dev_stage",
-          "status"
+          "type"
         ],
         "title": "FilterCountsResponse",
         "type": "object"
