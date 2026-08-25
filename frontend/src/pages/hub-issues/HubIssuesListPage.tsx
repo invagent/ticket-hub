@@ -72,6 +72,15 @@ const TIME_PRESET_DAYS: Record<string, [number | null, number | null]> = {
   "7天内": [0, 7],
   "10天以上": [10, null],
 };
+
+// 任务状态下拉选项（HubIssue.status → 中文标签）
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "pending_review", label: "待确认分类" },
+  { value: "in_progress", label: "处理中" },
+  { value: "released", label: "已发版" },
+  { value: "resolved", label: "已解决" },
+  { value: "closed", label: "已关闭" },
+];
 // 本地日期 YYYY-MM-DD（今天偏移 offsetDays 天）
 function ymd(offsetDays = 0): string {
   const d = new Date();
@@ -364,6 +373,8 @@ export function HubIssuesListPage() {
         onCloseTime={(preset, from, to) =>
           setFilters({ close_time: preset, close_from: from ?? "", close_to: to ?? "" })
         }
+        status={status}
+        onStatus={(v) => setFilter("status", v)}
         selectCls={selectCls}
         activeCount={
           [product, search, assignedUserId, opStatusFilter, devStage, createTime, closeTime, status].filter(
@@ -718,6 +729,8 @@ function FilterPanel({
   onCloseTime,
   selectCls,
   activeCount,
+  status,
+  onStatus,
 }: {
   opStatusCounts: Record<string, number>;
   devStageCounts: Record<string, number>;
@@ -744,6 +757,8 @@ function FilterPanel({
   onCloseTime: (preset: string, from?: string, to?: string) => void;
   selectCls: string;
   activeCount: number;
+  status: string;
+  onStatus: (v: string) => void;
 }) {
   const [searchDraft, setSearchDraft] = useState(search);
   // 外部（URL / 浏览器前进后退 / 重置）改变 search 时，同步回输入框，避免草稿态残留
@@ -842,6 +857,27 @@ function FilterPanel({
         to={closeTo}
         onChange={onCloseTime}
       />
+
+      {/* 任务状态（HubIssue.status 精确匹配） */}
+      <div className="flex items-center gap-3 flex-wrap pt-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold text-hub-textMuted tracking-[.3px] w-[70px]">
+            任务状态
+          </span>
+          <select
+            value={status}
+            onChange={(e) => onStatus(e.target.value)}
+            className={`${selectCls} !w-[140px]`}
+          >
+            <option value="">全部状态</option>
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {/* 处理人下拉（→assigned_user_id）+ 关键字搜索(→search)，均真实生效。
           hub 原始状态下拉已隐藏（与「任务状态」重复；status 参数仍支持外部链接带入） */}
