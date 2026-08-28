@@ -132,11 +132,13 @@ class TicketRepository:
             base = base.where(Ticket.hub_issue_id == hub_issue_id)
             count_base = count_base.where(Ticket.hub_issue_id == hub_issue_id)
         if source_ticket_q:
-            # 工单号子串匹配（支持输入后几位）：来源工单号 source_ticket_id OR
-            # 本系统工单编号 short_code（如 TKT-005920）。ilike 大小写不敏感，转义 LIKE 元字符。
+            # 工单号子串匹配（支持输入后几位）：来源工单编号 source_ticket_number（KSM
+            # billNumber）OR 来源工单 id source_ticket_id（老工单/其它来源，id 即编号）
+            # OR 本系统工单编号 short_code（如 TKT-005920）。ilike 大小写不敏感，转义 LIKE 元字符。
             esc = source_ticket_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{esc}%"
             cond = or_(
+                Ticket.source_ticket_number.ilike(pattern, escape="\\"),
                 Ticket.source_ticket_id.ilike(pattern, escape="\\"),
                 Ticket.short_code.ilike(pattern, escape="\\"),
             )

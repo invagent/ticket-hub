@@ -143,6 +143,7 @@ class KSMIngester:
             short_code=short_code,
             source_code="ksm",
             source_ticket_id=bill_id,
+            source_ticket_number=payload.get("billNumber"),
             type="Raw",
             status="received",
             source_payload=payload,

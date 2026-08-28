@@ -366,6 +366,9 @@ class Ticket(Base):
         String(32), ForeignKey("sources.code"), nullable=True
     )
     source_ticket_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_ticket_number: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )  # 来源工单编号（展示/搜索用，KSM= billNumber；老工单/其它来源为空，回落 source_ticket_id）
     internal_split_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     source_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 

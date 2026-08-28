@@ -112,6 +112,7 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         # Identity / dedupe key
         "billId": data.get("billId") or data.get("id"),
+        "billNumber": data.get("billNumber"),  # 来源工单编号（展示/搜索用）
         # Ticket metadata
         "title": data.get("title"),
         "content": data.get("problem"),

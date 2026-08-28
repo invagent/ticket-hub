@@ -152,18 +152,11 @@ class TicketListResponse(BaseModel):
 def _source_ticket_number(t: Ticket) -> str | None:
     """来源工单编号（页面展示用）。
 
-    KSM 新工单 source_ticket_id 存的是 billId（长串 id），人看的编号在
-    source_payload._subscribe_callback.billNumber（如 R20260826-2368）；老 KSM
-    工单（当时未推 billNumber）与其它来源（智齿 ticketid）则 source_ticket_id
-    本身就是编号。有 billNumber 返回它，否则回落 source_ticket_id。
+    编号已落库 source_ticket_number（KSM billNumber）；老 KSM 工单（当时未推
+    billNumber）与其它来源（智齿 ticketid）该列为空，回落 source_ticket_id
+    （id 即编号）。
     """
-    sp = t.source_payload or {}
-    raw = sp.get("_subscribe_callback")
-    if isinstance(raw, dict):
-        num = raw.get("billNumber")
-        if num:
-            return str(num)
-    return t.source_ticket_id
+    return t.source_ticket_number or t.source_ticket_id
 
 
 @router.get("", response_model=TicketListResponse)
