@@ -355,7 +355,7 @@ export function TicketDetailPage() {
                 <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
                 {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
                 <ProcessStatusBadge
-                  opStatus={d.op_status}
+                  opStatus={opStatus}
                   hubStatus={hub.data?.status}
                   predictedType={d.predicted_type}
                   hubIssueId={d.hub_issue_id}
