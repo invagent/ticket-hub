@@ -344,9 +344,9 @@ export function TicketDetailPage() {
                 <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
                   {d.short_code}
                 </h1>
-                {d.source_ticket_id && (
+                {(d.source_ticket_number ?? d.source_ticket_id) && (
                   <span className="text-[12px] text-hub-textMuted font-mono">
-                    来源编号：{d.source_ticket_id}
+                    来源编号：{d.source_ticket_number ?? d.source_ticket_id}
                   </span>
                 )}
               </div>

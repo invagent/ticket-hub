@@ -4711,6 +4711,8 @@ export interface components {
             source_status: string | null;
             /** Source Ticket Id */
             source_ticket_id: string | null;
+            /** Source Ticket Number */
+            source_ticket_number?: string | null;
             /** Status */
             status: string;
             /** Title */
@@ -4809,6 +4811,8 @@ export interface components {
             source_code: string | null;
             /** Source Ticket Id */
             source_ticket_id: string | null;
+            /** Source Ticket Number */
+            source_ticket_number?: string | null;
             /** Status */
             status: string;
             /** Title */

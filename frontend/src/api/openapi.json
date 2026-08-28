@@ -7411,6 +7411,17 @@
             ],
             "title": "Source Ticket Id"
           },
+          "source_ticket_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ticket Number"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -7825,6 +7836,17 @@
               }
             ],
             "title": "Source Ticket Id"
+          },
+          "source_ticket_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ticket Number"
           },
           "status": {
             "title": "Status",

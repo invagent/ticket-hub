@@ -344,14 +344,18 @@ export function TicketsListPage() {
         header: "来源工单号",
         accessorKey: "source_ticket_id",
         size: 130,
-        cell: ({ row }) => (
-          <span
-            className="text-[11.5px] text-hub-textSecondary font-mono truncate block"
-            title={row.original.source_ticket_id ?? ""}
-          >
-            {row.original.source_ticket_id ?? "—"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          // 页面展示来源工单编号（KSM billNumber），无编号回落 id；id 仍存 source_ticket_id 用于后台流转
+          const num = row.original.source_ticket_number ?? row.original.source_ticket_id;
+          return (
+            <span
+              className="text-[11.5px] text-hub-textSecondary font-mono truncate block"
+              title={num ?? ""}
+            >
+              {num ?? "—"}
+            </span>
+          );
+        },
       },
       {
         id: "predicted_type",

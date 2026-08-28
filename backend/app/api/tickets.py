@@ -35,7 +35,7 @@ from app.core.storage.minio_store import (
     guess_content_type,
 )
 from app.db import get_session
-from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, User
+from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -50,7 +50,10 @@ class TicketSummary(BaseModel):
     id: int
     short_code: str
     source_code: str | None
-    source_ticket_id: str | None
+    source_ticket_id: str | None  # 来源工单 id（后台流转用，KSM= billId）
+    source_ticket_number: str | None = (
+        None  # 来源工单编号（页面展示用，KSM= billNumber；无则回落 source_ticket_id）
+    )
     type: str
     status: str
     title: str | None
@@ -144,6 +147,23 @@ class TicketListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+def _source_ticket_number(t: Ticket) -> str | None:
+    """来源工单编号（页面展示用）。
+
+    KSM 新工单 source_ticket_id 存的是 billId（长串 id），人看的编号在
+    source_payload._subscribe_callback.billNumber（如 R20260826-2368）；老 KSM
+    工单（当时未推 billNumber）与其它来源（智齿 ticketid）则 source_ticket_id
+    本身就是编号。有 billNumber 返回它，否则回落 source_ticket_id。
+    """
+    sp = t.source_payload or {}
+    raw = sp.get("_subscribe_callback")
+    if isinstance(raw, dict):
+        num = raw.get("billNumber")
+        if num:
+            return str(num)
+    return t.source_ticket_id
 
 
 @router.get("", response_model=TicketListResponse)
@@ -285,6 +305,8 @@ def list_tickets(
         s.reporter_name = rep.get("name") or None
         s.reporter_mobile = rep.get("mobile") or None
         s.reporter_email = rep.get("email") or None
+        # 来源工单编号（展示用，回落 source_ticket_id）
+        s.source_ticket_number = _source_ticket_number(t)
         # 服务等级空 → 标准服务
         s.service_level = t.service_level or "标准服务"
         s.remaining_hours = _remaining_hours(t)
@@ -318,6 +340,26 @@ def get_ticket(
     if ticket.handler_user_id is not None:
         hu = db.get(User, ticket.handler_user_id)
         detail.handler_user_name = hu.name if hu else None
+    # 已毕业工单：hub 衍生字段（op_status/hub_status/linear_status/reject_count）+
+    # 产品线/模块以 hub 为准（编辑只改 hub，ticket.* 停留在毕业时快照）。与列表接口
+    # _to_summary 口径一致（SSOT）。get_ticket 此前漏填，导致 op_status 恒为 None。
+    if ticket.hub_issue_id is not None:
+        hub = db.get(HubIssue, ticket.hub_issue_id)
+        if hub is not None:
+            detail.op_status = hub.op_status
+            detail.hub_status = hub.status
+            detail.linear_status = hub.linear_status
+            detail.reject_count = hub.reject_count
+            if hub.product_line_code is not None:
+                detail.product_line_code = hub.product_line_code
+            if hub.module is not None:
+                detail.module = hub.module
+    if detail.product_line_code:
+        pl = db.execute(
+            select(ProductLine.name).where(ProductLine.code == detail.product_line_code)
+        ).scalar()
+        detail.product_name = pl
+    detail.source_ticket_number = _source_ticket_number(ticket)
     if ticket.customer_identity_id is not None:
         identity = db.get(CustomerIdentity, ticket.customer_identity_id)
         if identity is not None:
