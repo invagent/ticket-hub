@@ -1084,7 +1084,7 @@ class SyncOutbox(Base):
     __tablename__ = "sync_outbox"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('reply','status','supply','release_note','progress_note')",
+            "kind IN ('reply','status','supply','release_note','progress_note','return')",
             name="ck_sync_outbox_kind",
         ),
         CheckConstraint(

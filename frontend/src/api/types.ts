@@ -2133,6 +2133,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/return": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return Ticket
+         * @description 退回 KSM（returnKsmOrder）——转错模块打回重新分派。处理人可执行。
+         *
+         *     入一条 kind='return' 的 sync_outbox 行，KSM sender 消费成 returnKsmOrder；
+         *     退回意见 deal_opinion 取详情页「处理说明」。仅 KSM 来源工单可退回。
+         */
+        post: operations["return_ticket_api_tickets__ticket_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -4106,6 +4129,18 @@ export interface components {
             no_match_count: number;
             /** Results */
             results: components["schemas"]["RerouteItemOut"][];
+        };
+        /** ReturnBody */
+        ReturnBody: {
+            /** Deal Opinion */
+            deal_opinion: string;
+        };
+        /** ReturnResponse */
+        ReturnResponse: {
+            /** Outbox Id */
+            outbox_id: number;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** RevertSplitBody */
         RevertSplitBody: {
@@ -8877,6 +8912,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    return_ticket_api_tickets__ticket_id__return_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReturnResponse"];
                 };
             };
             /** @description Validation Error */

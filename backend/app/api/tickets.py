@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,6 +40,7 @@ from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
 from app.services.attachments.thumbnail import THUMB_MIME, make_thumbnail
+from app.services.cascade.return_sync import ReturnSyncError, request_return
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -358,6 +359,47 @@ def get_ticket(
         for a in atts
     ]
     return detail
+
+
+class ReturnBody(BaseModel):
+    deal_opinion: str = Field(..., min_length=1, max_length=4000)
+
+
+class ReturnResponse(BaseModel):
+    ticket_id: int
+    outbox_id: int
+
+
+@router.post("/{ticket_id}/return", response_model=ReturnResponse)
+def return_ticket(
+    ticket_id: int,
+    body: ReturnBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> ReturnResponse:
+    """退回 KSM（returnKsmOrder）——转错模块打回重新分派。处理人可执行。
+
+    入一条 kind='return' 的 sync_outbox 行，KSM sender 消费成 returnKsmOrder；
+    退回意见 deal_opinion 取详情页「处理说明」。仅 KSM 来源工单可退回。
+    """
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    # 授权：admin/supervisor 放行；否则要求当前用户是该工单的处理人本人。
+    if user.role not in ("admin", "supervisor") and ticket.handler_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="需要主管/管理员权限，或本工单的处理人才能退回")
+    try:
+        result = request_return(
+            db, ticket_id, deal_opinion=body.deal_opinion, requested_by=f"user:{user.name}"
+        )
+    except ReturnSyncError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "ticket_return_requested",
+        ticket_id=ticket_id,
+        operator_user_id=user.user_id,
+    )
+    return ReturnResponse(ticket_id=result.ticket_id, outbox_id=result.outbox_id)
 
 
 # 附件不可变（storage_key 确定性 key，内容不变）→ 长缓存，重开工单/复现同图走浏览器缓存。

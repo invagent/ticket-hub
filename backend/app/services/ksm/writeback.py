@@ -50,6 +50,7 @@ from adapters.ksm import (
     KSMConfig,
     KSMError,
     LockOrderRequest,
+    ReturnOrderRequest,
     SupplyOrderRequest,
 )
 from app.config import Settings, get_settings
@@ -93,10 +94,26 @@ class _KSMFields:
     linkman: str
     email: str
     mobile: str
+    opercache_id: str = ""
 
 
 def _s(v: Any) -> str:
     return "" if v is None else str(v)
+
+
+def _opercache_id(raw: dict[str, Any], node_id: str) -> str:
+    """从 handleSteps 里找 nodeId 匹配当前节点的操作缓存 id（退回 returnKsmOrder 用）。
+
+    KSM 工单被接管后节点流转，handleSteps 累积多条操作记录；returnKsmOrder 需要
+    与当前节点（node.id）对应的那条 handleStep 的 opercacheId。找不到回落空串。
+    """
+    steps = raw.get("handleSteps")
+    if not isinstance(steps, list) or not node_id:
+        return ""
+    for h in steps:
+        if isinstance(h, dict) and h.get("nodeId") == node_id:
+            return _s(h.get("opercacheId"))
+    return ""
 
 
 def _extract_ksm_fields(
@@ -121,9 +138,10 @@ def _extract_ksm_fields(
     customer = customer if isinstance(customer, dict) else {}
 
     bill_id = _s(payload.get("billId") or raw.get("billId") or raw.get("id") or fallback_bill_id)
+    node_id = _nested_id("node")
     return _KSMFields(
         bill_id=bill_id,
-        node_id=_nested_id("node"),
+        node_id=node_id,
         product_id=_nested_id("product"),
         version_id=_nested_id("version"),
         module_id=_nested_id("module"),
@@ -131,6 +149,7 @@ def _extract_ksm_fields(
         linkman=_s(customer.get("linkman") or payload.get("accountName")),
         email=_s(customer.get("email") or payload.get("email")),
         mobile=_s(customer.get("mobile") or payload.get("mobile")),
+        opercache_id=_opercache_id(raw, node_id),
     )
 
 
@@ -143,9 +162,10 @@ def _merge_refreshed(base: _KSMFields, detail: dict[str, Any]) -> _KSMFields:
 
     customer = detail.get("customerInfo")
     customer = customer if isinstance(customer, dict) else {}
+    node_id = _nested_id("node") or base.node_id
     return _KSMFields(
         bill_id=base.bill_id,
-        node_id=_nested_id("node") or base.node_id,
+        node_id=node_id,
         product_id=_nested_id("product") or base.product_id,
         version_id=_nested_id("version") or base.version_id,
         module_id=_nested_id("module") or base.module_id,
@@ -153,6 +173,7 @@ def _merge_refreshed(base: _KSMFields, detail: dict[str, Any]) -> _KSMFields:
         linkman=_s(customer.get("linkman")) or base.linkman,
         email=_s(customer.get("email")) or base.email,
         mobile=_s(customer.get("mobile")) or base.mobile,
+        opercache_id=_opercache_id(detail, node_id) or base.opercache_id,
     )
 
 
@@ -245,6 +266,12 @@ class KSMWritebackSender:
         if action == "supply":
             ticket.ksm_takeover_status = None
             ticket.ksm_takeover_error = None
+        # 退回真发成功 → 工单交还 KSM 重新分派：清接管状态 + 本地工单关闭（不再跟踪）。
+        # 不碰 hub（退回 ≠ 答复关单；hub 由主管见工单关闭后手动处理）。
+        if action == "return":
+            ticket.ksm_takeover_status = None
+            ticket.ksm_takeover_error = None
+            self._close_ticket_returned(row, ticket)
         self._db.commit()
         report.sent += 1
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)
@@ -289,8 +316,27 @@ class KSMWritebackSender:
                 reason=f"KSM 答复关单回写成功（outbox={row.id}）",
             )
 
+    def _close_ticket_returned(self, row: SyncOutbox, ticket: Ticket) -> None:
+        """退回真发成功后：本地工单 → closed（交还 KSM 重新分派，不再跟踪）。
+
+        只关工单，不碰 hub（退回 ≠ 答复关单；hub 由主管见工单关闭后手动处理）。
+        已在终态的不重置（幂等）。不 commit（随外层）。
+        """
+        if ticket.status in _TICKET_TERMINAL_STATUSES:
+            return
+        prev = ticket.status
+        ticket.status = "closed"
+        StatusHistoryRepository(self._db).record(
+            entity_type="ticket",
+            entity_id=ticket.id,
+            from_status=prev,
+            to_status="closed",
+            changed_by="system:ksm_writeback",
+            reason=f"退回 KSM 重新分派成功（outbox={row.id}, kind=return）",
+        )
+
     def _resolve_action(self, row: SyncOutbox) -> str | None:
-        """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply'
+        """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply' | 'return'
         | 'release_note'（关单）| 'progress_note'（不关单）."""
         if row.kind == "reply":
             return "reply"
@@ -300,6 +346,8 @@ class KSMWritebackSender:
             return "progress_note"
         if row.kind == "supply":
             return "supply"
+        if row.kind == "return":
+            return "return"
         if row.kind == "status":
             to_status = (row.payload or {}).get("to_status")
             if to_status == "in_progress":
@@ -311,6 +359,12 @@ class KSMWritebackSender:
     def _execute(self, action: str, row: SyncOutbox, fields: _KSMFields) -> None:
         if action == "lock":
             self._lock(fields)
+            return
+        # 退回：不先 lock（lock 是「接管」语义，与退回相悖，实测未 lock 直接 return 成功）。
+        # 只需重拉最新节点 + 对应 opercacheId，否则旧节点会报「已流转至其他节点」。
+        if action == "return":
+            fresh = self._refresh(fields)
+            self._return(fresh, _s((row.payload or {}).get("deal_opinion")).strip())
             return
         # all remaining actions need a fresh node → lock then refresh
         self._lock(fields)
@@ -397,6 +451,24 @@ class KSMWritebackSender:
                 bill_id=fields.bill_id,
                 node_id=fields.node_id,
                 deal_opinion=note[:4000],
+            )
+        )
+
+    def _return(self, fields: _KSMFields, deal_opinion: str) -> None:
+        """退回 KSM（returnKsmOrder）——转错模块打回重新分派，不关单。
+
+        current_node_id + opercache_id 必须是 refresh 后的最新值，否则 KSM 报
+        「已流转至其他节点」。opercache_id 为 handleSteps 里匹配当前 node 的那条。
+        """
+        self._client.return_order(
+            ReturnOrderRequest(
+                account=self._settings.ksm_handler_name,
+                account_name=self._settings.ksm_handler_name,
+                account_number=self._settings.ksm_handler_number,
+                bill_id=fields.bill_id,
+                deal_opinion=deal_opinion[:4000],
+                opercache_id=fields.opercache_id,
+                current_node_id=fields.node_id,
             )
         )
 

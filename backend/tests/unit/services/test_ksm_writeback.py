@@ -15,6 +15,7 @@ from adapters.ksm import (
     HandleOrderRequest,
     KSMBusinessError,
     LockOrderRequest,
+    ReturnOrderRequest,
     SupplyOrderRequest,
 )
 from app.config import Settings
@@ -33,6 +34,7 @@ class FakeKSMClient:
         self.locks: list[LockOrderRequest] = []
         self.handles: list[HandleOrderRequest] = []
         self.supplies: list[SupplyOrderRequest] = []
+        self.returns: list[ReturnOrderRequest] = []
         self.detail_calls: list[str] = []
         self._detail = detail
         self.lock_error: Exception | None = None
@@ -53,6 +55,10 @@ class FakeKSMClient:
 
     def supply_order(self, req: SupplyOrderRequest) -> dict:  # type: ignore[type-arg]
         self.supplies.append(req)
+        return {"status": True}
+
+    def return_order(self, req: ReturnOrderRequest) -> dict:  # type: ignore[type-arg]
+        self.returns.append(req)
         return {"status": True}
 
     def get_order_detail(self, *, bill_id: str, notice_num: str, subscribe_num: str) -> dict:  # type: ignore[type-arg]
@@ -321,6 +327,92 @@ def test_supply_locks_then_supplies(world: Session) -> None:
     assert client.supplies[0].bill_id == "BILL-1" and client.supplies[0].node_id == "NODE-OLD"
     world.refresh(row)
     assert row.status == "sent"
+
+
+# ---- return（退回 KSM）------------------------------------------------------
+# 退回不 lock（lock 是接管语义，与退回相悖）；refresh 重拉最新 node + 对应
+# opercacheId，否则旧节点报「已流转至其他节点」；真发成功后本地工单关闭 + 清接管。
+
+
+def test_return_refreshes_then_returns_without_lock(world: Session) -> None:
+    """退回不先 lock，refresh 后直接 returnKsmOrder，用最新 node + opercacheId。"""
+    hub = _hub(world)
+    t = _ticket(world, hub, ksm_takeover_status="handled")
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "转错模块，退回重分派"})
+    fresh = {
+        **_SUBSCRIBE,
+        "node": {"id": "NODE-NEW", "name": "协同处理"},
+        "handleSteps": [
+            {"nodeId": "NODE-NEW", "opercacheId": "OPCACHE-NEW"},
+            {"nodeId": "NODE-OLD", "opercacheId": "OPCACHE-OLD"},
+        ],
+    }
+    client = FakeKSMClient(detail=fresh)
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    report = drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+    assert report.sent == 1
+    assert len(client.locks) == 0  # 退回不 lock
+    assert len(client.returns) == 1
+    r = client.returns[0]
+    assert r.bill_id == "BILL-1"
+    assert r.deal_opinion == "转错模块，退回重分派"
+    assert r.current_node_id == "NODE-NEW"  # 用 refresh 后最新节点
+    assert r.opercache_id == "OPCACHE-NEW"  # 匹配最新 node 的 opercacheId
+
+
+def test_return_no_notice_uses_stored_node_and_opercache(world: Session) -> None:
+    """无 notice 不 refresh，用入库时的 node + 匹配的 opercacheId。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        source_payload={
+            "billId": "BILL-1",
+            "_subscribe_callback": {
+                **_SUBSCRIBE,
+                "handleSteps": [
+                    {"nodeId": "NODE-OLD", "opercacheId": "OPCACHE-OLD"},
+                ],
+            },
+        },
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 1
+    assert not client.detail_calls  # 无 notice → 不 refresh
+    assert client.returns[0].current_node_id == "NODE-OLD"
+    assert client.returns[0].opercache_id == "OPCACHE-OLD"
+
+
+def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> None:
+    """退回真发成功 → 本地工单关闭 + 清接管状态；不碰 hub。"""
+    hub = _hub(world)
+    t = _ticket(world, hub, ksm_takeover_status="handled", status="received")
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "转错模块"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    world.refresh(t)
+    assert t.status == "closed"
+    assert t.ksm_takeover_status is None  # 清回未接管
+    world.refresh(hub)
+    assert hub.status == "created"  # hub 不动（退回 ≠ 答复关单）
+
+
+def test_return_dry_run_does_not_close_ticket(world: Session) -> None:
+    hub = _hub(world)
+    t = _ticket(world, hub, status="received")
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(
+        world, client=client, settings=_settings(ksm_writeback_dry_run=True)
+    )
+    assert report.skipped == 1
+    assert len(client.returns) == 0
+    world.refresh(t)
+    assert t.status == "received"
 
 
 # ---- supply 真发成功/dry_run/失败 → ticket.status 不动（补料识别已改走 -----

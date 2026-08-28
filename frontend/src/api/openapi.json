@@ -5484,6 +5484,39 @@
         "title": "RerouteResponse",
         "type": "object"
       },
+      "ReturnBody": {
+        "properties": {
+          "deal_opinion": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Deal Opinion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deal_opinion"
+        ],
+        "title": "ReturnBody",
+        "type": "object"
+      },
+      "ReturnResponse": {
+        "properties": {
+          "outbox_id": {
+            "title": "Outbox Id",
+            "type": "integer"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "outbox_id"
+        ],
+        "title": "ReturnResponse",
+        "type": "object"
+      },
       "RevertSplitBody": {
         "properties": {
           "decision_id": {
@@ -14559,6 +14592,59 @@
           }
         },
         "summary": "Get Ticket History",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/tickets/{ticket_id}/return": {
+      "post": {
+        "description": "退回 KSM（returnKsmOrder）——转错模块打回重新分派。处理人可执行。\n\n入一条 kind='return' 的 sync_outbox 行，KSM sender 消费成 returnKsmOrder；\n退回意见 deal_opinion 取详情页「处理说明」。仅 KSM 来源工单可退回。",
+        "operationId": "return_ticket_api_tickets__ticket_id__return_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Return Ticket",
         "tags": [
           "tickets"
         ]
