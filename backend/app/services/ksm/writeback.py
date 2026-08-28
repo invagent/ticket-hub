@@ -101,19 +101,27 @@ def _s(v: Any) -> str:
     return "" if v is None else str(v)
 
 
-def _opercache_id(raw: dict[str, Any], node_id: str) -> str:
-    """从 handleSteps 里找 nodeId 匹配当前节点的操作缓存 id（退回 returnKsmOrder 用）。
+def _return_target_opercache_id(raw: dict[str, Any]) -> str:
+    """退回目标「受理」节点的操作缓存 id（returnKsmOrder 的 opercacheID）。
 
-    KSM 工单被接管后节点流转，handleSteps 累积多条操作记录；returnKsmOrder 需要
-    与当前节点（node.id）对应的那条 handleStep 的 opercacheId。找不到回落空串。
+    returnKsmOrder 的 opercacheID 决定退回**目标节点**，currentNodeID 是源节点
+    （见 _return 方法）。退回必须落到「受理」节点，否则工单退回后仍停在协同处理
+    态。handleSteps 里可能有多条「受理」记录（工单反复退回再受理），取
+    handleDateTime 最新（离现在最近）那条的 opercacheId。找不到回落空串。
     """
     steps = raw.get("handleSteps")
-    if not isinstance(steps, list) or not node_id:
+    if not isinstance(steps, list):
         return ""
-    for h in steps:
-        if isinstance(h, dict) and h.get("nodeId") == node_id:
-            return _s(h.get("opercacheId"))
-    return ""
+    accept = [
+        h
+        for h in steps
+        if isinstance(h, dict) and h.get("nodeName") == "受理" and h.get("opercacheId")
+    ]
+    if not accept:
+        return ""
+    # handleDateTime 是 "YYYY-MM-DD HH:MM:SS" 字符串，字典序 == 时间序，reverse 取最新。
+    accept.sort(key=lambda h: _s(h.get("handleDateTime")), reverse=True)
+    return _s(accept[0].get("opercacheId"))
 
 
 def _extract_ksm_fields(
@@ -149,7 +157,7 @@ def _extract_ksm_fields(
         linkman=_s(customer.get("linkman") or payload.get("accountName")),
         email=_s(customer.get("email") or payload.get("email")),
         mobile=_s(customer.get("mobile") or payload.get("mobile")),
-        opercache_id=_opercache_id(raw, node_id),
+        opercache_id=_return_target_opercache_id(raw),
     )
 
 
@@ -173,7 +181,7 @@ def _merge_refreshed(base: _KSMFields, detail: dict[str, Any]) -> _KSMFields:
         linkman=_s(customer.get("linkman")) or base.linkman,
         email=_s(customer.get("email")) or base.email,
         mobile=_s(customer.get("mobile")) or base.mobile,
-        opercache_id=_opercache_id(detail, node_id) or base.opercache_id,
+        opercache_id=_return_target_opercache_id(detail) or base.opercache_id,
     )
 
 
@@ -457,8 +465,10 @@ class KSMWritebackSender:
     def _return(self, fields: _KSMFields, deal_opinion: str) -> None:
         """退回 KSM（returnKsmOrder）——转错模块打回重新分派，不关单。
 
-        current_node_id + opercache_id 必须是 refresh 后的最新值，否则 KSM 报
-        「已流转至其他节点」。opercache_id 为 handleSteps 里匹配当前 node 的那条。
+        current_node_id（源节点）= refresh 后的最新 node.id；opercache_id（退回目标）
+        = 「受理」节点时间最新那条 handleStep 的 opercacheId。这样工单退回后落到
+        受理节点，而不是原地停在协同处理态。二者都必须 refresh 后取最新，否则 KSM
+        报「已流转至其他节点」。
         """
         self._client.return_order(
             ReturnOrderRequest(
