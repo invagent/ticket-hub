@@ -327,21 +327,42 @@ class KSMWritebackSender:
     def _close_ticket_returned(self, row: SyncOutbox, ticket: Ticket) -> None:
         """退回真发成功后：本地工单 → closed（交还 KSM 重新分派，不再跟踪）。
 
-        只关工单，不碰 hub（退回 ≠ 答复关单；hub 由主管见工单关闭后手动处理）。
-        已在终态的不重置（幂等）。不 commit（随外层）。
+        工单关闭 + 若所挂 Operation hub 已无其它未终态工单，则同步关 op_status
+        （否则任务表「处理状态」一直停留在 processing）。不碰研发类 hub（研发走
+        Linear，退回是 Operation 场景）。已在终态的不重置（幂等）。不 commit。
         """
-        if ticket.status in _TICKET_TERMINAL_STATUSES:
+        if ticket.status not in _TICKET_TERMINAL_STATUSES:
+            prev = ticket.status
+            ticket.status = "closed"
+            StatusHistoryRepository(self._db).record(
+                entity_type="ticket",
+                entity_id=ticket.id,
+                from_status=prev,
+                to_status="closed",
+                changed_by="system:ksm_writeback",
+                reason=f"退回 KSM 重新分派成功（outbox={row.id}, kind=return）",
+            )
+        # 所挂 Operation hub：仅当无其它仍活跃的关联工单时，关闭 op_status。
+        hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
+        if hub is None or hub.type != "Operation":
             return
-        prev = ticket.status
-        ticket.status = "closed"
-        StatusHistoryRepository(self._db).record(
-            entity_type="ticket",
-            entity_id=ticket.id,
-            from_status=prev,
-            to_status="closed",
-            changed_by="system:ksm_writeback",
-            reason=f"退回 KSM 重新分派成功（outbox={row.id}, kind=return）",
+        active = (
+            self._db.query(Ticket.id)
+            .filter(
+                Ticket.hub_issue_id == hub.id,
+                Ticket.deleted_at.is_(None),
+                Ticket.status.notin_(list(_TICKET_TERMINAL_STATUSES)),
+            )
+            .first()
         )
+        if active is None and hub.op_status != OP_CLOSED:
+            apply_op_status(
+                self._db,
+                hub,
+                to_status=OP_CLOSED,
+                handler=hub.op_handler or "agent",
+                reason=f"KSM 退回成功，工单已全部关闭（outbox={row.id}）",
+            )
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:
         """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply' | 'return'

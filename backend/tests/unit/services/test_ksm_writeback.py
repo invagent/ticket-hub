@@ -439,8 +439,11 @@ def test_return_no_notice_uses_stored_node_and_opercache(world: Session) -> None
 
 
 def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> None:
-    """退回真发成功 → 本地工单关闭 + 清接管状态；不碰 hub。"""
+    """退回真发成功 → 本地工单关闭 + 清接管状态 + Operation hub 关 op_status。"""
     hub = _hub(world)
+    hub.op_status = "processing"
+    hub.op_handler = "agent"
+    world.commit()
     t = _ticket(world, hub, ksm_takeover_status="handled", status="received")
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "转错模块"})
     client = FakeKSMClient(detail=_SUBSCRIBE)
@@ -450,7 +453,25 @@ def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> Non
     assert t.status == "closed"
     assert t.ksm_takeover_status is None  # 清回未接管
     world.refresh(hub)
-    assert hub.status == "created"  # hub 不动（退回 ≠ 答复关单）
+    assert hub.op_status == "closed"  # 关联工单已全关 → Operation hub 关 op_status
+
+
+def test_return_does_not_close_op_status_when_other_ticket_active(world: Session) -> None:
+    """hub 下还有其它活跃工单时，退回只关当前工单，不关 hub 的 op_status。"""
+    hub = _hub(world)
+    hub.op_status = "processing"
+    hub.op_handler = "agent"
+    world.commit()
+    t1 = _ticket(world, hub, ksm_takeover_status="handled", status="received")
+    _ticket(world, hub, short_code="TKT-WB-2", source_ticket_id="BILL-2", status="received")
+    _outbox(world, t1, hub, kind="return", payload={"deal_opinion": "转错模块"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    assert report.sent == 1
+    world.refresh(t1)
+    assert t1.status == "closed"
+    world.refresh(hub)
+    assert hub.op_status == "processing"  # 还有活跃工单，不关 op_status
 
 
 def test_return_dry_run_does_not_close_ticket(world: Session) -> None:
