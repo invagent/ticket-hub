@@ -628,6 +628,32 @@ export function TicketDetailPage() {
                       转派
                     </button>
                   )}
+                  {/* 退回 KSM（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明作退回意见 */}
+                  {d.source_code === "ksm" &&
+                    (isSupervisor() ||
+                      (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                      <button
+                        type="button"
+                        disabled={returnKsm.isPending}
+                        title="退回 KSM 重新分派（不可逆）"
+                        onClick={() => {
+                          const content = (
+                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                          ).trim();
+                          if (!content) {
+                            setReturnErr("处理说明为空，无法退回");
+                            return;
+                          }
+                          if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
+                            return;
+                          }
+                          returnKsm.mutate(content);
+                        }}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {returnKsm.isPending ? "退回中…" : "退回 KSM"}
+                      </button>
+                    )}
                   <button
                     type="button"
                     disabled={reply.isPending || suggestion === "split" || opDone}
@@ -670,35 +696,6 @@ export function TicketDetailPage() {
                   {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
                   {returnErr && <span className="ml-2 text-[11px] text-hub-rose">{returnErr}</span>}
                 </div>
-
-                {/* 退回 KSM（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明作退回意见 */}
-                {d.source_code === "ksm" &&
-                  (isSupervisor() ||
-                    (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
-                    <div className="flex items-center gap-2.5 flex-wrap pt-1">
-                      <button
-                        type="button"
-                        disabled={returnKsm.isPending}
-                        title="退回 KSM 重新分派（不可逆）"
-                        onClick={() => {
-                          const content = (
-                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                          ).trim();
-                          if (!content) {
-                            setReturnErr("处理说明为空，无法退回");
-                            return;
-                          }
-                          if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
-                            return;
-                          }
-                          returnKsm.mutate(content);
-                        }}
-                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {returnKsm.isPending ? "退回中…" : "退回 KSM"}
-                      </button>
-                    </div>
-                  )}
                 </div>
                 )}
 
