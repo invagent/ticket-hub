@@ -57,9 +57,9 @@ def main(*, dry_run: bool, days: int) -> None:
 
         updated = 0
         for ticket in tickets:
-            reporter = ticket.reporter or {}
-            if not isinstance(reporter, dict):
-                reporter = {}
+            # 先拷贝（脱离原对象），再改拷贝，再赋回。JSON 列在 set 时按内容 == 比较：
+            # 若先原地改原对象再拷贝，新旧内容相同会被判为「无变化」，不触发 UPDATE。
+            reporter = dict(ticket.reporter or {})
             mobile, email, tel = _contact(ticket.source_payload or {})
             changed = False
             if not reporter.get("mobile") and mobile:
@@ -77,8 +77,7 @@ def main(*, dry_run: bool, days: int) -> None:
                 f"  {ticket.short_code}: mobile={mobile!r} email={email!r} tel={tel!r}"
             )
             if not dry_run:
-                # JSON 列（非 MutableDict）不检测 dict 原地修改，必须赋新对象触发 UPDATE
-                ticket.reporter = dict(reporter)
+                ticket.reporter = reporter
                 db.add(ticket)
             updated += 1
 
