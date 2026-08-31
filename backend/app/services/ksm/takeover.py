@@ -127,9 +127,22 @@ def takeover_ksm_ticket(
             logger.warning("ksm_takeover_handle_failed", bill_id=fields.bill_id, error=str(e))
             return
 
+    # ---- 4. 持久化退回信息（迁移 0038）----
+    # handle 后工单已到「协同处理」节点，再 refresh 拿最新详情；把「受理节点
+    # opercacheId」（退回目标）+「当前节点 node.id」（退回源）落到 ticket，退回 sender
+    # 直接读，不依赖 notice 24h TTL。notice 刚推、几乎必然有效；若失效则回落 fresh。
+    final = _refresh(client, fresh, notice_store)
+    ticket.ksm_accept_opercache_id = final.opercache_id or None
+    ticket.ksm_current_node_id = final.node_id or None
+
     ticket.ksm_takeover_status = "handled"
     ticket.ksm_takeover_error = None
-    logger.info("ksm_takeover_handled", bill_id=fields.bill_id)
+    logger.info(
+        "ksm_takeover_handled",
+        bill_id=fields.bill_id,
+        accept_opercache_id=ticket.ksm_accept_opercache_id,
+        current_node_id=ticket.ksm_current_node_id,
+    )
 
 
 def _handle_with_compensation(

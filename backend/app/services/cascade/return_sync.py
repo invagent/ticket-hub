@@ -10,7 +10,6 @@ sender 消费成 returnKsmOrder（退回，不关单）。退回是工单级动�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -31,23 +30,6 @@ class ReturnResult:
     outbox_id: int
 
 
-def _has_accept_node(payload: dict[str, Any] | None) -> bool:
-    """工单是否已进入「受理」流程——退回目标 opercacheId 是否存在。
-
-    退回必须退到「受理」节点，其 opercacheId 来自 handleSteps 里 nodeName=="受理"
-    的那条（口径与 writeback._return_target_opercache_id 一致）。工单入库时若仍是
-    status=1（已提交、未受理），handleSteps 只有「反馈提交」，找不到受理节点 →
-    退回必然失败（KSM 报「已流转至其他节点」）。入队前先拦下，避免静默失败。
-    """
-    cb = (payload or {}).get("_subscribe_callback") or {}
-    steps = cb.get("handleSteps")
-    if not isinstance(steps, list):
-        return False
-    return any(
-        isinstance(h, dict) and h.get("nodeName") == "受理" and h.get("opercacheId") for h in steps
-    )
-
-
 def request_return(
     db: Session,
     ticket_id: int,
@@ -65,8 +47,10 @@ def request_return(
         raise ReturnSyncError(f"工单 {ticket_id} 不存在或已删除")
     if ticket.source_code != "ksm" or not ticket.source_ticket_id:
         raise ReturnSyncError("仅 KSM 来源工单可退回")
-    if not _has_accept_node(ticket.source_payload):
-        raise ReturnSyncError("工单尚未进入受理流程，无法退回")
+    # 退回依赖持久化的「受理节点 opercacheId」（takeover 时写入，迁移 0038）。
+    # 缺失 = 工单未受理 或 notice 已过期拿不到受理信息 → 退回必然失败，入队前拦截。
+    if not (ticket.ksm_accept_opercache_id and ticket.ksm_current_node_id):
+        raise ReturnSyncError("工单尚未受理（受理信息缺失），无法退回")
 
     row = SyncOutbox(
         kind="return",

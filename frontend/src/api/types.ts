@@ -1859,7 +1859,7 @@ export interface paths {
         put?: never;
         /**
          * Reclassify
-         * @description 主管改判分类。改判本身即视为已确认分类，按新类型分流：
+         * @description 改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：
          *
          *     - Operation → 回炉自动答复链（op_status=processing/agent）。
          *     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停

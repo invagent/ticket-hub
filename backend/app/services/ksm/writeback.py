@@ -37,7 +37,7 @@ Safety
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -240,6 +240,15 @@ class KSMWritebackSender:
             self._mark_skipped(row, "no billId in source_payload")
             report.skipped += 1
             return
+
+        # 退回：优先用 takeover 时持久化的「受理节点 opercacheId + 当前节点」（迁移 0038）。
+        # notice 24h 过期后 _refresh 拿不到实时详情，用旧快照会报「已流转至其他节点」。
+        if row.kind == "return":
+            fields = replace(
+                fields,
+                opercache_id=ticket.ksm_accept_opercache_id or fields.opercache_id,
+                node_id=ticket.ksm_current_node_id or fields.node_id,
+            )
 
         action = self._resolve_action(row)
         if action is None:

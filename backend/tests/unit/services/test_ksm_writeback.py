@@ -438,6 +438,25 @@ def test_return_no_notice_uses_stored_node_and_opercache(world: Session) -> None
     assert client.returns[0].opercache_id == "OPCACHE-ACCEPT"
 
 
+def test_return_uses_persisted_fields_over_stale_snapshot(world: Session) -> None:
+    """notice 过期 + 快照无受理节点 → 退回用持久化的受理节点信息（迁移 0038），不再失败。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        # 快照无 handleSteps（入库时未受理），但持久化了受理节点信息
+        source_payload={"billId": "BILL-1", "_subscribe_callback": _SUBSCRIBE},
+        ksm_accept_opercache_id="OPCACHE-PERSISTED",
+        ksm_current_node_id="NODE-PERSISTED",
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=_SUBSCRIBE)
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 1
+    assert client.returns[0].opercache_id == "OPCACHE-PERSISTED"
+    assert client.returns[0].current_node_id == "NODE-PERSISTED"
+
+
 def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> None:
     """退回真发成功 → 本地工单关闭 + 清接管状态 + Operation hub 关 op_status。"""
     hub = _hub(world)

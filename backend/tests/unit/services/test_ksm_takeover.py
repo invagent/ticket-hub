@@ -74,8 +74,23 @@ _SUBSCRIBE = {
     "module": {"id": "MOD-1"},
     "customerInfo": {"linkman": "王五", "email": "w@x.com", "mobile": "13800000000"},
 }
-# 接管后重拉的最新详情：node 已流转到新节点
-_SUBSCRIBE_FRESH = {**_SUBSCRIBE, "node": {"id": "NODE-NEW", "name": "处理"}}
+# 接管后重拉的最新详情：node 已流转到新节点，handleSteps 含「受理」节点（退回目标 opercacheId 来源）
+_SUBSCRIBE_FRESH = {
+    **_SUBSCRIBE,
+    "node": {"id": "NODE-NEW", "name": "处理"},
+    "handleSteps": [
+        {
+            "nodeName": "受理",
+            "opercacheId": "OPCACHE-ACCEPT",
+            "handleDateTime": "2026-08-29 13:00:00",
+        },
+        {
+            "nodeName": "协同处理",
+            "opercacheId": "OPCACHE-COOP",
+            "handleDateTime": "2026-08-29 13:00:01",
+        },
+    ],
+}
 
 
 def _settings(**ov: object) -> Settings:
@@ -195,6 +210,9 @@ def test_new_ticket_full_takeover(world: Session) -> None:
     # 接管人固定配置
     assert client.locks[0].account_number == "10086"
     assert t.ksm_takeover_status == "handled"
+    # 持久化退回信息（迁移 0038）：受理节点 opercacheId + 当前节点
+    assert t.ksm_accept_opercache_id == "OPCACHE-ACCEPT"
+    assert t.ksm_current_node_id == "NODE-NEW"
 
 
 def test_new_ticket_status2_also_full(world: Session) -> None:
