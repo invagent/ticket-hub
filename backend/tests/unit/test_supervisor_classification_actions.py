@@ -521,3 +521,39 @@ def test_answered_operation_cannot_reclassify(app_client: TestClient, op_world: 
     )
     assert r.status_code == 409, r.text
     assert "不可改判" in r.text
+
+
+def test_processing_operation_reclassify_by_own_handler(
+    app_client: TestClient, op_world: Session
+) -> None:
+    """处理人本人（member）也能转研发：授权对齐 PATCH /attributes 的口径。"""
+    op_world.add(User(id=9, feishu_uid="ou_m", name="mia", role="member"))
+    hub = op_world.get(HubIssue, 80)
+    hub.op_handler_user_id = 9
+    op_world.commit()
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 80, "new_type": "Bug_fix", "reason": "跟客户确认是 bug"},
+            headers=_bearer(9, role="member"),
+        )
+    assert r.status_code == 200, r.text
+    op_world.refresh(hub)
+    assert hub.type == "Bug_fix"
+    assert hub.status == "created"  # 处理中 Operation 转研发 → 直推分支
+    assert hub.op_handler_user_id is None  # Operation→研发清运营字段
+    push.assert_called_once_with(80)
+
+
+def test_reclassify_forbidden_for_non_handler_member(
+    app_client: TestClient, op_world: Session
+) -> None:
+    """非处理人的 member 无权转研发（403）。"""
+    op_world.add(User(id=10, feishu_uid="ou_n", name="nina", role="member"))
+    op_world.commit()
+    r = app_client.post(
+        "/api/supervisor/reclassify",
+        json={"hub_issue_id": 80, "new_type": "Bug_fix", "reason": "x"},
+        headers=_bearer(10, role="member"),
+    )
+    assert r.status_code == 403, r.text

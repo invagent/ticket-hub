@@ -1964,10 +1964,10 @@ def confirm_classification(
 def reclassify(
     body: ReclassifyBody,
     background_tasks: BackgroundTasks,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
-    """主管改判分类。改判本身即视为已确认分类，按新类型分流：
+    """改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：
 
     - Operation → 回炉自动答复链（op_status=processing/agent）。
     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
@@ -1979,6 +1979,9 @@ def reclassify(
     from app.services.dispatch import dispatch_handler
     from app.services.hub_issues.op_status import set_hub_tickets_handler
 
+    # 处理中 Operation 转研发是「处理人跟客户沟通后判断是需求/Bug」的场景，
+    # 处理人本人即可操作（对齐 PATCH /attributes 的授权口径），无需主管介入。
+    _authorize_hub_handler(db, body.hub_issue_id, user)
     settings = get_settings()
     hub = _get_reclassifiable_hub(db, body.hub_issue_id)
     old_type = hub.type
@@ -2016,7 +2019,7 @@ def reclassify(
                 subject_id=tk.id,
                 proposal={
                     "predicted_type": body.new_type,
-                    "reason": body.reason or f"主管改判 {old_zh}→{new_zh}",
+                    "reason": body.reason or f"改判 {old_zh}→{new_zh}",
                     "skill": "manual",
                     "human_confirmed": True,
                     "changed_by": f"user:{user.name}",
@@ -2030,7 +2033,7 @@ def reclassify(
             hub,
             to_status=OP_PROCESSING,
             handler="agent",
-            reason=f"主管改判 {old_zh}→运营，回炉答复链",
+            reason=f"改判 {old_zh}→运营，回炉答复链",
         )
         # 与自动/手动毕业的 Operation 路径一致：按规则预分配运营处理人。
         # 否则改判进 Operation 的 hub 的 op_handler_user_id 恒 NULL，转人工永远
