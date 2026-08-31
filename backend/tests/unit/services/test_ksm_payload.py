@@ -122,24 +122,40 @@ def test_full_field_mapping_from_doc_example() -> None:
     assert out["_subscribe_callback"] is data
 
 
-def test_customerinfo_contact_fields_ignored() -> None:
-    """customerInfo.linkman/mobile/email must NOT bleed into the contact
-    fields — those belong to the account, not the person who filed the
-    ticket (the 2026-05-14 mapping fix)."""
+def test_customerinfo_contact_fields_prioritized() -> None:
+    """手机/邮箱优先取客户公司联系人（customerInfo.mobile/email），反馈人顶层
+    feedbackPhone/feedbackEmail 作兜底。部分工单 feedbackPhone 为空但
+    customerInfo.mobile 有值（如 TKT-006256）。"""
     data = {
         "customerInfo": {
             "customerName": "某某公司",
             "customerNumber": "C001",
             "linkman": "李四",
             "mobile": "13900139000",
+            "phone": "010-12345678",
             "email": "lisi@example.com",
         }
     }
     out = from_subscribe_callback(data)
     assert out["account"] == "C001"
     assert out["accountName"] is None
-    assert out["email"] is None
-    assert out["mobile"] is None
+    assert out["email"] == "lisi@example.com"
+    assert out["mobile"] == "13900139000"
+    assert out["tel"] == "010-12345678"
+
+
+def test_feedback_fields_fallback_when_customerinfo_missing() -> None:
+    """customerInfo 无手机/邮箱时，回落反馈人顶层 feedbackPhone/feedbackEmail。"""
+    data = {
+        "feedbackPhone": "13911112222",
+        "feedbackEmail": "f@x.com",
+        "feedbackTel": "010-999",
+        "customerInfo": {"customerNumber": "C"},
+    }
+    out = from_subscribe_callback(data)
+    assert out["mobile"] == "13911112222"
+    assert out["email"] == "f@x.com"
+    assert out["tel"] == "010-999"
 
 
 def test_feedback_tel_mapped_independently_of_phone() -> None:

@@ -121,9 +121,12 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         # Customer identity (KSMIngester._extract_identity reads these)
         "account": customer.get("customerNumber"),
         "accountName": data.get("feedbackUser"),
-        "email": data.get("feedbackEmail"),
-        "mobile": data.get("feedbackPhone"),
-        "tel": data.get("feedbackTel"),
+        # 手机/邮箱优先取客户公司联系人（customerInfo.mobile/email），反馈人顶层
+        # feedbackPhone/feedbackEmail 作兜底——部分工单 feedbackPhone 为空，但
+        # customerInfo.mobile 有值（如 TKT-006256）。
+        "email": customer.get("email") or data.get("feedbackEmail"),
+        "mobile": customer.get("mobile") or data.get("feedbackPhone"),
+        "tel": customer.get("phone") or data.get("feedbackTel"),
         "erpUid": customer.get("customerNumber"),
         # 提单公司：KSM customerInfo.customerName（客户公司名，≠ feedbackUser 反馈人）。
         # 税号/租户 KSM 不传，留空。
