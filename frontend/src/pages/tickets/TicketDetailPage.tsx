@@ -9,11 +9,11 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getByPath, patchByPath, postByPath } from "@/api/client";
+import { api, getByPath, patchByPath, postByPath } from "@/api/client";
 import { currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
-import { Modal, ModalHeader, ModalFooter } from "@/components/hubActions";
+import { Modal, ModalHeader, ModalFooter, hubErrMsg } from "@/components/hubActions";
 import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
@@ -260,7 +260,7 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["tickets"] });  // 毕业后工单列表 + 任务表都变
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
     },
-    onError: (e) => setGradErr(e instanceof ApiError ? e.message : String(e)),
+    onError: (e) => setGradErr(hubErrMsg(e)),
   });
   // 运营正常跟进：把处理说明作为答复发出（纯文本，不带附件）
   const [replyErr, setReplyErr] = useState<string | null>(null);
@@ -280,7 +280,7 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
     },
-    onError: (e) => setReplyErr(e instanceof ApiError ? e.message : String(e)),
+    onError: (e) => setReplyErr(hubErrMsg(e)),
   });
   // 退回 KSM：把处理说明作为退回意见 deal_opinion 退回（仅 KSM 来源工单）
   const [returnErr, setReturnErr] = useState<string | null>(null);
@@ -296,7 +296,7 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
       setConfirmNotice("工单已退回 KSM 重新分派");
     },
-    onError: (e) => setReturnErr(e instanceof ApiError ? e.message : String(e)),
+    onError: (e) => setReturnErr(hubErrMsg(e)),
   });
 
   const d = detail.data;
@@ -861,7 +861,7 @@ export function TicketDetailPage() {
                   : "未分配"
               }
               pending={assign.isPending}
-              error={assign.error instanceof ApiError ? assign.error.message : null}
+              error={assign.error ? hubErrMsg(assign.error) : null}
               onSubmit={(uid) => assign.mutate(uid)}
               onClose={() => setTransferOpen(false)}
             />
@@ -968,7 +968,7 @@ function TicketAttributesEditor({
     if (graduated) void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hub.id] });
     void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
   };
-  const onErr = (e: unknown) => setError(e instanceof ApiError ? e.message : String(e));
+  const onErr = (e: unknown) => setError(hubErrMsg(e));
 
   const dirty = type !== initType || plc !== initPlc || module !== initModule;
 
