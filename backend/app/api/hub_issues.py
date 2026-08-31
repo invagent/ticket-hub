@@ -526,6 +526,17 @@ def update_hub_attributes(
     if body.type is not None and body.type != hub.type:
         old = hub.type
         hub.type = body.type
+        # Operation → 研发类/内部任务：清 Operation 专属字段，否则违反
+        # ck_hub_issues_operation_fields（非 Operation 要求 reply_content/authored_by 为 NULL）。
+        # 与 reclassify 的清空口径一致。
+        if old == "Operation" and body.type in ("Bug_fix", "Demand", "Internal_task"):
+            hub.reply_content = None
+            hub.reply_authored_by = None
+            hub.reply_updated_at = None
+            hub.op_status = None
+            hub.op_handler = None
+            hub.op_status_changed_at = None
+            hub.op_handler_user_id = None
         linked = (
             db.query(Ticket)
             .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))

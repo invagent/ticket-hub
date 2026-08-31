@@ -107,6 +107,32 @@ def test_attributes_rejected_on_closed(app_client: TestClient, db_session: Sessi
     assert r.status_code == 409, r.text
 
 
+def test_attributes_operation_to_dev_clears_operation_fields(
+    app_client: TestClient, db_session: Session
+):
+    """Operation → 研发类改 type 时清 Operation 专属字段，避免 ck_hub_issues_operation_fields
+    约束冲突（非 Operation 要求 reply_content/reply_authored_by 为 NULL）。"""
+    hid = _mk(db_session, hub_id=206, type_="Operation", status="created", op_status="processing")
+    h = db_session.get(HubIssue, hid)
+    h.reply_content = "草稿答复"
+    h.reply_authored_by = "agent:ai_cs:draft"
+    h.op_handler = "agent"
+    db_session.commit()
+
+    r = app_client.patch(
+        f"/api/hub-issues/{hid}/attributes", json={"type": "Bug_fix"}, headers=_bearer()
+    )
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    h = db_session.get(HubIssue, hid)
+    assert h.type == "Bug_fix"
+    assert h.reply_content is None
+    assert h.reply_authored_by is None
+    assert h.op_status is None
+    assert h.op_handler is None
+    assert h.op_handler_user_id is None
+
+
 def test_attributes_handler_allowed_stranger_403(app_client: TestClient, db_session: Session):
     hid = _mk(db_session, hub_id=204, type_="Operation", status="created", op_status="processing", handler_uid=7)
     # 处理人本人（uid=7）放行
