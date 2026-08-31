@@ -47,10 +47,15 @@ def request_return(
         raise ReturnSyncError(f"工单 {ticket_id} 不存在或已删除")
     if ticket.source_code != "ksm" or not ticket.source_ticket_id:
         raise ReturnSyncError("仅 KSM 来源工单可退回")
-    # 退回依赖持久化的「受理节点 opercacheId」（takeover 时写入，迁移 0038）。
-    # 缺失 = 工单未受理 或 notice 已过期拿不到受理信息 → 退回必然失败，入队前拦截。
+    # 退回依赖持久化的「受理节点 opercacheId + 当前节点」（takeover 时写入，迁移 0038）。
+    # 缺失分两种：① 工单从未被接管受理；② 历史工单已受理但 notice 过期、受理信息丢失。
     if not (ticket.ksm_accept_opercache_id and ticket.ksm_current_node_id):
-        raise ReturnSyncError("工单尚未受理（受理信息缺失），无法退回")
+        if ticket.ksm_takeover_status == "handled":
+            raise ReturnSyncError(
+                "该工单为历史工单，KSM 受理信息已过期，无法自动退回。"
+                "请在 KSM 侧重新触发一次状态变更（如重新受理/转单），或人工在 KSM 系统处理。"
+            )
+        raise ReturnSyncError("工单尚未受理，无法退回")
 
     row = SyncOutbox(
         kind="return",

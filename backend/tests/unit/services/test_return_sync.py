@@ -99,3 +99,17 @@ def test_request_return_rejects_missing_current_node(world: Session) -> None:
     t = _ticket(world, ksm_current_node_id=None)
     with pytest.raises(ReturnSyncError):
         request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
+
+
+def test_request_return_rejects_expired_accept_info(world: Session) -> None:
+    """已受理但受理信息丢失（notice 过期）→ 提示历史工单信息过期，引导人工/KSM 重触发。"""
+    t = _ticket(
+        world,
+        ksm_takeover_status="handled",
+        ksm_accept_opercache_id=None,
+        ksm_current_node_id=None,
+    )
+    with pytest.raises(ReturnSyncError) as exc:
+        request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
+    assert "历史工单" in str(exc.value)
+    assert "KSM 受理信息已过期" in str(exc.value)
