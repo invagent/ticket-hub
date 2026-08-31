@@ -24,6 +24,18 @@ def _ticket(db: Session, **ov: object) -> Ticket:
         "type": "Raw",
         "status": "received",
         "title": "工单",
+        # 默认已受理：handleSteps 含「受理」节点，退回目标 opercacheId 可取
+        "source_payload": {
+            "_subscribe_callback": {
+                "handleSteps": [
+                    {
+                        "nodeName": "受理",
+                        "opercacheId": "OPCACHE-ACCEPT",
+                        "handleDateTime": "2026-08-29 13:00:00",
+                    },
+                ]
+            }
+        },
     }
     base.update(ov)
     t = Ticket(**base)  # type: ignore[arg-type]
@@ -35,7 +47,9 @@ def _ticket(db: Session, **ov: object) -> Ticket:
 
 def test_request_return_enqueues_return_outbox(world: Session) -> None:
     t = _ticket(world)
-    res = request_return(world, t.id, deal_opinion="转错模块，退回重分派", requested_by="user:carol")
+    res = request_return(
+        world, t.id, deal_opinion="转错模块，退回重分派", requested_by="user:carol"
+    )
     assert res.ticket_id == t.id
     row = world.query(SyncOutbox).filter_by(kind="return", ticket_id=t.id).one()
     assert row.target_source_code == "ksm"
@@ -80,3 +94,30 @@ def test_request_return_rejects_child_no_source(world: Session) -> None:
 def test_request_return_rejects_missing_ticket(world: Session) -> None:
     with pytest.raises(ReturnSyncError):
         request_return(world, 99999, deal_opinion="退回", requested_by="user:carol")
+
+
+def test_request_return_rejects_not_accepted(world: Session) -> None:
+    """工单尚未进入受理流程（handleSteps 无「受理」节点）→ 退回不可行，入队前拦截。"""
+    t = _ticket(
+        world,
+        source_payload={
+            "_subscribe_callback": {
+                "handleSteps": [
+                    {
+                        "nodeName": None,
+                        "opercacheId": "OPCACHE-SUBMIT",
+                        "handleDateTime": "2026-08-29 13:00:00",
+                    },
+                ]
+            }
+        },
+    )
+    with pytest.raises(ReturnSyncError):
+        request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
+
+
+def test_request_return_rejects_no_handle_steps(world: Session) -> None:
+    """source_payload 无 handleSteps → 退回不可行。"""
+    t = _ticket(world, source_payload={"_subscribe_callback": {}})
+    with pytest.raises(ReturnSyncError):
+        request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
