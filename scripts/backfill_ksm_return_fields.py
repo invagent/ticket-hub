@@ -77,10 +77,9 @@ def main(*, dry_run: bool) -> None:
                 ticket.ksm_accept_opercache_id = accept_oc
                 ticket.ksm_current_node_id = node_id
                 db.add(ticket)
+                db.commit()  # 逐条落库：KSM 接口慢，中断也不丢已处理的
             updated += 1
 
-        if not dry_run:
-            db.commit()
         print(f"\n{'[dry-run] ' if dry_run else ''}回填 {updated} 条，notice 过期 {no_notice} 条。")
     finally:
         client.close()
