@@ -77,7 +77,8 @@ def main(*, dry_run: bool, days: int) -> None:
                 f"  {ticket.short_code}: mobile={mobile!r} email={email!r} tel={tel!r}"
             )
             if not dry_run:
-                ticket.reporter = reporter
+                # JSON 列（非 MutableDict）不检测 dict 原地修改，必须赋新对象触发 UPDATE
+                ticket.reporter = dict(reporter)
                 db.add(ticket)
             updated += 1
 
