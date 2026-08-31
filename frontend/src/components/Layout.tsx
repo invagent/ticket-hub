@@ -66,6 +66,18 @@ function TargetIcon({ active }: { active: boolean }) {
   );
 }
 
+function TrainingIcon({ active }: { active: boolean }) {
+  const c = "currentColor";
+  void active;
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15">
+      <path d="M7.5 2 13 4.8 7.5 7.6 2 4.8Z" fill="none" stroke={c} strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M4.2 6.2v3.4c0 1 1.5 2 3.3 2s3.3-1 3.3-2V6.2" fill="none" stroke={c} strokeWidth="1.3" />
+      <line x1="13" y1="4.8" x2="13" y2="9" stroke={c} strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ChartIcon({ active }: { active: boolean }) {
   const c = "currentColor";
   void active;
@@ -104,6 +116,12 @@ const navItems: {
     to: "/reflect",
     label: "反思诊断",
     icon: TargetIcon,
+    roles: ["knowledge_op", "supervisor", "admin"],
+  },
+  {
+    to: "/reflect-training",
+    label: "反思诊断训练",
+    icon: TrainingIcon,
     roles: ["knowledge_op", "supervisor", "admin"],
   },
   { to: "/analytics", label: "统计看板", icon: ChartIcon, roles: ["supervisor", "admin"] },
