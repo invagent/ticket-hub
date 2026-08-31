@@ -39,6 +39,7 @@ from app.db import make_session
 from app.models import HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
+from app.services.hub_issues.module_owner import resolve_module_owner
 from app.services.hub_issues.webhook_push import push_hub_issue_to_webhook
 
 logger = get_logger(__name__)
@@ -185,8 +186,12 @@ def push_hub_issue_to_linear(
         assignee_user: User | None = None
         if assignee_override_user_id is not None:
             assignee_user = db.get(User, assignee_override_user_id)
-        elif hub.assigned_user_id is not None:
-            assignee_user = db.get(User, hub.assigned_user_id)
+        else:
+            # 默认 assignee = 模块研发责任人（assignment_scopes_module，按当前
+            # 产品线+模块查）；查不到回落入库责任人（hub.assigned_user_id）。
+            assignee_user = resolve_module_owner(db, hub.product_line_code, hub.module)
+            if assignee_user is None and hub.assigned_user_id is not None:
+                assignee_user = db.get(User, hub.assigned_user_id)
         if assignee_user is not None:
             if assignee_user.email and not assignee_user.linear_user_id:
                 _mark_pending(

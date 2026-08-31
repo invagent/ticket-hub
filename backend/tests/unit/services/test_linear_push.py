@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from adapters.linear import CreatedIssue, LinearNetworkError
 from app.config import get_settings
-from app.models import HubIssue, Source, StatusHistory, Ticket, User
+from app.models import AssignmentScopeModule, HubIssue, Source, StatusHistory, Ticket, User
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 
 
@@ -128,6 +128,20 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].team_id == "team-aralgo"  # type: ignore[attr-defined]
     assert fake.requests[0].assignee_id == "lin-u-6"  # type: ignore[attr-defined]
+
+
+def test_push_uses_module_owner_over_assigned(world: Session) -> None:
+    """转研发责任人：模块研发责任人（assignment_scopes_module）优先于入库责任人。"""
+    world.add(User(id=30, feishu_uid="ou_a30", name="入库责任人", linear_user_id="lin-u-30"))
+    world.add(User(id=31, feishu_uid="ou_a31", name="模块负责人", linear_user_id="lin-u-31"))
+    world.add(AssignmentScopeModule(user_id=31, product_line_code="fpy", module="开票模块"))
+    world.commit()
+    hub = _make_hub(
+        world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块"
+    )
+    fake = _FakeLinearClient()
+    push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert fake.requests[0].assignee_id == "lin-u-31"  # 模块负责人，而非 lin-u-30
 
 
 def test_push_uses_dispatched_assignee(world: Session) -> None:

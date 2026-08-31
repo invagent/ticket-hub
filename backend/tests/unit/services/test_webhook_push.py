@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from adapters.linear import LinearNetworkError
 from app.config import get_settings
 from app.models import (
+    AssignmentScopeModule,
     Customer,
     CustomerIdentity,
     HubIssue,
@@ -19,6 +20,7 @@ from app.models import (
     Source,
     StatusHistory,
     Ticket,
+    User,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 from app.services.hub_issues.webhook_push import build_webhook_fields, push_hub_issue_to_webhook
@@ -137,6 +139,28 @@ def test_build_fields_full_mapping(world: Session) -> None:
     assert fields["email"] == "zhangsan@corp.com"
     assert fields["feishuUrl"] == f"https://hub.example.com/ticket-hub/tickets/{ticket.id}"
     assert fields["operate"] == "BUG转产研修改工单状态及提单类型"
+
+
+def test_build_fields_handle_user_from_module_owner(world: Session) -> None:
+    """handleUser = 模块研发责任人（assignment_scopes_module），而非入库责任人。"""
+    world.add(User(id=40, feishu_uid="ou_o40", name="入库责任人"))
+    world.add(User(id=41, feishu_uid="ou_o41", name="研发负责人"))
+    world.add(AssignmentScopeModule(user_id=41, product_line_code="fpy", module="开票模块"))
+    world.commit()
+    hub = _make_hub(world, 40, assigned_user_id=40, product_line_code="fpy", module="开票模块")
+    _make_ksm_ticket(world, hub)
+    fields = build_webhook_fields(world, hub)
+    assert fields["handleUser"] == "研发负责人"
+
+
+def test_build_fields_handle_user_falls_back_to_assigned(world: Session) -> None:
+    """模块没配研发责任人时，handleUser 回落入库责任人 assigned_user_id。"""
+    world.add(User(id=50, feishu_uid="ou_o50", name="入库责任人"))
+    world.commit()
+    hub = _make_hub(world, 50, assigned_user_id=50, product_line_code="fpy", module="开票模块")
+    _make_ksm_ticket(world, hub)
+    fields = build_webhook_fields(world, hub)
+    assert fields["handleUser"] == "入库责任人"
 
 
 def test_build_fields_demand_operate_text(world: Session) -> None:

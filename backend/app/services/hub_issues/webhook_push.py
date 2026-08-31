@@ -12,7 +12,7 @@
   productIssueModule 产品模块（hub.module），不为空
   customerName       客户名称（Customer.display_name / company）
   reporter/phone/telephone/email  主源工单 reporter.{name,mobile,tel,email}
-  handleUser         处理人姓名（assigned_user.name）
+  handleUser         处理人姓名（模块研发责任人，查不到回落 assigned_user.name）
   handleSteps        KSM 主源工单节点串（非 KSM 为空）
   feishuUrl          本系统工单详情链接 {hub_public_base_url}/tickets/{主源工单 id}
   ticketId/ticketNo  主源工单 source_ticket_id / short_code
@@ -32,6 +32,7 @@ from app.api.ksm_nodes import parse_ksm_nodes
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.models import Customer, CustomerIdentity, HubIssue, ProductLine, Ticket, User
+from app.services.hub_issues.module_owner import resolve_module_owner
 
 logger = get_logger(__name__)
 
@@ -133,8 +134,13 @@ def build_webhook_fields(db: Session, hub: HubIssue) -> dict[str, Any]:
     settings = get_settings()
     src = _primary_source_ticket(db, hub)
 
+    # handleUser：转研发责任人 = 模块研发责任人（assignment_scopes_module，按当前
+    # 产品线+模块查），查不到回落入库责任人（hub.assigned_user_id）。
     assignee_name = ""
-    if hub.assigned_user_id is not None:
+    owner = resolve_module_owner(db, hub.product_line_code, hub.module)
+    if owner is not None:
+        assignee_name = owner.name or ""
+    elif hub.assigned_user_id is not None:
         assignee = db.get(User, hub.assigned_user_id)
         if assignee is not None:
             assignee_name = assignee.name or ""
