@@ -255,6 +255,15 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         return result
 
     settings = get_settings()
+    # 运营类工单：accuracy_mode=='review' 时跳过闸门①，直接进 drain 扫描 → AI
+    # 生成答复草稿显示在详情页（op_status 已在毕业时预置 processing/agent，
+    # hub.status 保持 created 无需额外赋值，drain 自然捡到，见 operation_answer.py
+    # drain_operation_auto_reply 的扫描口径）。review 模式保证草稿绝不自动直发，
+    # 换成任何非 review 模式都会在无人工介入下把答复发给客户——所以这个跳过必须
+    # 绑死 accuracy_mode=='review'，不能只靠运维记住配对，否则维持原闸门①行为。
+    if result.type == "Operation" and settings.operation_answer_accuracy_mode == "review":
+        return result
+
     if settings.gate_classify_enabled:
         # 闸门①：全类型（Operation/Bug_fix/Demand/Internal_task）毕业后停
         # pending_review 待人工确认分类，不自动分流（不推 Linear、不进答复链）。

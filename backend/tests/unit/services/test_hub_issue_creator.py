@@ -357,9 +357,10 @@ def test_auto_bugfix_gated_to_pending_review(
 def test_auto_operation_gated_to_pending_review(
     world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """闸门①（gate_classify_enabled，默认回落 require_review_before_linear=True）现覆盖
-    全类型：Operation 自动毕业也停 pending_review，不进自动答复链（op_status 已在毕业时
-    设为 processing，但 hub.status 停 pending_review 待人工确认分类）。"""
+    """闸门①开 + accuracy_mode 不是 'review'（代码默认 'off'）：Operation 自动毕业仍停
+    pending_review，不进自动答复链——防御性兜底，防止 accuracy_mode 配置对不上时
+    在无人工介入下自动生成并直发答复（op_status 已在毕业时设为 processing，但
+    hub.status 停 pending_review 待人工确认分类）。"""
     import app.services.hub_issues.creator as creator_mod
 
     t = _make_ticket(world, 41, predicted_type="Operation")
@@ -372,6 +373,35 @@ def test_auto_operation_gated_to_pending_review(
     world.expire_all()
     hub = world.get(HubIssue, result.hub_issue_id)
     assert hub.status == "pending_review"
+
+
+def test_auto_operation_accuracy_review_skips_pending_review(
+    world: Session, sqlite_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """闸门①开 + accuracy_mode=='review'：Operation 自动毕业跳过 pending_review，
+    status 保持 created，op_status/op_handler 沿用毕业时的预置值——让 Celery drain
+    自然捡到去生成 AI 答复草稿，不需要人工先确认分类。"""
+    import app.services.hub_issues.creator as creator_mod
+
+    monkeypatch.setenv("OPERATION_ANSWER_ACCURACY_MODE", "review")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    t = _make_ticket(world, 43, predicted_type="Operation")
+    tid = t.id
+    _point_make_session_at(sqlite_engine, monkeypatch)
+    monkeypatch.setattr(creator_mod, "maybe_supersede_duplicate", lambda db, hub: None)
+
+    result = creator_mod.create_hub_issue_for_ticket_auto(tid)
+    assert result is not None and result.type == "Operation"
+    world.expire_all()
+    hub = world.get(HubIssue, result.hub_issue_id)
+    assert hub.status == "created"
+    assert hub.op_status == "processing"
+    assert hub.op_handler == "agent"
+
+    get_settings.cache_clear()
 
 
 def test_auto_operation_not_gated_when_gate_classify_off(

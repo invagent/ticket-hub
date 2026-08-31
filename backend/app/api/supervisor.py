@@ -81,6 +81,7 @@ from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 from app.services.hub_issues.module_owner import resolve_module_owner
 from app.services.hub_issues.op_status import (
     OP_PROCESSING,
+    OP_REVIEWING,
     apply_op_status,
     record_ticket_action,
 )
@@ -919,6 +920,7 @@ class EscalationPendingItem(BaseModel):
     short_code: str
     title: str | None
     dissatisfaction: str | None
+    is_ai_cs_escalation: bool
     created_at: datetime
 
 
@@ -935,7 +937,8 @@ def list_escalation_pending_diagnosis(
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> EscalationPendingResponse:
-    """AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
+    """AI 客服 escalation 工单 + 已标记诊断的运营单中尚未做出病因判定的（反思诊断
+    工作台待处理队列）。
 
     diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
     —— 与召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
@@ -948,7 +951,7 @@ def list_escalation_pending_diagnosis(
         db.query(Ticket)
         .filter(
             Ticket.deleted_at.is_(None),
-            Ticket.source_code == "ai_cs",
+            or_(Ticket.source_code == "ai_cs", Ticket.diagnosis_flagged_at.isnot(None)),
             or_(Ticket.predicted_type == "Operation", Ticket.predicted_type.is_(None)),
         )
         .order_by(Ticket.created_at.desc())
@@ -967,12 +970,52 @@ def list_escalation_pending_diagnosis(
                 short_code=t.short_code,
                 title=t.title,
                 dissatisfaction=ai.get("dissatisfaction"),
+                is_ai_cs_escalation=t.source_code == "ai_cs",
                 created_at=t.created_at,
             )
         )
         if len(items) >= min(limit, 100):
             break
     return EscalationPendingResponse(items=items)
+
+
+class ReflectTicketItem(BaseModel):
+    id: int
+    short_code: str
+    title: str | None
+    status: str
+    created_at: datetime
+
+
+class ReflectTicketsResponse(BaseModel):
+    items: list[ReflectTicketItem]
+    total: int
+
+
+@router.get("/reflect-tickets", response_model=ReflectTicketsResponse)
+def list_reflect_tickets(
+    _user: AuthedUser = Depends(require_knowledge_op),
+    db: Session = Depends(get_session),
+    limit: int = 50,
+) -> ReflectTicketsResponse:
+    """反思诊断工作台左侧工单浏览列表：ai_cs escalation ∪ 已标记诊断的运营工单
+    （不按 diagnosis 是否完成过滤——供回看已诊断的工单）。"""
+    q = db.query(Ticket).filter(
+        Ticket.deleted_at.is_(None),
+        or_(Ticket.source_code == "ai_cs", Ticket.diagnosis_flagged_at.isnot(None)),
+    )
+    total = q.count()
+    rows = q.order_by(Ticket.created_at.desc()).limit(min(limit, 100)).all()
+    return ReflectTicketsResponse(
+        items=[
+            ReflectTicketItem(
+                id=t.id, short_code=t.short_code, title=t.title, status=t.status,
+                created_at=t.created_at,
+            )
+            for t in rows
+        ],
+        total=total,
+    )
 
 
 # ---- 投诉队列 (ADR-0016 P2d) --------------------------------------------------
@@ -1365,6 +1408,7 @@ class EscalationContextResponse(BaseModel):
     is_escalation: bool
     ticket_id: int
     session_id: str | None = None
+    is_ai_cs_escalation: bool = True
     original_question: str = ""
     ai_answer: str = ""
     dissatisfaction: str = ""
@@ -1688,6 +1732,7 @@ def ai_cs_escalation_context_endpoint(
         is_escalation=True,
         ticket_id=ctx.ticket_id,
         session_id=ctx.session_id,
+        is_ai_cs_escalation=ctx.is_ai_cs_escalation,
         original_question=ctx.original_question,
         ai_answer=ctx.ai_answer,
         dissatisfaction=ctx.dissatisfaction,
@@ -1886,21 +1931,22 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
 
 
 def _get_reclassifiable_hub(db: Session, hub_issue_id: int) -> HubIssue:
-    """reclassify 可作用的 hub：待确认分类（pending_review），或【处理中的 Operation】
-    （运营处理中发现是需求/Bug 需转研发推 Linear）。已答复/已关闭 Operation = 处理完成，
-    不可转（业务规则：已答复不转 Linear）。其他状态一律拒。"""
+    """reclassify 可作用的 hub：待确认分类（pending_review），或【处理中/草稿待审的
+    Operation】（运营处理中/AI 已生成待审草稿时发现是需求/Bug 需转研发推 Linear）。
+    已答复/已关闭 Operation = 处理完成，不可转（业务规则：已答复不转 Linear）。
+    其他状态一律拒。"""
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None or hub.deleted_at is not None:
         raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
     if hub.status == "pending_review":
         return hub
-    if hub.type == "Operation" and hub.op_status == OP_PROCESSING:
+    if hub.type == "Operation" and hub.op_status in (OP_PROCESSING, OP_REVIEWING):
         return hub
     raise HTTPException(
         status_code=409,
         detail=(
             f"hub {hub.short_code} status={hub.status!r} op_status={hub.op_status!r} "
-            "不可改判（仅待确认分类、或处理中的运营工单可改判转研发）"
+            "不可改判（仅待确认分类、或处理中/草稿待审的运营工单可改判转研发）"
         ),
     )
 

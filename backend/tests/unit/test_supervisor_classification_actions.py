@@ -518,6 +518,37 @@ def test_answered_operation_cannot_reclassify(app_client: TestClient, op_world: 
     assert "不可改判" in r.text
 
 
+def test_reviewing_operation_can_reclassify_to_dev(
+    app_client: TestClient, op_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """草稿待审(op_status=reviewing)的 Operation——AI 判错类型——可改判转研发，草稿
+    连同 op 专属字段一并清空（草稿本就没发出去，直接清掉即可）。"""
+    hub = op_world.get(HubIssue, 80)
+    hub.op_status = "reviewing"
+    hub.reply_content = "AI 生成的答复草稿"
+    hub.reply_authored_by = "agent:ai_cs:draft"
+    op_world.commit()
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: op_world.get(User, 2),
+    )
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 80, "new_type": "Bug_fix", "reason": "AI 误判为运营类"},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    op_world.expire_all()
+    hub = op_world.get(HubIssue, 80)
+    assert hub.type == "Bug_fix"
+    assert hub.op_status is None
+    assert hub.op_handler is None
+    assert hub.reply_content is None
+    assert hub.reply_authored_by is None
+    push.assert_called_once_with(80)
+
+
 def test_processing_operation_reclassify_by_own_handler(
     app_client: TestClient, op_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
