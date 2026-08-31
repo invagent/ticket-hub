@@ -103,25 +103,22 @@ def test_dismiss_records_ticket_action(app_client: TestClient, act_world: Sessio
 def test_confirm_pushes_linear(
     app_client: TestClient, act_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """闸门③关（gate_linear_push_enabled=False）时保留旧行为：直推 Linear。"""
-    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    try:
-        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
-            r = app_client.post(
-                "/api/supervisor/confirm-classification",
-                json={"hub_issue_id": 70},
-                headers=_bearer(2),
-            )
-        assert r.status_code == 200, r.text
-        hub = act_world.get(HubIssue, 70)
-        act_world.refresh(hub)
-        assert hub.status == "created"
-        push.assert_called_once_with(70)
-    finally:
-        get_settings.cache_clear()
+    """模块负责人确定 → 直推 Linear（status=created）。"""
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: act_world.get(User, 2),
+    )
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 70},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = act_world.get(HubIssue, 70)
+    act_world.refresh(hub)
+    assert hub.status == "created"
+    push.assert_called_once_with(70)
 
 
 def test_reclassify_to_operation_enters_answer_chain(
@@ -312,27 +309,24 @@ def test_confirm_demand_gate_on_goes_pending_linear_review(
     push.assert_not_called()
 
 
-def test_confirm_bugfix_gate_off_pushes_and_created(
+def test_confirm_bugfix_owner_resolved_pushes_and_created(
     app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    try:
-        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
-            r = app_client.post(
-                "/api/supervisor/confirm-classification",
-                json={"hub_issue_id": 81},
-                headers=_bearer(2),
-            )
-        assert r.status_code == 200, r.text
-        hub = type_world.get(HubIssue, 81)
-        type_world.refresh(hub)
-        assert hub.status == "created"
-        push.assert_called_once_with(81)
-    finally:
-        get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: type_world.get(User, 2),
+    )
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-classification",
+            json={"hub_issue_id": 81},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 81)
+    type_world.refresh(hub)
+    assert hub.status == "created"
+    push.assert_called_once_with(81)
 
 
 def test_confirm_internal_task_created_no_external_action(
@@ -370,28 +364,25 @@ def test_reclassify_to_bugfix_gate_on_goes_pending_linear_review(
     push.assert_not_called()
 
 
-def test_reclassify_to_demand_gate_off_pushes(
+def test_reclassify_to_demand_owner_resolved_pushes(
     app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GATE_LINEAR_PUSH_ENABLED", "false")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-    try:
-        with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
-            r = app_client.post(
-                "/api/supervisor/reclassify",
-                json={"hub_issue_id": 82, "new_type": "Demand", "reason": "其实是需求"},
-                headers=_bearer(2),
-            )
-        assert r.status_code == 200, r.text
-        hub = type_world.get(HubIssue, 82)
-        type_world.refresh(hub)
-        assert hub.type == "Demand"
-        assert hub.status == "created"
-        push.assert_called_once_with(82)
-    finally:
-        get_settings.cache_clear()
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: type_world.get(User, 2),
+    )
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 82, "new_type": "Demand", "reason": "其实是需求"},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    hub = type_world.get(HubIssue, 82)
+    type_world.refresh(hub)
+    assert hub.type == "Demand"
+    assert hub.status == "created"
+    push.assert_called_once_with(82)
 
 
 def test_confirm_by_handler_allowed(app_client: TestClient, act_world: Session) -> None:
@@ -483,9 +474,13 @@ def op_world(db_session: Session) -> Session:
 
 
 def test_processing_operation_reclassify_to_dev_pushes_linear(
-    app_client: TestClient, op_world: Session
+    app_client: TestClient, op_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """处理中 Operation 改判 Demand：直推 Linear（即使闸门③开）、op 字段清空、type 翻转。"""
+    """处理中 Operation 改判 Demand + 模块负责人确定：直推 Linear、op 字段清空、type 翻转。"""
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: op_world.get(User, 2),
+    )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
         r = app_client.post(
             "/api/supervisor/reclassify",
@@ -496,7 +491,7 @@ def test_processing_operation_reclassify_to_dev_pushes_linear(
     hub = op_world.get(HubIssue, 80)
     op_world.refresh(hub)
     assert hub.type == "Demand"
-    assert hub.status == "created"  # 直推分支，不是 pending_linear_review
+    assert hub.status == "created"  # 责任人确定 → 直推，不是 pending_linear_review
     # Operation 专属字段清空（满足 ck_hub_issues_operation_fields + 契约）
     assert hub.op_status is None
     assert hub.op_handler is None
@@ -524,13 +519,17 @@ def test_answered_operation_cannot_reclassify(app_client: TestClient, op_world: 
 
 
 def test_processing_operation_reclassify_by_own_handler(
-    app_client: TestClient, op_world: Session
+    app_client: TestClient, op_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """处理人本人（member）也能转研发：授权对齐 PATCH /attributes 的口径。"""
     op_world.add(User(id=9, feishu_uid="ou_m", name="mia", role="member"))
     hub = op_world.get(HubIssue, 80)
     hub.op_handler_user_id = 9
     op_world.commit()
+    monkeypatch.setattr(
+        "app.api.supervisor.resolve_module_owner",
+        lambda *a, **k: op_world.get(User, 2),
+    )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
         r = app_client.post(
             "/api/supervisor/reclassify",
@@ -540,7 +539,7 @@ def test_processing_operation_reclassify_by_own_handler(
     assert r.status_code == 200, r.text
     op_world.refresh(hub)
     assert hub.type == "Bug_fix"
-    assert hub.status == "created"  # 处理中 Operation 转研发 → 直推分支
+    assert hub.status == "created"  # 责任人确定 → 直推
     assert hub.op_handler_user_id is None  # Operation→研发清运营字段
     push.assert_called_once_with(80)
 

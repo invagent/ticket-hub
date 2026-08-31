@@ -204,8 +204,6 @@ class Settings(BaseSettings):
     require_review_before_linear: bool = True
     # 闸门①：全类型毕业后停 pending_review 待确认分类（默认 None → 回落 require_review_before_linear）
     gate_classify_enabled: bool | None = None
-    # 闸门③：研发类推 Linear 前停 pending_linear_review 待处理人确认（默认开）
-    gate_linear_push_enabled: bool = True
     # D4 优化 v2: 建 Linear 前 hub 级语义去重（命中则 supersede 到已有 hub，不重复推）
     hub_dedup_enabled: bool = True
     hub_dedup_threshold: float = 0.85  # 余弦下限

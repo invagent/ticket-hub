@@ -159,7 +159,6 @@ def test_auto_dispatch_missed_gate_off_marks_pending_no_linear(
             (),
             {
                 "gate_classify_enabled": False,
-                "gate_linear_push_enabled": True,
                 "require_review_before_linear": False,
                 "hub_dedup_enabled": False,
             },
@@ -195,7 +194,6 @@ def test_auto_dispatch_missed_gate_on_goes_pending_review(db_session: Session, m
             (),
             {
                 "gate_classify_enabled": True,
-                "gate_linear_push_enabled": True,
                 "require_review_before_linear": True,
                 "hub_dedup_enabled": False,
             },
@@ -263,7 +261,6 @@ def test_gate_classify_on_operation_stays_pending_review(db_session, monkeypatch
                 "gate_classify_enabled": True,
                 "hub_dedup_enabled": False,
                 "require_review_before_linear": True,
-                "gate_linear_push_enabled": True,
             },
         )(),
     )
@@ -273,7 +270,7 @@ def test_gate_classify_on_operation_stays_pending_review(db_session, monkeypatch
 
 
 def test_gate_classify_off_devclass_pushes(db_session, monkeypatch) -> None:
-    """闸门①关：研发类命中分派仍走现状分流，直接推 Linear。"""
+    """闸门①关 + 模块负责人确定 → 研发类自动推 Linear。"""
     reporter = _seed_user(db_session, "rep_off")
     handler = _seed_user(db_session, "h_off")
     _seed_dispatch_rule(db_session, handler.id)
@@ -291,20 +288,21 @@ def test_gate_classify_off_devclass_pushes(db_session, monkeypatch) -> None:
                 "gate_classify_enabled": False,
                 "hub_dedup_enabled": False,
                 "require_review_before_linear": False,
-                "gate_linear_push_enabled": False,
             },
         )(),
+    )
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: handler
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         create_hub_issue_for_ticket_auto(ticket_id)
     mp.assert_called_once()
 
 
-def test_gate_classify_off_gate_linear_push_on_parks_pending_linear_review(
+def test_gate_classify_off_module_owner_unresolved_parks_pending_linear_review(
     db_session, monkeypatch
 ) -> None:
-    """闸门①关+闸门③开：闸门是独立开关——分类自动确认不能连带绕过闸门③。
-    Bug_fix 命中分派后应停 pending_linear_review，不直推 Linear。"""
+    """闸门①关 + 模块负责人不确定 → 停 pending_linear_review，不直推 Linear。"""
     reporter = _seed_user(db_session, "rep_indep_on")
     handler = _seed_user(db_session, "h_indep_on")
     _seed_dispatch_rule(db_session, handler.id)
@@ -322,9 +320,11 @@ def test_gate_classify_off_gate_linear_push_on_parks_pending_linear_review(
                 "gate_classify_enabled": False,
                 "hub_dedup_enabled": False,
                 "require_review_before_linear": False,
-                "gate_linear_push_enabled": True,
             },
         )(),
+    )
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: None
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         result = create_hub_issue_for_ticket_auto(ticket_id)
@@ -333,8 +333,8 @@ def test_gate_classify_off_gate_linear_push_on_parks_pending_linear_review(
     assert hub.status == "pending_linear_review"
 
 
-def test_gate_classify_off_gate_linear_push_off_still_pushes(db_session, monkeypatch) -> None:
-    """闸门①关+闸门③关（回归）：两闸门都关时维持现状，直推 Linear。"""
+def test_gate_classify_off_module_owner_resolved_pushes(db_session, monkeypatch) -> None:
+    """闸门①关 + 模块负责人确定 → 直推 Linear（status=created）。"""
     reporter = _seed_user(db_session, "rep_indep_off")
     handler = _seed_user(db_session, "h_indep_off")
     _seed_dispatch_rule(db_session, handler.id)
@@ -352,9 +352,11 @@ def test_gate_classify_off_gate_linear_push_off_still_pushes(db_session, monkeyp
                 "gate_classify_enabled": False,
                 "hub_dedup_enabled": False,
                 "require_review_before_linear": False,
-                "gate_linear_push_enabled": False,
             },
         )(),
+    )
+    monkeypatch.setattr(
+        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: handler
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         result = create_hub_issue_for_ticket_auto(ticket_id)

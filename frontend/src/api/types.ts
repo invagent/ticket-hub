@@ -1441,8 +1441,8 @@ export interface paths {
          *
          *     - Operation → created + op_status=processing/agent（回到自动答复链，由
          *       Celery drain 扫描触发，此处不直接调答复）。
-         *     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
-         *       pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。
+         *     - Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；
+         *       不确定 → pending_linear_review 待处理人确认（工作台选人推送）。
          *     - Internal_task → created（无外部动作）。
          */
         post: operations["confirm_classification_api_supervisor_confirm_classification_post"];
@@ -1862,9 +1862,8 @@ export interface paths {
          * @description 改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：
          *
          *     - Operation → 回炉自动答复链（op_status=processing/agent）。
-         *     - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
-         *       pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像
-         *       confirm-classification 的分流，改判后不再回 pending_review 二次确认）。
+         *     - Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；
+         *       不确定 → pending_linear_review 待处理人确认（工作台选人推送）。
          *     - Internal_task/Complaint → created，不推 Linear、不走答复。
          */
         post: operations["reclassify_api_supervisor_reclassify_post"];

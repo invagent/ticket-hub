@@ -13013,7 +13013,7 @@
     },
     "/api/supervisor/confirm-classification": {
       "post": {
-        "description": "确认分类无误 → 按 hub.type 分流。权限放宽到处理人本人（_authorize_hub_handler）：\n\n- Operation → created + op_status=processing/agent（回到自动答复链，由\n  Celery drain 扫描触发，此处不直接调答复）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。\n- Internal_task → created（无外部动作）。",
+        "description": "确认分类无误 → 按 hub.type 分流。权限放宽到处理人本人（_authorize_hub_handler）：\n\n- Operation → created + op_status=processing/agent（回到自动答复链，由\n  Celery drain 扫描触发，此处不直接调答复）。\n- Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；\n  不确定 → pending_linear_review 待处理人确认（工作台选人推送）。\n- Internal_task → created（无外部动作）。",
         "operationId": "confirm_classification_api_supervisor_confirm_classification_post",
         "requestBody": {
           "content": {
@@ -13804,7 +13804,7 @@
     },
     "/api/supervisor/reclassify": {
       "post": {
-        "description": "改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：\n\n- Operation → 回炉自动答复链（op_status=processing/agent）。\n- Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停\n  pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像\n  confirm-classification 的分流，改判后不再回 pending_review 二次确认）。\n- Internal_task/Complaint → created，不推 Linear、不走答复。",
+        "description": "改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：\n\n- Operation → 回炉自动答复链（op_status=processing/agent）。\n- Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；\n  不确定 → pending_linear_review 待处理人确认（工作台选人推送）。\n- Internal_task/Complaint → created，不推 Linear、不走答复。",
         "operationId": "reclassify_api_supervisor_reclassify_post",
         "requestBody": {
           "content": {

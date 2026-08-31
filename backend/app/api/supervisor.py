@@ -212,6 +212,24 @@ class AssignResponse(BaseModel):
 # ---- endpoints ------------------------------------------------------------
 
 
+def _handler_scope(db: Session, user: AuthedUser):
+    """人工确认闸门行级可见性过滤：主管/admin 返回 None（看全部）；其余角色
+    只返回「处理人 = 自己」的 hub——op_handler_user_id 或任一关联 ticket 的
+    handler_user_id（与 list_tickets 的 visible_to_user_id、_authorize_hub_handler
+    口径一致）。"""
+    if user.role in ("supervisor", "admin"):
+        return None
+    handler_hub_ids = (
+        db.query(Ticket.hub_issue_id)
+        .filter(Ticket.handler_user_id == user.user_id, Ticket.hub_issue_id.isnot(None))
+        .subquery()
+    )
+    return or_(
+        HubIssue.op_handler_user_id == user.user_id,
+        HubIssue.id.in_(handler_hub_ids),
+    )
+
+
 @router.get("/inbox", response_model=InboxResponse)
 def list_inbox(
     user: AuthedUser = Depends(require_supervisor),
@@ -1898,16 +1916,13 @@ def confirm_classification(
 
     - Operation → created + op_status=processing/agent（回到自动答复链，由
       Celery drain 扫描触发，此处不直接调答复）。
-    - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
-      pending_linear_review 待处理人确认，不推 Linear；关则 created + 推 Linear。
+    - Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；
+      不确定 → pending_linear_review 待处理人确认（工作台选人推送）。
     - Internal_task → created（无外部动作）。
     """
-    from app.config import get_settings
-
     _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     prev = hub.status
-    settings = get_settings()
 
     if hub.type == "Operation":
         hub.status = "created"
@@ -1920,12 +1935,12 @@ def confirm_classification(
         )
         reason = "主管确认分类"
     elif hub.type in ("Bug_fix", "Demand"):
-        if settings.gate_linear_push_enabled:
-            hub.status = "pending_linear_review"
-            reason = "确认分类，待处理人确认后推 Linear"
-        else:
+        if resolve_module_owner(db, hub.product_line_code, hub.module) is not None:
             hub.status = "created"
             reason = "确认分类，推送 Linear"
+        else:
+            hub.status = "pending_linear_review"
+            reason = "确认分类，待处理人确认后推 Linear"
     else:  # Internal_task / Complaint
         hub.status = "created"
         reason = "主管确认分类"
@@ -1947,7 +1962,7 @@ def confirm_classification(
     )
     db.commit()
 
-    if hub.type in ("Bug_fix", "Demand") and not settings.gate_linear_push_enabled:
+    if hub.type in ("Bug_fix", "Demand") and hub.status == "created":
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
     logger.info(
@@ -1970,25 +1985,19 @@ def reclassify(
     """改判分类（主管/管理员，或本工单处理人本人）。改判本身即视为已确认分类，按新类型分流：
 
     - Operation → 回炉自动答复链（op_status=processing/agent）。
-    - Bug_fix/Demand → 闸门③（gate_linear_push_enabled）开则停
-      pending_linear_review 待处理人确认；关则 created + 推 Linear（镜像
-      confirm-classification 的分流，改判后不再回 pending_review 二次确认）。
+    - Bug_fix/Demand → 按模块负责人是否确定分流：确定 → created + 推 Linear；
+      不确定 → pending_linear_review 待处理人确认（工作台选人推送）。
     - Internal_task/Complaint → created，不推 Linear、不走答复。
     """
-    from app.config import get_settings
     from app.services.dispatch import dispatch_handler
     from app.services.hub_issues.op_status import set_hub_tickets_handler
 
     # 处理中 Operation 转研发是「处理人跟客户沟通后判断是需求/Bug」的场景，
     # 处理人本人即可操作（对齐 PATCH /attributes 的授权口径），无需主管介入。
     _authorize_hub_handler(db, body.hub_issue_id, user)
-    settings = get_settings()
     hub = _get_reclassifiable_hub(db, body.hub_issue_id)
     old_type = hub.type
     old_status = hub.status
-    # 来源：处理中的 Operation 转研发类（非 pending_review）→ 直推 Linear（用户决策），
-    # 不走 pending_linear_review 二次确认。pending_review 原路径行为不变。
-    from_processing_op = old_status != "pending_review" and old_type == "Operation"
     # 中文类型（写进用户可见的 reason，避免英文枚举 Bug_fix 直显）
     old_zh = HUB_TYPE_ZH.get(old_type, old_type)
     new_zh = HUB_TYPE_ZH.get(body.new_type, body.new_type)
@@ -2045,9 +2054,10 @@ def reclassify(
             hub.op_handler_user_id = dr.user_id
             set_hub_tickets_handler(db, hub, dr.user_id)
     elif body.new_type in ("Bug_fix", "Demand"):
-        # 处理中 Operation 转研发：直推 Linear（created + 下方 BackgroundTask），不二次确认。
-        # pending_review 原路径：尊重闸门③（gate_linear_push_enabled 开则停 pending_linear_review）。
-        if from_processing_op or not settings.gate_linear_push_enabled:
+        # 按模块负责人是否确定分流：确定 → created 直推 Linear；不确定 →
+        # pending_linear_review 待处理人确认（工作台选人推送）。统一口径，不再
+        # 区分「处理中 Operation 转研发」与「pending_review 原路径」。
+        if resolve_module_owner(db, hub.product_line_code, hub.module) is not None:
             hub.status = "created"
         else:
             hub.status = "pending_linear_review"  # 待处理人确认后推 Linear

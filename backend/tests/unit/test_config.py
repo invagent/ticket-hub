@@ -61,7 +61,3 @@ def test_gate_classify_falls_back_to_require_review() -> None:
 def test_gate_classify_explicit_overrides_fallback() -> None:
     s = Settings(require_review_before_linear=True, gate_classify_enabled=False)
     assert s.gate_classify_enabled is False
-
-
-def test_gate_linear_push_default_on() -> None:
-    assert Settings().gate_linear_push_enabled is True

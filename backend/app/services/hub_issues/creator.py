@@ -30,6 +30,7 @@ from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.cascade.reply_sync import backfill_reply_to_ticket
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
+from app.services.hub_issues.module_owner import resolve_module_owner
 from app.services.hub_issues.op_status import OP_PROCESSING
 
 logger = get_logger(__name__)
@@ -49,6 +50,9 @@ class HubIssueResult:
     type: str
     created: bool  # False when the ticket was already linked
     dispatch_missed: bool = False  # 研发类分派无匹配处理人（auto 路径据此转 pending）
+    module_owner_resolved: bool = (
+        False  # 研发类模块负责人确定（auto 路径据此决定是否自动推 Linear）
+    )
 
 
 def _next_hub_short_code(db: Session) -> str:
@@ -221,6 +225,9 @@ def ensure_hub_issue_for_ticket(
         type=issue_type,
         created=True,
         dispatch_missed=dispatch_missed,
+        module_owner_resolved=(
+            resolve_module_owner(db, hub.product_line_code, hub.module) is not None
+        ),
     )
 
 
@@ -262,16 +269,16 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         _mark_dispatch_pending(result.hub_issue_id)
         return result
 
-    # 闸门①关：分类自动确认。研发类还要过闸门③（gate_linear_push_enabled）
-    # ——两个闸门是独立开关，闸门①关不能连带绕过闸门③。闸门③开则停
-    # pending_linear_review 待处理人确认，不推 Linear；关则维持现状直推。
+    # 闸门①关：分类自动确认。研发类推 Linear 前按「模块负责人是否确定」分流：
+    # 责任人确定（resolve_module_owner 命中）→ 自动推 Linear；不确定 → 停
+    # pending_linear_review 待处理人确认（工作台选人推送）。
     # Operation 自动答复链由 Celery drain 扫 op_status=processing/agent
     # 触发（不在此处调用）；Internal_task 无动作。
     if result.type in ("Bug_fix", "Demand"):
-        if settings.gate_linear_push_enabled:
-            _mark_pending_linear_review(result.hub_issue_id)
-        else:
+        if result.module_owner_resolved:
             push_hub_issue_to_linear(result.hub_issue_id)
+        else:
+            _mark_pending_linear_review(result.hub_issue_id)
     return result
 
 
