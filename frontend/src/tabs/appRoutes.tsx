@@ -18,6 +18,7 @@ import { SkillsPage } from "@/pages/admin/skills/SkillsPage";
 import { HolidaysPage } from "@/pages/admin/holidays/HolidaysPage";
 import { DispatchRulesPage } from "@/pages/admin/dispatch/DispatchRulesPage";
 import { ReflectWorkbenchPage } from "@/pages/reflect/ReflectWorkbenchPage";
+import { ReflectTrainingPage } from "@/pages/reflect-training/ReflectTrainingPage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 
 /**
@@ -34,6 +35,7 @@ export const authedRoutes = (
     <Route path="/" element={<WorkbenchPage />} />
     <Route path="/supervisor" element={<Navigate to="/" replace />} />
     <Route path="/reflect" element={<ReflectWorkbenchPage />} />
+    <Route path="/reflect-training" element={<ReflectTrainingPage />} />
     <Route path="/analytics" element={<AnalyticsPage />} />
     <Route path="/tickets" element={<TicketsListPage />} />
     <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />

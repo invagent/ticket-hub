@@ -9,6 +9,7 @@ const STATIC: Record<string, string> = {
   "/tickets": "全部工单",
   "/hub-issues": "工单任务表",
   "/reflect": "反思诊断",
+  "/reflect-training": "反思诊断训练",
   "/analytics": "统计看板",
   "/customers": "客户",
   "/admin/users": "人员与分工",
