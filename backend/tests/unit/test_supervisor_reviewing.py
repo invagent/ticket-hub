@@ -49,12 +49,28 @@ def rvw_world(db_session: Session) -> Session:
     return db_session
 
 
-def test_reviewing_requires_supervisor(app_client: TestClient, rvw_world: Session) -> None:
+def test_reviewing_filters_to_own_handler(app_client: TestClient, rvw_world: Session) -> None:
+    """非主管只看到处理人=自己的待审核答复；别人的不返回。"""
+    # member 非处理人 → 空列表
     r = app_client.get(
         "/api/supervisor/reviewing-answers",
         headers=_bearer(1, name="bob", role="member"),
     )
-    assert r.status_code == 403
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == []
+
+    # op_handler_user_id=1 → member id=1 能看到
+    hub = rvw_world.get(HubIssue, 70)
+    hub.op_handler_user_id = 1
+    rvw_world.commit()
+    r = app_client.get(
+        "/api/supervisor/reviewing-answers",
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["short_code"] == "HUB-000070"
 
 
 def test_reviewing_lists_with_accuracy(app_client: TestClient, rvw_world: Session) -> None:

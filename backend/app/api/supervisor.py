@@ -41,7 +41,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
@@ -212,17 +212,16 @@ class AssignResponse(BaseModel):
 # ---- endpoints ------------------------------------------------------------
 
 
-def _handler_scope(db: Session, user: AuthedUser):
+def _handler_scope(db: Session, user: AuthedUser) -> Any:
     """人工确认闸门行级可见性过滤：主管/admin 返回 None（看全部）；其余角色
     只返回「处理人 = 自己」的 hub——op_handler_user_id 或任一关联 ticket 的
     handler_user_id（与 list_tickets 的 visible_to_user_id、_authorize_hub_handler
     口径一致）。"""
     if user.role in ("supervisor", "admin"):
         return None
-    handler_hub_ids = (
-        db.query(Ticket.hub_issue_id)
-        .filter(Ticket.handler_user_id == user.user_id, Ticket.hub_issue_id.isnot(None))
-        .subquery()
+    handler_hub_ids = select(Ticket.hub_issue_id).where(
+        Ticket.handler_user_id == user.user_id,
+        Ticket.hub_issue_id.isnot(None),
     )
     return or_(
         HubIssue.op_handler_user_id == user.user_id,
@@ -875,22 +874,23 @@ class ReviewingAnswersResponse(BaseModel):
 
 @router.get("/reviewing-answers", response_model=ReviewingAnswersResponse)
 def list_reviewing_answers(
-    _user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> ReviewingAnswersResponse:
-    """Operation hubs awaiting human review of a low-accuracy auto-reply draft."""
-    hubs = (
-        db.query(HubIssue)
-        .filter(
-            HubIssue.deleted_at.is_(None),
-            HubIssue.type == "Operation",
-            HubIssue.op_status == "reviewing",
-        )
-        .order_by(HubIssue.op_status_changed_at.desc())
-        .limit(min(limit, 100))
-        .all()
+    """Operation hubs awaiting human review of a low-accuracy auto-reply draft.
+
+    行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
+    """
+    q = db.query(HubIssue).filter(
+        HubIssue.deleted_at.is_(None),
+        HubIssue.type == "Operation",
+        HubIssue.op_status == "reviewing",
     )
+    scope = _handler_scope(db, user)
+    if scope is not None:
+        q = q.filter(scope)
+    hubs = q.order_by(HubIssue.op_status_changed_at.desc()).limit(min(limit, 100)).all()
     items = []
     for h in hubs:
         dec = (
@@ -1793,27 +1793,27 @@ class PendingClassificationResponse(BaseModel):
 
 @router.get("/pending-classification", response_model=PendingClassificationResponse)
 def list_pending_classification(
-    _user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> PendingClassificationResponse:
-    """全类型 status=pending_review 待主管确认分类队列（闸门①）。
+    """全类型 status=pending_review 待确认分类队列（闸门①）。
 
     闸门①开启后 Operation/Bug_fix/Demand/Internal_task 毕业后一律先停
     pending_review，故此队列不再只挑研发类。注意 pending_review 与既有
     status='pending'（Linear 推送失败待人工，pending-hub-issues 端点消费）
     是不同队列、不同状态值。
+
+    行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
     """
-    hubs = (
-        db.query(HubIssue)
-        .filter(
-            HubIssue.deleted_at.is_(None),
-            HubIssue.status == "pending_review",
-        )
-        .order_by(HubIssue.updated_at.desc())
-        .limit(min(limit, 100))
-        .all()
+    q = db.query(HubIssue).filter(
+        HubIssue.deleted_at.is_(None),
+        HubIssue.status == "pending_review",
     )
+    scope = _handler_scope(db, user)
+    if scope is not None:
+        q = q.filter(scope)
+    hubs = q.order_by(HubIssue.updated_at.desc()).limit(min(limit, 100)).all()
     items: list[PendingClassificationItem] = []
     for h in hubs:
         reason: str | None = None
@@ -2146,24 +2146,24 @@ class PendingLinearReviewResponse(BaseModel):
 
 @router.get("/pending-linear-review", response_model=PendingLinearReviewResponse)
 def list_pending_linear_review(
-    _user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
     limit: int = 50,
 ) -> PendingLinearReviewResponse:
     """闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
     负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+
+    行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
     """
-    hubs = (
-        db.query(HubIssue)
-        .filter(
-            HubIssue.deleted_at.is_(None),
-            HubIssue.status == "pending_linear_review",
-            HubIssue.type.in_(["Bug_fix", "Demand"]),
-        )
-        .order_by(HubIssue.id.desc())
-        .limit(min(limit, 100))
-        .all()
+    q = db.query(HubIssue).filter(
+        HubIssue.deleted_at.is_(None),
+        HubIssue.status == "pending_linear_review",
+        HubIssue.type.in_(["Bug_fix", "Demand"]),
     )
+    scope = _handler_scope(db, user)
+    if scope is not None:
+        q = q.filter(scope)
+    hubs = q.order_by(HubIssue.id.desc()).limit(min(limit, 100)).all()
     items: list[PendingLinearReviewItem] = []
     for h in hubs:
         owner = resolve_module_owner(db, h.product_line_code, h.module)
@@ -2192,10 +2192,12 @@ class ConfirmLinearPushBody(BaseModel):
 def confirm_linear_push(
     body: ConfirmLinearPushBody,
     background_tasks: BackgroundTasks,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> ClassificationActionResponse:
-    """主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。"""
+    """主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。
+    权限放宽到处理人本人（_authorize_hub_handler）。"""
+    _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = db.get(HubIssue, body.hub_issue_id)
     if hub is None or hub.deleted_at is not None or hub.status != "pending_linear_review":
         raise HTTPException(

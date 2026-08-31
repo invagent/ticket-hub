@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.auth import issue_jwt
-from app.models import HubIssue, User
+from app.models import HubIssue, Ticket, User
 
 
 def _bearer(uid: int, *, name: str = "carol", role: str = "supervisor") -> dict[str, str]:
@@ -57,14 +57,40 @@ def pc_world(db_session: Session) -> Session:
     return db_session
 
 
-def test_pending_classification_requires_supervisor(
+def test_pending_classification_filters_to_own_handler(
     app_client: TestClient, pc_world: Session
 ) -> None:
+    """非主管只看到处理人=自己的待确认分类；别人的不返回。"""
+    # member 非处理人 → 空列表
     r = app_client.get(
         "/api/supervisor/pending-classification",
         headers=_bearer(1, name="bob", role="member"),
     )
-    assert r.status_code == 403
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == []
+
+    # 给 hub 60 挂一条 handler=1 的 ticket → member id=1 看到 hub 60（而非 61/63）
+    pc_world.add(
+        Ticket(
+            id=601,
+            short_code="TKT-000601",
+            source_code="ksm",
+            source_ticket_id="k-601",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=60,
+            handler_user_id=1,
+        )
+    )
+    pc_world.commit()
+    r = app_client.get(
+        "/api/supervisor/pending-classification",
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    codes = {i["short_code"] for i in r.json()["items"]}
+    assert codes == {"HUB-000060"}
 
 
 def test_pending_classification_lists_all_types_pending_review(

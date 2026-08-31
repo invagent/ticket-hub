@@ -257,8 +257,9 @@ export function WorkbenchPage() {
         </div>
       )}
 
-      {/* ③ 人工确认闸门：三个固定 tab（闸门关时对应队列为空但 tab 仍展示），仅主管 */}
-      {isSupervisor && <GateTabsSection />}
+      {/* ③ 人工确认闸门：三个固定 tab（闸门关时对应队列为空但 tab 仍展示）。
+          所有角色可见：主管看全部，处理人只看处理人=自己的（后端按 _handler_scope 过滤）。 */}
+      <GateTabsSection />
     </div>
   );
 }

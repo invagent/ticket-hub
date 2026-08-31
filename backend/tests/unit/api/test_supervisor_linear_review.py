@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.auth import issue_jwt
-from app.models import AssignmentScopeModule, HubIssue, StatusHistory, User
+from app.models import AssignmentScopeModule, HubIssue, StatusHistory, Ticket, User
 
 
 def _bearer(uid: int, *, name: str = "carol", role: str = "supervisor") -> dict[str, str]:
@@ -103,14 +103,40 @@ def test_list_pending_linear_review(app_client: TestClient, review_world: Sessio
     assert item90["module"] == "开票"
 
 
-def test_list_pending_linear_review_requires_supervisor(
+def test_list_pending_linear_review_filters_to_own_handler(
     app_client: TestClient, review_world: Session
 ) -> None:
+    """非主管只看到处理人=自己的闸门；别人的不返回（行级可见性）。"""
+    # member id=1 不是任何 pending hub 的处理人 → 空列表
     r = app_client.get(
         "/api/supervisor/pending-linear-review",
         headers=_bearer(1, name="bob", role="member"),
     )
-    assert r.status_code == 403
+    assert r.status_code == 200, r.text
+    assert r.json()["items"] == []
+
+    # 给 hub 90 挂一条 handler=1 的 ticket → member id=1 能看到 hub 90（而非 91）
+    review_world.add(
+        Ticket(
+            id=901,
+            short_code="TKT-000901",
+            source_code="ksm",
+            source_ticket_id="k-901",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=90,
+            handler_user_id=1,
+        )
+    )
+    review_world.commit()
+    r = app_client.get(
+        "/api/supervisor/pending-linear-review",
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert r.status_code == 200, r.text
+    ids = {item["hub_issue_id"] for item in r.json()["items"]}
+    assert ids == {90}
 
 
 def test_confirm_linear_push_defaults_to_module_owner(
@@ -165,12 +191,39 @@ def test_confirm_linear_push_rejects_non_pending(
     assert r.status_code == 409
 
 
-def test_confirm_linear_push_requires_supervisor(
+def test_confirm_linear_push_by_own_handler(
     app_client: TestClient, review_world: Session
 ) -> None:
+    """处理人本人可确认推送；非处理人的 member 仍 403。"""
+    # 非处理人 member → 403
     r = app_client.post(
         "/api/supervisor/confirm-linear-push",
         json={"hub_issue_id": 90},
         headers=_bearer(1, name="bob", role="member"),
     )
     assert r.status_code == 403
+
+    # 处理人本人（关联 ticket.handler_user_id=3）→ 200
+    review_world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    review_world.add(
+        Ticket(
+            id=902,
+            short_code="TKT-000902",
+            source_code="ksm",
+            source_ticket_id="k-902",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=90,
+            handler_user_id=3,
+        )
+    )
+    review_world.commit()
+    with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
+        r = app_client.post(
+            "/api/supervisor/confirm-linear-push",
+            json={"hub_issue_id": 90},
+            headers=_bearer(3, name="handler", role="member"),
+        )
+    assert r.status_code == 200, r.text
+    push.assert_called_once_with(90, assignee_override_user_id=40)
