@@ -262,8 +262,14 @@ class KSMClient:
         return data  # type: ignore[no-any-return]
 
     def download_attachment(self, url: str) -> bytes:
-        """Direct download. KSM 服务器拒绝默认 UA，要伪装成浏览器。"""
-        resp = self._http.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=self._timeout)
+        """Direct download. KSM 服务器拒绝默认 UA，要伪装成浏览器。
+        follow_redirects=True：KSM 附件 URL 可能是 http:// → https:// 308 重定向。"""
+        resp = self._http.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=self._timeout,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
         return resp.content
 
