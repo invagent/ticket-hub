@@ -14,7 +14,7 @@
  */
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, ApiError } from "@/api/client";
 import { OpsPanel } from "@/pages/workbench/OpsPanel";
@@ -274,7 +274,12 @@ const GATE_TABS = [
 type GateTab = (typeof GATE_TABS)[number]["key"];
 
 function GateTabsSection() {
-  const [tab, setTab] = useState<GateTab>("classify");
+  // 支持深链 /workbench?tab=linear（工单详情页「未找到责任人」提示跳转过来）——
+  // 只读初始值，不双向同步 URL（tab 切换仍是纯本地 state，避免过度设计）。
+  const [searchParams] = useSearchParams();
+  const initialTab =
+    GATE_TABS.find((t) => t.key === searchParams.get("tab"))?.key ?? "classify";
+  const [tab, setTab] = useState<GateTab>(initialTab);
   return (
     <>
       <SectionHeader

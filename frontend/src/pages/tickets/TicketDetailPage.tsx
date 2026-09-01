@@ -793,13 +793,13 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                {/* 研发类已毕业但未推送（分派缺人/推 Linear 失败转人工，pending 队列）：
-                    提示去主管工作台「Linear 推送待人工」处理，避免误显示「已推送」 */}
+                {/* 研发类已毕业但未推送（未推送过/推送失败/待选责任人）：只提醒现状，
+                    具体操作（重推/去工作台选人）已在下方「工单参数」区给出对应按钮，
+                    避免引导语与按钮区重复。 */}
                 {classified && isDevType && d.predicted_type && !pushedToLinear && (
                   <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
                     {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
-                    类工单尚未推送 Linear（分派缺人或推送待人工）。请在主管工作台「Linear
-                    推送待人工」队列补齐处理人后重推。
+                    类工单尚未推送 Linear，见下方「工单参数」区操作。
                   </div>
                 )}
 
@@ -1132,12 +1132,44 @@ function TicketAttributesEditor({
     onError: onErr,
   });
 
+  // 研发类已毕业但未成功推送（未推送过，或推送过但失败）→ 重推 Linear。守卫与后端
+  // repush-linear 一致（linear_uuid/identifier 均空才允许），覆盖 TKT-006458 那种
+  // "改类型为 Bug_fix 后只点了保存，从未真正推送过" 的场景。
+  const repush = useMutation({
+    mutationFn: () => api.post("/api/supervisor/repush-linear", { hub_issue_id: hub!.id }),
+    onSuccess: (d: { pushed: boolean; linear_identifier: string | null; pending_reason: string | null }) => {
+      if (d.pushed) {
+        setError(null);
+        setNotice(`推送成功（${d.linear_identifier}）`);
+      } else {
+        setNotice(null);
+        setError(d.pending_reason ?? "推送失败，原因未知");
+      }
+      refresh();
+    },
+    onError: onErr,
+  });
+
   const busy =
-    save.isPending || confirm.isPending || graduate.isPending || reclassifyToDev.isPending;
+    save.isPending ||
+    confirm.isPending ||
+    graduate.isPending ||
+    reclassifyToDev.isPending ||
+    repush.isPending;
   const pendingReview = graduated && hub.status === "pending_review";
+  // 待人工确认责任人才能推送（模块负责人不确定）：跳工作台「待推 Linear」队列选人。
+  const pendingLinearReview = graduated && hub.status === "pending_linear_review";
   // 处理中的 Operation（可转研发）：已毕业 + 类型 Operation + op_status=processing
   const isProcessingOp =
     graduated && hub.type === "Operation" && hub.op_status === "processing";
+  // 已是研发类但未成功推送（linear_identifier 空），且不是上面两种待确认态——
+  // 覆盖"从未推送"与"推送失败待重试"两种情况，与后端 repush-linear 的守卫对齐。
+  const devUnpushed =
+    graduated &&
+    (hub.type === "Bug_fix" || hub.type === "Demand") &&
+    !hub.linear_identifier &&
+    !pendingReview &&
+    !pendingLinearReview;
   // 当前选中的是研发类
   const devTypeSelected = type === "Bug_fix" || type === "Demand";
 
@@ -1293,6 +1325,29 @@ function TicketAttributesEditor({
               >
                 {reclassifyToDev.isPending ? "转研发中…" : "转研发并推送"}
               </button>
+            )}
+            {/* 研发类已毕业但从未成功推送（未推送 或 推送失败）：常驻可点，不依赖
+                op_status（TKT-006458 教训：改类型为 Bug_fix 后 op_status 已被清空，
+                之前的可见性条件 isProcessingOp 天然漏了这种单）。 */}
+            {devUnpushed && (
+              <button
+                type="button"
+                onClick={() => repush.mutate()}
+                disabled={busy}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {repush.isPending ? "推送中…" : "转研发并推送"}
+              </button>
+            )}
+            {/* 模块负责人不确定，需人工选人后才能推送——跳工作台现成的选人队列，
+                不在详情页重复实现一套选人 UI。 */}
+            {pendingLinearReview && (
+              <Link
+                to="/workbench?tab=linear"
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light"
+              >
+                未找到责任人，请到工作台选择责任人推送 →
+              </Link>
             )}
           </>
         ) : (

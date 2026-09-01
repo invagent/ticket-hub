@@ -1132,12 +1132,16 @@ def close_complaint_endpoint(
 @router.post("/repush-linear", response_model=RepushLinearResponse)
 def repush_linear_endpoint(
     body: RepushLinearBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> RepushLinearResponse:
     """Retry a blocked Linear push (e.g. after the assignee joined Linear and
-    sync-from-linear refreshed the mapping). Synchronous — the supervisor
-    wants to see the outcome immediately."""
+    sync-from-linear refreshed the mapping), or push for the first time when a
+    hub graduated as Bug_fix/Demand but was never actually pushed (e.g. type
+    was changed via PATCH /attributes, which never pushes). Synchronous — the
+    caller wants to see the outcome immediately. 权限放宽到本工单处理人本人
+    （_authorize_hub_handler），不再局限主管——处理人在工单详情页自助重推。"""
+    _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = db.get(HubIssue, body.hub_issue_id)
     if hub is None or hub.deleted_at is not None:
         raise HTTPException(status_code=404, detail="hub_issue not found")

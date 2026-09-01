@@ -221,3 +221,39 @@ def test_repush_missing_hub_404(app_client: TestClient, pending_world: Session) 
         "/api/supervisor/repush-linear", json={"hub_issue_id": 9999}, headers=_bearer(2)
     )
     assert resp.status_code == 404
+
+
+def test_repush_rejects_non_handler(app_client: TestClient, pending_world: Session) -> None:
+    """非本工单处理人、非主管 → 403（授权放宽仍有边界）。"""
+    resp = app_client.post(
+        "/api/supervisor/repush-linear",
+        json={"hub_issue_id": 80},
+        headers=_bearer(1, name="bob", role="member"),
+    )
+    assert resp.status_code == 403
+
+
+def test_repush_allowed_for_own_handler(app_client: TestClient, pending_world: Session) -> None:
+    """处理人本人（非主管）可自助重推——TKT-006458 事故修复：处理人不必找主管代操作。"""
+    pending_world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    pending_world.add(
+        Ticket(
+            id=903,
+            short_code="TKT-000903",
+            source_code="ksm",
+            source_ticket_id="k-903",
+            type="Raw",
+            status="received",
+            title="t",
+            hub_issue_id=80,
+            handler_user_id=3,
+        )
+    )
+    pending_world.commit()
+    resp = app_client.post(
+        "/api/supervisor/repush-linear",
+        json={"hub_issue_id": 80},
+        headers=_bearer(3, name="handler", role="member"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["pushed"] is False  # LINEAR_PUSH_ENABLED=false in conftest
