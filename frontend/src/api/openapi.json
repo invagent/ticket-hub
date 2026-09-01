@@ -2787,6 +2787,16 @@
             "title": "Last Seen At",
             "type": "string"
           },
+          "last_transfer_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransferAttempt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_urged_at": {
             "anyOf": [
               {
@@ -8032,6 +8042,25 @@
           "created_at"
         ],
         "title": "TicketSummary",
+        "type": "object"
+      },
+      "TransferAttempt": {
+        "description": "AI 转人工时的已尝试问答（只读展示，见 last_transfer_attempt）。",
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "TransferAttempt",
         "type": "object"
       },
       "UpdateAttributesBody": {

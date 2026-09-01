@@ -106,6 +106,13 @@ class SubIssueItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TransferAttempt(BaseModel):
+    """AI 转人工时的已尝试问答（只读展示，见 last_transfer_attempt）。"""
+
+    question: str
+    answer: str
+
+
 class HubIssueDetail(HubIssueSummary):
     canonical_body: str | None
     # Operation-only（其余 Operation 字段已在 Summary）
@@ -131,6 +138,9 @@ class HubIssueDetail(HubIssueSummary):
     sub_issues: list[SubIssueItem] = []
     # 补料清单：AI 判定需补料时生成的「需补充资料」文本（仅 op_status=supplementing 回填）
     supply_note: str | None = None
+    # AI 转人工时已尝试的问答（仅 op_status=processing 且最新 auto_reply 判 transfer 回填）；
+    # 只读展示用，不进 reply_content/处理说明草稿——避免被误当正式答复发出。
+    last_transfer_attempt: TransferAttempt | None = None
 
 
 class HubIssueListResponse(BaseModel):
@@ -331,6 +341,26 @@ def get_hub_issue(
             note = dec.proposal.get("supply_note")
             if note:
                 detail.supply_note = str(note)
+    # processing 态：回填最新一条 AI 转人工审计（branch=transfer）的已尝试问答，
+    # 供处理说明区只读提示——人工判断 AI 是否已经答过、答了什么。
+    if hub.op_status == "processing":
+        dec = (
+            db.query(AgentDecision)
+            .filter(
+                AgentDecision.subject_type == "hub_issue",
+                AgentDecision.subject_id == hub_issue_id,
+                AgentDecision.decision_type == "auto_reply",
+            )
+            .order_by(AgentDecision.id.desc())
+            .first()
+        )
+        if dec and dec.proposal and dec.proposal.get("branch") == "transfer":
+            question = dec.proposal.get("question")
+            answer = dec.proposal.get("answer")
+            if question and answer:
+                detail.last_transfer_attempt = TransferAttempt(
+                    question=str(question), answer=str(answer)
+                )
     return detail
 
 

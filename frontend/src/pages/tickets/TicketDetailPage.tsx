@@ -610,6 +610,24 @@ export function TicketDetailPage() {
                       AI 草稿待审核，确认后正式发出
                     </div>
                   )}
+                  {/* AI 转人工时已尝试的问答（只读提示，非正式草稿）：processing 态 +
+                      最新 auto_reply 判 transfer 时后端回填，帮人工判断 AI 是否已答过、答了什么。
+                      不预填进下方文本框，避免被误当草稿改改就直接发出。 */}
+                  {opStatus === "processing" && hub.data?.last_transfer_attempt && (
+                    <div className="mb-1.5 text-[11px] text-hub-textMuted bg-hub-panel border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
+                      <div className="font-semibold text-hub-textFaint mb-0.5">
+                        🤖 AI 已尝试回答（未采纳，转人工处理）
+                      </div>
+                      <div>
+                        <span className="text-hub-textFaint">问：</span>
+                        {hub.data.last_transfer_attempt.question}
+                      </div>
+                      <div>
+                        <span className="text-hub-textFaint">答：</span>
+                        {hub.data.last_transfer_attempt.answer}
+                      </div>
+                    </div>
+                  )}
                   {/* 当前节点(idx0)：可编辑文本框（默认取 cached_reply_content，无独立保存按钮，入库随页面「确认」）。
                       历史节点：有逐节点记录则只读展示，无内容才「无数据」——不显示任何可操作控件。
                       逐节点处理说明后端暂无字段，历史内容目前仅来自本地草稿 noteDrafts。 */}

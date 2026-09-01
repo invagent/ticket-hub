@@ -3356,6 +3356,7 @@ export interface components {
              * Format: date-time
              */
             last_seen_at: string;
+            last_transfer_attempt?: components["schemas"]["TransferAttempt"] | null;
             /** Last Urged At */
             last_urged_at?: string | null;
             /** Linear Identifier */
@@ -4926,6 +4927,16 @@ export interface components {
             type: string;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /**
+         * TransferAttempt
+         * @description AI 转人工时的已尝试问答（只读展示，见 last_transfer_attempt）。
+         */
+        TransferAttempt: {
+            /** Answer */
+            answer: string;
+            /** Question */
+            question: string;
         };
         /** UpdateAttributesBody */
         UpdateAttributesBody: {
