@@ -3,154 +3,35 @@
  *
  * 左列 300px：skill 卡片列表（编号/名称/来源/目标准确率可双击编辑/当前准确率+统计时间）。
  * 右侧：选中 skill 对应的工单校验表格（工单编号/客户问题/AI结论/人工复核结论/
- * AI判断正确/调整校验结果），点击工单编号从右侧滑出该工单的完整思考详情。
+ * AI判断正确/调整校验结果），点击工单编号从右侧滑出该工单的完整思考详情
+ * （详情内容见 TicketThinkingDrawer.tsx）。
  *
  * 数据现状（2026-09）：
  *   - skill 名称/描述真实调用 GET /api/admin/skills（系统基础配置-skill配置 同一份数据）。
  *   - 编号(SK###)/来源/目标准确率/当前准确率/统计时间、以及工单校验列表——后端暂无
- *     对应字段和接口，先用本地 mock 占位（见 MOCK_SKILL_META / MOCK_TICKETS_BY_SKILL），
- *     字段结构已按最终需求定稿，后端补齐后直接替换数据源即可，交互不用改。
+ *     对应字段和接口，先用本地 mock 占位（见 mockData.ts），字段结构已按最终需求定稿，
+ *     后端补齐后直接替换数据源即可，交互不用改。
  *   - 目标准确率的双击编辑目前只存在本地 state，不落库。
  */
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { paths } from "@/api/types";
-import { Drawer } from "@/components/Drawer";
+import {
+  DEFAULT_META,
+  MOCK_SKILL_META,
+  MOCK_TICKETS_BY_SKILL,
+  fallbackCode,
+  type SkillMeta,
+  type TrainingTicketRow,
+} from "./mockData";
+import { TicketThinkingDrawer } from "./TicketThinkingDrawer";
 
 type SkillSummary =
   paths["/api/admin/skills"]["get"]["responses"]["200"]["content"]["application/json"][number];
 
-type SkillSource = "交付服务" | "运营" | "研发";
-
-interface SkillMeta {
-  code: string;
-  source: SkillSource;
-  target_accuracy: number;
-  current_accuracy: number;
-  stat_time: string;
-}
-
-interface TrainingTicketRow {
-  id: number;
-  ticket_code: string;
-  customer_question: string;
-  ai_conclusion: string;
-  human_conclusion: string;
-  ai_correct: boolean;
-  adjusted_result: string | null;
-}
-
-const DEFAULT_META: Omit<SkillMeta, "code"> = {
-  source: "研发",
-  target_accuracy: 90,
-  current_accuracy: 0,
-  stat_time: "暂无统计",
-};
-
-// TODO(backend): 编号/来源/目标准确率/当前准确率/统计时间需要新字段，暂用本地 mock 按
-// skill name 映射；覆盖不到的 skill 用 DEFAULT_META + 序号兜底生成编号，页面不会因缺数据报错。
-const MOCK_SKILL_META: Record<string, SkillMeta> = {
-  triage: {
-    code: "SK001",
-    source: "运营",
-    target_accuracy: 92,
-    current_accuracy: 88,
-    stat_time: "统计至 2026-08-31 18:00",
-  },
-  classify: {
-    code: "SK002",
-    source: "研发",
-    target_accuracy: 90,
-    current_accuracy: 85,
-    stat_time: "统计至 2026-08-31 18:00",
-  },
-  escalation_classify: {
-    code: "SK003",
-    source: "交付服务",
-    target_accuracy: 95,
-    current_accuracy: 91,
-    stat_time: "统计至 2026-08-31 18:00",
-  },
-  vision_extract: {
-    code: "SK004",
-    source: "研发",
-    target_accuracy: 88,
-    current_accuracy: 93,
-    stat_time: "统计至 2026-08-31 18:00",
-  },
-  split: {
-    code: "SK005",
-    source: "运营",
-    target_accuracy: 85,
-    current_accuracy: 80,
-    stat_time: "统计至 2026-08-31 18:00",
-  },
-};
-
-// TODO(backend): 工单校验列表需要「skill ↔ 工单」关联数据，暂用本地 mock。
-const MOCK_TICKETS_BY_SKILL: Record<string, TrainingTicketRow[]> = {
-  triage: [
-    {
-      id: 1,
-      ticket_code: "TKT-005890",
-      customer_question: "开票金额和采购单不一致，无法生成对应的进项发票，麻烦帮忙看下什么原因，比较着急",
-      ai_conclusion: "判定为 Bug_fix，进项发票金额校验逻辑与采购单税率字段存在偏差",
-      human_conclusion: "确认为 Bug_fix，采购单税率字段未同步更新导致金额校验失败",
-      ai_correct: true,
-      adjusted_result: null,
-    },
-    {
-      id: 2,
-      ticket_code: "TKT-005912",
-      customer_question: "系统提示网络异常，无法提交开票申请，刷新几次都不行",
-      ai_conclusion: "判定为 Operation，建议客户检查本地网络配置后重试",
-      human_conclusion: "实为 Bug_fix，开票接口超时阈值设置过短导致高峰期批量失败",
-      ai_correct: false,
-      adjusted_result: "调整 timeout 判定关键词权重后重新分析，判定为 Bug_fix",
-    },
-    {
-      id: 3,
-      ticket_code: "TKT-005944",
-      customer_question: "想咨询一下电子发票的开票流程，第一次用不太清楚",
-      ai_conclusion: "判定为 Operation，属于流程咨询类问题",
-      human_conclusion: "确认为 Operation，已引导客户完成开票流程",
-      ai_correct: true,
-      adjusted_result: null,
-    },
-  ],
-  escalation_classify: [
-    {
-      id: 4,
-      ticket_code: "TKT-006021",
-      customer_question: "AI 客服说按步骤操作认证就行，我照做了还是一直转圈超时，没解决",
-      ai_conclusion: "判定为 Bug_fix，AI 已给出正确操作步骤但客户执行后仍失败，怀疑认证接口异常",
-      human_conclusion: "确认为 Bug_fix，认证回调地址在新版本中失效",
-      ai_correct: true,
-      adjusted_result: null,
-    },
-    {
-      id: 5,
-      ticket_code: "TKT-006058",
-      customer_question: "AI 客服回复说系统不支持批量导入，但我们业务确实需要，想让人工看下能不能加",
-      ai_conclusion: "判定为 Demand，AI 已答复不支持且客户明确提出新增诉求",
-      human_conclusion: "确认为 Demand，已转产品评估排期",
-      ai_correct: true,
-      adjusted_result: null,
-    },
-  ],
-};
-
 function fmtInt(n: number): string {
   return `${n}%`;
-}
-
-// 无 mock 映射的 skill：按 name 稳定哈希生成兜底编号，避免和已映射编号撞车，
-// 也不随渲染顺序变化（不能用数组下标——渲染顺序不保证稳定）。
-function fallbackCode(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return `SK9${String(h % 90).padStart(2, "0")}`;
 }
 
 // ---- skill card --------------------------------------------------------
@@ -250,8 +131,8 @@ function SkillCard({
 
 // ---- ticket table -------------------------------------------------------
 
-// 点击查看完整内容的浮窗单元格：fixed 定位，宽度充足 + 正常换行，保证长文本
-// 完整展示不挤压变形；点击触发元素之外任意位置关闭。
+// 点击查看完整内容的浮窗单元格：fixed 定位，浅灰底色和白色表格区分开，宽度充足 +
+// 正常换行，保证长文本完整展示不挤压变形；点击触发元素之外任意位置关闭。
 function TextPopoverCell({ text, maxWidthPx = 220 }: { text: string; maxWidthPx?: number }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -287,7 +168,7 @@ function TextPopoverCell({ text, maxWidthPx = 220 }: { text: string; maxWidthPx?
       </div>
       {open && pos && (
         <div
-          className="fixed z-[9999] bg-white border border-hub-border rounded-lg shadow-xl p-3.5 text-[12.5px] text-hub-text leading-relaxed"
+          className="fixed z-[9999] border border-hub-border rounded-lg shadow-xl p-3.5 text-[12.5px] text-hub-text leading-relaxed"
           style={{
             top: Math.min(pos.top, window.innerHeight - 200),
             left: Math.min(Math.max(8, pos.left), window.innerWidth - 400),
@@ -295,6 +176,7 @@ function TextPopoverCell({ text, maxWidthPx = 220 }: { text: string; maxWidthPx?
             maxWidth: 380,
             whiteSpace: "normal",
             wordBreak: "break-word",
+            backgroundColor: "#f4f6f8",
           }}
         >
           {text}
@@ -382,68 +264,6 @@ function TicketTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-// ---- ticket thinking drawer ----------------------------------------------
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1 mb-4">
-      <span className="text-[11px] text-hub-textMuted font-semibold">{label}</span>
-      <div className="text-[12.5px] text-hub-text leading-relaxed">{children}</div>
-    </div>
-  );
-}
-
-function TicketThinkingDrawer({
-  row,
-  skillName,
-  onClose,
-}: {
-  row: TrainingTicketRow | null;
-  skillName: string;
-  onClose: () => void;
-}) {
-  return (
-    <Drawer open={row !== null} onClose={onClose} widthCss="min(720px, 70vw)">
-      {row && (
-        <>
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h3 className="text-[16px] font-bold m-0 font-mono">{row.ticket_code}</h3>
-              <span className="text-[11px] text-hub-textMuted">工单思考详情 · {skillName}</span>
-            </div>
-            <button onClick={onClose} className="text-hub-textFaint hover:text-hub-text text-xl leading-none">
-              ×
-            </button>
-          </div>
-
-          <Field label="客户问题">{row.customer_question}</Field>
-          <Field label="AI分析结论">{row.ai_conclusion}</Field>
-          <Field label="人工复核结论">{row.human_conclusion}</Field>
-          <Field label="AI判断正确">
-            <AiCorrectBadge correct={row.ai_correct} />
-          </Field>
-          <Field label="调整校验结果">
-            {row.adjusted_result ? (
-              <span className="text-hub-teal-deep">{row.adjusted_result}</span>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-hub-textFaint">暂无校验记录</span>
-                <button
-                  disabled
-                  title="功能开发中，待后端接入"
-                  className="text-[11px] px-2 py-1 rounded-md border border-hub-border text-hub-textFaint cursor-not-allowed"
-                >
-                  重新校验
-                </button>
-              </div>
-            )}
-          </Field>
-        </>
-      )}
-    </Drawer>
   );
 }
 
