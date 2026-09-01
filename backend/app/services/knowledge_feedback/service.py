@@ -48,6 +48,7 @@ class EscalationContext:
 
     ticket_id: int
     session_id: str | None  # ticket.source_ticket_id — replay can reuse this
+    is_ai_cs_escalation: bool  # True=真实 ai_cs escalation；False=运营单人工标记诊断
     original_question: str
     ai_answer: str
     dissatisfaction: str
@@ -61,11 +62,13 @@ class EscalationContext:
 
 def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | None:
     """Return the escalation golden triple for a ticket, or None if the ticket
-    is not an AI 客服 escalation (no reflect context to show)."""
+    is not an AI 客服 escalation and hasn't been flagged for diagnosis either
+    (no reflect context to show)."""
     ticket = db.get(Ticket, ticket_id)
     if ticket is None or ticket.deleted_at is not None:
         return None
-    if ticket.source_code != _AI_CS_SOURCE:
+    is_ai_cs = ticket.source_code == _AI_CS_SOURCE
+    if not is_ai_cs and ticket.diagnosis_flagged_at is None:
         return None
     ai = (ticket.source_payload or {}).get("ai_cs") or {}
 
@@ -78,6 +81,7 @@ def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | 
     return EscalationContext(
         ticket_id=ticket.id,
         session_id=ticket.source_ticket_id,
+        is_ai_cs_escalation=is_ai_cs,
         original_question=str(ai.get("original_question") or ticket.body or ""),
         ai_answer=str(ai.get("ai_answer") or ""),
         dissatisfaction=str(ai.get("dissatisfaction") or ""),
@@ -95,12 +99,20 @@ _VALID_DIAGNOSIS_CAUSES = frozenset({"skill", "knowledge", "retrieval"})
 
 
 class NotEscalationError(Exception):
-    """Ticket is not an ai_cs escalation — nothing to diagnose."""
+    """Ticket is not an ai_cs escalation and hasn't been flagged for diagnosis."""
+
+
+class AlreadyDiagnosedError(Exception):
+    """Ticket already has a diagnosis verdict — re-flagging would clobber it."""
 
 
 def _escalation_ticket(db: Session, ticket_id: int) -> Ticket:
     ticket = db.get(Ticket, ticket_id)
-    if ticket is None or ticket.deleted_at is not None or ticket.source_code != _AI_CS_SOURCE:
+    if (
+        ticket is None
+        or ticket.deleted_at is not None
+        or (ticket.source_code != _AI_CS_SOURCE and ticket.diagnosis_flagged_at is None)
+    ):
         raise NotEscalationError(f"ticket {ticket_id} is not an ai_cs escalation")
     return ticket
 
@@ -115,6 +127,47 @@ def _set_ai_cs_key(ticket: Ticket, key: str, value: Any) -> None:
     payload["ai_cs"] = ai
     ticket.source_payload = payload
     flag_modified(ticket, "source_payload")
+
+
+def flag_for_diagnosis(
+    db: Session,
+    ticket_id: int,
+    *,
+    question: str,
+    answer: str,
+    cited_knowledge: list[dict[str, Any]],
+    skills_used: list[str],
+    note: str,
+    operator: str,
+) -> None:
+    """处理人标记「运营单 AI 自动答复有问题」→ 借用 escalation 同一套黄金三元组
+    存储位置（source_payload['ai_cs']），使其能走既有反思诊断读写路径。
+
+    未诊断状态下允许重复调用（幂等刷新黄金三元组，不触碰 diagnosis/reflection）；
+    已有诊断结论时拒绝——防止处理人二次标记把知识运营的判定结果覆盖掉。
+    """
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None or ticket.deleted_at is not None:
+        raise ValueError(f"ticket {ticket_id} not found")
+    existing_diagnosis = ((ticket.source_payload or {}).get("ai_cs") or {}).get("diagnosis") or {}
+    if existing_diagnosis.get("cause") or existing_diagnosis.get("causes"):
+        raise AlreadyDiagnosedError(f"ticket {ticket_id} already has a diagnosis verdict")
+    _set_ai_cs_key(ticket, "original_question", question)
+    _set_ai_cs_key(ticket, "ai_answer", answer)
+    _set_ai_cs_key(ticket, "dissatisfaction", note or "")
+    _set_ai_cs_key(ticket, "cited_knowledge", cited_knowledge)
+    _set_ai_cs_key(ticket, "skills_used", skills_used)
+    ticket.diagnosis_flagged_at = datetime.now(UTC)
+    StatusHistoryRepository(db).record(
+        entity_type="ticket",
+        entity_id=ticket.id,
+        from_status=ticket.status,
+        to_status=ticket.status,  # audit event — no status transition
+        changed_by=operator,
+        reason="处理人标记：AI 自动答复有问题，送反思诊断",
+        metadata={"kind": "diagnosis_flagged"},
+    )
+    logger.info("operation_ticket_flagged_for_diagnosis", ticket_id=ticket.id, by=operator)
 
 
 def save_diagnosis(

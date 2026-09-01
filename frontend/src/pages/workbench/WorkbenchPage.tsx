@@ -1179,7 +1179,7 @@ function HumanQueue() {
         id: e.short_code,
         title: e.title ?? "（无标题）",
         sub: e.dissatisfaction
-          ? `escalation · 客户不满：「${e.dissatisfaction}」，待反思诊断`
+          ? `escalation · ${e.is_ai_cs_escalation ? "客户不满" : "内部复核"}：「${e.dissatisfaction}」，待反思诊断`
           : "escalation · 待反思诊断",
         since: e.created_at,
         link: { label: "去诊断", to: `/reflect?ticket=${e.ticket_id}` },

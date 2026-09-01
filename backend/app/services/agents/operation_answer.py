@@ -327,6 +327,13 @@ def auto_answer_operation(
             logger.warning("operation_auto_reply_author_failed", hub_issue_id=hub.id, error=str(e))
             return False
         apply_op_status(db, hub, to_status=OP_ANSWERED, handler="agent", reason="agent 答复成功")
+        # cited_knowledge/skills_used 必存（不受打分开关影响）：反思诊断（处理人
+        # 事后标记「答复有问题」）需要这两个字段还原黄金三元组，晚存就永久丢了。
+        extra: dict[str, object] = {"cited_knowledge": cited_knowledge}
+        if skill:
+            extra["skills_used"] = [skill]
+        if accuracy_extra:
+            extra.update(accuracy_extra)
         _record_decision(
             db,
             hub.id,
@@ -334,7 +341,7 @@ def auto_answer_operation(
             question=question,
             answer=answer,
             supply_note="",
-            extra=accuracy_extra,
+            extra=extra,
         )
         logger.info("operation_auto_reply_sent", hub_issue_id=hub.id)
         return True

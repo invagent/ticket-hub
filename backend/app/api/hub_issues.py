@@ -21,6 +21,7 @@ from app.db import get_session
 from app.models import AgentDecision, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import HubIssueRepository, TicketRepository
+from app.services import knowledge_feedback as kf
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
@@ -483,6 +484,96 @@ def request_supply_endpoint(
         hub_issue_id=result.hub_issue_id,
         ticket_count=len(result.ticket_ids),
         outbox_count=len(result.outbox_ids),
+    )
+
+
+# ---- 标记诊断：运营单 AI 自动答复有问题 → 送反思诊断 -----------------------------
+
+
+class FlagDiagnosisBody(BaseModel):
+    ticket_id: int
+    note: str | None = Field(default=None, max_length=2000)  # 内部复核意见，选填
+
+
+class FlagDiagnosisResponse(BaseModel):
+    ticket_id: int
+    hub_issue_id: int
+    flagged_at: datetime
+
+
+@router.post("/{hub_issue_id}/flag-diagnosis", response_model=FlagDiagnosisResponse)
+def flag_diagnosis_endpoint(
+    hub_issue_id: int,
+    body: FlagDiagnosisBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> FlagDiagnosisResponse:
+    """处理人发现运营工单的 AI 自动答复有问题 → 送进反思诊断工作台（复用 ai_cs
+    escalation 的读写路径，见 knowledge_feedback.service.flag_for_diagnosis）。
+
+    权限：处理人本人或主管/admin（_authorize_hub_handler，同 reply/request-supply）。
+    三个状态条件必须同时成立才允许标记：type=Operation、op_status=answered（非
+    closed/processing/reviewing/exception/supplementing）、reply_authored_by ==
+    'agent:ai_cs'（区分「AI 直发」vs 人工发/编辑过的答复）。
+    """
+    _authorize_hub_handler(db, hub_issue_id, user)
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+    if hub.type != "Operation":
+        raise HTTPException(status_code=409, detail="仅运营（Operation）工单支持标记诊断")
+    if hub.op_status != OP_ANSWERED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"仅「AI 已答复未关闭」的工单可标记诊断，当前状态：{hub.op_status}",
+        )
+    if hub.reply_authored_by != "agent:ai_cs":
+        raise HTTPException(
+            status_code=409, detail="当前答复非 AI 自动答复（人工回复/编辑过），无需诊断"
+        )
+    ticket = db.get(Ticket, body.ticket_id)
+    if ticket is None or ticket.deleted_at is not None or ticket.hub_issue_id != hub_issue_id:
+        raise HTTPException(status_code=404, detail="ticket not found or not linked to this hub")
+
+    dec = (
+        db.query(AgentDecision)
+        .filter(
+            AgentDecision.decision_type == "auto_reply",
+            AgentDecision.subject_type == "hub_issue",
+            AgentDecision.subject_id == hub.id,
+        )
+        .order_by(AgentDecision.id.desc())
+        .first()
+    )
+    if dec is None:
+        raise HTTPException(status_code=409, detail="找不到 AI 自动答复记录，无法标记诊断")
+    prop = dec.proposal or {}
+
+    try:
+        kf.flag_for_diagnosis(
+            db,
+            body.ticket_id,
+            question=str(prop.get("question") or ""),
+            answer=str(prop.get("answer") or ""),
+            cited_knowledge=prop.get("cited_knowledge") or [],
+            skills_used=prop.get("skills_used") or [],
+            note=body.note or "",
+            operator=f"user:{user.name}",
+        )
+    except kf.AlreadyDiagnosedError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    db.commit()
+    logger.info(
+        "hub_issue_flag_diagnosis",
+        hub_issue_id=hub_issue_id,
+        ticket_id=body.ticket_id,
+        operator_user_id=user.user_id,
+    )
+    assert ticket.diagnosis_flagged_at is not None
+    return FlagDiagnosisResponse(
+        ticket_id=body.ticket_id,
+        hub_issue_id=hub_issue_id,
+        flagged_at=ticket.diagnosis_flagged_at,
     )
 
 

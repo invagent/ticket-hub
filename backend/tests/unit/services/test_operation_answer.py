@@ -101,6 +101,41 @@ def test_auto_answer_d_sends(db_session: Session) -> None:
     assert d is not None and d.proposal["branch"] == "D"
 
 
+def test_auto_answer_d_persists_cited_knowledge_and_skills_used(db_session: Session) -> None:
+    """D 分支发送成功必存 cited_knowledge/skills_used（供处理人事后标记诊断时
+    还原黄金三元组；此前 replay 打完分就丢了，从未持久化）。"""
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    fake = _FakeClient(answer="您好，请在【发票管理】重新发起开票。")
+    fake_cited = [{"type": "faq", "title": "开票失败排查", "score": 0.88}]
+
+    def _replay(**kw: object) -> ReplayResult:
+        fake.replay_kwargs = kw
+        return ReplayResult(
+            answer=fake._answer, cited_knowledge=fake_cited, skills_used=[], trace_id="t2"
+        )
+
+    fake.replay = _replay  # type: ignore[method-assign]
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D"),
+        ),
+    ):
+        auto_answer_operation(
+            db_session, hub.id, settings=_S(ai_cs_managed_skills="customer-service")
+        )
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None
+    assert d.proposal["cited_knowledge"] == fake_cited
+    assert d.proposal["skills_used"] == ["customer-service"]
+
+
 def test_auto_answer_passes_managed_skill_to_replay(db_session: Session) -> None:
     """replay 必须带受管理 skill（AI 客服服务端要求 skill 在受管理列表内）。"""
     hub, _t = _seed_op_hub(db_session)

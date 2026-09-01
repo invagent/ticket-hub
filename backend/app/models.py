@@ -356,6 +356,7 @@ class Ticket(Base):
         Index("ix_tickets_customer", "customer_identity_id"),
         Index("ix_tickets_status", "status"),
         Index("ix_tickets_type", "type"),
+        Index("ix_tickets_diagnosis_flagged", "diagnosis_flagged_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -371,6 +372,11 @@ class Ticket(Base):
     )  # 来源工单编号（展示/搜索用，KSM= billNumber；老工单/其它来源为空，回落 source_ticket_id）
     internal_split_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     source_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # 处理人标记「AI 自动答复有问题」送反思诊断的时间（NULL=未标记）。真实
+    # ai_cs escalation 工单恒为 NULL；仅 KSM/智齿运营单被人工标记后落值。
+    diagnosis_flagged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Type / split structure
     type: Mapped[str] = mapped_column(String(16), nullable=False)

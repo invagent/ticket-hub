@@ -8,10 +8,12 @@ Flow: escalation 工单（AI 客服答错被客户投诉）→ 主管看黄金�
 """
 
 from .service import (
+    AlreadyDiagnosedError,
     EscalationContext,
     KnowledgeFeedbackDisabledError,
     NotEscalationError,
     build_client,
+    flag_for_diagnosis,
     load_escalation_context,
     record_publish_audit,
     save_diagnosis,
@@ -19,10 +21,12 @@ from .service import (
 )
 
 __all__ = [
+    "AlreadyDiagnosedError",
     "EscalationContext",
     "KnowledgeFeedbackDisabledError",
     "NotEscalationError",
     "build_client",
+    "flag_for_diagnosis",
     "load_escalation_context",
     "record_publish_audit",
     "save_diagnosis",

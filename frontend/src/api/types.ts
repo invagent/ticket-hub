@@ -1029,6 +1029,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/flag-diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flag Diagnosis Endpoint
+         * @description 处理人发现运营工单的 AI 自动答复有问题 → 送进反思诊断工作台（复用 ai_cs
+         *     escalation 的读写路径，见 knowledge_feedback.service.flag_for_diagnosis）。
+         *
+         *     权限：处理人本人或主管/admin（_authorize_hub_handler，同 reply/request-supply）。
+         *     三个状态条件必须同时成立才允许标记：type=Operation、op_status=answered（非
+         *     closed/processing/reviewing/exception/supplementing）、reply_authored_by ==
+         *     'agent:ai_cs'（区分「AI 直发」vs 人工发/编辑过的答复）。
+         */
+        post: operations["flag_diagnosis_endpoint_api_hub_issues__hub_issue_id__flag_diagnosis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/{hub_issue_id}/notify-release": {
         parameters: {
             query?: never;
@@ -1464,6 +1490,7 @@ export interface paths {
         /**
          * Confirm Linear Push
          * @description 主管/处理人确认推 Linear：手选 assignee 或回落模块负责人 → created + 推送。
+         *     权限放宽到处理人本人（_authorize_hub_handler）。
          */
         post: operations["confirm_linear_push_api_supervisor_confirm_linear_push_post"];
         delete?: never;
@@ -1646,7 +1673,8 @@ export interface paths {
         };
         /**
          * List Escalation Pending Diagnosis
-         * @description AI 客服 escalation 工单中尚未做出病因判定的（反思诊断工作台待处理队列）。
+         * @description AI 客服 escalation 工单 + 已标记诊断的运营单中尚未做出病因判定的（反思诊断
+         *     工作台待处理队列）。
          *
          *     diagnosis 存在 source_payload['ai_cs']['diagnosis']（JSON），跨库无法列过滤
          *     —— 与召回同一套「量小，Python 侧过滤」剧本（当前量级足够）。
@@ -1791,12 +1819,14 @@ export interface paths {
         };
         /**
          * List Pending Classification
-         * @description 全类型 status=pending_review 待主管确认分类队列（闸门①）。
+         * @description 全类型 status=pending_review 待确认分类队列（闸门①）。
          *
          *     闸门①开启后 Operation/Bug_fix/Demand/Internal_task 毕业后一律先停
          *     pending_review，故此队列不再只挑研发类。注意 pending_review 与既有
          *     status='pending'（Linear 推送失败待人工，pending-hub-issues 端点消费）
          *     是不同队列、不同状态值。
+         *
+         *     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
          */
         get: operations["list_pending_classification_api_supervisor_pending_classification_get"];
         put?: never;
@@ -1838,6 +1868,8 @@ export interface paths {
          * List Pending Linear Review
          * @description 闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
          *     负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+         *
+         *     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
          */
         get: operations["list_pending_linear_review_api_supervisor_pending_linear_review_get"];
         put?: never;
@@ -1867,6 +1899,27 @@ export interface paths {
          *     - Internal_task/Complaint → created，不推 Linear、不走答复。
          */
         post: operations["reclassify_api_supervisor_reclassify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supervisor/reflect-tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reflect Tickets
+         * @description 反思诊断工作台左侧工单浏览列表：ai_cs escalation ∪ 已标记诊断的运营工单
+         *     （不按 diagnosis 是否完成过滤——供回看已诊断的工单）。
+         */
+        get: operations["list_reflect_tickets_api_supervisor_reflect_tickets_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1960,6 +2013,8 @@ export interface paths {
         /**
          * List Reviewing Answers
          * @description Operation hubs awaiting human review of a low-accuracy auto-reply draft.
+         *
+         *     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
          */
         get: operations["list_reviewing_answers_api_supervisor_reviewing_answers_get"];
         put?: never;
@@ -2921,6 +2976,11 @@ export interface components {
              * @default
              */
             dissatisfaction: string;
+            /**
+             * Is Ai Cs Escalation
+             * @default true
+             */
+            is_ai_cs_escalation: boolean;
             /** Is Escalation */
             is_escalation: boolean;
             /**
@@ -2948,6 +3008,8 @@ export interface components {
             created_at: string;
             /** Dissatisfaction */
             dissatisfaction: string | null;
+            /** Is Ai Cs Escalation */
+            is_ai_cs_escalation: boolean;
             /** Short Code */
             short_code: string;
             /** Ticket Id */
@@ -3102,6 +3164,25 @@ export interface components {
             type: {
                 [key: string]: number;
             };
+        };
+        /** FlagDiagnosisBody */
+        FlagDiagnosisBody: {
+            /** Note */
+            note?: string | null;
+            /** Ticket Id */
+            ticket_id: number;
+        };
+        /** FlagDiagnosisResponse */
+        FlagDiagnosisResponse: {
+            /**
+             * Flagged At
+             * Format: date-time
+             */
+            flagged_at: string;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Ticket Id */
+            ticket_id: number;
         };
         /** FunnelOut */
         FunnelOut: {
@@ -4014,6 +4095,29 @@ export interface components {
             /** Ticket Id */
             ticket_id: number;
         };
+        /** ReflectTicketItem */
+        ReflectTicketItem: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Short Code */
+            short_code: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ReflectTicketsResponse */
+        ReflectTicketsResponse: {
+            /** Items */
+            items: components["schemas"]["ReflectTicketItem"][];
+            /** Total */
+            total: number;
+        };
         /** RelinkBody */
         RelinkBody: {
             /** New Hub Issue Id */
@@ -4632,6 +4736,8 @@ export interface components {
             customer_identity_id: number | null;
             /** Customer Replied At */
             customer_replied_at: string | null;
+            /** Diagnosis Flagged At */
+            diagnosis_flagged_at?: string | null;
             /** Expected Resolved At */
             expected_resolved_at: string | null;
             /** Feature */
@@ -7263,6 +7369,41 @@ export interface operations {
             };
         };
     };
+    flag_diagnosis_endpoint_api_hub_issues__hub_issue_id__flag_diagnosis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagDiagnosisBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagDiagnosisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     notify_release_endpoint_api_hub_issues__hub_issue_id__notify_release_post: {
         parameters: {
             query?: never;
@@ -8485,6 +8626,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClassificationActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reflect_tickets_api_supervisor_reflect_tickets_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReflectTicketsResponse"];
                 };
             };
             /** @description Validation Error */

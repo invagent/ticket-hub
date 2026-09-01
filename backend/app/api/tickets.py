@@ -133,6 +133,8 @@ class TicketDetail(TicketSummary):
     predicted_module: str | None = None
     predicted_module_confidence: float | None = None
     module_classified_at: datetime | None = None
+    # 处理人标记「AI 自动答复有问题」送反思诊断的时间（NULL=未标记）
+    diagnosis_flagged_at: datetime | None = None
     # enriched display fields (not on ORM, set manually in get_ticket)
     assigned_user_name: str | None = None
     customer_display_name: str | None = None
