@@ -1009,7 +1009,10 @@ def list_reflect_tickets(
     return ReflectTicketsResponse(
         items=[
             ReflectTicketItem(
-                id=t.id, short_code=t.short_code, title=t.title, status=t.status,
+                id=t.id,
+                short_code=t.short_code,
+                title=t.title,
+                status=t.status,
                 created_at=t.created_at,
             )
             for t in rows

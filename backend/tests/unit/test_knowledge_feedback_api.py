@@ -600,3 +600,122 @@ def test_escalation_queue_operation_only_filter(app_client: TestClient, world: S
     ids = {it["ticket_id"] for it in r.json()["items"]}
     assert 720 in ids and 723 in ids
     assert 721 not in ids and 722 not in ids
+
+
+# ---- 运营单标记诊断（非 ai_cs 来源，diagnosis_flagged_at 放行）------------------
+
+
+def _mk_flagged_ksm_ticket(
+    world: Session,
+    ticket_id: int,
+    *,
+    flagged: bool = True,
+    predicted_type: str | None = "Operation",
+) -> None:
+    if not world.query(Source).filter_by(code="ksm").count():
+        world.add(Source(code="ksm", name="KSM"))
+    from datetime import UTC, datetime
+
+    world.add(
+        Ticket(
+            id=ticket_id,
+            short_code=f"TKT-{ticket_id:06d}",
+            source_code="ksm",
+            source_ticket_id=f"bill-{ticket_id}",
+            type="Raw",
+            status="received",
+            title="开票失败",
+            predicted_type=predicted_type,
+            diagnosis_flagged_at=datetime.now(UTC) if flagged else None,
+            source_payload={
+                "ai_cs": {
+                    "original_question": "开票失败",
+                    "ai_answer": "请重试",
+                    "dissatisfaction": "重试无效",
+                    "cited_knowledge": [],
+                }
+            }
+            if flagged
+            else None,
+        )
+    )
+    world.commit()
+
+
+def test_escalation_context_for_flagged_operation_ticket(
+    app_client: TestClient, world: Session
+) -> None:
+    """KSM 来源 + diagnosis_flagged_at 已设置 → escalation-context 认得，
+    is_ai_cs_escalation=False（区分真实客户投诉 vs 内部复核）。"""
+    _mk_flagged_ksm_ticket(world, 800)
+    r = app_client.get("/api/supervisor/tickets/800/escalation-context", headers=_bearer(2))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["is_escalation"] is True
+    assert body["is_ai_cs_escalation"] is False
+    assert body["dissatisfaction"] == "重试无效"
+
+
+def test_escalation_context_ai_cs_still_is_ai_cs_escalation_true(
+    app_client: TestClient, world: Session
+) -> None:
+    """回归：真实 ai_cs escalation 的 is_ai_cs_escalation 仍为 True，行为不受影响。"""
+    _mk_escalation(world, 801)
+    r = app_client.get("/api/supervisor/tickets/801/escalation-context", headers=_bearer(2))
+    assert r.status_code == 200
+    assert r.json()["is_ai_cs_escalation"] is True
+
+
+def test_diagnosis_write_works_on_flagged_operation_ticket(
+    app_client: TestClient, world: Session
+) -> None:
+    """PUT diagnosis 对已标记诊断的运营单同样能写（_escalation_ticket 放宽生效）。"""
+    _mk_flagged_ksm_ticket(world, 802)
+    r = app_client.put(
+        "/api/supervisor/tickets/802/diagnosis",
+        headers=_bearer(2),
+        json={"cause": "knowledge"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["diagnosis"]["cause"] == "knowledge"
+
+
+def test_escalation_queue_includes_flagged_operation_ticket(
+    app_client: TestClient, world: Session
+) -> None:
+    _mk_flagged_ksm_ticket(world, 803)
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 803 in ids
+    row = next(it for it in r.json()["items"] if it["ticket_id"] == 803)
+    assert row["is_ai_cs_escalation"] is False
+
+    # 已诊断 → 排除出队列
+    app_client.put(
+        "/api/supervisor/tickets/803/diagnosis", headers=_bearer(2), json={"cause": "skill"}
+    )
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 803 not in ids
+
+
+def test_escalation_queue_still_excludes_unflagged_operation_ticket(
+    app_client: TestClient, world: Session
+) -> None:
+    """回归：source_code='ksm' 但没被标记诊断 → 不在队列里。"""
+    _mk_flagged_ksm_ticket(world, 804, flagged=False)
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 804 not in ids
+
+
+def test_reflect_tickets_endpoint(app_client: TestClient, world: Session) -> None:
+    """左侧工单浏览列表：ai_cs escalation ∪ 已标记诊断的运营工单，未标记的不出现。"""
+    _mk_escalation(world, 810)
+    _mk_flagged_ksm_ticket(world, 811, flagged=True)
+    _mk_flagged_ksm_ticket(world, 812, flagged=False)
+    r = app_client.get("/api/supervisor/reflect-tickets", headers=_bearer(2))
+    assert r.status_code == 200, r.text
+    ids = {it["id"] for it in r.json()["items"]}
+    assert 810 in ids and 811 in ids
+    assert 812 not in ids
