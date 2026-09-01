@@ -1,7 +1,8 @@
 """知识运营角色测试（ADR-0016 P5 权限双层）.
 
-knowledge_op：反思工作台端点组放行；主管修正权（split/dedup/complaint 队列等）
-与内部编排 skill（/api/admin/skills）一律 403。supervisor/admin 不受影响。
+knowledge_op：反思工作台端点组放行；主管修正权（split/dedup/complaint 队列等）一律 403。
+内部编排 skill（/api/admin/skills）读接口放行（反思诊断训练页面用），写接口仍 403。
+supervisor/admin 不受影响。
 """
 
 from __future__ import annotations
@@ -70,9 +71,15 @@ def test_kop_blocked_from_supervisor_queues(
     assert r.status_code == 403, path
 
 
-def test_kop_blocked_from_internal_skills(app_client: TestClient, world: Session) -> None:
-    """内部编排 skill 保持 require_admin——知识运营够不到（决策 7 核心边界）。"""
+def test_kop_can_read_internal_skills(app_client: TestClient, world: Session) -> None:
+    """内部编排 skill 的读接口放行给 knowledge_op（反思诊断训练页面用）；
+    写接口（draft/promote/rollback/import 等）仍 require_admin，知识运营够不到。"""
     r = app_client.get("/api/admin/skills", headers=_bearer(3))
+    assert r.status_code == 200
+
+
+def test_kop_blocked_from_internal_skills_write(app_client: TestClient, world: Session) -> None:
+    r = app_client.post("/api/admin/skills/import-from-files", headers=_bearer(3))
     assert r.status_code == 403
 
 

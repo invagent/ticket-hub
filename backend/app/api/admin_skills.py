@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps.auth import AuthedUser, require_admin
+from app.api.deps.auth import AuthedUser, require_admin, require_knowledge_op
 from app.core.logging import get_logger
 from app.db import get_session
 from app.services.skills import prompt_store as ps
@@ -116,7 +116,7 @@ class ImportResponse(BaseModel):
 
 @router.get("", response_model=list[SkillSummary])
 def list_skills(
-    _admin: AuthedUser = Depends(require_admin),
+    _user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> list[SkillSummary]:
     return [
@@ -136,7 +136,7 @@ def list_skills(
 @router.get("/{name}", response_model=SkillDetail)
 def get_skill(
     name: str,
-    _admin: AuthedUser = Depends(require_admin),
+    _user: AuthedUser = Depends(require_knowledge_op),
     db: Session = Depends(get_session),
 ) -> SkillDetail:
     row = ps.get_prompt_row(db, name)
