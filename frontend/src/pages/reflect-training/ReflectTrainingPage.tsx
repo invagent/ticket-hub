@@ -12,7 +12,7 @@
  *     字段结构已按最终需求定稿，后端补齐后直接替换数据源即可，交互不用改。
  *   - 目标准确率的双击编辑目前只存在本地 state，不落库。
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { paths } from "@/api/types";
@@ -183,19 +183,24 @@ function SkillCard({
   return (
     <div
       onClick={onSelect}
-      className={`cursor-pointer rounded-[10px] border p-3 mb-2 transition-colors ${
+      className={`cursor-pointer rounded-[10px] border p-3 mb-2 transition-all ${
         selected
-          ? "bg-hub-teal-light border-hub-teal"
+          ? "bg-hub-teal-light border-hub-teal ring-2 ring-hub-teal/30 shadow-md"
           : "bg-white border-hub-border hover:bg-hub-page/60"
       }`}
     >
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-mono text-hub-textMuted">{meta.code}</span>
+        <span className={`text-[11px] font-mono ${selected ? "text-hub-teal-deep font-bold" : "text-hub-textMuted"}`}>
+          {meta.code}
+        </span>
         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-hub-neutral-light border border-hub-border text-hub-textSecondary whitespace-nowrap">
           {meta.source}
         </span>
       </div>
-      <div className="text-[13px] font-semibold text-hub-text mb-2.5 truncate" title={skill.name}>
+      <div
+        className={`text-[13px] mb-2.5 truncate ${selected ? "font-bold text-hub-teal-deep" : "font-semibold text-hub-text"}`}
+        title={skill.name}
+      >
         {skill.description || skill.name}
       </div>
       <div className="flex items-center justify-between text-[11.5px] mb-1">
@@ -244,6 +249,60 @@ function SkillCard({
 }
 
 // ---- ticket table -------------------------------------------------------
+
+// 点击查看完整内容的浮窗单元格：fixed 定位，宽度充足 + 正常换行，保证长文本
+// 完整展示不挤压变形；点击触发元素之外任意位置关闭。
+function TextPopoverCell({ text, maxWidthPx = 220 }: { text: string; maxWidthPx?: number }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const handleClick = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: r.left });
+    }
+    setOpen((v) => !v);
+  };
+
+  return (
+    <div ref={wrapRef}>
+      <div
+        ref={triggerRef}
+        onClick={handleClick}
+        className="truncate cursor-pointer hover:text-hub-teal-deep hover:underline decoration-dotted"
+        style={{ maxWidth: maxWidthPx }}
+      >
+        {text}
+      </div>
+      {open && pos && (
+        <div
+          className="fixed z-[9999] bg-white border border-hub-border rounded-lg shadow-xl p-3.5 text-[12.5px] text-hub-text leading-relaxed"
+          style={{
+            top: Math.min(pos.top, window.innerHeight - 200),
+            left: Math.min(Math.max(8, pos.left), window.innerWidth - 400),
+            minWidth: 260,
+            maxWidth: 380,
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AiCorrectBadge({ correct }: { correct: boolean }) {
   return (
@@ -298,19 +357,13 @@ function TicketTable({
                 </button>
               </td>
               <td className="px-3 py-2">
-                <div className="truncate max-w-[220px]" title={r.customer_question}>
-                  {r.customer_question}
-                </div>
+                <TextPopoverCell text={r.customer_question} />
               </td>
               <td className="px-3 py-2">
-                <div className="truncate max-w-[220px]" title={r.ai_conclusion}>
-                  {r.ai_conclusion}
-                </div>
+                <TextPopoverCell text={r.ai_conclusion} />
               </td>
               <td className="px-3 py-2">
-                <div className="truncate max-w-[220px]" title={r.human_conclusion}>
-                  {r.human_conclusion}
-                </div>
+                <TextPopoverCell text={r.human_conclusion} />
               </td>
               <td className="px-3 py-2 text-center">
                 <AiCorrectBadge correct={r.ai_correct} />
