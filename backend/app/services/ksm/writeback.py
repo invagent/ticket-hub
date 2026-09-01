@@ -262,7 +262,7 @@ class KSMWritebackSender:
             return
 
         try:
-            self._execute(action, row, fields)
+            self._execute(action, row, fields, persisted_node_id=ticket.ksm_current_node_id)
         except KSMError as e:
             self._record_failure(row, report, str(e))
             return
@@ -394,7 +394,9 @@ class KSMWritebackSender:
                 return "close"
         return None
 
-    def _execute(self, action: str, row: SyncOutbox, fields: _KSMFields) -> None:
+    def _execute(
+        self, action: str, row: SyncOutbox, fields: _KSMFields, *, persisted_node_id: str | None = None
+    ) -> None:
         if action == "lock":
             self._lock(fields)
             return
@@ -407,6 +409,10 @@ class KSMWritebackSender:
         # all remaining actions need a fresh node → lock then refresh
         self._lock(fields)
         fresh = self._refresh(fields)
+        # notice 24h 过期时 _refresh 回落入库快照节点，KSM 报「已流转至其他节点」。
+        # takeover 成功后 ksm_current_node_id 持久化了「协同处理」节点，用它兜底。
+        if not fresh.node_id and persisted_node_id:
+            fresh = replace(fresh, node_id=persisted_node_id)
         if action == "reply":
             self._handle_close(fresh, self._reply_text(row))
         elif action == "release_note":
