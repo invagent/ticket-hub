@@ -409,9 +409,11 @@ class KSMWritebackSender:
         # all remaining actions need a fresh node → lock then refresh
         self._lock(fields)
         fresh = self._refresh(fields)
-        # notice 24h 过期时 _refresh 回落入库快照节点，KSM 报「已流转至其他节点」。
-        # takeover 成功后 ksm_current_node_id 持久化了「协同处理」节点，用它兜底。
-        if not fresh.node_id and persisted_node_id:
+        # notice 24h 过期时 _refresh 回落入库快照节点（比 takeover 节点旧），
+        # KSM 报「已流转至其他节点」。refresh 回落的标志是 node_id 与入库快照相同。
+        # ksm_current_node_id 是 takeover handle 后持久化的「协同处理」节点，比入库
+        # 快照新——refresh 失败时用它替换，refresh 成功时保留 refresh 结果不覆盖。
+        if persisted_node_id and fresh.node_id == fields.node_id:
             fresh = replace(fresh, node_id=persisted_node_id)
         if action == "reply":
             self._handle_close(fresh, self._reply_text(row))

@@ -794,3 +794,43 @@ def test_reply_uses_persisted_node_when_notice_expired(world: Session) -> None:
     assert report.sent == 1
     assert len(client.handles) == 1
     assert client.handles[0].node_id == "NODE-PERSISTED"
+
+
+def test_reply_persisted_node_overrides_stale_snapshot_when_notice_expired(world: Session) -> None:
+    # 真实场景：入库快照有 node_id（NODE-OLD），notice 过期，refresh 回落到 NODE-OLD；
+    # ksm_current_node_id=NODE-PERSISTED（takeover 后更新的节点）应覆盖 NODE-OLD。
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        ksm_current_node_id="NODE-PERSISTED",
+        ksm_takeover_status="handled",
+        # source_payload 保持默认，_SUBSCRIBE.node.id = NODE-OLD
+    )
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "已处理"})
+    # no notice_store → refresh 失败 → fresh.node_id == fields.node_id == NODE-OLD
+    # → 兜底触发，用 NODE-PERSISTED
+    client = FakeKSMClient()
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 1
+    assert client.handles[0].node_id == "NODE-PERSISTED"
+
+
+def test_reply_does_not_override_node_when_refresh_succeeds(world: Session) -> None:
+    # notice 有效，refresh 成功拿到新节点 NODE-NEW；
+    # ksm_current_node_id 不应覆盖 refresh 结果。
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        ksm_current_node_id="NODE-PERSISTED",
+        ksm_takeover_status="handled",
+    )
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "已处理"})
+    fresh_detail = {**_SUBSCRIBE, "node": {"id": "NODE-NEW", "name": "协同处理"}}
+    client = FakeKSMClient(detail=fresh_detail)
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    report = drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+    assert report.sent == 1
+    assert client.handles[0].node_id == "NODE-NEW"
