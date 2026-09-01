@@ -10,14 +10,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getByPath, patchByPath, postByPath } from "@/api/client";
-import { currentUserId, isSupervisor } from "@/api/auth";
+import { currentRole, currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter, hubErrMsg } from "@/components/hubActions";
 import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
-import { KnowledgeReflectPanel } from "./KnowledgeReflectPanel";
+import { ReflectDrawer } from "./ReflectDrawer";
 import { ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
@@ -298,6 +298,37 @@ export function TicketDetailPage() {
     },
     onError: (e) => setReturnErr(hubErrMsg(e)),
   });
+  // 标记诊断：运营单 AI 自动答复有问题 → 送反思诊断工作台（处理人本人/主管均可点）
+  const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [diagnosisErr, setDiagnosisErr] = useState<string | null>(null);
+  const flagDiagnosis = useMutation({
+    mutationFn: (note: string) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/flag-diagnosis",
+        { hub_issue_id: hubId ?? 0 },
+        { ticket_id: id, note: note || undefined },
+      ),
+    onSuccess: () => {
+      setDiagnosisErr(null);
+      setDiagnosisOpen(false);
+      setConfirmNotice("已标记，等待知识运营复核诊断");
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+    },
+    onError: (e) => setDiagnosisErr(hubErrMsg(e)),
+  });
+  // 反思诊断抽屉：仅 knowledge_op/supervisor/admin + 该工单确实有反思上下文
+  // （真实 ai_cs escalation 或已被标记诊断）才显示按钮。queryKey 与 ReflectDrawer
+  // 内部同名查询共享缓存，不会重复打两次请求。
+  const [reflectOpen, setReflectOpen] = useState(false);
+  const canSeeReflect =
+    currentRole() === "knowledge_op" || currentRole() === "supervisor" || currentRole() === "admin";
+  const escalationCtx = useQuery({
+    queryKey: ["escalation-context", id],
+    queryFn: () =>
+      getByPath("/api/supervisor/tickets/{ticket_id}/escalation-context", { ticket_id: id }),
+    enabled: !Number.isNaN(id) && canSeeReflect,
+  });
+  const showReflectBtn = canSeeReflect && !!escalationCtx.data?.is_escalation;
 
   const d = detail.data;
   // 选中节点是否为当前节点（idx0=倒序后最上）；历史节点无逐节点记录，右侧三块显示「无数据」
@@ -323,6 +354,17 @@ export function TicketDetailPage() {
   // 待审核(reviewing)：AI 草稿答复存 hub.reply_content（未级联到 ticket），
   // 供审核人在处理说明框查看/编辑后点答复正式发出。
   const draftReply = opStatus === "reviewing" ? (hub.data?.reply_content ?? "") : "";
+  // 标记诊断按钮可见性：运营类 + 已毕业确认 + AI 已答复未关闭 + 答复确实是 AI 自动发的
+  // （不是主管/处理人人工发的或编辑过的）；处理人本人或主管可点。
+  const aiAutoReplied = hub.data?.reply_authored_by === "agent:ai_cs";
+  const alreadyFlaggedDiagnosis = !!d?.diagnosis_flagged_at;
+  const canFlagDiagnosis =
+    isOperation &&
+    classified &&
+    opStatus === "answered" &&
+    aiAutoReplied &&
+    (isSupervisor() ||
+      (d?.handler_user_id != null && currentUserId() === d.handler_user_id));
   // 改判类型默认取 AI 预测类型（在 HUB_TYPES 内才采纳）
   useEffect(() => {
     if (d?.predicted_type && HUB_TYPES.includes(d.predicted_type as (typeof HUB_TYPES)[number])) {
@@ -363,6 +405,16 @@ export function TicketDetailPage() {
                   ticketStatusLabel={ticketStatusLabel}
                 />
                 <RemainingTag hours={d.remaining_hours} />
+                {showReflectBtn && (
+                  <button
+                    type="button"
+                    onClick={() => setReflectOpen(true)}
+                    title="查看反思诊断详情（黄金三元组/病因判定/skill修订/发布）"
+                    className="px-2.5 py-1 text-[11.5px] font-semibold rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border hover:brightness-95"
+                  >
+                    🧠 反思
+                  </button>
+                )}
               </div>
             </header>
             {/* 返回列表（确认按钮已去除；转派移至处理区「提交答复」左侧） */}
@@ -654,6 +706,22 @@ export function TicketDetailPage() {
                         {returnKsm.isPending ? "退回中…" : "退回 KSM"}
                       </button>
                     )}
+                  {/* 诊断：运营单 AI 自动答复有问题 → 送反思诊断（处理人本人/主管可点） */}
+                  {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
+                    <button
+                      type="button"
+                      onClick={() => setDiagnosisOpen(true)}
+                      title="AI 自动答复有问题？标记后送知识运营复核诊断"
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95"
+                    >
+                      诊断
+                    </button>
+                  )}
+                  {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
+                    <span className="text-[10.5px] text-hub-textFaint">
+                      已标记诊断，等待知识运营复核
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={reply.isPending || suggestion === "split" || opDone}
@@ -783,8 +851,8 @@ export function TicketDetailPage() {
             </div>
           </Card>
 
-          {/* Phase 1 知识反哺：仅 ai_cs escalation 工单 + 主管可见（组件内部自判） */}
-          <KnowledgeReflectPanel ticketId={id} />
+          {/* 反思诊断详情通过顶部「🧠 反思」按钮 → 右侧抽屉展示（ReflectDrawer），
+              不再内嵌在页面里常驻。 */}
 
           {/* 6. 工单操作记录：每次操作的时间/人/内容/状态变更/结果，取自 status_history（倒序，最新在上） */}
           <Card title="工单操作记录">
@@ -877,8 +945,20 @@ export function TicketDetailPage() {
               onClose={() => setAddSubOpen(false)}
             />
           )}
+
+          {/* 标记诊断弹窗：内部复核意见选填，不做必填校验 */}
+          {diagnosisOpen && (
+            <DiagnosisFlagModal
+              pending={flagDiagnosis.isPending}
+              error={diagnosisErr}
+              onSubmit={(note) => flagDiagnosis.mutate(note)}
+              onClose={() => setDiagnosisOpen(false)}
+            />
+          )}
         </div>
       )}
+      {/* 反思诊断抽屉：Drawer 本身是 fixed 定位，渲染位置不影响页面布局 */}
+      <ReflectDrawer ticketId={id} open={reflectOpen} onClose={() => setReflectOpen(false)} />
     </div>
   );
 }
@@ -1718,6 +1798,59 @@ function TransferModal({
           className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-hub-teal text-white disabled:opacity-50 hover:brightness-95"
         >
           {pending ? "转派中…" : "确认"}
+        </button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+// ---- 标记诊断弹窗：内部复核意见（选填，不强制填写）----
+function DiagnosisFlagModal({
+  pending,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  pending: boolean;
+  error: string | null;
+  onSubmit: (note: string) => void;
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <Modal onClose={onClose}>
+      <ModalHeader title="标记诊断" onClose={onClose} />
+      <div className="px-5 py-4 flex flex-col gap-3">
+        <div className="text-[12px] text-hub-textSecondary">
+          确认后本工单会送进反思诊断工作台，供知识运营复核并优化 AI 客服的 skill/知识库。
+        </div>
+        <div>
+          <div className="text-[11.5px] font-semibold text-hub-textSecondary mb-1">
+            内部复核意见（选填）
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            placeholder="AI 答复哪里有问题？（选填，有助于知识运营诊断）"
+            className="w-full px-3 py-2 text-xs border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal resize-y"
+          />
+        </div>
+        {error && <div className="text-[11.5px] text-hub-rose">{error}</div>}
+      </div>
+      <ModalFooter>
+        <button
+          onClick={onClose}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-white text-hub-textSecondary border border-hub-border"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => onSubmit(note.trim())}
+          disabled={pending}
+          className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-hub-purple text-white disabled:opacity-50 hover:brightness-95"
+        >
+          {pending ? "提交中…" : "确认标记"}
         </button>
       </ModalFooter>
     </Modal>
