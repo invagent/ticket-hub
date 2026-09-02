@@ -108,17 +108,19 @@ def test_consume_wraps_after_dev_owners_shrink(db_session: Session) -> None:
     db_session.commit()
     got = consume_module_owner(db_session, "发票云", "开票")
     assert got is not None and got.id == u1.id
+    db_session.flush()  # session autoflush=False：refresh() 前必须显式 flush 才能看到刚写的游标
     db_session.refresh(mod)
     assert mod.dev_owner_rotation_cursor == 0  # 取模折算，不抛异常
 
 
 def test_consume_inactive_owner_returns_none_but_cursor_advances(db_session: Session) -> None:
-    u_inactive = _seed_user(db_session, "杨吉", active=False)
+    _seed_user(db_session, "杨吉", active=False)
     u_active = _seed_user(db_session, "汪意")
     mod = _seed_module(db_session, mod="开票", dev_owners="杨吉、汪意")
     db_session.commit()
     got1 = consume_module_owner(db_session, "发票云", "开票")
     assert got1 is None  # 轮询位对应的人 inactive，不做二次查找跳过
+    db_session.flush()  # session autoflush=False：refresh() 前必须显式 flush 才能看到刚写的游标
     db_session.refresh(mod)
     assert mod.dev_owner_rotation_cursor == 1  # 但游标仍前进
     got2 = consume_module_owner(db_session, "发票云", "开票")

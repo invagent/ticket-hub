@@ -129,13 +129,14 @@ def default_owner_from_ticket_handler(db: Session, hub: HubIssue) -> int | None:
     handler_user_id，同 hub 下该字段值一致，取第一条即可）。查不到返回 None。"""
     from app.models import Ticket
 
-    return (
+    handler_user_id: int | None = (
         db.query(Ticket.handler_user_id)
         .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
         .filter(Ticket.handler_user_id.is_not(None))
         .limit(1)
         .scalar()
     )
+    return handler_user_id
 
 
 def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> str:

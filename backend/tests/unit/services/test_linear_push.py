@@ -250,6 +250,28 @@ def test_push_failure_marks_pending(world: Session) -> None:
     assert "Linear 推送失败" in (sh.reason or "")
 
 
+def test_push_failure_still_consumes_rotation_cursor(world: Session) -> None:
+    """已知行为（非 bug）：consume_module_owner 在 push 真正调用 Linear API 之前
+    执行——若随后 create_issue 失败转 pending，游标依旧前进（同一事务一并
+    commit）。与「游标始终前进，即使这一位当前不可用」的既定设计一致（见
+    module_owner.py consume_module_owner 文档），本测试锁定这个行为，防止未来
+    改动无声改变轮询语义。重试时会转给下一位，而非重试同一位。"""
+    world.add(User(id=60, feishu_uid="ou_a60", name="研发甲", linear_user_id="lin-u-60"))
+    world.add(User(id=61, feishu_uid="ou_a61", name="研发乙", linear_user_id="lin-u-61"))
+    world.add(ProductLine(code="fpy3", name="fpy3"))
+    mod = Module(product_line_code="fpy3", name="退票模块", dev_owners="研发甲、研发乙")
+    world.add(mod)
+    world.commit()
+    hub = _make_hub(world, 53, product_line_code="fpy3", module="退票模块")
+    fake = _FakeLinearClient(raises=LinearNetworkError("timeout"))
+    assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
+    world.refresh(hub)
+    assert hub.status == "pending"
+    assert hub.owner_user_id == 60  # 已选定责任人（哪怕推送随后失败）
+    world.refresh(mod)
+    assert mod.dev_owner_rotation_cursor == 1  # 游标已前进，重推会轮到研发乙
+
+
 def test_unmatched_individual_assignee_marks_pending_without_push(world: Session) -> None:
     """个人处理人（有邮箱）在 Linear 查无此人 → 不推送，置 pending 待人工。"""
     world.add(
