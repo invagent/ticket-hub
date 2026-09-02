@@ -224,7 +224,10 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
 # ---- Task 6: 关单回写衔接 op_status=closed -----------------------------------
 
 
-def test_reply_close_advances_op_status_to_closed_when_answered(world: Session) -> None:
+def test_reply_close_does_not_advance_op_status_to_closed(world: Session) -> None:
+    """答复回写 KSM 成功 ≠ 客户确认解决——op_status 停在 answered，不在此处
+    被推进到 closed。唯一能推进到 closed 的路径是 T+7 beat
+    （close_overdue_answered），答复回写成功那一刻不应抢跑。"""
     hub = _hub(world, op_status="answered", op_handler="agent:auto_answer")
     t = _ticket(world, hub)
     _outbox(world, t, hub, kind="reply", payload={"reply_content": "请按步骤操作"})
@@ -235,14 +238,14 @@ def test_reply_close_advances_op_status_to_closed_when_answered(world: Session) 
     drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
 
     world.refresh(hub)
+    # hub.status（底层机制）仍然推进到 resolved——只有 op_status（业务层）不动
     assert hub.status == "resolved"
-    assert hub.op_status == "closed"
-    # handler 保持原值，关单不改处理人
+    assert hub.op_status == "answered"
     assert hub.op_handler == "agent:auto_answer"
     history = StatusHistoryRepository(world).find_for_entity(
         entity_type="hub_issue", entity_id=hub.id
     )
-    assert any(h.to_status == "closed" and h.from_status == "answered" for h in history)
+    assert not any(h.to_status == "closed" for h in history)
 
 
 def test_close_local_ignores_non_operation_hub_op_status(world: Session) -> None:
@@ -254,35 +257,6 @@ def test_close_local_ignores_non_operation_hub_op_status(world: Session) -> None
     world.refresh(hub)
     assert hub.status == "resolved"
     assert hub.op_status is None
-
-
-def test_close_local_does_not_touch_op_status_when_not_answered(world: Session) -> None:
-    hub = _hub(world, op_status="processing", op_handler="agent:auto_answer")
-    t = _ticket(world, hub)
-    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
-    client = FakeKSMClient(detail=_SUBSCRIBE)
-    drain_ksm_outbox(world, client=client, settings=_settings())
-    world.refresh(hub)
-    assert hub.status == "resolved"
-    # 尚未 answered（比如客户还没到自动答复阶段）→ 关单回写不越权推进 op_status
-    assert hub.op_status == "processing"
-
-
-def test_close_local_op_status_closed_is_idempotent(world: Session) -> None:
-    """op_status 已是 closed（比如 T+7 beat 先到）→ 关单回写不重复写 history。"""
-    hub = _hub(world, op_status="closed", op_handler="主管")
-    t = _ticket(world, hub)
-    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
-    client = FakeKSMClient(detail=_SUBSCRIBE)
-    drain_ksm_outbox(world, client=client, settings=_settings())
-    world.refresh(hub)
-    assert hub.op_status == "closed"
-    assert hub.op_handler == "主管"
-    history = StatusHistoryRepository(world).find_for_entity(
-        entity_type="hub_issue", entity_id=hub.id
-    )
-    op_status_entries = [h for h in history if h.to_status == "closed"]
-    assert len(op_status_entries) == 0  # apply_op_status no-op：状态和处理人都没变
 
 
 # ---- progress_note → lock + handle(is_deal=False) 不关单（ADR-0016 P4）------

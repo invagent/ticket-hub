@@ -57,7 +57,7 @@ from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
-from app.services.hub_issues.op_status import OP_ANSWERED, OP_CLOSED, apply_op_status
+from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
 from app.services.ksm.notice_store import NoticeStoreLike
 
 logger = get_logger(__name__)
@@ -321,17 +321,12 @@ class KSMWritebackSender:
                 changed_by=changed_by,
                 reason=f"Operation 答复关单回写成功（outbox={row.id}）",
             )
-        # op_status 业务层（与上面 hub.status 底层机制并存，互不替代）：
-        # 仅 Operation 且已在 answered 才顺带推进到 closed——T+7 beat 和这里
-        # 谁先到都行（apply_op_status 幂等）；处理人保持原值，关单不改处理人。
-        if hub is not None and hub.type == "Operation" and hub.op_status == OP_ANSWERED:
-            apply_op_status(
-                self._db,
-                hub,
-                to_status=OP_CLOSED,
-                handler=hub.op_handler or "agent",
-                reason=f"KSM 答复关单回写成功（outbox={row.id}）",
-            )
+        # op_status 业务层不在此处推进到 closed（此前的实现在这里直接把
+        # answered→closed，等于「答复回写 KSM 成功」= 关单，导致 T+7 beat
+        # （close_overdue_answered）从未真正生效——KSM 的 handleKsmOrder(isDeal=2)
+        # 只是 KSM 侧唯一的流转推进机制，不代表客户已确认解决。op_status 停在
+        # answered，唯一能推进到 closed 的路径是 T+7 beat：答复后 N 天内没有
+        # 客户重推同一单驳回（ksm_ingester 会转回 processing）才自动关闭。
 
     def _close_ticket_returned(self, row: SyncOutbox, ticket: Ticket) -> None:
         """退回真发成功后：本地工单 → closed（交还 KSM 重新分派，不再跟踪）。
