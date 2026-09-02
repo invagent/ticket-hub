@@ -634,11 +634,11 @@ export function TicketDetailPage() {
                   {isCurrentNode ? (
                     <>
                       {(() => {
-                        // 待审核可编辑（审核人改草稿）；否则答复完成/关单/工单终态 → 只读。
-                        // reviewing 单可能出现 ticket.status=closed 脱节，故 reviewing 显式放开。
-                        const editable =
-                          opStatus === "reviewing" ||
-                          (!DONE_STATUSES.includes(d.status) && !opDone);
+                        // 待审核可编辑（审核人改草稿）；否则答复完成/关单 → 只读。运营
+                        // 工单的「是否处理完」权威在 hub.op_status，不看 ticket.status
+                        // ——后者可能因历史原因脱节（如曾观察到 reviewing 单
+                        // ticket.status=closed），信了会把仍在处理中的单误锁只读。
+                        const editable = !opDone;
                         // 补料态默认填 AI 生成的「需补充资料」清单（cached_reply_content 补料态为空）
                         const supplyNote =
                           opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
@@ -656,9 +656,9 @@ export function TicketDetailPage() {
                             placeholder={
                               editable
                                 ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
-                                : opDone
-                                  ? "已答复完成，只读"
-                                  : "工单已终态，只读"
+                                : opStatus === "closed"
+                                  ? "已关单，只读"
+                                  : "已答复完成，只读"
                             }
                             className={
                               "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
