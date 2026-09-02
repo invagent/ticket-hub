@@ -331,9 +331,13 @@ export function TicketDetailPage() {
   // hub 仍在加载时，先不当作已确认（避免闪现「已推 Linear」再回退）
   const hubResolved = d?.hub_issue_id == null || hub.isSuccess;
   const classified = d?.hub_issue_id != null && hubResolved && !pendingReview;
-  // 明确分类后按 predicted_type 分流展示
-  const isDevType = d?.predicted_type === "Bug_fix" || d?.predicted_type === "Demand";
-  const isOperation = d?.predicted_type === "Operation";
+  // 明确分类后按类型分流展示：已毕业以 hub.type 为准（主管手动改判毕业时
+  // type_override 可能与 ticket.predicted_type 不同，甚至 predicted_type 从未
+  // 写入——如 triage 从未跑过、直接手动选类型毕业的场景），未毕业才回落
+  // predicted_type（与 opStatus/hubStatus 等字段的既有 SSOT 写法一致）。
+  const effectiveType = hub.data?.type ?? d?.predicted_type;
+  const isDevType = effectiveType === "Bug_fix" || effectiveType === "Demand";
+  const isOperation = effectiveType === "Operation";
   // 答复完成(answered)或已关单(closed)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
   const opDone = opStatus === "answered" || opStatus === "closed";

@@ -215,6 +215,10 @@ def list_tickets(
     # 列表读 ticket.* 会读到毕业时的旧快照，故这里带出 hub 的值，_to_summary 覆盖。
     hub_plc_map: dict[int, str | None] = {}
     hub_module_map: dict[int, str | None] = {}
+    # 已毕业工单的「工单类型」以 hub.type 为准：主管手动改判毕业（type_override）
+    # 时 ticket.predicted_type 从未被回写（triage 可能压根没跑过），只看
+    # predicted_type 会让已毕业、已在正常处理的工单在列表显示「未分类」。
+    hub_type_map: dict[int, str] = {}
     # 研发类（Bug_fix/Demand）所挂 hub 的 linear_status（镜像 Linear 列名，展示层）；
     # 工单列表「研发进度」列据此显示细粒度阶段（前端 linearStatusToCN 译中文）。
     hub_linear_status_map: dict[int, str | None] = {}
@@ -228,6 +232,7 @@ def list_tickets(
                 HubIssue.product_line_code,
                 HubIssue.module,
                 HubIssue.linear_status,
+                HubIssue.type,
             ).where(HubIssue.id.in_(hub_ids))
         ).all()
         hub_op_map = {r.id: r.op_status for r in hrows}
@@ -236,6 +241,7 @@ def list_tickets(
         hub_plc_map = {r.id: r.product_line_code for r in hrows}
         hub_module_map = {r.id: r.module for r in hrows}
         hub_linear_status_map = {r.id: r.linear_status for r in hrows}
+        hub_type_map = {r.id: r.type for r in hrows}
 
     # batch-load 主产品名称 + SLA 解决时限（product_line_code → name / sla_resolve_hours）
     # 已毕业工单以 hub 的 product_line_code 为准，故两处 code 都要并入名字查询集合
@@ -284,7 +290,7 @@ def list_tickets(
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
             s.hub_status = hub_status_map.get(t.hub_issue_id)
             s.linear_status = hub_linear_status_map.get(t.hub_issue_id)
-            # 已毕业：产品线/模块以 hub 为准（与详情页 graduated ? hub.* : ticket.* 对齐）。
+            # 已毕业：产品线/模块/类型以 hub 为准（与详情页 graduated ? hub.* : ticket.* 对齐）。
             # 编辑参数只改 hub，ticket.* 停留在毕业时快照，故这里覆盖为 hub 的最新值。
             hub_plc = hub_plc_map.get(t.hub_issue_id)
             if hub_plc is not None:
@@ -292,6 +298,9 @@ def list_tickets(
             hub_module = hub_module_map.get(t.hub_issue_id)
             if hub_module is not None:
                 s.module = hub_module
+            hub_type = hub_type_map.get(t.hub_issue_id)
+            if hub_type is not None:
+                s.predicted_type = hub_type
         if s.product_line_code:
             s.product_name = product_name_map.get(s.product_line_code)
         # 关联任务数：拆分子单数（Parent 持有 children_ticket_ids）；单问题工单=1
@@ -350,6 +359,10 @@ def get_ticket(
                 detail.product_line_code = hub.product_line_code
             if hub.module is not None:
                 detail.module = hub.module
+            # 类型以 hub.type 为准：主管手动改判毕业（type_override）时
+            # ticket.predicted_type 从未被回写，只读 predicted_type 会让已毕业
+            # 工单在详情页误判成「未分类」（前端 isOperation/isDevType 据此判断）。
+            detail.predicted_type = hub.type
     if detail.product_line_code:
         pl = db.execute(
             select(ProductLine.name).where(ProductLine.code == detail.product_line_code)

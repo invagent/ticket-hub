@@ -523,6 +523,50 @@ def test_summary_ungraduated_uses_ticket_product_and_module(
     assert by["TKT-A"]["product_name"] == "发票云"
 
 
+def test_summary_and_detail_graduated_uses_hub_type_when_predicted_type_unset(
+    app_client: TestClient, world2: Session
+) -> None:
+    """主管手动改判毕业（type_override）时 triage 可能从未跑过，
+    ticket.predicted_type 永远是 None——列表/详情都应以 hub.type 为准，
+    否则已在正常处理的工单在 UI 上误显示「未分类」（TKT-006567 真实事故）。"""
+    from app.models import HubIssue, Ticket
+
+    world2.add(
+        HubIssue(
+            id=61,
+            short_code="HUB-MANUAL",
+            type="Operation",
+            title="manual graduate",
+            status="created",
+            op_status="processing",
+        )
+    )
+    world2.flush()
+    world2.add(
+        Ticket(
+            id=211,
+            short_code="TKT-MANUAL",
+            source_code="ksm",
+            source_ticket_id="manual-1",
+            type="Raw",
+            status="received",
+            title="manual graduate ticket",
+            hub_issue_id=61,
+            predicted_type=None,  # triage 从未跑过（或失败留空）
+            received_at=datetime(2026, 5, 6, 13, 0, tzinfo=UTC),
+        )
+    )
+    world2.commit()
+
+    r = app_client.get("/api/tickets", headers=_bearer())
+    by = {it["short_code"]: it for it in r.json()["items"]}
+    assert by["TKT-MANUAL"]["predicted_type"] == "Operation"
+
+    d = app_client.get("/api/tickets/211", headers=_bearer())
+    assert d.status_code == 200, d.text
+    assert d.json()["predicted_type"] == "Operation"
+
+
 def test_summary_exposes_linear_status_for_dev(app_client: TestClient, world2: Session) -> None:
     """研发类工单「研发进度」列数据源：Summary 带出所挂 hub 的 linear_status（镜像 Linear 列名）。
     未挂 hub / 无 linear_status 时为 None。"""
