@@ -16,6 +16,7 @@ from .service import (
     flag_for_diagnosis,
     load_escalation_context,
     record_publish_audit,
+    reviewing_hub_for_ticket,
     save_diagnosis,
     save_reflection,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "flag_for_diagnosis",
     "load_escalation_context",
     "record_publish_audit",
+    "reviewing_hub_for_ticket",
     "save_diagnosis",
     "save_reflection",
 ]

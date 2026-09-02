@@ -1955,8 +1955,11 @@ export interface paths {
         /**
          * Repush Linear Endpoint
          * @description Retry a blocked Linear push (e.g. after the assignee joined Linear and
-         *     sync-from-linear refreshed the mapping). Synchronous — the supervisor
-         *     wants to see the outcome immediately.
+         *     sync-from-linear refreshed the mapping), or push for the first time when a
+         *     hub graduated as Bug_fix/Demand but was never actually pushed (e.g. type
+         *     was changed via PATCH /attributes, which never pushes). Synchronous — the
+         *     caller wants to see the outcome immediately. 权限放宽到本工单处理人本人
+         *     （_authorize_hub_handler），不再局限主管——处理人在工单详情页自助重推。
          */
         post: operations["repush_linear_endpoint_api_supervisor_repush_linear_post"];
         delete?: never;
@@ -2058,6 +2061,8 @@ export interface paths {
          * Save Diagnosis Endpoint
          * @description Persist the supervisor's cause verdict (skill/knowledge/retrieval) and
          *     the human-verified correct answer for an escalation ticket.
+         *
+         *     权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）。
          */
         put: operations["save_diagnosis_endpoint_api_supervisor_tickets__ticket_id__diagnosis_put"];
         post?: never;
@@ -2079,6 +2084,9 @@ export interface paths {
          * @description The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so
          *     the reflect UI can seed the comparison. is_escalation=false for non-ai_cs
          *     tickets (UI hides the panel).
+         *
+         *     权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）：处理人
+         *     自助诊断 AI 答复因打分未过被转人工审核的场景，无需知识运营代操作。
          */
         get: operations["ai_cs_escalation_context_endpoint_api_supervisor_tickets__ticket_id__escalation_context_get"];
         put?: never;
@@ -2103,6 +2111,11 @@ export interface paths {
          * @description Run the LLM reflect agent (3-step audit → inferred cause) over the
          *     escalation context. Synchronous — supervisor watches the result. The
          *     result is cached on the ticket; rerunning overwrites.
+         *
+         *     权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）。对
+         *     op_status=reviewing 的工单（AI 答复因打分未过转人工审核），若 LLM 给出
+         *     revised_answer，自动回填到 hub.reply_content 草稿——处理人无需额外「采纳」
+         *     动作，编辑/确认后仍走既有「提交答复」发出。
          */
         post: operations["run_reflect_endpoint_api_supervisor_tickets__ticket_id__reflect_post"];
         delete?: never;

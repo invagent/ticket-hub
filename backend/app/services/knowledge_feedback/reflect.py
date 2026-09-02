@@ -44,6 +44,7 @@ class ReflectResult:
     confidence: float
     reason: str
     suggested_revision: str | None
+    revised_answer: str | None  # 客户面向的修正版答案；证据不足时 LLM 留 null
     cost_usd: float
     model: str
 
@@ -64,6 +65,7 @@ class ReflectResult:
             "confidence": self.confidence,
             "reason": self.reason,
             "suggested_revision": self.suggested_revision,
+            "revised_answer": self.revised_answer,
             "model": self.model,
             "at": datetime.now(UTC).isoformat(),
         }
@@ -148,6 +150,7 @@ def run_reflect(
         confidence=parsed["confidence"],
         reason=parsed["reason"],
         suggested_revision=parsed["suggested_revision"],
+        revised_answer=parsed["revised_answer"],
         cost_usd=resp.cost_usd,
         model=resp.model,
     )
@@ -199,10 +202,12 @@ def _parse(content: str) -> dict[str, Any]:
         raise ReflectError(f"confidence out of range: {confidence}")
 
     suggested = data.get("suggested_revision")
+    revised_answer = data.get("revised_answer")
     return {
         "steps": steps,
         "causes": causes,
         "confidence": confidence,
         "reason": str(data.get("reason") or ""),
         "suggested_revision": str(suggested) if suggested else None,
+        "revised_answer": str(revised_answer) if revised_answer else None,
     }

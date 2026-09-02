@@ -20,19 +20,22 @@ export function ReflectDrawer({
   onClose: () => void;
 }) {
   const role = currentRole();
-  const canSee = role === "knowledge_op" || role === "supervisor" || role === "admin";
+  // 全量能力（skill 修订/replay/发布）仅 knowledge_op/supervisor/admin；诊断区
+  // （DiagnosisColumn）对 reviewing 态处理人也开放——后端 escalation-context
+  // 端点已按处理人身份把关，前端不重复判断，只要请求本身合法就渲染。
+  const canSeeFull = role === "knowledge_op" || role === "supervisor" || role === "admin";
   const qc = useQueryClient();
 
   const status = useQuery({
     queryKey: ["ai-cs-status"],
     queryFn: () => api.get("/api/supervisor/ai-cs/status"),
-    enabled: open && canSee,
+    enabled: open && canSeeFull,
   });
   const ctxQ = useQuery({
     queryKey: ["escalation-context", ticketId],
     queryFn: () =>
       getByPath("/api/supervisor/tickets/{ticket_id}/escalation-context", { ticket_id: ticketId }),
-    enabled: open && canSee,
+    enabled: open,
   });
 
   return (
@@ -55,22 +58,24 @@ export function ReflectDrawer({
           </button>
         </div>
         <div className="flex-1 overflow-auto bg-[#f6f4ef]">
-          {!canSee ? (
-            <div className="p-6 text-sm text-[#8b8577]">仅知识运营/主管/管理员可查看反思诊断。</div>
-          ) : ctxQ.isLoading ? (
+          {ctxQ.isLoading ? (
             <div className="p-6 text-sm text-[#8b8577]">加载工单上下文…</div>
+          ) : ctxQ.error ? (
+            <div className="p-6 text-sm text-[#8b8577]">无权查看该工单的反思诊断。</div>
           ) : !ctxQ.data?.is_escalation ? (
             <div className="p-6 text-sm text-[#8b8577]">该工单不是 AI 客服 escalation，无诊断上下文</div>
           ) : (
             <div className="flex flex-col">
               <DiagnosisColumn ticketId={ticketId} ctx={ctxQ.data} stacked />
-              <RemedyColumn
-                ticketId={ticketId}
-                ctx={ctxQ.data}
-                aiCsEnabled={!!status.data?.enabled}
-                qc={qc}
-                stacked
-              />
+              {canSeeFull && (
+                <RemedyColumn
+                  ticketId={ticketId}
+                  ctx={ctxQ.data}
+                  aiCsEnabled={!!status.data?.enabled}
+                  qc={qc}
+                  stacked
+                />
+              )}
             </div>
           )}
         </div>

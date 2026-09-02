@@ -87,6 +87,7 @@ export function DiagnosisColumn({
         confidence?: number;
         reason?: string;
         suggested_revision?: string | null;
+        revised_answer?: string | null;
         model?: string;
       }
     | null;
@@ -124,6 +125,10 @@ export function DiagnosisColumn({
     onSuccess: () => {
       setError(null);
       void qc.invalidateQueries({ queryKey: ["escalation-context", ticketId] });
+      // reviewing 态时后端可能已把新答案自动回填到 hub.reply_content 草稿——
+      // 这里不知道具体 hubId，宽泛失效整个 hub-issue-detail 前缀，让详情页
+      // 处理说明框读到最新草稿。
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail"] });
     },
     onError: (e) => setError(errMsg(e)),
   });
@@ -462,6 +467,11 @@ export function DiagnosisColumn({
                   )}
                 </div>
                 <div className="text-[11.5px] text-[#3f6b6d] mt-1">{reflection.reason}</div>
+                {reflection.revised_answer && (
+                  <div className="mt-2 text-[11px] text-[#3f6b6d]">
+                    ✓ 已生成客户新答案并自动回填到处理说明草稿
+                  </div>
+                )}
                 <button
                   onClick={() =>
                     reflectionCauses.length &&

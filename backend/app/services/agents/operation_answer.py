@@ -137,6 +137,16 @@ def _save_draft_reply(db: Session, hub: HubIssue, *, content: str) -> None:
     hub.reply_authored_by = "agent:ai_cs:draft"
 
 
+def apply_reflect_draft(db: Session, hub: HubIssue, *, content: str) -> None:
+    """反思推断生成的客户新答案回填草稿（仅 reviewing 态）。镜像
+    _save_draft_reply，但标记来源为 reflect（区别于首次自动答复草稿），便于
+    审计/前端区分。不 commit（调用方负责事务边界）。
+    """
+    hub.reply_content = content
+    hub.reply_is_draft = True
+    hub.reply_authored_by = "agent:ai_cs:reflect_draft"
+
+
 def _replay_with_retry(
     client: object, *, question: str, skill: str | None, hub_id: int
 ) -> ReplayResult:
@@ -297,6 +307,16 @@ def auto_answer_operation(
                     handler=resolve_op_handler(db, hub, settings),
                     reason=reason,
                 )
+                # cited_knowledge/skills_used 必存（同 D 分支）：reviewing 态
+                # 处理人自助反思推断需要还原黄金三元组，晚存就永久丢了。
+                review_extra: dict[str, object] = {
+                    "accuracy": score.accuracy,
+                    "reason": score.reason,
+                    "mode": mode,
+                    "cited_knowledge": cited_knowledge,
+                }
+                if skill:
+                    review_extra["skills_used"] = [skill]
                 _record_decision(
                     db,
                     hub.id,
@@ -304,7 +324,7 @@ def auto_answer_operation(
                     question=question,
                     answer=answer,
                     supply_note="",
-                    extra={"accuracy": score.accuracy, "reason": score.reason, "mode": mode},
+                    extra=review_extra,
                 )
                 logger.info(
                     "operation_answer_review",

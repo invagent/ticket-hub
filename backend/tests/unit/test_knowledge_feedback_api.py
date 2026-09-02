@@ -528,6 +528,7 @@ def test_reflect_runs_and_caches(
             confidence=0.9,
             reason="r",
             suggested_revision="改规则 2",
+            revised_answer=None,
             cost_usd=0.001,
             model="glm-4-flash",
         )
@@ -719,3 +720,231 @@ def test_reflect_tickets_endpoint(app_client: TestClient, world: Session) -> Non
     ids = {it["id"] for it in r.json()["items"]}
     assert 810 in ids and 811 in ids
     assert 812 not in ids
+
+
+# ---- reviewing 态处理人自助诊断+反思回填答复 -----------------------------------
+
+
+def _mk_reviewing_hub_ticket(
+    world: Session,
+    ticket_id: int,
+    hub_id: int,
+    *,
+    handler_user_id: int | None = None,
+    op_status: str = "reviewing",
+) -> None:
+    """一个 op_status=reviewing 的 Operation hub + 关联 ticket + 一条
+    D_review 分支的 auto_reply AgentDecision（含 cited_knowledge/skills_used，
+    镜像 D 分支补存后的真实审计形态）。"""
+    from app.models import AgentDecision, HubIssue
+
+    if not world.query(Source).filter_by(code="ksm").count():
+        world.add(Source(code="ksm", name="KSM"))
+    world.add(
+        HubIssue(
+            id=hub_id,
+            short_code=f"HUB-{hub_id:06d}",
+            type="Operation",
+            title="开票超时",
+            status="created",
+            op_status=op_status,
+            op_handler_user_id=handler_user_id,
+            reply_content="请实名认证后重试",
+            reply_is_draft=True,
+            reply_authored_by="agent:ai_cs:draft",
+        )
+    )
+    world.add(
+        Ticket(
+            id=ticket_id,
+            short_code=f"TKT-{ticket_id:06d}",
+            source_code="ksm",
+            source_ticket_id=f"bill-{ticket_id}",
+            type="Raw",
+            status="received",
+            title="开票超时",
+            predicted_type="Operation",
+            hub_issue_id=hub_id,
+            handler_user_id=handler_user_id,
+        )
+    )
+    world.flush()
+    world.add(
+        AgentDecision(
+            decision_type="auto_reply",
+            subject_type="hub_issue",
+            subject_id=hub_id,
+            proposal={
+                "branch": "D_review",
+                "question": "开票超时",
+                "answer": "请实名认证后重试",
+                "supply_note": "",
+                "accuracy": 82,
+                "reason": "准确率82%<90%，待主管审核",
+                "mode": "enforce",
+                "cited_knowledge": [{"type": "kb", "title": "实名认证指引", "score": 0.7}],
+                "skills_used": ["customer-service"],
+            },
+        )
+    )
+    world.commit()
+
+
+def test_escalation_context_for_reviewing_ticket(app_client: TestClient, world: Session) -> None:
+    """处理人本人调 escalation-context：is_escalation=True，
+    is_ai_cs_escalation=False，字段来自 auto_reply AgentDecision proposal，
+    dissatisfaction 填打分理由（非真实客户抱怨）。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 900, 90, handler_user_id=3)
+    token, _ = issue_jwt(sub="3", name="handler", role="member")
+    r = app_client.get(
+        "/api/supervisor/tickets/900/escalation-context",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["is_escalation"] is True
+    assert body["is_ai_cs_escalation"] is False
+    assert body["original_question"] == "开票超时"
+    assert body["ai_answer"] == "请实名认证后重试"
+    assert body["dissatisfaction"] == "准确率82%<90%，待主管审核"
+    assert body["cited_knowledge"] == [{"type": "kb", "title": "实名认证指引", "score": 0.7}]
+    assert body["skills_used"] == ["customer-service"]
+
+
+def test_escalation_context_reviewing_rejects_non_handler(
+    app_client: TestClient, world: Session
+) -> None:
+    """非本人非知识运营/主管 → 403。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.add(User(id=4, feishu_uid="ou_other", name="other", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 901, 91, handler_user_id=3)
+    token, _ = issue_jwt(sub="4", name="other", role="member")
+    r = app_client.get(
+        "/api/supervisor/tickets/901/escalation-context",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 403
+
+
+def test_reflect_reviewing_ticket_autofills_draft(app_client: TestClient, world: Session) -> None:
+    """跑反思推断，LLM 给出 revised_answer → 自动回填 hub.reply_content 草稿，
+    reply_authored_by 标记为 reflect_draft（区别于首次自动答复草稿）。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 902, 92, handler_user_id=3)
+
+    from app.services.knowledge_feedback import reflect as rf
+
+    def fake_run_reflect(**kw):  # type: ignore[no-untyped-def]
+        return rf.ReflectResult(
+            steps=[{"title": "t", "detail": "d", "verdict": None, "good": None}],
+            causes=["skill"],
+            confidence=0.8,
+            reason="r",
+            suggested_revision=None,
+            revised_answer="请先完成实名认证，再重新提交开票申请。",
+            cost_usd=0.001,
+            model="glm-4-flash",
+        )
+
+    monkey_target = rf.run_reflect
+    rf.run_reflect = fake_run_reflect  # type: ignore[assignment]
+    try:
+        token, _ = issue_jwt(sub="3", name="handler", role="member")
+        r = app_client.post(
+            "/api/supervisor/tickets/902/reflect",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    finally:
+        rf.run_reflect = monkey_target  # type: ignore[assignment]
+
+    assert r.status_code == 200, r.text
+    from app.models import HubIssue as _HubIssue
+
+    hub = world.get(_HubIssue, 92)
+    world.refresh(hub)
+    assert hub.reply_content == "请先完成实名认证，再重新提交开票申请。"
+    assert hub.reply_is_draft is True
+    assert hub.reply_authored_by == "agent:ai_cs:reflect_draft"
+
+
+def test_reflect_reviewing_no_revised_answer_no_writeback(
+    app_client: TestClient, world: Session
+) -> None:
+    """LLM 不给 revised_answer → hub.reply_content 保持不变（不覆盖已有草稿）。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 903, 93, handler_user_id=3)
+
+    from app.services.knowledge_feedback import reflect as rf
+
+    def fake_run_reflect(**kw):  # type: ignore[no-untyped-def]
+        return rf.ReflectResult(
+            steps=[{"title": "t", "detail": "d", "verdict": None, "good": None}],
+            causes=["retrieval"],
+            confidence=0.5,
+            reason="r",
+            suggested_revision=None,
+            revised_answer=None,
+            cost_usd=0.001,
+            model="glm-4-flash",
+        )
+
+    monkey_target = rf.run_reflect
+    rf.run_reflect = fake_run_reflect  # type: ignore[assignment]
+    try:
+        token, _ = issue_jwt(sub="3", name="handler", role="member")
+        r = app_client.post(
+            "/api/supervisor/tickets/903/reflect",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    finally:
+        rf.run_reflect = monkey_target  # type: ignore[assignment]
+
+    assert r.status_code == 200, r.text
+    from app.models import HubIssue as _HubIssue
+
+    hub = world.get(_HubIssue, 93)
+    world.refresh(hub)
+    assert hub.reply_content == "请实名认证后重试"
+    assert hub.reply_authored_by == "agent:ai_cs:draft"
+
+
+def test_escalation_queue_excludes_reviewing_ticket(app_client: TestClient, world: Session) -> None:
+    """窄口径：reviewing 态工单不出现在主管工作台的 escalation-pending-diagnosis 队列。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 904, 94, handler_user_id=3)
+    r = app_client.get("/api/supervisor/escalation-pending-diagnosis", headers=_bearer(2))
+    ids = {it["ticket_id"] for it in r.json()["items"]}
+    assert 904 not in ids
+
+
+def test_reflect_tickets_excludes_reviewing_ticket(app_client: TestClient, world: Session) -> None:
+    """窄口径：reviewing 态工单不出现在主管工作台的 reflect-tickets 浏览列表。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 905, 95, handler_user_id=3)
+    r = app_client.get("/api/supervisor/reflect-tickets", headers=_bearer(2))
+    ids = {it["id"] for it in r.json()["items"]}
+    assert 905 not in ids
+
+
+def test_reflect_reviewing_ticket_not_reviewing_state_404s(
+    app_client: TestClient, world: Session
+) -> None:
+    """回归：同一 ticket 一旦 hub 离开 reviewing 态（如已 answered），
+    escalation-context 又不再认得它（不是真实 escalation 也没被标记诊断）。"""
+    world.add(User(id=3, feishu_uid="ou_h", name="handler", role="member"))
+    world.commit()
+    _mk_reviewing_hub_ticket(world, 906, 96, handler_user_id=3, op_status="answered")
+    token, _ = issue_jwt(sub="3", name="handler", role="member")
+    r = app_client.get(
+        "/api/supervisor/tickets/906/escalation-context",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["is_escalation"] is False

@@ -1723,15 +1723,33 @@ def ai_cs_publish_endpoint(
     return PublishResponse(skill_name=body.skill_name, version=body.version, published=True)
 
 
+def _authorize_escalation_ticket(db: Session, ticket_id: int, user: AuthedUser) -> None:
+    """诊断/反思三端点授权：knowledge_op 及以上角色直接放行（真实 ai_cs
+    escalation 场景仍是知识运营主战场）；否则要求是该 ticket 关联 hub 的处理人
+    ——这条放宽只覆盖 op_status=reviewing 处理人自助诊断场景（真实 ai_cs
+    escalation 多数尚无 hub_issue_id，会被 _authorize_hub_handler 挡下，
+    与期望一致：非知识运营不该碰真实客户投诉的诊断）。"""
+    if user.role in ("knowledge_op", "supervisor", "admin"):
+        return
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None or ticket.hub_issue_id is None:
+        raise HTTPException(status_code=403, detail="需要知识运营/主管/管理员权限")
+    _authorize_hub_handler(db, ticket.hub_issue_id, user, base_roles=("supervisor", "admin"))
+
+
 @router.get("/tickets/{ticket_id}/escalation-context", response_model=EscalationContextResponse)
 def ai_cs_escalation_context_endpoint(
     ticket_id: int,
-    _user: AuthedUser = Depends(require_knowledge_op),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> EscalationContextResponse:
     """The golden triple (原问题/AI答复/不满) for an ai_cs escalation ticket, so
     the reflect UI can seed the comparison. is_escalation=false for non-ai_cs
-    tickets (UI hides the panel)."""
+    tickets (UI hides the panel).
+
+    权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）：处理人
+    自助诊断 AI 答复因打分未过被转人工审核的场景，无需知识运营代操作。"""
+    _authorize_escalation_ticket(db, ticket_id, user)
     ctx = kf.load_escalation_context(db, ticket_id)
     if ctx is None:
         return EscalationContextResponse(is_escalation=False, ticket_id=ticket_id)
@@ -1755,11 +1773,14 @@ def ai_cs_escalation_context_endpoint(
 def save_diagnosis_endpoint(
     ticket_id: int,
     body: DiagnosisBody,
-    user: AuthedUser = Depends(require_knowledge_op),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> DiagnosisResponse:
     """Persist the supervisor's cause verdict (skill/knowledge/retrieval) and
-    the human-verified correct answer for an escalation ticket."""
+    the human-verified correct answer for an escalation ticket.
+
+    权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）。"""
+    _authorize_escalation_ticket(db, ticket_id, user)
     try:
         diagnosis = kf.save_diagnosis(
             db,
@@ -1781,14 +1802,21 @@ def save_diagnosis_endpoint(
 @router.post("/tickets/{ticket_id}/reflect", response_model=ReflectResponse)
 def run_reflect_endpoint(
     ticket_id: int,
-    user: AuthedUser = Depends(require_knowledge_op),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> ReflectResponse:
     """Run the LLM reflect agent (3-step audit → inferred cause) over the
     escalation context. Synchronous — supervisor watches the result. The
-    result is cached on the ticket; rerunning overwrites."""
+    result is cached on the ticket; rerunning overwrites.
+
+    权限放宽到 reviewing 态处理人本人（_authorize_escalation_ticket）。对
+    op_status=reviewing 的工单（AI 答复因打分未过转人工审核），若 LLM 给出
+    revised_answer，自动回填到 hub.reply_content 草稿——处理人无需额外「采纳」
+    动作，编辑/确认后仍走既有「提交答复」发出。"""
+    from app.services.agents.operation_answer import apply_reflect_draft
     from app.services.knowledge_feedback import reflect as rf
 
+    _authorize_escalation_ticket(db, ticket_id, user)
     ctx = kf.load_escalation_context(db, ticket_id)
     if ctx is None:
         raise HTTPException(
@@ -1812,6 +1840,11 @@ def run_reflect_endpoint(
         raise HTTPException(status_code=503, detail=f"LLM 不可用：{e}") from e
     reflection = result.as_payload()
     kf.save_reflection(db, ticket_id, reflection)
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is not None and result.revised_answer:
+        hub = kf.reviewing_hub_for_ticket(db, ticket)
+        if hub is not None:
+            apply_reflect_draft(db, hub, content=result.revised_answer)
     db.commit()
     logger.info(
         "escalation_reflect_done",

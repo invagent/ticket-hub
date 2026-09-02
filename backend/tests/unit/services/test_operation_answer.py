@@ -389,6 +389,52 @@ def test_d_enforce_low_accuracy_saves_draft_reviewing(db_session: Session) -> No
     assert d.proposal.get("accuracy") == 60
 
 
+def test_d_review_persists_cited_knowledge_and_skills_used(db_session: Session) -> None:
+    """D_review 分支（打分未过转人工审核）同样必存 cited_knowledge/skills_used
+    ——镜像 D 分支的持久化（供 reviewing 态处理人跑反思推断还原黄金三元组）。"""
+    from app.services.agents.answer_accuracy import AccuracyScore
+
+    hub, _t = _seed_op_hub(db_session)
+    db_session.commit()
+    s = _S()
+    s.operation_answer_accuracy_mode = "enforce"
+    s.operation_answer_accuracy_threshold = 90
+    fake_cited = [{"type": "faq", "title": "实名认证指引", "score": 0.7}]
+    fake = _FakeClient(answer="可能是网络问题，建议稍后再试。")
+
+    def _replay(**kw: object) -> ReplayResult:
+        fake.replay_kwargs = kw
+        return ReplayResult(
+            answer=fake._answer, cited_knowledge=fake_cited, skills_used=[], trace_id="t3"
+        )
+
+    fake.replay = _replay  # type: ignore[method-assign]
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="D", supply_note=""),
+        ),
+        patch(
+            "app.services.agents.operation_answer.score_answer_accuracy",
+            return_value=AccuracyScore(accuracy=60, reason="依据不足"),
+        ),
+    ):
+        auto_answer_operation(
+            db_session,
+            hub.id,
+            settings=_S(**{**s.__dict__, "ai_cs_managed_skills": "customer-service"}),
+        )
+    d = (
+        db_session.query(AgentDecision)
+        .filter_by(decision_type="auto_reply", subject_id=hub.id)
+        .first()
+    )
+    assert d is not None and d.proposal["branch"] == "D_review"
+    assert d.proposal["cited_knowledge"] == fake_cited
+    assert d.proposal["skills_used"] == ["customer-service"]
+
+
 def test_d_enforce_high_accuracy_sends(db_session: Session) -> None:
     """enforce + ≥阈值：直发 + answered。"""
     from app.services.agents.answer_accuracy import AccuracyScore

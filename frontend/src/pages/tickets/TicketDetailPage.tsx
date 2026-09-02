@@ -316,20 +316,6 @@ export function TicketDetailPage() {
     },
     onError: (e) => setDiagnosisErr(hubErrMsg(e)),
   });
-  // 反思诊断抽屉：仅 knowledge_op/supervisor/admin + 该工单确实有反思上下文
-  // （真实 ai_cs escalation 或已被标记诊断）才显示按钮。queryKey 与 ReflectDrawer
-  // 内部同名查询共享缓存，不会重复打两次请求。
-  const [reflectOpen, setReflectOpen] = useState(false);
-  const canSeeReflect =
-    currentRole() === "knowledge_op" || currentRole() === "supervisor" || currentRole() === "admin";
-  const escalationCtx = useQuery({
-    queryKey: ["escalation-context", id],
-    queryFn: () =>
-      getByPath("/api/supervisor/tickets/{ticket_id}/escalation-context", { ticket_id: id }),
-    enabled: !Number.isNaN(id) && canSeeReflect,
-  });
-  const showReflectBtn = canSeeReflect && !!escalationCtx.data?.is_escalation;
-
   const d = detail.data;
   // 选中节点是否为当前节点（idx0=倒序后最上）；历史节点无逐节点记录，右侧三块显示「无数据」
   const isCurrentNode = nodeIdx === 0;
@@ -351,6 +337,23 @@ export function TicketDetailPage() {
   // 答复完成(answered)或已关单(closed)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
   const opDone = opStatus === "answered" || opStatus === "closed";
+  // 反思诊断抽屉：knowledge_op/supervisor/admin 全量可见；此外 reviewing 态
+  // （AI 答复打分未过转人工审核）本工单处理人本人也能看——只诊断不改 skill
+  // （ReflectDrawer 内部按角色再拆一层，RemedyColumn 仍 knowledge_op-only）。
+  // queryKey 与 ReflectDrawer 内部同名查询共享缓存，不会重复打两次请求。
+  const [reflectOpen, setReflectOpen] = useState(false);
+  const canSeeReflectFull =
+    currentRole() === "knowledge_op" || currentRole() === "supervisor" || currentRole() === "admin";
+  const canSeeReflectAsHandler =
+    opStatus === "reviewing" && d?.handler_user_id != null && currentUserId() === d.handler_user_id;
+  const canSeeReflect = canSeeReflectFull || canSeeReflectAsHandler;
+  const escalationCtx = useQuery({
+    queryKey: ["escalation-context", id],
+    queryFn: () =>
+      getByPath("/api/supervisor/tickets/{ticket_id}/escalation-context", { ticket_id: id }),
+    enabled: !Number.isNaN(id) && canSeeReflect,
+  });
+  const showReflectBtn = canSeeReflect && !!escalationCtx.data?.is_escalation;
   // 待审核(reviewing)：AI 草稿答复存 hub.reply_content（未级联到 ticket），
   // 供审核人在处理说明框查看/编辑后点答复正式发出。
   const draftReply = opStatus === "reviewing" ? (hub.data?.reply_content ?? "") : "";

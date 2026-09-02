@@ -18,8 +18,9 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from adapters.ai_cs import AiCsClient, AiCsConfig
 from app.core.logging import get_logger
-from app.models import Ticket
+from app.models import AgentDecision, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
+from app.services.hub_issues.op_status import OP_REVIEWING
 
 logger = get_logger(__name__)
 
@@ -60,21 +61,34 @@ class EscalationContext:
     reflection: dict[str, Any] | None
 
 
-def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | None:
-    """Return the escalation golden triple for a ticket, or None if the ticket
-    is not an AI 客服 escalation and hasn't been flagged for diagnosis either
-    (no reflect context to show)."""
-    ticket = db.get(Ticket, ticket_id)
-    if ticket is None or ticket.deleted_at is not None:
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+
+def reviewing_hub_for_ticket(db: Session, ticket: Ticket) -> HubIssue | None:
+    """ticket 挂的 hub 是否处于 reviewing 态（AI 答复因打分未过/review 模式转
+    人工审核）。用于让 op_status=reviewing 的处理人在没有真实 ai_cs escalation
+    或 diagnosis_flagged_at 标记的情况下，也能自助跑一次反思诊断。"""
+    if ticket.hub_issue_id is None:
         return None
-    is_ai_cs = ticket.source_code == _AI_CS_SOURCE
-    if not is_ai_cs and ticket.diagnosis_flagged_at is None:
+    hub = db.get(HubIssue, ticket.hub_issue_id)
+    if hub is None or hub.op_status != OP_REVIEWING:
         return None
+    return hub
+
+
+def _latest_auto_reply_proposal(db: Session, hub_id: int) -> dict[str, Any]:
+    dec = (
+        db.query(AgentDecision)
+        .filter_by(subject_type="hub_issue", subject_id=hub_id, decision_type="auto_reply")
+        .order_by(AgentDecision.id.desc())
+        .first()
+    )
+    return (dec.proposal if dec else {}) or {}
+
+
+def _load_from_ai_cs_payload(ticket: Ticket, *, is_ai_cs: bool) -> EscalationContext:
     ai = (ticket.source_payload or {}).get("ai_cs") or {}
-
-    def _dict_list(value: Any) -> list[dict[str, Any]]:
-        return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
-
     skills = ai.get("skills_used")
     diagnosis = ai.get("diagnosis")
     reflection = ai.get("reflection")
@@ -95,6 +109,50 @@ def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | 
     )
 
 
+def _load_from_reviewing_hub(db: Session, ticket: Ticket, hub: HubIssue) -> EscalationContext:
+    """reviewing 态工单没有 source_payload['ai_cs']（不是真实 ai_cs 转接）——
+    黄金三元组改从最新一条 auto_reply AgentDecision 的 proposal 里取；
+    「客户不满反馈」填打分理由（score.reason，reviewing 态没有真实客户抱怨）。
+    diagnosis/reflection 缓存仍复用 ticket.source_payload['ai_cs']（可能为
+    空，处理人第一次点反思时才写入）。"""
+    proposal = _latest_auto_reply_proposal(db, hub.id)
+    ai = (ticket.source_payload or {}).get("ai_cs") or {}
+    diagnosis = ai.get("diagnosis")
+    reflection = ai.get("reflection")
+    skills = proposal.get("skills_used")
+    return EscalationContext(
+        ticket_id=ticket.id,
+        session_id=ticket.source_ticket_id,
+        is_ai_cs_escalation=False,
+        original_question=str(proposal.get("question") or ticket.body or ""),
+        ai_answer=str(proposal.get("answer") or ""),
+        dissatisfaction=str(proposal.get("reason") or ""),
+        conversation=[],
+        cited_knowledge=_dict_list(proposal.get("cited_knowledge")),
+        skills_used=[str(s) for s in skills if isinstance(s, str)]
+        if isinstance(skills, list)
+        else [],
+        diagnosis=diagnosis if isinstance(diagnosis, dict) else None,
+        reflection=reflection if isinstance(reflection, dict) else None,
+    )
+
+
+def load_escalation_context(db: Session, ticket_id: int) -> EscalationContext | None:
+    """Return the escalation golden triple for a ticket, or None if the ticket
+    is not an AI 客服 escalation, hasn't been flagged for diagnosis, and isn't
+    a reviewing-state Operation hub either (no reflect context to show)."""
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None or ticket.deleted_at is not None:
+        return None
+    is_ai_cs = ticket.source_code == _AI_CS_SOURCE
+    if is_ai_cs or ticket.diagnosis_flagged_at is not None:
+        return _load_from_ai_cs_payload(ticket, is_ai_cs=is_ai_cs)
+    hub = reviewing_hub_for_ticket(db, ticket)
+    if hub is None:
+        return None
+    return _load_from_reviewing_hub(db, ticket, hub)
+
+
 _VALID_DIAGNOSIS_CAUSES = frozenset({"skill", "knowledge", "retrieval"})
 
 
@@ -108,10 +166,12 @@ class AlreadyDiagnosedError(Exception):
 
 def _escalation_ticket(db: Session, ticket_id: int) -> Ticket:
     ticket = db.get(Ticket, ticket_id)
+    if ticket is None or ticket.deleted_at is not None:
+        raise NotEscalationError(f"ticket {ticket_id} is not an ai_cs escalation")
     if (
-        ticket is None
-        or ticket.deleted_at is not None
-        or (ticket.source_code != _AI_CS_SOURCE and ticket.diagnosis_flagged_at is None)
+        ticket.source_code != _AI_CS_SOURCE
+        and ticket.diagnosis_flagged_at is None
+        and reviewing_hub_for_ticket(db, ticket) is None
     ):
         raise NotEscalationError(f"ticket {ticket_id} is not an ai_cs escalation")
     return ticket
