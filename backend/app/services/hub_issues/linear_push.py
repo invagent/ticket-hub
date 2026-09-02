@@ -39,7 +39,7 @@ from app.db import make_session
 from app.models import HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
-from app.services.hub_issues.module_owner import resolve_module_owner
+from app.services.hub_issues.module_owner import consume_module_owner
 from app.services.hub_issues.webhook_push import push_hub_issue_to_webhook
 
 logger = get_logger(__name__)
@@ -95,8 +95,17 @@ def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
     webhook 不返回 Linear UUID —— linear_uuid 保持 NULL，避免 linear_status_sync
     拿假 UUID 去查 Linear。幂等靠 linear_identifier 非空（占位 WEBHOOK-{short_code}）。
     """
+    owner = consume_module_owner(db, hub.product_line_code, hub.module)
+    assignee_name = ""
+    if owner is not None:
+        assignee_name = owner.name or ""
+        hub.owner_user_id = owner.id
+    elif hub.assigned_user_id is not None:
+        fallback = db.get(User, hub.assigned_user_id)
+        if fallback is not None:
+            assignee_name = fallback.name or ""
     try:
-        push_hub_issue_to_webhook(db, hub)
+        push_hub_issue_to_webhook(db, hub, assignee_name=assignee_name)
     except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
         logger.warning("linear_webhook_push_failed", hub_issue_id=hub.id, error=str(e))
         _mark_pending(db, hub, reason=f"转研发 webhook 推送失败：{e}")
@@ -186,11 +195,14 @@ def push_hub_issue_to_linear(
         assignee_user: User | None = None
         if assignee_override_user_id is not None:
             assignee_user = db.get(User, assignee_override_user_id)
+            hub.owner_user_id = assignee_override_user_id
         else:
-            # 默认 assignee = 模块研发责任人（assignment_scopes_module，按当前
-            # 产品线+模块查）；查不到回落入库责任人（hub.assigned_user_id）。
-            assignee_user = resolve_module_owner(db, hub.product_line_code, hub.module)
-            if assignee_user is None and hub.assigned_user_id is not None:
+            # 默认 assignee = 模块研发责任人（modules.dev_owners 轮询选人）；
+            # 查不到回落入库责任人（hub.assigned_user_id）。
+            assignee_user = consume_module_owner(db, hub.product_line_code, hub.module)
+            if assignee_user is not None:
+                hub.owner_user_id = assignee_user.id
+            elif hub.assigned_user_id is not None:
                 assignee_user = db.get(User, hub.assigned_user_id)
         if assignee_user is not None:
             if assignee_user.email and not assignee_user.linear_user_id:

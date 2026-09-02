@@ -105,7 +105,7 @@ def test_confirm_pushes_linear(
 ) -> None:
     """模块负责人确定 → 直推 Linear（status=created）。"""
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: act_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
@@ -313,7 +313,7 @@ def test_confirm_bugfix_owner_resolved_pushes_and_created(
     app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: type_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
@@ -368,7 +368,7 @@ def test_reclassify_to_demand_owner_resolved_pushes(
     app_client: TestClient, type_world: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: type_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
@@ -478,7 +478,7 @@ def test_processing_operation_reclassify_to_dev_pushes_linear(
 ) -> None:
     """处理中 Operation 改判 Demand + 模块负责人确定：直推 Linear、op 字段清空、type 翻转。"""
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: op_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
@@ -529,7 +529,7 @@ def test_reviewing_operation_can_reclassify_to_dev(
     hub.reply_authored_by = "agent:ai_cs:draft"
     op_world.commit()
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: op_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:
@@ -558,7 +558,7 @@ def test_processing_operation_reclassify_by_own_handler(
     hub.op_handler_user_id = 9
     op_world.commit()
     monkeypatch.setattr(
-        "app.api.supervisor.resolve_module_owner",
+        "app.api.supervisor.peek_module_owner",
         lambda *a, **k: op_world.get(User, 2),
     )
     with patch("app.api.supervisor.push_hub_issue_to_linear") as push:

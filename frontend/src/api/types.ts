@@ -3474,6 +3474,8 @@ export interface components {
             actual_resolved_at: string | null;
             /** Assigned User Id */
             assigned_user_id: number | null;
+            /** Owner User Id */
+            owner_user_id?: number | null;
             /** Closed At */
             closed_at: string | null;
             /** Expected Resolved At */

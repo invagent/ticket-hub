@@ -324,7 +324,7 @@ def test_gate_classify_off_devclass_pushes(db_session, monkeypatch) -> None:
         )(),
     )
     monkeypatch.setattr(
-        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: handler
+        "app.services.hub_issues.creator.peek_module_owner", lambda *a, **k: handler
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         create_hub_issue_for_ticket_auto(ticket_id)
@@ -356,13 +356,15 @@ def test_gate_classify_off_module_owner_unresolved_parks_pending_linear_review(
         )(),
     )
     monkeypatch.setattr(
-        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: None
+        "app.services.hub_issues.creator.peek_module_owner", lambda *a, **k: None
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         result = create_hub_issue_for_ticket_auto(ticket_id)
     mp.assert_not_called()
     hub = db_session.get(HubIssue, result.hub_issue_id)
     assert hub.status == "pending_linear_review"
+    # 责任人默认值 = 处理人（毕业时 dispatch_handler 已写入 ticket.handler_user_id）
+    assert hub.owner_user_id == handler.id
 
 
 def test_gate_classify_off_module_owner_resolved_pushes(db_session, monkeypatch) -> None:
@@ -388,7 +390,7 @@ def test_gate_classify_off_module_owner_resolved_pushes(db_session, monkeypatch)
         )(),
     )
     monkeypatch.setattr(
-        "app.services.hub_issues.creator.resolve_module_owner", lambda *a, **k: handler
+        "app.services.hub_issues.creator.peek_module_owner", lambda *a, **k: handler
     )
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         result = create_hub_issue_for_ticket_auto(ticket_id)

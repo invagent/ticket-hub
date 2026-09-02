@@ -30,8 +30,8 @@ from app.models import HubIssue, Ticket, TicketHubIssueHistory
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.cascade.reply_sync import backfill_reply_to_ticket
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
-from app.services.hub_issues.module_owner import resolve_module_owner
-from app.services.hub_issues.op_status import OP_PROCESSING
+from app.services.hub_issues.module_owner import peek_module_owner
+from app.services.hub_issues.op_status import OP_PROCESSING, default_owner_from_ticket_handler
 
 logger = get_logger(__name__)
 
@@ -226,7 +226,7 @@ def ensure_hub_issue_for_ticket(
         created=True,
         dispatch_missed=dispatch_missed,
         module_owner_resolved=(
-            resolve_module_owner(db, hub.product_line_code, hub.module) is not None
+            peek_module_owner(db, hub.product_line_code, hub.module) is not None
         ),
     )
 
@@ -279,7 +279,7 @@ def create_hub_issue_for_ticket_auto(ticket_id: int) -> HubIssueResult | None:
         return result
 
     # 闸门①关：分类自动确认。研发类推 Linear 前按「模块负责人是否确定」分流：
-    # 责任人确定（resolve_module_owner 命中）→ 自动推 Linear；不确定 → 停
+    # 责任人确定（peek_module_owner 命中）→ 自动推 Linear；不确定 → 停
     # pending_linear_review 待处理人确认（工作台选人推送）。
     # Operation 自动答复链由 Celery drain 扫 op_status=processing/agent
     # 触发（不在此处调用）；Internal_task 无动作。
@@ -324,6 +324,7 @@ def _mark_pending_linear_review(hub_issue_id: int) -> None:
             return
         prev = hub.status
         hub.status = "pending_linear_review"
+        hub.owner_user_id = default_owner_from_ticket_handler(db, hub)
         StatusHistoryRepository(db).record(
             entity_type="hub_issue",
             entity_id=hub.id,

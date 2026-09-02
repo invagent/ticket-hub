@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.auth import issue_jwt
-from app.models import AssignmentScopeModule, HubIssue, StatusHistory, Ticket, User
+from app.models import HubIssue, Module, ProductLine, StatusHistory, Ticket, User
 
 
 def _bearer(uid: int, *, name: str = "carol", role: str = "supervisor") -> dict[str, str]:
@@ -43,11 +43,12 @@ def review_world(db_session: Session) -> Session:
         )
     )
     db_session.flush()
+    db_session.add(ProductLine(code="发票云", name="发票云"))
     db_session.add(
-        AssignmentScopeModule(
+        Module(
             product_line_code="发票云",
-            module="开票",
-            user_id=40,
+            name="开票",
+            dev_owners="module-owner",
         )
     )
     db_session.add(
@@ -103,6 +104,19 @@ def test_list_pending_linear_review(app_client: TestClient, review_world: Sessio
     assert item90["module"] == "开票"
 
 
+def test_list_pending_linear_review_preview_does_not_consume_rotation(
+    app_client: TestClient, review_world: Session
+) -> None:
+    """展示预览用 peek，不消耗轮询名额——反复查看队列不应改变游标。"""
+    for _ in range(3):
+        r = app_client.get("/api/supervisor/pending-linear-review", headers=_bearer(2))
+        assert r.status_code == 200, r.text
+        item90 = next(i for i in r.json()["items"] if i["hub_issue_id"] == 90)
+        assert item90["default_assignee_user_id"] == 40
+    mod = review_world.query(Module).filter_by(product_line_code="发票云", name="开票").one()
+    assert mod.dev_owner_rotation_cursor == 0
+
+
 def test_list_pending_linear_review_filters_to_own_handler(
     app_client: TestClient, review_world: Session
 ) -> None:
@@ -155,6 +169,7 @@ def test_confirm_linear_push_defaults_to_module_owner(
     hub = review_world.get(HubIssue, 90)
     review_world.refresh(hub)
     assert hub.status == "created"
+    assert hub.owner_user_id == 40  # 回落模块负责人（轮询选中）
     push.assert_called_once_with(90, assignee_override_user_id=40)
     sh = (
         review_world.query(StatusHistory)
@@ -177,7 +192,25 @@ def test_confirm_linear_push_with_explicit_assignee(
     hub = review_world.get(HubIssue, 91)
     review_world.refresh(hub)
     assert hub.status == "created"
+    assert hub.owner_user_id == 41  # 手选值，不调用 consume_module_owner
     push.assert_called_once_with(91, assignee_override_user_id=41)
+
+
+def test_confirm_linear_push_explicit_assignee_skips_consume(
+    app_client: TestClient, review_world: Session
+) -> None:
+    """手选 assignee_user_id 时不应调用 consume_module_owner（不消耗轮询游标）。"""
+    with (
+        patch("app.api.supervisor.push_hub_issue_to_linear"),
+        patch("app.api.supervisor.consume_module_owner") as consume,
+    ):
+        r = app_client.post(
+            "/api/supervisor/confirm-linear-push",
+            json={"hub_issue_id": 91, "assignee_user_id": 41},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
+    consume.assert_not_called()
 
 
 def test_confirm_linear_push_rejects_non_pending(

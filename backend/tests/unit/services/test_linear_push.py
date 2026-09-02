@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from adapters.linear import CreatedIssue, LinearNetworkError
 from app.config import get_settings
-from app.models import AssignmentScopeModule, HubIssue, Source, StatusHistory, Ticket, User
+from app.models import HubIssue, Module, ProductLine, Source, StatusHistory, Ticket, User
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 
 
@@ -131,10 +131,11 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
 
 
 def test_push_uses_module_owner_over_assigned(world: Session) -> None:
-    """转研发责任人：模块研发责任人（assignment_scopes_module）优先于入库责任人。"""
+    """转研发责任人：模块研发责任人（modules.dev_owners 轮询）优先于入库责任人。"""
     world.add(User(id=30, feishu_uid="ou_a30", name="入库责任人", linear_user_id="lin-u-30"))
     world.add(User(id=31, feishu_uid="ou_a31", name="模块负责人", linear_user_id="lin-u-31"))
-    world.add(AssignmentScopeModule(user_id=31, product_line_code="fpy", module="开票模块"))
+    world.add(ProductLine(code="fpy", name="fpy"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="模块负责人"))
     world.commit()
     hub = _make_hub(
         world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块"
@@ -142,6 +143,30 @@ def test_push_uses_module_owner_over_assigned(world: Session) -> None:
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].assignee_id == "lin-u-31"  # 模块负责人，而非 lin-u-30
+    world.refresh(hub)
+    assert hub.owner_user_id == 31  # consume_module_owner 选定后写责任人字段
+
+
+def test_push_consumes_module_owner_rotation_across_hubs(world: Session) -> None:
+    """同模块多人 dev_owners，连续两次推送应轮询到不同的人。"""
+    world.add(User(id=50, feishu_uid="ou_a50", name="研发甲", linear_user_id="lin-u-50"))
+    world.add(User(id=51, feishu_uid="ou_a51", name="研发乙", linear_user_id="lin-u-51"))
+    world.add(ProductLine(code="fpy2", name="fpy2"))
+    world.add(Module(product_line_code="fpy2", name="收票模块", dev_owners="研发甲、研发乙"))
+    world.commit()
+    hub1 = _make_hub(world, 51, product_line_code="fpy2", module="收票模块")
+    fake1 = _FakeLinearClient()
+    push_hub_issue_to_linear(hub1.id, world, client=fake1)  # type: ignore[arg-type]
+    assert fake1.requests[0].assignee_id == "lin-u-50"
+    world.refresh(hub1)
+    assert hub1.owner_user_id == 50
+
+    hub2 = _make_hub(world, 52, product_line_code="fpy2", module="收票模块")
+    fake2 = _FakeLinearClient()
+    push_hub_issue_to_linear(hub2.id, world, client=fake2)  # type: ignore[arg-type]
+    assert fake2.requests[0].assignee_id == "lin-u-51"
+    world.refresh(hub2)
+    assert hub2.owner_user_id == 51
 
 
 def test_push_uses_dispatched_assignee(world: Session) -> None:
@@ -375,6 +400,8 @@ def test_push_uses_assignee_override(world: Session) -> None:
     )
     assert fake.requests[0].assignee_id == "lu-ovr"  # type: ignore[attr-defined]
     assert fake.requests[0].team_id == "team-ovr"  # type: ignore[attr-defined]
+    world.refresh(hub)
+    assert hub.owner_user_id == 30  # override 值直接写责任人字段
 
 
 def test_push_without_override_uses_assigned_user_id(world: Session) -> None:

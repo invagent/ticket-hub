@@ -628,6 +628,12 @@ class HubIssue(Base):
     assigned_user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True, index=True
     )
+    # 责任人：默认=处理人（ticket.handler_user_id），推 Linear 后=推送时确定的模块
+    # 负责人（module_owner.py consume_module_owner）。与 assigned_user_id（入库路由
+    # 责任人，语义固定不变）是两个不同字段，别混用。
+    owner_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True, index=True
+    )
 
     # Timeline
     first_seen_at: Mapped[datetime] = mapped_column(
@@ -914,6 +920,9 @@ class Module(Base):
     product_owner: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # 研发责任人（逗号分隔多人）
     dev_owners: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # dev_owners 多人时的轮询游标（module_owner.py consume_module_owner 维护，
+    # 取模运算天然容错人员增减导致的越界，不需要显式重置）
+    dev_owner_rotation_cursor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # 最后操作人
     updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -431,6 +431,7 @@ export function HubIssuesListPage() {
                     "产品分类",
                     "研发工程状态",
                     "任务处理人",
+                    "责任人",
                     "任务创建时间",
                     "任务关闭时间",
                     "任务关联工单",
@@ -447,7 +448,7 @@ export function HubIssuesListPage() {
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="p-6 text-center text-xs text-hub-textFaint">
+                    <td colSpan={15} className="p-6 text-center text-xs text-hub-textFaint">
                       暂无任务
                     </td>
                   </tr>
@@ -557,6 +558,11 @@ export function HubIssuesListPage() {
                           : h.assigned_user_id
                             ? (userMap.get(h.assigned_user_id) ?? `#${h.assigned_user_id}`)
                             : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-hub-textSecondary">
+                        {h.owner_user_id
+                          ? (userMap.get(h.owner_user_id) ?? `#${h.owner_user_id}`)
+                          : "—"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-hub-textFaint font-mono text-[11px]">
                         {fmtDate(h.first_seen_at)}

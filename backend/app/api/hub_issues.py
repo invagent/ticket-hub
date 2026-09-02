@@ -52,6 +52,8 @@ class HubIssueSummary(BaseModel):
     product: str | None
     module: str | None
     assigned_user_id: int | None
+    # 责任人：默认=处理人，推 Linear 后=推送时确定的模块负责人（module_owner.py）
+    owner_user_id: int | None = None
     first_seen_at: datetime
     last_seen_at: datetime
     expected_resolved_at: datetime | None

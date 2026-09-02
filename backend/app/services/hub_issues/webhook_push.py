@@ -32,7 +32,7 @@ from app.api.ksm_nodes import parse_ksm_nodes
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.models import Customer, CustomerIdentity, HubIssue, ProductLine, Ticket, User
-from app.services.hub_issues.module_owner import resolve_module_owner
+from app.services.hub_issues.module_owner import peek_module_owner
 
 logger = get_logger(__name__)
 
@@ -129,21 +129,28 @@ def _reporter_field(ticket: Ticket | None, key: str) -> str:
     return str(ticket.reporter.get(key) or "")
 
 
-def build_webhook_fields(db: Session, hub: HubIssue) -> dict[str, Any]:
-    """组装 webhook `fields`。所有值转为字符串（缺失→空串），对方系统按字符串接收。"""
+def build_webhook_fields(
+    db: Session, hub: HubIssue, *, assignee_name: str | None = None
+) -> dict[str, Any]:
+    """组装 webhook `fields`。所有值转为字符串（缺失→空串），对方系统按字符串接收。
+
+    handleUser：调用方（_push_via_webhook）在真正推送前已 consume_module_owner
+    选定责任人并通过 assignee_name 传入——这里不再自己查一次，避免脱离推送主流程
+    被调用时意外消耗轮询名额。未传入时回落 peek（只读预览，不消耗名额），再回落
+    入库责任人（hub.assigned_user_id）。
+    """
     settings = get_settings()
     src = _primary_source_ticket(db, hub)
 
-    # handleUser：转研发责任人 = 模块研发责任人（assignment_scopes_module，按当前
-    # 产品线+模块查），查不到回落入库责任人（hub.assigned_user_id）。
-    assignee_name = ""
-    owner = resolve_module_owner(db, hub.product_line_code, hub.module)
-    if owner is not None:
-        assignee_name = owner.name or ""
-    elif hub.assigned_user_id is not None:
-        assignee = db.get(User, hub.assigned_user_id)
-        if assignee is not None:
-            assignee_name = assignee.name or ""
+    if assignee_name is None:
+        assignee_name = ""
+        owner = peek_module_owner(db, hub.product_line_code, hub.module)
+        if owner is not None:
+            assignee_name = owner.name or ""
+        elif hub.assigned_user_id is not None:
+            assignee = db.get(User, hub.assigned_user_id)
+            if assignee is not None:
+                assignee_name = assignee.name or ""
 
     product_line = settings.linear_webhook_default_product_line
     product_category = _product_line_name(db, hub.product_line_code)
@@ -181,10 +188,11 @@ def push_hub_issue_to_webhook(
     hub: HubIssue,
     *,
     client: LinearWebhookClient | None = None,
+    assignee_name: str | None = None,
 ) -> WebhookPushResult:
     """POST hub 到飞书 webhook。失败抛异常（由 linear_push 统一转 pending）。"""
     settings = get_settings()
-    fields = build_webhook_fields(db, hub)
+    fields = build_webhook_fields(db, hub, assignee_name=assignee_name)
 
     owns_client = client is None
     if client is None:

@@ -124,6 +124,20 @@ def set_hub_tickets_handler(db: Session, hub: HubIssue, user_id: int) -> int:
     return len(tickets)
 
 
+def default_owner_from_ticket_handler(db: Session, hub: HubIssue) -> int | None:
+    """hub 进入 pending_linear_review 时「责任人」默认值 = 处理人（挂载 ticket 的
+    handler_user_id，同 hub 下该字段值一致，取第一条即可）。查不到返回 None。"""
+    from app.models import Ticket
+
+    return (
+        db.query(Ticket.handler_user_id)
+        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+        .filter(Ticket.handler_user_id.is_not(None))
+        .limit(1)
+        .scalar()
+    )
+
+
 def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> str:
     """人工介入处理人名：default_pool 对应 user.name；未配则 '主管'。"""
     settings = settings or get_settings()

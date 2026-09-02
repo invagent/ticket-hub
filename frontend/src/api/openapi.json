@@ -3193,6 +3193,17 @@
             ],
             "title": "Assigned User Id"
           },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
           "closed_at": {
             "anyOf": [
               {

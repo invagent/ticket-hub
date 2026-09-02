@@ -12,10 +12,10 @@ from sqlalchemy.orm import Session
 from adapters.linear import LinearNetworkError
 from app.config import get_settings
 from app.models import (
-    AssignmentScopeModule,
     Customer,
     CustomerIdentity,
     HubIssue,
+    Module,
     ProductLine,
     Source,
     StatusHistory,
@@ -142,10 +142,12 @@ def test_build_fields_full_mapping(world: Session) -> None:
 
 
 def test_build_fields_handle_user_from_module_owner(world: Session) -> None:
-    """handleUser = 模块研发责任人（assignment_scopes_module），而非入库责任人。"""
+    """handleUser = 模块研发责任人（modules.dev_owners，未传 assignee_name 时回落
+    peek 预览），而非入库责任人。"""
     world.add(User(id=40, feishu_uid="ou_o40", name="入库责任人"))
     world.add(User(id=41, feishu_uid="ou_o41", name="研发负责人"))
-    world.add(AssignmentScopeModule(user_id=41, product_line_code="fpy", module="开票模块"))
+    world.add(ProductLine(code="fpy", name="fpy"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="研发负责人"))
     world.commit()
     hub = _make_hub(world, 40, assigned_user_id=40, product_line_code="fpy", module="开票模块")
     _make_ksm_ticket(world, hub)
@@ -247,6 +249,30 @@ def test_push_hub_issue_to_linear_routes_to_webhook(world: Session, monkeypatch)
     assert hub.linear_status == "已转产研"
     assert hub.linear_status_synced_at is not None
     assert len(fake.sent) == 1
+
+
+def test_push_hub_issue_to_linear_webhook_consumes_module_owner(
+    world: Session, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """webhook 分支真正推送时 consume_module_owner 选定责任人，写入
+    hub.owner_user_id 且 handleUser 字段一并生效。"""
+    from app.services.hub_issues import webhook_push
+
+    world.add(User(id=60, feishu_uid="ou_o60", name="研发负责人"))
+    world.add(ProductLine(code="fpy", name="fpy"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="研发负责人"))
+    world.commit()
+    hub = _make_hub(world, 8, product_line_code="fpy", module="开票模块")
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-8")
+
+    fake = _FakeWebhookClient()
+    monkeypatch.setattr(webhook_push, "LinearWebhookClient", lambda cfg, **kw: fake)
+
+    res = push_hub_issue_to_linear(hub.id, world)
+    assert res is not None
+    world.refresh(hub)
+    assert hub.owner_user_id == 60
+    assert fake.sent[0]["handleUser"] == "研发负责人"
 
 
 def test_webhook_idempotent(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]

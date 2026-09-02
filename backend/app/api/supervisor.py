@@ -78,11 +78,12 @@ from app.services.hub_issues.creator import (
     ensure_hub_issue_for_ticket,
 )
 from app.services.hub_issues.linear_push import push_hub_issue_to_linear
-from app.services.hub_issues.module_owner import resolve_module_owner
+from app.services.hub_issues.module_owner import consume_module_owner, peek_module_owner
 from app.services.hub_issues.op_status import (
     OP_PROCESSING,
     OP_REVIEWING,
     apply_op_status,
+    default_owner_from_ticket_handler,
     record_ticket_action,
 )
 from app.services.ksm.notice_store import NoticeStore
@@ -2021,11 +2022,12 @@ def confirm_classification(
         )
         reason = "主管确认分类"
     elif hub.type in ("Bug_fix", "Demand"):
-        if resolve_module_owner(db, hub.product_line_code, hub.module) is not None:
+        if peek_module_owner(db, hub.product_line_code, hub.module) is not None:
             hub.status = "created"
             reason = "确认分类，推送 Linear"
         else:
             hub.status = "pending_linear_review"
+            hub.owner_user_id = default_owner_from_ticket_handler(db, hub)
             reason = "确认分类，待处理人确认后推 Linear"
     else:  # Internal_task / Complaint
         hub.status = "created"
@@ -2143,10 +2145,11 @@ def reclassify(
         # 按模块负责人是否确定分流：确定 → created 直推 Linear；不确定 →
         # pending_linear_review 待处理人确认（工作台选人推送）。统一口径，不再
         # 区分「处理中 Operation 转研发」与「pending_review 原路径」。
-        if resolve_module_owner(db, hub.product_line_code, hub.module) is not None:
+        if peek_module_owner(db, hub.product_line_code, hub.module) is not None:
             hub.status = "created"
         else:
             hub.status = "pending_linear_review"  # 待处理人确认后推 Linear
+            hub.owner_user_id = default_owner_from_ticket_handler(db, hub)
     else:  # Internal_task / Complaint：不推 Linear、不走答复
         hub.status = "created"
     StatusHistoryRepository(db).record(
@@ -2237,7 +2240,7 @@ def list_pending_linear_review(
     limit: int = 50,
 ) -> PendingLinearReviewResponse:
     """闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
-    负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+    负责人（peek_module_owner，仅预览不消耗轮询名额）及其是否在 Linear 工作区（linear_user_id 非空）。
 
     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
     """
@@ -2252,7 +2255,7 @@ def list_pending_linear_review(
     hubs = q.order_by(HubIssue.id.desc()).limit(min(limit, 100)).all()
     items: list[PendingLinearReviewItem] = []
     for h in hubs:
-        owner = resolve_module_owner(db, h.product_line_code, h.module)
+        owner = peek_module_owner(db, h.product_line_code, h.module)
         items.append(
             PendingLinearReviewItem(
                 hub_issue_id=h.id,
@@ -2292,11 +2295,12 @@ def confirm_linear_push(
         )
     assignee_user_id = body.assignee_user_id
     if assignee_user_id is None:
-        owner = resolve_module_owner(db, hub.product_line_code, hub.module)
+        owner = consume_module_owner(db, hub.product_line_code, hub.module)
         assignee_user_id = owner.id if owner else None
 
     prev = hub.status
     hub.status = "created"
+    hub.owner_user_id = assignee_user_id
     StatusHistoryRepository(db).record(
         entity_type="hub_issue",
         entity_id=hub.id,
