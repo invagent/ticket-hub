@@ -103,17 +103,24 @@ export function computeProcessStage(input: StageInput): ProcessStage {
     return { label, tone: "neutral" };
   }
 
-  // hub 终态优先（修缺陷1：resolved/closed 不再被误显示为"进行中"）
-  if (hubStatus && HUB_CLOSED.has(hubStatus)) {
-    return { label: "已关闭", tone: "closed" };
-  }
-  // 闸门/待人工态
+  // 闸门/待人工态优先于运营处理机——毕业时 op_status 已预置 processing（见
+  // creator.py），但闸门①/②开时工单可能仍卡在 pending_review 等人工确认分类/
+  // 推送，这时不该显示运营机的「处理中」，要显示闸门本身的状态。
   if (hubStatus === "pending_review") return { label: "待确认分类", tone: "pending" };
   if (hubStatus === "pending_linear_review") return { label: "待确认推送", tone: "pending" };
   if (hubStatus === "pending") return { label: "待人工处理", tone: "pending" };
 
-  // Operation：运营处理机
+  // Operation：op_status 是业务层权威状态，优先于 hub.status 终态判断（修缺陷3，
+  // 2026-09-02：答复回写成功会立即把 hub.status 推到 resolved，但 op_status
+  // 独立停在 answered 观察期——T+7 自动关闭前不该被误显示成「已关闭」）。
+  // hub.status 终态只在 op_status 为空（研发类/Internal_task 无此概念）时才
+  // 作为回落判断。
   if (opStatus) return OP_STAGE[opStatus] ?? { label: opStatus, tone: "neutral" };
+
+  // hub 终态（修缺陷1：resolved/closed 不再被误显示为"进行中"）。
+  if (hubStatus && HUB_CLOSED.has(hubStatus)) {
+    return { label: "已关闭", tone: "closed" };
+  }
 
   // 研发类通用态（细粒度进度另见「研发进度」列）
   if (predictedType && DEV_TYPES.has(predictedType)) {
