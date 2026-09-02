@@ -66,6 +66,7 @@ class TicketSummary(BaseModel):
     handler_user_id: int | None = None  # 处理人（当前实际持有人）
     handler_user_name: str | None = None
     predicted_type: str | None = None
+    predicted_confidence: float | None = None  # AI 分类置信度；0=triage 失败兜底默认值，非真实判断
     hub_issue_id: int | None
     op_status: str | None = (
         None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）

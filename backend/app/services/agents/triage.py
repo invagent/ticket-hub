@@ -30,6 +30,10 @@ logger = get_logger(__name__)
 
 _VALID_TYPES = frozenset({"Operation", "Bug_fix", "Demand", "Internal_task", "Complaint"})
 _SKILL_NAME = "triage"
+# triage LLM 彻底失败时的兜底分类：默认落 Operation（业务上最常见的分流去向），
+# confidence=0 保证绝不越过自动毕业门槛，前端据 AgentDecision.reason 前缀区分展示。
+_FALLBACK_TYPE = "Operation"
+_FALLBACK_REASON_PREFIX = "AI 分类失败，系统默认标记为运营类，请人工核实"
 
 
 class TriageError(Exception):
@@ -168,7 +172,9 @@ def _parse(content: str) -> dict[str, Any]:
 
 def run_ticket_triage(ticket_id: int, db: Session | None = None) -> TriageResult | None:
     """BG task body. 写 predicted_* + classify_type 审计（+ 混合时 split_ticket
-    审计）。任何失败返回 None（记日志不抛），不阻塞 worker。"""
+    审计）。LLM 彻底失败时写兜底分类（confidence=0，见 _FALLBACK_TYPE），仍返回
+    None（调用方据此跳过后续模块归类/自动分流，不阻塞 worker）；工单/ticket 不
+    存在时同样返回 None。"""
     own_session = db is None
     if own_session:
         db = make_session()
@@ -186,7 +192,34 @@ def run_ticket_triage(ticket_id: int, db: Session | None = None) -> TriageResult
                 module=t.module,
             )
         except (TriageError, LLMRouterError) as e:
+            # LLM 彻底失败（provider 耗尽重试/解析非法）：不再永久留 predicted_type=
+            # None——那样这单只能靠人工偶然在列表里翻到才会被发现。兜底给一个默认
+            # 分类（Operation，业务上最常见的分流去向），confidence=0（低于自动毕业
+            # 门槛 hub_issue_auto_confidence，绝不会被误判自动毕业），逼停在「已分类
+            # 但未毕业」态，处理人在工单列表能看到并需要手动确认/改判后才会毕业。
+            # AgentDecision.reason 显式标注兜底来源，前端据此与真实 AI 判断区分展示
+            # （见 _FALLBACK_REASON_PREFIX）。
             logger.warning("triage_failed", ticket_id=ticket_id, error=str(e))
+            t.predicted_type = _FALLBACK_TYPE
+            t.predicted_confidence = Decimal("0.00")
+            t.classified_at = datetime.now(UTC)
+            db.add(
+                AgentDecision(
+                    decision_type="classify_type",
+                    subject_type="ticket",
+                    subject_id=t.id,
+                    proposal={
+                        "predicted_type": _FALLBACK_TYPE,
+                        "confidence": 0.0,
+                        "reason": f"{_FALLBACK_REASON_PREFIX}：{e}",
+                        "model": None,
+                        "cost_usd": 0.0,
+                        "skill": _SKILL_NAME,
+                        "is_fallback": True,
+                    },
+                )
+            )
+            db.commit()
             return None
 
         t.predicted_type = result.type

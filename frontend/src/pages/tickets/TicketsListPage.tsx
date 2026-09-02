@@ -364,7 +364,10 @@ export function TicketsListPage() {
         size: 90,
         cell: ({ row }) =>
           row.original.predicted_type ? (
-            <PredictedTypeBadge type={row.original.predicted_type} />
+            <PredictedTypeBadge
+              type={row.original.predicted_type}
+              confidence={row.original.predicted_confidence}
+            />
           ) : (
             <span className="text-hub-textFaint text-[10.5px]">未分类</span>
           ),

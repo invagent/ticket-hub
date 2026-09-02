@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.llm_router import LLMResponse
 from app.core.llm_router.providers import LLMProvider
+from app.core.llm_router.providers.base import ProviderRetryableError
 from app.core.llm_router.router import LLMRouter
 from app.models import AgentDecision, Source, Ticket
 from app.services.agents.triage import TriageError, run_ticket_triage, triage_payload
@@ -29,8 +30,19 @@ class _FakeProvider(LLMProvider):
         )
 
 
+class _FailingProvider(LLMProvider):
+    name = "fake-failing"
+
+    def complete(self, messages, **kwargs):  # type: ignore[no-untyped-def]
+        raise ProviderRetryableError("upstream timeout")
+
+
 def _router(content: str) -> LLMRouter:
     return LLMRouter([_FakeProvider(content)])
+
+
+def _failing_router() -> LLMRouter:
+    return LLMRouter([_FailingProvider()])
 
 
 _SINGLE = '{"type":"Bug_fix","confidence":0.95,"reason":"报错","is_mixed":false,"sub_problems":[]}'
@@ -135,3 +147,27 @@ def test_run_triage_mixed_writes_split(world: Session, monkeypatch) -> None:  # 
     split = next(d for d in decisions if d.decision_type == "split_ticket")
     assert len(split.proposal["sub_issues"]) == 2
     assert split.proposal["skill"] == "triage"
+
+
+def test_run_triage_llm_exhausted_writes_fallback_operation(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """LLM 全部 provider 耗尽重试 → 不再永久留 predicted_type=None：兜底写
+    Operation + confidence=0（绝不越过自动毕业门槛）+ AgentDecision 标注
+    is_fallback，供前端与真实 AI 判断区分展示。run_ticket_triage 仍返回 None
+    （调用方跳过后续模块归类/自动分流）。"""
+    from app.services.agents import triage as mod
+
+    monkeypatch.setattr(mod.LLMRouter, "from_settings", classmethod(lambda _c: _failing_router()))
+    t = _mk(world, short_code="TKT-TRI-3", source_ticket_id="tri-3")
+    res = run_ticket_triage(t.id, db=world)
+    assert res is None
+
+    world.refresh(t)
+    assert t.predicted_type == "Operation"
+    assert float(t.predicted_confidence) == 0.0
+    assert t.classified_at is not None
+
+    dec = world.query(AgentDecision).filter_by(subject_id=t.id, decision_type="classify_type").one()
+    assert dec.proposal["is_fallback"] is True
+    assert dec.proposal["confidence"] == 0.0
+    assert dec.proposal["predicted_type"] == "Operation"
+    assert "AI 分类失败" in dec.proposal["reason"]

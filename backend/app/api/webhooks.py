@@ -156,7 +156,10 @@ def run_post_ingest_agents(ticket_id: int) -> None:
 
     tri = run_ticket_triage(ticket_id)
     if tri is None:
-        return  # triage 失败：留 predicted_type=None，人工可见（不误分流）
+        # triage 找不到 ticket，或 LLM 彻底失败已写兜底分类（predicted_type=
+        # Operation, confidence=0，见 triage.py _FALLBACK_TYPE）——两种情况都
+        # 不继续模块归类/自动分流，工单在列表可见、需人工手动确认才会毕业。
+        return
 
     # 产品模块归类（覆盖生效 plc/module + 重新路由）。在分流前——毕业 hub 要继承规范值。
     _resolve_module_and_route(ticket_id)

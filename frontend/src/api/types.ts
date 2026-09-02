@@ -4776,6 +4776,8 @@ export interface components {
             op_status?: string | null;
             /** Parent Ticket Id */
             parent_ticket_id: number | null;
+            /** Predicted Confidence */
+            predicted_confidence?: number | null;
             /** Predicted Module */
             predicted_module?: string | null;
             /** Predicted Module Confidence */
@@ -4892,6 +4894,8 @@ export interface components {
             module: string | null;
             /** Op Status */
             op_status?: string | null;
+            /** Predicted Confidence */
+            predicted_confidence?: number | null;
             /** Predicted Type */
             predicted_type?: string | null;
             /** Product Line Code */

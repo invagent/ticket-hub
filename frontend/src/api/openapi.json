@@ -7321,6 +7321,17 @@
             ],
             "title": "Parent Ticket Id"
           },
+          "predicted_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Confidence"
+          },
           "predicted_module": {
             "anyOf": [
               {
@@ -7814,6 +7825,17 @@
               }
             ],
             "title": "Op Status"
+          },
+          "predicted_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Confidence"
           },
           "predicted_type": {
             "anyOf": [

@@ -398,7 +398,9 @@ export function TicketDetailPage() {
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
                 <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
-                {d.predicted_type && <PredictedTypeBadge type={d.predicted_type} />}
+                {d.predicted_type && (
+                  <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
+                )}
                 <ProcessStatusBadge
                   opStatus={opStatus}
                   hubStatus={hub.data?.status}
@@ -2209,19 +2211,31 @@ const TYPE_LABELS: Record<string, { label: string; bg: string; fg: string; bd: s
   Complaint: { label: "投诉", bg: "#b04a4a", fg: "#ffffff", bd: "#b04a4a" },
 };
 
-export function PredictedTypeBadge({ type }: { type: string }) {
-  const meta = TYPE_LABELS[type] ?? {
-    label: type,
-    bg: "#f3f0e9",
-    fg: "#8b8577",
-    bd: "#e8e3d9",
-  };
+// confidence===0 = triage LLM 彻底失败时的兜底默认分类（非 AI 真实判断），灰色
+// + 待确认字样区分，避免处理人误以为 AI 真的判定过。
+const _FALLBACK_META = { bg: "#f1eee6", fg: "#8b8577", bd: "#e3ded2" };
+
+export function PredictedTypeBadge({
+  type,
+  confidence,
+}: {
+  type: string;
+  confidence?: number | null;
+}) {
+  const isFallback = confidence === 0;
+  const meta = isFallback
+    ? _FALLBACK_META
+    : TYPE_LABELS[type] ?? { label: type, bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" };
+  const label = isFallback
+    ? `${TYPE_LABELS[type]?.label ?? type}（待确认）`
+    : (TYPE_LABELS[type]?.label ?? type);
   return (
     <span
       className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap"
       style={{ background: meta.bg, color: meta.fg, borderColor: meta.bd }}
+      title={isFallback ? "AI 分类失败，系统默认标记，请人工核实" : undefined}
     >
-      {meta.label}
+      {label}
     </span>
   );
 }
