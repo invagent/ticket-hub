@@ -25,12 +25,15 @@ from app.services import knowledge_feedback as kf
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
+from app.services.dispatch import dispatch_handler
+from app.services.hub_issues.module_owner import peek_module_owner
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_CLOSED,
     OP_EXCEPTION,
     OP_PROCESSING,
     apply_op_status,
+    default_owner_from_ticket_handler,
     record_ticket_action,
     set_hub_tickets_handler,
 )
@@ -633,8 +636,11 @@ def update_hub_attributes(
     user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> UpdateAttributesResponse:
-    """只改数据（type/product_line_code/module），不联动下游（不推 Linear/不重分派/
-    不重答/不改 hub.status/op_status）。处理人本人/主管/管理员可改；已关闭 409。"""
+    """改 type/product_line_code/module。改 type 时按新类型规整下游状态（status/
+    op_status/dispatch），口径与 reclassify 一致，避免留下 pending_linear_review
+    等旧类型专属状态卡死的孤儿态；但不主动推 Linear（研发类改判后仍需人工
+    repush-linear 或走 confirm-linear-push，保留主管手动把关）。
+    处理人本人/主管/管理员可改；已关闭 409。"""
     _authorize_hub_handler(db, hub_issue_id, user)
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None or hub.deleted_at is not None:
@@ -683,6 +689,48 @@ def update_hub_attributes(
             )
         updated_tickets = len(linked)
         changes.append(f"类型 {old}→{body.type}")
+
+        # status 规整：仅对「已确认过分类」的 hub 生效（pending_review 待确认
+        # 分类的 hub 交给 confirm-classification/graduate 决定初次分流，这里不
+        # 抢它的活，否则光改类型下拉框还没点确认就被推进 created/pending_linear_review）。
+        if hub.status != "pending_review":
+            # 旧类型专属的 status（pending_linear_review/pending 都是研发类
+            # Linear 推送流程专属）留在非研发类上会变成孤儿态——不进任何队列、
+            # 也不会被任何自动链捡起（TKT-006584 教训：Bug_fix→Operation 后卡在
+            # pending_linear_review，既不进运营答复链也从待推 Linear 队列消失）。
+            if hub.status in ("pending_linear_review", "pending") and body.type not in (
+                "Bug_fix",
+                "Demand",
+            ):
+                hub.status = "created"
+
+            if body.type == "Operation":
+                # 进入运营类：回炉自动答复链（op_status=processing/agent）+ 按
+                # 分派引擎预分配运营处理人，口径与 reclassify/confirm-classification 一致。
+                hub.status = "created"
+                apply_op_status(
+                    db,
+                    hub,
+                    to_status=OP_PROCESSING,
+                    handler="agent",
+                    reason=f"手动修改 {old}→运营，回炉答复链",
+                )
+                db.flush()
+                dr = dispatch_handler(db, hub)
+                if dr.user_id is not None:
+                    hub.op_handler_user_id = dr.user_id
+                    set_hub_tickets_handler(db, hub, dr.user_id)
+            elif body.type in ("Bug_fix", "Demand") and hub.status not in (
+                "pending_linear_review",
+                "pending",
+            ):
+                # 进入研发类：模块负责人不确定则停 pending_linear_review 待人工
+                # 选人推送（不主动推 Linear，留给主管走 confirm-linear-push/repush-linear）。
+                if peek_module_owner(db, hub.product_line_code, hub.module) is None:
+                    hub.status = "pending_linear_review"
+                    hub.owner_user_id = default_owner_from_ticket_handler(db, hub)
+                elif hub.status != "created":
+                    hub.status = "created"
     if body.product_line_code is not None and body.product_line_code != hub.product_line_code:
         changes.append(f"产品线 {hub.product_line_code}→{body.product_line_code}")
         hub.product_line_code = body.product_line_code
