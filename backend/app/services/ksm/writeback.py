@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -59,6 +59,9 @@ from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
 from app.services.ksm.notice_store import NoticeStoreLike
+
+if TYPE_CHECKING:
+    from app.services.cascade.outbox_retry import OutboxRetryResult
 
 logger = get_logger(__name__)
 
@@ -609,3 +612,17 @@ def drain_ksm_outbox(
     finally:
         if owns_client:
             client.close()
+
+
+def retry_single_row(sender: KSMWritebackSender, row: SyncOutbox) -> OutboxRetryResult:
+    """处理人手工重试单行的适配层：复用 _process_row，不重置 attempts/status
+    ——该行已是 failed，_process_row 内部的 _record_failure 若这次仍失败会把
+    attempts 再 +1（通常维持 failed，因为早已 >= max_attempts）；成功则正常
+    翻 sent。只关心这一行最终落地的 status/last_error，不复用 DrainReport 的
+    批量聚合字段。运行期延迟导入避免循环依赖（outbox_retry.py 反向 import
+    本模块），类型标注走 TYPE_CHECKING 避免 mypy 报 no-any-return。"""
+    from app.services.cascade.outbox_retry import OutboxRetryResult
+
+    report = DrainReport()
+    sender._process_row(row, report)
+    return OutboxRetryResult(outbox_id=row.id, sent=row.status == "sent", error=row.last_error)

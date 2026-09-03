@@ -40,6 +40,11 @@ from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
 from app.services.attachments.thumbnail import THUMB_MIME, make_thumbnail
+from app.services.cascade.outbox_retry import (
+    OutboxRetryError,
+    latest_failed_outbox_for_ticket,
+    retry_outbox_row,
+)
 from app.services.cascade.return_sync import ReturnSyncError, request_return
 
 router = APIRouter()
@@ -142,6 +147,11 @@ class TicketDetail(TicketSummary):
     customer_id: int | None = None
     reporter_name: str | None = None
     attachments: list[AttachmentOut] = []  # 附件表记录（智齿/KSM/ai_cs 同步的截图等）
+    # 最近一次出站回写失败（跨 6 种 sync_outbox.kind 通用；None=无失败或已重试成功）
+    outbox_failed_id: int | None = None  # 重试时回传这个 id，前端不用关心 kind
+    outbox_failed_kind: str | None = None  # reply/status/supply/release_note/progress_note/return
+    outbox_failed_error: str | None = None  # last_error，截断展示
+    outbox_failed_attempts: int | None = None
 
 
 class TicketListResponse(BaseModel):
@@ -409,6 +419,12 @@ def get_ticket(
         )
         for a in atts
     ]
+    failed_row = latest_failed_outbox_for_ticket(db, ticket_id)
+    if failed_row is not None:
+        detail.outbox_failed_id = failed_row.id
+        detail.outbox_failed_kind = failed_row.kind
+        detail.outbox_failed_error = (failed_row.last_error or "")[:500]
+        detail.outbox_failed_attempts = failed_row.attempts
     return detail
 
 
@@ -451,6 +467,45 @@ def return_ticket(
         operator_user_id=user.user_id,
     )
     return ReturnResponse(ticket_id=result.ticket_id, outbox_id=result.outbox_id)
+
+
+class RetryOutboxResponse(BaseModel):
+    outbox_id: int
+    sent: bool
+    error: str | None
+
+
+@router.post("/{ticket_id}/retry-outbox", response_model=RetryOutboxResponse)
+def retry_outbox_endpoint(
+    ticket_id: int,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> RetryOutboxResponse:
+    """手工重试该工单最近一次失败的出站回写（不限 kind，覆盖 reply/status/
+    supply/release_note/progress_note/return）。处理人本人或主管/管理员可点，
+    权限口径与 /return 一致（ticket.handler_user_id）。同步执行，立即返回
+    成败——不是仅仅把 status 重置为 pending 甩给下一轮 2 分钟 beat。
+    """
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    if user.role not in ("admin", "supervisor") and ticket.handler_user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="需要主管/管理员权限，或本工单的处理人才能重试")
+    failed_row = latest_failed_outbox_for_ticket(db, ticket_id)
+    if failed_row is None:
+        raise HTTPException(status_code=409, detail="没有失败的回写记录")
+    try:
+        result = retry_outbox_row(db, failed_row.id)
+    except OutboxRetryError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    logger.info(
+        "ticket_retry_outbox",
+        ticket_id=ticket_id,
+        outbox_id=result.outbox_id,
+        sent=result.sent,
+        operator_user_id=user.user_id,
+    )
+    return RetryOutboxResponse(outbox_id=result.outbox_id, sent=result.sent, error=result.error)
 
 
 # 附件不可变（storage_key 确定性 key，内容不变）→ 长缓存，重开工单/复现同图走浏览器缓存。

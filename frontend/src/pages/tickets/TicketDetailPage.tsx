@@ -39,6 +39,17 @@ function sourceLabel(code: string | null | undefined): string {
   return SOURCE_LABEL[code] ?? code;
 }
 
+// sync_outbox.kind 英文枚举 → 中文（处理人「回写失败」横幅展示用；与后端
+// history_labels.py 的 OUTBOX_KIND_ZH 同义，各自维护一份，参照既有枚举翻译惯例）。
+const OUTBOX_KIND_ZH: Record<string, string> = {
+  reply: "答复",
+  status: "状态回写",
+  supply: "补料",
+  release_note: "发版通知",
+  progress_note: "进度通知",
+  return: "退回",
+};
+
 function fmtDateTime(v: string | null | undefined): string {
   if (!v) return "—";
   return new Date(v).toLocaleString("zh-CN");
@@ -298,6 +309,23 @@ export function TicketDetailPage() {
     },
     onError: (e) => setReturnErr(hubErrMsg(e)),
   });
+  // 手工重试最近一次失败的出站回写（reply/status/supply/release_note/
+  // progress_note/return 任一 kind，处理人/主管点按钮同步执行立即看结果）
+  const [retryErr, setRetryErr] = useState<string | null>(null);
+  const retryOutbox = useMutation({
+    mutationFn: () => postByPath("/api/tickets/{ticket_id}/retry-outbox", { ticket_id: id }, {}),
+    onSuccess: (r) => {
+      if (r.sent) {
+        setRetryErr(null);
+        setConfirmNotice("重试成功，已送达");
+      } else {
+        setRetryErr(r.error ?? "重试失败，原因未知");
+      }
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
+    },
+    onError: (e) => setRetryErr(hubErrMsg(e)),
+  });
   // 标记诊断：运营单 AI 自动答复有问题 → 送反思诊断工作台（处理人本人/主管均可点）
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [diagnosisErr, setDiagnosisErr] = useState<string | null>(null);
@@ -447,6 +475,31 @@ export function TicketDetailPage() {
               </span>
             </div>
           )}
+
+          {/* 出站回写失败提示（不限类型/kind——reply/status/supply/release_note/
+              progress_note/return 任一失败都会命中）：处理人本人或主管/管理员
+              可点「重试」同步立即执行，非本人只读展示。 */}
+          {d.outbox_failed_id != null && (
+            <div className="px-1 flex items-center gap-2 flex-wrap text-[11px] text-hub-rose bg-hub-rose-light border border-hub-rose-border rounded px-2 py-1.5">
+              <span>
+                ⚠️ {OUTBOX_KIND_ZH[d.outbox_failed_kind ?? ""] ?? d.outbox_failed_kind}
+                未能送达（已重试 {d.outbox_failed_attempts} 次）：
+                {d.outbox_failed_error || "原因未知"}
+              </span>
+              {(isSupervisor() ||
+                (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                <button
+                  type="button"
+                  disabled={retryOutbox.isPending}
+                  onClick={() => retryOutbox.mutate()}
+                  className="ml-auto px-2.5 py-1 text-[11px] font-semibold rounded-[6px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {retryOutbox.isPending ? "重试中…" : "重试"}
+                </button>
+              )}
+            </div>
+          )}
+          {retryErr && <div className="px-1 text-[11px] text-hub-rose">{retryErr}</div>}
 
           {/* 2. 客户信息容器：两行、每行 3 字段、平铺左右对齐 */}
           <Card title="客户信息">

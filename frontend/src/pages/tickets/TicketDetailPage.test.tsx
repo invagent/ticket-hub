@@ -50,6 +50,10 @@ function renderTicket(
     created_at: "2026-08-01T10:00:00Z",
     received_at: "2026-08-01T10:00:00Z",
     customer_replied_at: null,
+    outbox_failed_id: null,
+    outbox_failed_kind: null,
+    outbox_failed_error: null,
+    outbox_failed_attempts: null,
   };
   const ticket = { ...baseTicket, ...ticketOverrides };
   const handlers = [
@@ -143,5 +147,58 @@ describe("TicketDetailPage 已毕业单参数编辑", () => {
     );
     expect(await screen.findByRole("button", { name: "确认分类" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
+  });
+});
+
+describe("TicketDetailPage 出站回写失败横幅", () => {
+  it("有失败行时显示横幅+重试按钮（主管可见）", async () => {
+    renderTicket({
+      hub_issue_id: null,
+      outbox_failed_id: 1,
+      outbox_failed_kind: "reply",
+      outbox_failed_error: "节点已流转至其他节点",
+      outbox_failed_attempts: 5,
+    });
+    expect(await screen.findByText(/未能送达/)).toBeInTheDocument();
+    expect(screen.getByText(/节点已流转至其他节点/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
+
+  it("无失败行时不显示横幅", async () => {
+    renderTicket({ hub_issue_id: null, outbox_failed_id: null });
+    await screen.findByLabelText("工单类型");
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+  });
+
+  it("非处理人非主管看到横幅但看不到重试按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ id: 99, role: "assignee" }));
+    renderTicket({
+      hub_issue_id: null,
+      handler_user_id: 1,
+      outbox_failed_id: 1,
+      outbox_failed_kind: "return",
+      outbox_failed_error: "已被接管",
+      outbox_failed_attempts: 5,
+    });
+    expect(await screen.findByText(/退回/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+  });
+
+  it("点重试成功后横幅提示重试成功", async () => {
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    renderTicket({
+      hub_issue_id: null,
+      outbox_failed_id: 1,
+      outbox_failed_kind: "supply",
+      outbox_failed_error: "网络超时",
+      outbox_failed_attempts: 5,
+    });
+    server.use(
+      http.post("*/api/tickets/10/retry-outbox", () =>
+        HttpResponse.json({ outbox_id: 1, sent: true, error: null }),
+      ),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.getByText("重试成功，已送达")).toBeInTheDocument());
   });
 });

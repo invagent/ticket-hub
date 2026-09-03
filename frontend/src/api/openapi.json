@@ -2910,6 +2910,17 @@
             ],
             "title": "Op Status Changed At"
           },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
           "priority": {
             "anyOf": [
               {
@@ -3193,17 +3204,6 @@
             ],
             "title": "Assigned User Id"
           },
-          "owner_user_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner User Id"
-          },
           "closed_at": {
             "anyOf": [
               {
@@ -3368,6 +3368,17 @@
               }
             ],
             "title": "Op Status Changed At"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
           },
           "priority": {
             "anyOf": [
@@ -5626,6 +5637,36 @@
         "title": "RerouteResponse",
         "type": "object"
       },
+      "RetryOutboxResponse": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "outbox_id": {
+            "title": "Outbox Id",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outbox_id",
+          "sent",
+          "error"
+        ],
+        "title": "RetryOutboxResponse",
+        "type": "object"
+      },
       "ReturnBody": {
         "properties": {
           "deal_opinion": {
@@ -7320,6 +7361,50 @@
               }
             ],
             "title": "Op Status"
+          },
+          "outbox_failed_attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outbox Failed Attempts"
+          },
+          "outbox_failed_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outbox Failed Error"
+          },
+          "outbox_failed_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outbox Failed Id"
+          },
+          "outbox_failed_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outbox Failed Kind"
           },
           "parent_ticket_id": {
             "anyOf": [
@@ -14008,7 +14093,7 @@
     },
     "/api/supervisor/pending-linear-review": {
       "get": {
-        "description": "闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块\n负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。\n\n行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。",
+        "description": "闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块\n负责人（peek_module_owner，仅预览不消耗轮询名额）及其是否在 Linear 工作区（linear_user_id 非空）。\n\n行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。",
         "operationId": "list_pending_linear_review_api_supervisor_pending_linear_review_get",
         "parameters": [
           {
@@ -14906,6 +14991,49 @@
           }
         },
         "summary": "Get Ticket History",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/tickets/{ticket_id}/retry-outbox": {
+      "post": {
+        "description": "手工重试该工单最近一次失败的出站回写（不限 kind，覆盖 reply/status/\nsupply/release_note/progress_note/return）。处理人本人或主管/管理员可点，\n权限口径与 /return 一致（ticket.handler_user_id）。同步执行，立即返回\n成败——不是仅仅把 status 重置为 pending 甩给下一轮 2 分钟 beat。",
+        "operationId": "retry_outbox_endpoint_api_tickets__ticket_id__retry_outbox_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryOutboxResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Outbox Endpoint",
         "tags": [
           "tickets"
         ]
