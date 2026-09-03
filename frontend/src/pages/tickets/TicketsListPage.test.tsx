@@ -202,4 +202,46 @@ describe("TicketsListPage", () => {
     expect(cellText("处理中")).toBe(true); // Bug_fix hub_status=in_progress → 处理状态列
     expect(cellText("已发版")).toBe(true); // Demand hub_status=released → 处理状态列(研发用"已发版"，区别于运营"已答复")
   });
+
+  it("TKT-006619/TKT-006625 回归：ticket.status=closed 但 op_status=processing 时标题不灰置", async () => {
+    // 场景：客户端把这两单退回 KSM 重新分派，退回成功后本地 ticket.status
+    // 被置为 closed（"交还提单人，不再跟踪"语义），但 hub 仍在运营处理中
+    // （op_status=processing），不该被误判成已关闭而灰置标题。
+    const opSample = {
+      ...sample,
+      items: [
+        {
+          ...sample.items[0],
+          id: 13,
+          short_code: "TKT-006619",
+          title: "退回重新分派但仍处理中的运营单",
+          status: "closed",
+          predicted_type: "Operation",
+          hub_issue_id: 40,
+          hub_status: "created",
+          op_status: "processing",
+        },
+        {
+          ...sample.items[0],
+          id: 14,
+          short_code: "TKT-CLOSED",
+          title: "真正已关闭的单",
+          status: "closed",
+          predicted_type: "Operation",
+          hub_issue_id: null,
+          hub_status: null,
+          op_status: null,
+        },
+      ],
+      total: 2,
+    };
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(opSample)));
+    renderPage();
+
+    const stillProcessingTitle = await screen.findByTitle("退回重新分派但仍处理中的运营单");
+    expect(stillProcessingTitle.className).not.toContain("text-hub-textFaint");
+
+    const actuallyClosedTitle = await screen.findByTitle("真正已关闭的单");
+    expect(actuallyClosedTitle.className).toContain("text-hub-textFaint");
+  });
 });

@@ -24,7 +24,7 @@ import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
 import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
-import { devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
+import { computeProcessStage, devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -35,6 +35,26 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
 }
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
+
+// 标题灰置：已毕业 hub 的工单看 computeProcessStage 的综合判定（op_status 优先于
+// hub.status，避免"退回 KSM"等只改 ticket.status=closed 但 hub 仍在处理中的单被误灰，
+// 如 TKT-006619/TKT-006625：Operation 处理中却因客户端退回 KSM 重新分派导致
+// ticket.status=closed，op_status 仍是 processing，不该灰）；未毕业的单没有 hub 状态
+// 可参考，回落 ticket 底层终态判断。
+function isTicketClosed(t: TicketSummary): boolean {
+  if (t.hub_issue_id == null) {
+    return CLOSED_STATUSES.includes(t.status);
+  }
+  const stage = computeProcessStage({
+    predictedType: t.predicted_type,
+    hubIssueId: t.hub_issue_id,
+    hubStatus: t.hub_status,
+    opStatus: t.op_status,
+    ticketStatus: t.status,
+    ticketStatusLabel,
+  });
+  return stage.tone === "closed";
+}
 
 
 function fmtTime(v: string | null | undefined): string {
@@ -328,7 +348,7 @@ export function TicketsListPage() {
         accessorKey: "title",
         size: 260,
         cell: ({ row }) => {
-          const closed = CLOSED_STATUSES.includes(row.original.status);
+          const closed = isTicketClosed(row.original);
           return (
             <span
               className={`text-[12.5px] font-semibold block truncate ${closed ? "text-hub-textFaint" : ""}`}
