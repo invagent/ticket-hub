@@ -42,6 +42,16 @@ STATUS_ZH: dict[str, str] = {
     "created": "已创建",
 }
 
+# sync_outbox.kind 英文枚举 → 中文（工单详情页「回写失败」横幅展示用）。
+OUTBOX_KIND_ZH: dict[str, str] = {
+    "reply": "答复",
+    "status": "状态回写",
+    "supply": "补料",
+    "release_note": "发版通知",
+    "progress_note": "进度通知",
+    "return": "退回",
+}
+
 # changed_by 的非人类 actor 前缀 slug → 中文（system:/agent:/cascade:/op: 等）。
 _ACTOR_SLUG_ZH: dict[str, str] = {
     "system:ingest": "系统入库",

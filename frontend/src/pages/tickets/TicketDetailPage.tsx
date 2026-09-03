@@ -39,6 +39,17 @@ function sourceLabel(code: string | null | undefined): string {
   return SOURCE_LABEL[code] ?? code;
 }
 
+// sync_outbox.kind 英文枚举 → 中文（处理人「回写失败」横幅展示用；与后端
+// history_labels.py 的 OUTBOX_KIND_ZH 同义，各自维护一份，参照既有枚举翻译惯例）。
+const OUTBOX_KIND_ZH: Record<string, string> = {
+  reply: "答复",
+  status: "状态回写",
+  supply: "补料",
+  release_note: "发版通知",
+  progress_note: "进度通知",
+  return: "退回",
+};
+
 function fmtDateTime(v: string | null | undefined): string {
   if (!v) return "—";
   return new Date(v).toLocaleString("zh-CN");
@@ -282,6 +293,27 @@ export function TicketDetailPage() {
     },
     onError: (e) => setReplyErr(hubErrMsg(e)),
   });
+  // 补充资料：把处理说明当前内容作为补料说明提交给 KSM（复用同一个框，不再单独
+  // note 输入）。仅 KSM 来源可用；智齿无补料接口，靠人工线下答复。镜像
+  // HubIssueDetailPage.tsx 的 supply mutation，补上工单详情页缺失的入口。
+  const [supplyErr, setSupplyErr] = useState<string | null>(null);
+  const supply = useMutation({
+    mutationFn: (note: string) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/request-supply",
+        { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
+        { note },
+      ),
+    onSuccess: (r) => {
+      setSupplyErr(null);
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
+      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+      setConfirmNotice(`已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`);
+    },
+    onError: (e) => setSupplyErr(hubErrMsg(e)),
+  });
   // 退回 KSM：把处理说明作为退回意见 deal_opinion 退回（仅 KSM 来源工单）
   const [returnErr, setReturnErr] = useState<string | null>(null);
   const returnKsm = useMutation({
@@ -297,6 +329,23 @@ export function TicketDetailPage() {
       setConfirmNotice("工单已退回 KSM 重新分派");
     },
     onError: (e) => setReturnErr(hubErrMsg(e)),
+  });
+  // 手工重试最近一次失败的出站回写（reply/status/supply/release_note/
+  // progress_note/return 任一 kind，处理人/主管点按钮同步执行立即看结果）
+  const [retryErr, setRetryErr] = useState<string | null>(null);
+  const retryOutbox = useMutation({
+    mutationFn: () => postByPath("/api/tickets/{ticket_id}/retry-outbox", { ticket_id: id }, {}),
+    onSuccess: (r) => {
+      if (r.sent) {
+        setRetryErr(null);
+        setConfirmNotice("重试成功，已送达");
+      } else {
+        setRetryErr(r.error ?? "重试失败，原因未知");
+      }
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
+    },
+    onError: (e) => setRetryErr(hubErrMsg(e)),
   });
   // 标记诊断：运营单 AI 自动答复有问题 → 送反思诊断工作台（处理人本人/主管均可点）
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
@@ -447,6 +496,31 @@ export function TicketDetailPage() {
               </span>
             </div>
           )}
+
+          {/* 出站回写失败提示（不限类型/kind——reply/status/supply/release_note/
+              progress_note/return 任一失败都会命中）：处理人本人或主管/管理员
+              可点「重试」同步立即执行，非本人只读展示。 */}
+          {d.outbox_failed_id != null && (
+            <div className="px-1 flex items-center gap-2 flex-wrap text-[11px] text-hub-rose bg-hub-rose-light border border-hub-rose-border rounded px-2 py-1.5">
+              <span>
+                ⚠️ {OUTBOX_KIND_ZH[d.outbox_failed_kind ?? ""] ?? d.outbox_failed_kind}
+                未能送达（已重试 {d.outbox_failed_attempts} 次）：
+                {d.outbox_failed_error || "原因未知"}
+              </span>
+              {(isSupervisor() ||
+                (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                <button
+                  type="button"
+                  disabled={retryOutbox.isPending}
+                  onClick={() => retryOutbox.mutate()}
+                  className="ml-auto px-2.5 py-1 text-[11px] font-semibold rounded-[6px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {retryOutbox.isPending ? "重试中…" : "重试"}
+                </button>
+              )}
+            </div>
+          )}
+          {retryErr && <div className="px-1 text-[11px] text-hub-rose">{retryErr}</div>}
 
           {/* 2. 客户信息容器：两行、每行 3 字段、平铺左右对齐 */}
           <Card title="客户信息">
@@ -733,6 +807,32 @@ export function TicketDetailPage() {
                         {returnKsm.isPending ? "退回中…" : "退回 KSM"}
                       </button>
                     )}
+                  {/* 补充资料（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明
+                      作补料说明提交，工单转 supplementing；客户补料后自动交 AI 重答。
+                      智齿无补料接口，不显示。镜像 HubIssueDetailPage.tsx 同名按钮，
+                      补上工单详情页原先缺失的入口。 */}
+                  {d.source_code === "ksm" &&
+                    (isSupervisor() ||
+                      (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                      <button
+                        type="button"
+                        disabled={supply.isPending || opDone}
+                        title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                        onClick={() => {
+                          const content = (
+                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                          ).trim();
+                          if (!content) {
+                            setSupplyErr("处理说明为空，无法请求补料");
+                            return;
+                          }
+                          supply.mutate(content);
+                        }}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {supply.isPending ? "提交中…" : "补充资料"}
+                      </button>
+                    )}
                   {/* 诊断：运营单 AI 自动答复有问题 → 送反思诊断（处理人本人/主管可点） */}
                   {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
                     <button
@@ -790,6 +890,7 @@ export function TicketDetailPage() {
                   )}
                   {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
                   {returnErr && <span className="ml-2 text-[11px] text-hub-rose">{returnErr}</span>}
+                  {supplyErr && <span className="ml-2 text-[11px] text-hub-rose">{supplyErr}</span>}
                 </div>
                 </div>
                 )}

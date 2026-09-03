@@ -1867,7 +1867,7 @@ export interface paths {
         /**
          * List Pending Linear Review
          * @description 闸门③：status=='pending_linear_review' 的研发类 hub 队列，每条附默认模块
-         *     负责人（resolve_module_owner）及其是否在 Linear 工作区（linear_user_id 非空）。
+         *     负责人（peek_module_owner，仅预览不消耗轮询名额）及其是否在 Linear 工作区（linear_user_id 非空）。
          *
          *     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
          */
@@ -2194,6 +2194,29 @@ export interface paths {
         get: operations["get_ticket_history_api_tickets__ticket_id__history_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/retry-outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Outbox Endpoint
+         * @description 手工重试该工单最近一次失败的出站回写（不限 kind，覆盖 reply/status/
+         *     supply/release_note/progress_note/return）。处理人本人或主管/管理员可点，
+         *     权限口径与 /return 一致（ticket.handler_user_id）。同步执行，立即返回
+         *     成败——不是仅仅把 status 重置为 pending 甩给下一轮 2 分钟 beat。
+         */
+        post: operations["retry_outbox_endpoint_api_tickets__ticket_id__retry_outbox_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3395,6 +3418,8 @@ export interface components {
             op_status?: string | null;
             /** Op Status Changed At */
             op_status_changed_at?: string | null;
+            /** Owner User Id */
+            owner_user_id?: number | null;
             /** Priority */
             priority: string | null;
             /** Product */
@@ -3474,8 +3499,6 @@ export interface components {
             actual_resolved_at: string | null;
             /** Assigned User Id */
             assigned_user_id: number | null;
-            /** Owner User Id */
-            owner_user_id?: number | null;
             /** Closed At */
             closed_at: string | null;
             /** Expected Resolved At */
@@ -3516,6 +3539,8 @@ export interface components {
             op_status?: string | null;
             /** Op Status Changed At */
             op_status_changed_at?: string | null;
+            /** Owner User Id */
+            owner_user_id?: number | null;
             /** Priority */
             priority: string | null;
             /** Product */
@@ -4249,6 +4274,15 @@ export interface components {
             /** Results */
             results: components["schemas"]["RerouteItemOut"][];
         };
+        /** RetryOutboxResponse */
+        RetryOutboxResponse: {
+            /** Error */
+            error: string | null;
+            /** Outbox Id */
+            outbox_id: number;
+            /** Sent */
+            sent: boolean;
+        };
         /** ReturnBody */
         ReturnBody: {
             /** Deal Opinion */
@@ -4776,6 +4810,14 @@ export interface components {
             module_classified_at?: string | null;
             /** Op Status */
             op_status?: string | null;
+            /** Outbox Failed Attempts */
+            outbox_failed_attempts?: number | null;
+            /** Outbox Failed Error */
+            outbox_failed_error?: string | null;
+            /** Outbox Failed Id */
+            outbox_failed_id?: number | null;
+            /** Outbox Failed Kind */
+            outbox_failed_kind?: string | null;
             /** Parent Ticket Id */
             parent_ticket_id: number | null;
             /** Predicted Confidence */
@@ -9117,6 +9159,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_outbox_endpoint_api_tickets__ticket_id__retry_outbox_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryOutboxResponse"];
                 };
             };
             /** @description Validation Error */

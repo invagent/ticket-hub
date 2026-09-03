@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +46,9 @@ from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
+
+if TYPE_CHECKING:
+    from app.services.cascade.outbox_retry import OutboxRetryResult
 
 logger = get_logger(__name__)
 
@@ -297,3 +300,13 @@ def drain_zhichi_outbox(
     finally:
         if owns_client:
             client.close()
+
+
+def retry_single_row(sender: ZhichiWritebackSender, row: SyncOutbox) -> OutboxRetryResult:
+    """处理人手工重试单行的适配层：复用 _process_row，不重置 attempts/status。
+    见 ksm/writeback.py 同名函数的注释，逻辑镜像。"""
+    from app.services.cascade.outbox_retry import OutboxRetryResult
+
+    report = DrainReport()
+    sender._process_row(row, report)
+    return OutboxRetryResult(outbox_id=row.id, sent=row.status == "sent", error=row.last_error)

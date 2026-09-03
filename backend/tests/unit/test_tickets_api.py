@@ -359,6 +359,130 @@ def test_get_ticket_soft_deleted_returns_404(app_client: TestClient, world: Sess
     assert app_client.get("/api/tickets/104", headers=_bearer()).status_code == 404
 
 
+# ---- 处理人可见失败 + 手工重试（sync_outbox.status='failed'）----------------
+
+
+def test_get_ticket_includes_outbox_failed_fields(app_client: TestClient, world: Session) -> None:
+    from app.models import SyncOutbox
+
+    world.add(
+        SyncOutbox(
+            kind="reply",
+            target_source_code="ksm",
+            ticket_id=100,
+            source_ticket_id="ksm-1",
+            payload={"reply_content": "ok"},
+            status="failed",
+            attempts=5,
+            last_error="节点已流转至其他节点",
+        )
+    )
+    world.commit()
+
+    r = app_client.get("/api/tickets/100", headers=_bearer())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["outbox_failed_id"] is not None
+    assert body["outbox_failed_kind"] == "reply"
+    assert body["outbox_failed_error"] == "节点已流转至其他节点"
+    assert body["outbox_failed_attempts"] == 5
+
+
+def test_get_ticket_no_failed_row_fields_are_null(app_client: TestClient, world: Session) -> None:
+    r = app_client.get("/api/tickets/100", headers=_bearer())
+    body = r.json()
+    assert body["outbox_failed_id"] is None
+    assert body["outbox_failed_kind"] is None
+    assert body["outbox_failed_error"] is None
+    assert body["outbox_failed_attempts"] is None
+
+
+def test_retry_outbox_endpoint_handler_can_retry(
+    app_client: TestClient, world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.models import SyncOutbox
+
+    world.add(
+        SyncOutbox(
+            kind="reply",
+            target_source_code="ksm",
+            ticket_id=100,
+            source_ticket_id="ksm-1",
+            payload={"reply_content": "ok"},
+            status="failed",
+            attempts=5,
+            last_error="节点已流转至其他节点",
+        )
+    )
+    world.commit()
+
+    # ticket 100 的 handler_user_id=1（alice）；ksm_writeback 未开启 → OutboxRetryError → 409
+    # 断言的是「授权通过、能走到业务层报错」而非 403（区分权限失败 vs 业务失败）。
+    r = app_client.post(
+        "/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee")
+    )
+    assert r.status_code == 409
+    assert "ksm_writeback_enabled" in r.json()["detail"]
+
+
+def test_retry_outbox_endpoint_rejects_non_handler(
+    app_client: TestClient, world: Session
+) -> None:
+    from app.models import SyncOutbox
+
+    world.add(
+        SyncOutbox(
+            kind="reply",
+            target_source_code="ksm",
+            ticket_id=100,
+            source_ticket_id="ksm-1",
+            payload={"reply_content": "ok"},
+            status="failed",
+            attempts=5,
+        )
+    )
+    world.commit()
+
+    # ticket 100 的 handler_user_id=1；用另一个非 handler 的 assignee 账号（bob=2）
+    r = app_client.post(
+        "/api/tickets/100/retry-outbox", headers=_bearer(2, role="assignee")
+    )
+    assert r.status_code == 403
+
+
+def test_retry_outbox_endpoint_no_failed_row_409(
+    app_client: TestClient, world: Session
+) -> None:
+    r = app_client.post(
+        "/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee")
+    )
+    assert r.status_code == 409
+    assert "没有失败的回写记录" in r.json()["detail"]
+
+
+def test_retry_outbox_endpoint_supervisor_can_retry_others_ticket(
+    app_client: TestClient, world: Session
+) -> None:
+    from app.models import SyncOutbox
+
+    world.add(
+        SyncOutbox(
+            kind="reply",
+            target_source_code="ksm",
+            ticket_id=100,
+            source_ticket_id="ksm-1",
+            payload={"reply_content": "ok"},
+            status="failed",
+            attempts=5,
+        )
+    )
+    world.commit()
+
+    # ticket 100 的 handler 是 alice(1)，用 supervisor 账号（非 handler）仍应放行到业务层
+    r = app_client.post("/api/tickets/100/retry-outbox", headers=_bearer(9, role="supervisor"))
+    assert r.status_code == 409  # ksm_writeback 未开启 → 业务层报错，而非 403
+
+
 # ---- 工单列表优化：多选筛选 + 新字段（product_name/reject_count/children_count）----
 
 
