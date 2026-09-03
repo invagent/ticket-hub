@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.db import get_session, init_engine
 from app.models import HubIssue, Ticket, User
@@ -42,7 +42,14 @@ def main(*, from_user_id: int, to_user_id: int, start: datetime, end: datetime, 
                 .join(HubIssue, HubIssue.id == Ticket.hub_issue_id)
                 .where(
                     HubIssue.type == "Operation",
-                    HubIssue.op_handler_user_id == from_user_id,
+                    # 两个字段任一命中都算——op_handler_user_id 是当前 hub 层实际
+                    # 持有人；ticket.handler_user_id 可能因为 hub 层后来转到通用
+                    # 「主管」兜底桶（op_handler_user_id 变 None）而没跟着更新，
+                    # 但工单列表页「处理人」列读的正是这个字段，看起来还是原处理人。
+                    or_(
+                        HubIssue.op_handler_user_id == from_user_id,
+                        Ticket.handler_user_id == from_user_id,
+                    ),
                     HubIssue.op_status.in_(_OPEN_OP_STATUSES),
                     HubIssue.deleted_at.is_(None),
                     Ticket.deleted_at.is_(None),
