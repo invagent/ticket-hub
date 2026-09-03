@@ -293,6 +293,27 @@ export function TicketDetailPage() {
     },
     onError: (e) => setReplyErr(hubErrMsg(e)),
   });
+  // 补充资料：把处理说明当前内容作为补料说明提交给 KSM（复用同一个框，不再单独
+  // note 输入）。仅 KSM 来源可用；智齿无补料接口，靠人工线下答复。镜像
+  // HubIssueDetailPage.tsx 的 supply mutation，补上工单详情页缺失的入口。
+  const [supplyErr, setSupplyErr] = useState<string | null>(null);
+  const supply = useMutation({
+    mutationFn: (note: string) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/request-supply",
+        { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
+        { note },
+      ),
+    onSuccess: (r) => {
+      setSupplyErr(null);
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
+      void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
+      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+      setConfirmNotice(`已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`);
+    },
+    onError: (e) => setSupplyErr(hubErrMsg(e)),
+  });
   // 退回 KSM：把处理说明作为退回意见 deal_opinion 退回（仅 KSM 来源工单）
   const [returnErr, setReturnErr] = useState<string | null>(null);
   const returnKsm = useMutation({
@@ -786,6 +807,32 @@ export function TicketDetailPage() {
                         {returnKsm.isPending ? "退回中…" : "退回 KSM"}
                       </button>
                     )}
+                  {/* 补充资料（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明
+                      作补料说明提交，工单转 supplementing；客户补料后自动交 AI 重答。
+                      智齿无补料接口，不显示。镜像 HubIssueDetailPage.tsx 同名按钮，
+                      补上工单详情页原先缺失的入口。 */}
+                  {d.source_code === "ksm" &&
+                    (isSupervisor() ||
+                      (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                      <button
+                        type="button"
+                        disabled={supply.isPending || opDone}
+                        title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                        onClick={() => {
+                          const content = (
+                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                          ).trim();
+                          if (!content) {
+                            setSupplyErr("处理说明为空，无法请求补料");
+                            return;
+                          }
+                          supply.mutate(content);
+                        }}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {supply.isPending ? "提交中…" : "补充资料"}
+                      </button>
+                    )}
                   {/* 诊断：运营单 AI 自动答复有问题 → 送反思诊断（处理人本人/主管可点） */}
                   {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
                     <button
@@ -843,6 +890,7 @@ export function TicketDetailPage() {
                   )}
                   {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
                   {returnErr && <span className="ml-2 text-[11px] text-hub-rose">{returnErr}</span>}
+                  {supplyErr && <span className="ml-2 text-[11px] text-hub-rose">{supplyErr}</span>}
                 </div>
                 </div>
                 )}

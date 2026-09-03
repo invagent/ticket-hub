@@ -150,6 +150,77 @@ describe("TicketDetailPage 已毕业单参数编辑", () => {
   });
 });
 
+describe("TicketDetailPage 补充资料按钮", () => {
+  function opHub(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 60,
+      short_code: "HUB-000060",
+      type: "Operation",
+      status: "created",
+      title: "开票失败",
+      product_line_code: "pl-1",
+      module: "m-1",
+      op_status: "processing",
+      op_handler: "agent",
+      linear_identifier: null,
+      linked_tickets: [],
+      sub_issues: [],
+      ...overrides,
+    };
+  }
+
+  it("KSM 来源 + 主管可见「补充资料」按钮", async () => {
+    renderTicket(
+      { hub_issue_id: 60, source_code: "ksm", predicted_type: "Operation" },
+      opHub(),
+    );
+    expect(await screen.findByRole("button", { name: "补充资料" })).toBeInTheDocument();
+  });
+
+  it("非 KSM 来源（智齿）不显示「补充资料」按钮", async () => {
+    renderTicket(
+      { hub_issue_id: 60, source_code: "zhichi", predicted_type: "Operation" },
+      opHub(),
+    );
+    await screen.findByRole("button", { name: "提交答复" });
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+  });
+
+  it("非处理人非主管看不到「补充资料」按钮", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ id: 99, role: "assignee" }));
+    renderTicket(
+      { hub_issue_id: 60, source_code: "ksm", predicted_type: "Operation", handler_user_id: 1 },
+      opHub(),
+    );
+    await screen.findByRole("button", { name: "提交答复" });
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+  });
+
+  it("点补充资料把处理说明当前内容提交给 request-supply", async () => {
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    renderTicket(
+      {
+        hub_issue_id: 60,
+        source_code: "ksm",
+        predicted_type: "Operation",
+        cached_reply_content: "请提供报错截图",
+      },
+      opHub(),
+    );
+    let capturedNote: string | undefined;
+    server.use(
+      http.post("*/api/hub-issues/60/request-supply", async ({ request }) => {
+        const body = (await request.json()) as { note: string };
+        capturedNote = body.note;
+        return HttpResponse.json({ hub_issue_id: 60, outbox_count: 1, ticket_count: 1 });
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "补充资料" }));
+    await waitFor(() => expect(capturedNote).toBe("请提供报错截图"));
+    expect(await screen.findByText(/已请求补料/)).toBeInTheDocument();
+  });
+});
+
 describe("TicketDetailPage 出站回写失败横幅", () => {
   it("有失败行时显示横幅+重试按钮（主管可见）", async () => {
     renderTicket({
