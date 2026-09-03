@@ -24,9 +24,9 @@ def _ticket(db: Session, **ov: object) -> Ticket:
         "type": "Raw",
         "status": "received",
         "title": "工单",
-        # 默认已受理：持久化了受理节点 opercacheId + 当前节点（takeover 写入）
-        "ksm_accept_opercache_id": "OPCACHE-ACCEPT",
-        "ksm_current_node_id": "NODE-CURRENT",
+        # 默认已受理（takeover 写入 locked/handled）；退回目标节点改为退回执行
+        # 时实时计算，不再依赖持久化的 opercacheId/node_id 快照。
+        "ksm_takeover_status": "handled",
     }
     base.update(ov)
     t = Ticket(**base)  # type: ignore[arg-type]
@@ -88,28 +88,14 @@ def test_request_return_rejects_missing_ticket(world: Session) -> None:
 
 
 def test_request_return_rejects_not_accepted(world: Session) -> None:
-    """缺持久化的受理节点信息（未受理 或 notice 过期没回填）→ 退回不可行，入队前拦截。"""
-    t = _ticket(world, ksm_accept_opercache_id=None, ksm_current_node_id=None)
+    """工单从未被接管受理 → 退回不可行，入队前拦截。"""
+    t = _ticket(world, ksm_takeover_status=None)
     with pytest.raises(ReturnSyncError):
         request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
 
 
-def test_request_return_rejects_missing_current_node(world: Session) -> None:
-    """只缺当前节点 → 退回不可行（退回需要源节点 + 目标 opercacheId 都齐）。"""
-    t = _ticket(world, ksm_current_node_id=None)
+def test_request_return_rejects_failed_takeover(world: Session) -> None:
+    """接管失败（未成功 lock/handle）→ 退回不可行。"""
+    t = _ticket(world, ksm_takeover_status="failed")
     with pytest.raises(ReturnSyncError):
         request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
-
-
-def test_request_return_rejects_expired_accept_info(world: Session) -> None:
-    """已受理但受理信息丢失（notice 过期）→ 提示历史工单信息过期，引导人工/KSM 重触发。"""
-    t = _ticket(
-        world,
-        ksm_takeover_status="handled",
-        ksm_accept_opercache_id=None,
-        ksm_current_node_id=None,
-    )
-    with pytest.raises(ReturnSyncError) as exc:
-        request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
-    assert "历史工单" in str(exc.value)
-    assert "KSM 受理信息已过期" in str(exc.value)

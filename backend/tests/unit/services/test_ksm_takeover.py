@@ -210,9 +210,10 @@ def test_new_ticket_full_takeover(world: Session) -> None:
     # 接管人固定配置
     assert client.locks[0].account_number == "10086"
     assert t.ksm_takeover_status == "handled"
-    # 持久化退回信息（迁移 0038）：受理节点 opercacheId + 当前节点
-    assert t.ksm_accept_opercache_id == "OPCACHE-ACCEPT"
-    assert t.ksm_current_node_id == "NODE-NEW"
+    # 2026-09 改判：退回目标节点改为退回执行时实时计算，takeover 不再持久化
+    # ksm_accept_opercache_id/ksm_current_node_id（迁移 0038 的列留存未删）。
+    assert t.ksm_accept_opercache_id is None
+    assert t.ksm_current_node_id is None
 
 
 def test_new_ticket_status2_also_full(world: Session) -> None:

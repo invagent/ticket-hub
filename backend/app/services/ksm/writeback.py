@@ -97,6 +97,8 @@ class _KSMFields:
     linkman: str
     email: str
     mobile: str
+    # 退回目标 opercacheId：不在这里算，只能基于「刚实时拉取」的 handleSteps 现算
+    # （见 _previous_node_opercache_id + KSMWritebackSender._refresh_for_return）。
     opercache_id: str = ""
 
 
@@ -104,27 +106,24 @@ def _s(v: Any) -> str:
     return "" if v is None else str(v)
 
 
-def _return_target_opercache_id(raw: dict[str, Any]) -> str:
-    """退回目标「受理」节点的操作缓存 id（returnKsmOrder 的 opercacheID）。
+def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
+    """退回目标节点的操作缓存 id（returnKsmOrder 的 opercacheID）。
 
-    returnKsmOrder 的 opercacheID 决定退回**目标节点**，currentNodeID 是源节点
-    （见 _return 方法）。退回必须落到「受理」节点，否则工单退回后仍停在协同处理
-    态。handleSteps 里可能有多条「受理」记录（工单反复退回再受理），取
-    handleDateTime 最新（离现在最近）那条的 opercacheId。找不到回落空串。
+    2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」——把
+    handleSteps 按 handleDateTime 升序排，取倒数第二条（严格按时间序，不管节点
+    名是否相同）的 opercacheId。要求 detail 必须是**刚刚实时拉取**的（调用方
+    负责 refresh，本函数不兜底旧快照），否则"最新节点"判断本身就可能过期。
+    步数不足 2 条或缺字段 → 回落空串，调用方据此拒绝退回，不猜测。
     """
-    steps = raw.get("handleSteps")
+    steps = detail.get("handleSteps")
     if not isinstance(steps, list):
         return ""
-    accept = [
-        h
-        for h in steps
-        if isinstance(h, dict) and h.get("nodeName") == "受理" and h.get("opercacheId")
-    ]
-    if not accept:
+    valid = [h for h in steps if isinstance(h, dict)]
+    if len(valid) < 2:
         return ""
-    # handleDateTime 是 "YYYY-MM-DD HH:MM:SS" 字符串，字典序 == 时间序，reverse 取最新。
-    accept.sort(key=lambda h: _s(h.get("handleDateTime")), reverse=True)
-    return _s(accept[0].get("opercacheId"))
+    # handleDateTime 是 "YYYY-MM-DD HH:MM:SS" 字符串，字典序 == 时间序。
+    valid.sort(key=lambda h: _s(h.get("handleDateTime")))
+    return _s(valid[-2].get("opercacheId"))
 
 
 def _extract_ksm_fields(
@@ -160,7 +159,6 @@ def _extract_ksm_fields(
         linkman=_s(customer.get("linkman") or payload.get("accountName")),
         email=_s(customer.get("email") or payload.get("email")),
         mobile=_s(customer.get("mobile") or payload.get("mobile")),
-        opercache_id=_return_target_opercache_id(raw),
     )
 
 
@@ -184,7 +182,7 @@ def _merge_refreshed(base: _KSMFields, detail: dict[str, Any]) -> _KSMFields:
         linkman=_s(customer.get("linkman")) or base.linkman,
         email=_s(customer.get("email")) or base.email,
         mobile=_s(customer.get("mobile")) or base.mobile,
-        opercache_id=_return_target_opercache_id(detail) or base.opercache_id,
+        opercache_id=base.opercache_id,
     )
 
 
@@ -243,15 +241,6 @@ class KSMWritebackSender:
             self._mark_skipped(row, "no billId in source_payload")
             report.skipped += 1
             return
-
-        # 退回：优先用 takeover 时持久化的「受理节点 opercacheId + 当前节点」（迁移 0038）。
-        # notice 24h 过期后 _refresh 拿不到实时详情，用旧快照会报「已流转至其他节点」。
-        if row.kind == "return":
-            fields = replace(
-                fields,
-                opercache_id=ticket.ksm_accept_opercache_id or fields.opercache_id,
-                node_id=ticket.ksm_current_node_id or fields.node_id,
-            )
 
         action = self._resolve_action(row)
         if action is None:
@@ -393,15 +382,21 @@ class KSMWritebackSender:
         return None
 
     def _execute(
-        self, action: str, row: SyncOutbox, fields: _KSMFields, *, persisted_node_id: str | None = None
+        self,
+        action: str,
+        row: SyncOutbox,
+        fields: _KSMFields,
+        *,
+        persisted_node_id: str | None = None,
     ) -> None:
         if action == "lock":
             self._lock(fields)
             return
         # 退回：不先 lock（lock 是「接管」语义，与退回相悖，实测未 lock 直接 return 成功）。
-        # 只需重拉最新节点 + 对应 opercacheId，否则旧节点会报「已流转至其他节点」。
+        # 目标节点=「最新节点的上一个节点」，必须基于刚实时拉取的数据算，拉不到就
+        # 拒绝退回（绝不用旧快照猜，猜错等于把工单退到错误节点，KSM 还不一定报错）。
         if action == "return":
-            fresh = self._refresh(fields)
+            fresh = self._refresh_for_return(fields)
             self._return(fresh, _s((row.payload or {}).get("deal_opinion")).strip())
             return
         # all remaining actions need a fresh node → lock then refresh
@@ -501,10 +496,10 @@ class KSMWritebackSender:
     def _return(self, fields: _KSMFields, deal_opinion: str) -> None:
         """退回 KSM（returnKsmOrder）——转错模块打回重新分派，不关单。
 
-        current_node_id（源节点）= refresh 后的最新 node.id；opercache_id（退回目标）
-        = 「受理」节点时间最新那条 handleStep 的 opercacheId。这样工单退回后落到
-        受理节点，而不是原地停在协同处理态。二者都必须 refresh 后取最新，否则 KSM
-        报「已流转至其他节点」。
+        current_node_id（源节点）= 刚实时拉取的最新 node.id；opercache_id（退回
+        目标）= 同一次拉取里，按时间排序的倒数第二条 handleStep 的 opercacheId
+        （即"最新节点的上一个节点"）。二者都来自 _refresh_for_return 的同一份
+        新鲜数据，不接受过期快照。
         """
         self._client.return_order(
             ReturnOrderRequest(
@@ -540,6 +535,34 @@ class KSMWritebackSender:
             logger.warning("ksm_refresh_failed", bill_id=fields.bill_id, error=str(e))
             return fields
         return _merge_refreshed(fields, detail)
+
+    def _refresh_for_return(self, fields: _KSMFields) -> _KSMFields:
+        """退回专用：强制实时拉取，拉不到就报错（绝不回落旧快照）。
+
+        退回目标="最新节点的上一个节点"，这个判断本身就依赖"最新节点"是新鲜的
+        ——旧快照的"最新"可能早就不是最新了，回落等于用错误前提算出一个看似
+        合理但实际可能错的目标节点，且 KSM 不一定会报错拒绝。所以这里没有
+        _refresh() 那种"拉不到就退回旧值"的兜底：拉不到就抛错，让这一行退到
+        pending/failed，交人工核实，而不是悄悄退到错节点。
+        """
+        if self._notice_store is None:
+            raise KSMError(f"退回需要实时数据但无 notice 缓存: bill_id={fields.bill_id}")
+        notice = self._notice_store.get(fields.bill_id)
+        if notice is None:
+            raise KSMError(f"退回需要实时数据但 notice 已过期/未缓存: bill_id={fields.bill_id}")
+        detail = self._client.get_order_detail(
+            bill_id=fields.bill_id,
+            notice_num=notice.notice_num,
+            subscribe_num=notice.subscribe_num,
+        )
+        node_id = ""
+        node = detail.get("node")
+        if isinstance(node, dict):
+            node_id = _s(node.get("id"))
+        opercache_id = _previous_node_opercache_id(detail)
+        if not node_id or not opercache_id:
+            raise KSMError(f"退回目标节点计算失败（节点数不足或缺字段）: bill_id={fields.bill_id}")
+        return replace(fields, node_id=node_id, opercache_id=opercache_id)
 
     # ---- text builders -------------------------------------------------
 

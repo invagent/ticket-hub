@@ -304,13 +304,14 @@ def test_supply_locks_then_supplies(world: Session) -> None:
 
 
 # ---- return（退回 KSM）------------------------------------------------------
-# 退回不 lock（lock 是接管语义，与退回相悖）；refresh 重拉最新 node（源节点）+
-# 受理节点的 opercacheId（退回目标），否则旧节点报「已流转至其他节点」或退回后
-# 原地停在协同处理；真发成功后本地工单关闭 + 清接管。
+# 2026-09 改判：退回不 lock（lock 是接管语义，与退回相悖）；退回目标改为「最新
+# 节点的上一个节点」，且必须基于刚实时拉取的数据算（旧的"最新"可能已经不是
+# 最新了）——没有 notice 或拉取失败就拒绝退回，绝不用旧快照猜。真发成功后本地
+# 工单关闭 + 清接管。
 
 
 def test_return_refreshes_then_returns_without_lock(world: Session) -> None:
-    """退回不先 lock，refresh 后直接 returnKsmOrder：源=最新 node，目标=受理节点 opercacheId。"""
+    """退回不先 lock，强制 refresh 后直接 returnKsmOrder：源=最新 node，目标=倒数第二条 opercacheId。"""
     hub = _hub(world)
     t = _ticket(world, hub, ksm_takeover_status="handled")
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "转错模块，退回重分派"})
@@ -319,16 +320,16 @@ def test_return_refreshes_then_returns_without_lock(world: Session) -> None:
         "node": {"id": "NODE-NEW", "name": "协同处理"},
         "handleSteps": [
             {
-                "nodeId": "NODE-NEW",
-                "nodeName": "协同处理",
-                "opercacheId": "OPCACHE-COOP",
-                "handleDateTime": "2026-08-28 13:00:00",
-            },
-            {
                 "nodeId": "NODE-OLD",
                 "nodeName": "受理",
                 "opercacheId": "OPCACHE-ACCEPT",
                 "handleDateTime": "2026-08-27 18:00:00",
+            },
+            {
+                "nodeId": "NODE-NEW",
+                "nodeName": "协同处理",
+                "opercacheId": "OPCACHE-COOP",
+                "handleDateTime": "2026-08-28 13:00:00",
             },
         ],
     }
@@ -343,34 +344,34 @@ def test_return_refreshes_then_returns_without_lock(world: Session) -> None:
     assert r.bill_id == "BILL-1"
     assert r.deal_opinion == "转错模块，退回重分派"
     assert r.current_node_id == "NODE-NEW"  # 源节点 = refresh 后最新 node
-    assert r.opercache_id == "OPCACHE-ACCEPT"  # 目标 = 受理节点的 opercacheId
+    assert r.opercache_id == "OPCACHE-ACCEPT"  # 目标 = 最新节点的上一个节点
 
 
-def test_return_target_picks_latest_accept_node(world: Session) -> None:
-    """多个受理节点 → 取 handleDateTime 最新（离现在最近）那条的 opercacheId。"""
+def test_return_target_picks_node_before_latest_by_time(world: Session) -> None:
+    """多条记录 → 按 handleDateTime 排序取倒数第二条的 opercacheId，不管节点名是否相同。"""
     hub = _hub(world)
     t = _ticket(world, hub)
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
     fresh = {
         **_SUBSCRIBE,
-        "node": {"id": "NODE-NEW", "name": "协同处理"},
+        "node": {"id": "NODE-NEW", "name": "技术分析"},
         "handleSteps": [
             {
                 "nodeId": "A1",
                 "nodeName": "受理",
-                "opercacheId": "OPCACHE-OLD-ACCEPT",
+                "opercacheId": "OPCACHE-ACCEPT",
                 "handleDateTime": "2026-08-20 10:00:00",
             },
             {
                 "nodeId": "A2",
-                "nodeName": "受理",
-                "opercacheId": "OPCACHE-NEW-ACCEPT",
+                "nodeName": "技术分析",
+                "opercacheId": "OPCACHE-PREV",
                 "handleDateTime": "2026-08-27 09:00:00",
             },
             {
                 "nodeId": "NODE-NEW",
-                "nodeName": "协同处理",
-                "opercacheId": "OPCACHE-COOP",
+                "nodeName": "技术分析",
+                "opercacheId": "OPCACHE-LATEST",
                 "handleDateTime": "2026-08-28 13:00:00",
             },
         ],
@@ -379,11 +380,11 @@ def test_return_target_picks_latest_accept_node(world: Session) -> None:
     store = FakeNoticeStore()
     store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
     drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
-    assert client.returns[0].opercache_id == "OPCACHE-NEW-ACCEPT"
+    assert client.returns[0].opercache_id == "OPCACHE-PREV"
 
 
-def test_return_no_notice_uses_stored_node_and_opercache(world: Session) -> None:
-    """无 notice 不 refresh，用入库时的 node（源）+ 受理节点 opercacheId（目标）。"""
+def test_return_no_notice_rejects(world: Session) -> None:
+    """无 notice → 拒绝退回（不再回落旧快照猜目标），行 deferred 不发。"""
     hub = _hub(world)
     t = _ticket(
         world,
@@ -406,29 +407,76 @@ def test_return_no_notice_uses_stored_node_and_opercache(world: Session) -> None
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
     client = FakeKSMClient(detail=_SUBSCRIBE)
     report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
-    assert report.sent == 1
-    assert not client.detail_calls  # 无 notice → 不 refresh
-    assert client.returns[0].current_node_id == "NODE-OLD"
-    assert client.returns[0].opercache_id == "OPCACHE-ACCEPT"
+    assert report.sent == 0
+    assert report.deferred == 1
+    assert not client.returns
+    assert not client.detail_calls  # 无 notice → 连拉都没拉
 
 
-def test_return_uses_persisted_fields_over_stale_snapshot(world: Session) -> None:
-    """notice 过期 + 快照无受理节点 → 退回用持久化的受理节点信息（迁移 0038），不再失败。"""
+def test_return_refresh_failure_rejects(world: Session) -> None:
+    """notice 存在但实时拉取失败（KSM 报错）→ 拒绝退回，不用旧数据猜。"""
     hub = _hub(world)
-    t = _ticket(
-        world,
-        hub,
-        # 快照无 handleSteps（入库时未受理），但持久化了受理节点信息
-        source_payload={"billId": "BILL-1", "_subscribe_callback": _SUBSCRIBE},
-        ksm_accept_opercache_id="OPCACHE-PERSISTED",
-        ksm_current_node_id="NODE-PERSISTED",
-    )
+    t = _ticket(world, hub)
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
-    client = FakeKSMClient(detail=_SUBSCRIBE)
-    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
-    assert report.sent == 1
-    assert client.returns[0].opercache_id == "OPCACHE-PERSISTED"
-    assert client.returns[0].current_node_id == "NODE-PERSISTED"
+    client = FakeKSMClient(detail=None)  # get_order_detail 抛 KSMBusinessError
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    report = drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+    assert report.sent == 0
+    assert report.deferred == 1
+    assert not client.returns
+
+
+def test_return_too_few_steps_rejects(world: Session) -> None:
+    """刚拉取的 handleSteps 不足 2 条 → 算不出"上一个节点"，拒绝退回。"""
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    fresh = {
+        **_SUBSCRIBE,
+        "node": {"id": "NODE-ONLY", "name": "受理"},
+        "handleSteps": [
+            {
+                "nodeId": "NODE-ONLY",
+                "nodeName": "受理",
+                "opercacheId": "OPCACHE-ONLY",
+                "handleDateTime": "2026-08-27 18:00:00",
+            },
+        ],
+    }
+    client = FakeKSMClient(detail=fresh)
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    report = drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+    assert report.sent == 0
+    assert report.deferred == 1
+    assert not client.returns
+
+
+_RETURN_FRESH_DETAIL = {
+    **_SUBSCRIBE,
+    "node": {"id": "NODE-NEW", "name": "协同处理"},
+    "handleSteps": [
+        {
+            "nodeId": "NODE-OLD",
+            "nodeName": "受理",
+            "opercacheId": "OPCACHE-ACCEPT",
+            "handleDateTime": "2026-08-27 18:00:00",
+        },
+        {
+            "nodeId": "NODE-NEW",
+            "nodeName": "协同处理",
+            "opercacheId": "OPCACHE-COOP",
+            "handleDateTime": "2026-08-28 13:00:00",
+        },
+    ],
+}
+
+
+def _return_notice_store() -> FakeNoticeStore:
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    return store
 
 
 def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> None:
@@ -439,8 +487,10 @@ def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> Non
     world.commit()
     t = _ticket(world, hub, ksm_takeover_status="handled", status="received")
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "转错模块"})
-    client = FakeKSMClient(detail=_SUBSCRIBE)
-    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    client = FakeKSMClient(detail=_RETURN_FRESH_DETAIL)
+    report = drain_ksm_outbox(
+        world, client=client, notice_store=_return_notice_store(), settings=_settings()
+    )
     assert report.sent == 1
     world.refresh(t)
     assert t.status == "closed"
@@ -458,8 +508,10 @@ def test_return_does_not_close_op_status_when_other_ticket_active(world: Session
     t1 = _ticket(world, hub, ksm_takeover_status="handled", status="received")
     _ticket(world, hub, short_code="TKT-WB-2", source_ticket_id="BILL-2", status="received")
     _outbox(world, t1, hub, kind="return", payload={"deal_opinion": "转错模块"})
-    client = FakeKSMClient(detail=_SUBSCRIBE)
-    report = drain_ksm_outbox(world, client=client, settings=_settings())
+    client = FakeKSMClient(detail=_RETURN_FRESH_DETAIL)
+    report = drain_ksm_outbox(
+        world, client=client, notice_store=_return_notice_store(), settings=_settings()
+    )
     assert report.sent == 1
     world.refresh(t1)
     assert t1.status == "closed"
