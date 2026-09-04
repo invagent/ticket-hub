@@ -108,6 +108,11 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
     """
     customer = data.get("customerInfo") or {} if isinstance(data.get("customerInfo"), dict) else {}
     module = (data.get("module") or {}) if isinstance(data.get("module"), dict) else {}
+    product = (data.get("product") or {}) if isinstance(data.get("product"), dict) else {}
+    close_reason = (
+        (data.get("closereason") or {}) if isinstance(data.get("closereason"), dict) else {}
+    )
+    status = data.get("status")
 
     payload: dict[str, Any] = {
         # Identity / dedupe key
@@ -118,6 +123,16 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         "content": data.get("problem"),
         "productLineCode": _resolve_product_line_code(data),
         "moduleName": module.get("name") or None,
+        # 接收工单状态（KSM status：1=受理/2=处理，原样落 source_status）
+        "sourceStatus": str(status) if status is not None else None,
+        # 提单产品线/模块原样值（KSM 侧原始名称，未经 _resolve_product_line_code
+        # 归类映射，供跟归类结果对比；product_line_code 校验失败/未知时这里仍有值）
+        "reporterProductLine": product.get("name") or None,
+        "reporterModule": module.get("name") or None,
+        # 关单节点（closereason，仅关单工单有值）
+        "closeNodeId": close_reason.get("id") or None,
+        "closeNodeName": close_reason.get("name") or None,
+        "closeNodeStatus": close_reason.get("status") or None,
         # Customer identity (KSMIngester._extract_identity reads these)
         "account": customer.get("customerNumber"),
         "accountName": data.get("feedbackUser"),
@@ -131,6 +146,11 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         # 提单公司：KSM customerInfo.customerName（客户公司名，≠ feedbackUser 反馈人）。
         # 税号/租户 KSM 不传，留空。
         "reporterCompany": customer.get("customerName") or None,
+        # 客户联系人（customerInfo.linkman/mobile/email）：跟 reporter「反馈人」
+        # （feedbackUser）语义不同，是客户公司侧登记的联系人，可能与反馈人不是同一人。
+        "linkman": customer.get("linkman") or None,
+        "contactMobile": customer.get("mobile") or None,
+        "contactEmail": customer.get("email") or None,
         "attachments": parse_attachments(data),
         # Pass through full original payload for source_payload audit trail.
         "_subscribe_callback": data,

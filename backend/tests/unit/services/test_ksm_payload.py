@@ -122,6 +122,49 @@ def test_full_field_mapping_from_doc_example() -> None:
     assert out["_subscribe_callback"] is data
 
 
+def test_ksm_source_fields_mapped() -> None:
+    """新增落库字段：接收状态(status)/提单产品线模块原始值(product.name/module.name)/
+    客户联系人(customerInfo.linkman/mobile/email)/关单节点(closereason)。"""
+    data = {
+        "billId": "R20260904-0001",
+        "status": "2",
+        "product": {"id": "P1", "number": "C28", "name": "金蝶发票云"},
+        "module": {"id": "M1", "number": "R025114", "name": "综合收票管理（星空旗舰版）"},
+        "closereason": {"id": "CR1", "name": "已给方案-技术支持处理", "status": "1"},
+        "customerInfo": {
+            "customerNumber": "C001",
+            "linkman": "张文强",
+            "mobile": "13213338193",
+            "email": "zhang@example.com",
+        },
+    }
+    out = from_subscribe_callback(data)
+    assert out["sourceStatus"] == "2"
+    assert out["reporterProductLine"] == "金蝶发票云"
+    assert out["reporterModule"] == "综合收票管理（星空旗舰版）"
+    assert out["closeNodeId"] == "CR1"
+    assert out["closeNodeName"] == "已给方案-技术支持处理"
+    assert out["closeNodeStatus"] == "1"
+    assert out["linkman"] == "张文强"
+    assert out["contactMobile"] == "13213338193"
+    assert out["contactEmail"] == "zhang@example.com"
+
+
+def test_ksm_source_fields_missing_are_none() -> None:
+    """无 status/product/module/closereason/customerInfo.linkman → 全部 None，不抛异常。"""
+    data = {"billId": "R20260904-0002"}
+    out = from_subscribe_callback(data)
+    assert out["sourceStatus"] is None
+    assert out["reporterProductLine"] is None
+    assert out["reporterModule"] is None
+    assert out["closeNodeId"] is None
+    assert out["closeNodeName"] is None
+    assert out["closeNodeStatus"] is None
+    assert out["linkman"] is None
+    assert out["contactMobile"] is None
+    assert out["contactEmail"] is None
+
+
 def test_customerinfo_contact_fields_prioritized() -> None:
     """手机/邮箱优先取客户公司联系人（customerInfo.mobile/email），反馈人顶层
     feedbackPhone/feedbackEmail 作兜底。部分工单 feedbackPhone 为空但

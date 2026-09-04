@@ -76,6 +76,10 @@ class KSMIngester:
         # 1. Idempotency: skip if already ingested
         existing = self._tickets.find_by_source("ksm", bill_id)
         if existing is not None:
+            # 重推（补料/驳回/状态推进/关单）：KSM 侧状态列均可能已变，先同步刷新，
+            # 不受下面 op_status 分支影响——即便落到纯 no-op 分支（如工单关闭）也
+            # 要把关单节点/接收状态等最新值落库，否则关单信息永远拿不到。
+            self._sync_ksm_fields(existing, payload)
             hub = self._db.get(HubIssue, existing.hub_issue_id) if existing.hub_issue_id else None
             op = hub.op_status if hub is not None and hub.deleted_at is None else None
             if op == OP_SUPPLEMENTING:
@@ -158,6 +162,7 @@ class KSMIngester:
             },
             reporter_company=payload.get("reporterCompany"),
         )
+        self._sync_ksm_fields(ticket, payload)
         self._tickets.add(ticket)
 
         # 4. Dispatch（按来源+规则派单，取代旧 Router 按产品线/模块路由——分派提前到
@@ -230,6 +235,20 @@ class KSMIngester:
         )
 
     # ---- internal ------------------------------------------------------
+
+    @staticmethod
+    def _sync_ksm_fields(ticket: Ticket, payload: dict[str, Any]) -> None:
+        """把 KSM 重推payload 里的状态类字段刷到已存在 ticket——接收状态/关单节点
+        随工单流转变化，每次重推都要跟最新值同步，不止首次入库写一次。"""
+        ticket.source_status = payload.get("sourceStatus")
+        ticket.ksm_reporter_product_line = payload.get("reporterProductLine")
+        ticket.ksm_reporter_module = payload.get("reporterModule")
+        ticket.ksm_linkman = payload.get("linkman")
+        ticket.ksm_contact_mobile = payload.get("contactMobile")
+        ticket.ksm_contact_email = payload.get("contactEmail")
+        ticket.ksm_close_node_id = payload.get("closeNodeId")
+        ticket.ksm_close_node_name = payload.get("closeNodeName")
+        ticket.ksm_close_node_status = payload.get("closeNodeStatus")
 
     @staticmethod
     def _require_str(payload: dict[str, Any], key: str) -> str:

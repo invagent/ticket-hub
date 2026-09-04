@@ -4811,6 +4811,22 @@ export interface components {
             hub_status?: string | null;
             /** Id */
             id: number;
+            /** Ksm Close Node Id */
+            ksm_close_node_id?: string | null;
+            /** Ksm Close Node Name */
+            ksm_close_node_name?: string | null;
+            /** Ksm Close Node Status */
+            ksm_close_node_status?: string | null;
+            /** Ksm Contact Email */
+            ksm_contact_email?: string | null;
+            /** Ksm Contact Mobile */
+            ksm_contact_mobile?: string | null;
+            /** Ksm Linkman */
+            ksm_linkman?: string | null;
+            /** Ksm Reporter Module */
+            ksm_reporter_module?: string | null;
+            /** Ksm Reporter Product Line */
+            ksm_reporter_product_line?: string | null;
             /** Linear Status */
             linear_status?: string | null;
             /** Module */
@@ -9046,9 +9062,11 @@ export interface operations {
         parameters: {
             query?: {
                 source_code?: string | null;
+                source_codes?: string[] | null;
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
+                assigned_user_ids?: number[] | null;
                 handler_user_ids?: number[] | null;
                 predicted_types?: string[] | null;
                 unassigned_only?: boolean;
@@ -9056,6 +9074,16 @@ export interface operations {
                 hub_issue_id?: number | null;
                 source_ticket_q?: string | null;
                 op_status?: string | null;
+                op_statuses?: string[] | null;
+                received_from?: string | null;
+                received_to?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                resolved_from?: string | null;
+                resolved_to?: string | null;
+                closed_from?: string | null;
+                closed_to?: string | null;
+                reporter_company?: string | null;
                 page?: number;
                 page_size?: number;
             };

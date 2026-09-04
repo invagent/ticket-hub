@@ -493,6 +493,20 @@ class Ticket(Base):
     ksm_accept_opercache_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ksm_current_node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # KSM 源工单字段落库（迁移 0042）：跨来源通用列复用现有 product_line_code/module
+    # （已被归类链覆盖为规范值），这里额外落 KSM 原始提单产品线/模块名（未经归类映射，
+    # 展示 KSM 侧原样值，供跟归类结果对比）；customerInfo 联系人（linkman/mobile/email，
+    # 跟 reporter「反馈人」语义不同——reporter 是 feedbackUser，这里是客户公司联系人）；
+    # 关单节点（closereason.id/name/status）。均只 KSM 来源有值，其它来源留空。
+    ksm_reporter_product_line: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ksm_reporter_module: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ksm_linkman: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ksm_contact_mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ksm_contact_email: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ksm_close_node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ksm_close_node_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ksm_close_node_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
