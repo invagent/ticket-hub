@@ -24,8 +24,8 @@ export function TabBar() {
             title={t.title}
             className={`group flex items-center gap-1.5 px-3 py-2 cursor-pointer select-none whitespace-nowrap border-b-2 -mb-px text-[12.5px] ${
               active
-                ? "border-hub-teal text-hub-teal-deep font-semibold bg-white"
-                : "border-transparent text-hub-textSecondary hover:bg-hub-neutral-light"
+                ? "border-hub-teal text-hub-teal-deep font-semibold bg-[#e3e7ee]"
+                : "border-transparent text-hub-textSecondary hover:bg-white/40"
             }`}
           >
             <span className="max-w-[160px] truncate">{t.title}</span>

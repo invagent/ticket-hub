@@ -80,9 +80,11 @@ class TicketRepository:
         self,
         *,
         source_code: str | None = None,
+        source_codes: list[str] | None = None,
         type_: str | None = None,
         status: str | None = None,
         assigned_user_id: int | None = None,
+        assigned_user_ids: list[int] | None = None,
         handler_user_ids: list[int] | None = None,
         visible_to_user_id: int | None = None,
         predicted_types: list[str] | None = None,
@@ -91,6 +93,16 @@ class TicketRepository:
         hub_issue_id: int | None = None,
         source_ticket_q: str | None = None,
         op_status: str | None = None,
+        op_statuses: list[str] | None = None,
+        received_from: datetime | None = None,
+        received_to: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        resolved_from: datetime | None = None,
+        resolved_to: datetime | None = None,
+        closed_from: datetime | None = None,
+        closed_to: datetime | None = None,
+        reporter_company: str | None = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Page[Ticket]:
@@ -99,7 +111,10 @@ class TicketRepository:
 
         base = select(Ticket).where(Ticket.deleted_at.is_(None))
         count_base = select(func.count(Ticket.id)).where(Ticket.deleted_at.is_(None))
-        if source_code:
+        if source_codes:
+            base = base.where(Ticket.source_code.in_(source_codes))
+            count_base = count_base.where(Ticket.source_code.in_(source_codes))
+        elif source_code:
             base = base.where(Ticket.source_code == source_code)
             count_base = count_base.where(Ticket.source_code == source_code)
         if type_:
@@ -108,9 +123,40 @@ class TicketRepository:
         if status:
             base = base.where(Ticket.status == status)
             count_base = count_base.where(Ticket.status == status)
-        if assigned_user_id is not None:
+        if assigned_user_ids:
+            base = base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
+            count_base = count_base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
+        elif assigned_user_id is not None:
             base = base.where(Ticket.assigned_user_id == assigned_user_id)
             count_base = count_base.where(Ticket.assigned_user_id == assigned_user_id)
+        if received_from is not None:
+            base = base.where(Ticket.received_at >= received_from)
+            count_base = count_base.where(Ticket.received_at >= received_from)
+        if received_to is not None:
+            base = base.where(Ticket.received_at <= received_to)
+            count_base = count_base.where(Ticket.received_at <= received_to)
+        if created_from is not None:
+            base = base.where(Ticket.created_at >= created_from)
+            count_base = count_base.where(Ticket.created_at >= created_from)
+        if created_to is not None:
+            base = base.where(Ticket.created_at <= created_to)
+            count_base = count_base.where(Ticket.created_at <= created_to)
+        if resolved_from is not None:
+            base = base.where(Ticket.actual_resolved_at >= resolved_from)
+            count_base = count_base.where(Ticket.actual_resolved_at >= resolved_from)
+        if resolved_to is not None:
+            base = base.where(Ticket.actual_resolved_at <= resolved_to)
+            count_base = count_base.where(Ticket.actual_resolved_at <= resolved_to)
+        if closed_from is not None:
+            base = base.where(Ticket.actual_released_at >= closed_from)
+            count_base = count_base.where(Ticket.actual_released_at >= closed_from)
+        if closed_to is not None:
+            base = base.where(Ticket.actual_released_at <= closed_to)
+            count_base = count_base.where(Ticket.actual_released_at <= closed_to)
+        if reporter_company:
+            esc_comp = reporter_company.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            base = base.where(Ticket.reporter_company.ilike(f"%{esc_comp}%"))
+            count_base = count_base.where(Ticket.reporter_company.ilike(f"%{esc_comp}%"))
         # 处理人多选筛选（handler_user_id）
         if handler_user_ids:
             base = base.where(Ticket.handler_user_id.in_(handler_user_ids))
@@ -144,7 +190,18 @@ class TicketRepository:
             )
             base = base.where(cond)
             count_base = count_base.where(cond)
-        if op_status:
+        if op_statuses:
+            dev_types = ("Bug_fix", "Demand")
+            conds = [HubIssue.op_status.in_(op_statuses)]
+            if "processing" in op_statuses:
+                conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status != "released"))
+            if "answered" in op_statuses:
+                conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"))
+            hub_cond = or_(*conds) if len(conds) > 1 else conds[0]
+            hub_sub = select(HubIssue.id).where(hub_cond)
+            base = base.where(Ticket.hub_issue_id.in_(hub_sub))
+            count_base = count_base.where(Ticket.hub_issue_id.in_(hub_sub))
+        elif op_status:
             # 处理状态筛选（op_status 在所挂 hub_issue 上，仅 Operation 有值）。
             # 与列表展示口径一致：研发类（Bug_fix/Demand）无 op_status，其「处理状态」
             # 由 hub.status 派生——released=处理完成(answered)，其余已毕业=处理中(processing)。

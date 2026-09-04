@@ -233,16 +233,18 @@ export function TicketDetailPage() {
       navigate("/tickets"); // 无 tab 环境（如测试）回退到普通导航
     }
   };
-  const [gradErr, setGradErr] = useState<string | null>(null);
-  // 分类改判本地态：类型选择（默认 predicted_type，回落 Operation）
-  const [classifyType, setClassifyType] = useState<string>("Operation");
   // 处理建议（前端态，默认正常跟进）+ 确认按钮提示（逻辑待后端）
   const [suggestion, setSuggestion] = useState<string>("normal");
   const [confirmNotice, setConfirmNotice] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [addSubOpen, setAddSubOpen] = useState(false);
   // 添加子任务：本地草稿行（后端"查工单任务列表→无则建/有则关联"接口待补，草稿仅前端可见）
-  const [subDrafts, setSubDrafts] = useState<{ title: string; type: string }[]>([]);
+  const [subDrafts, setSubDrafts] = useState<{
+    title: string;
+    type: string;
+    product_line?: string;
+    module?: string;
+  }[]>([]);
   // 处理节点：选中节点 idx（0=最新/当前）+ 逐节点处理说明草稿（后端逐节点字段待补）
   const [nodeIdx, setNodeIdx] = useState(0);
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
@@ -254,24 +256,9 @@ export function TicketDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
-      void qc.invalidateQueries({ queryKey: ["tickets"] });  // 列表缓存作废，回列表自动刷新
+      void qc.invalidateQueries({ queryKey: ["tickets"] }); // 列表缓存作废，回列表自动刷新
       setTransferOpen(false);
     },
-  });
-  const graduate = useMutation({
-    mutationFn: () =>
-      api.post("/api/supervisor/create-hub-issue", {
-        ticket_id: id,
-        type: classifyType,
-      }),
-    onSuccess: () => {
-      setGradErr(null);
-      void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
-      void qc.invalidateQueries({ queryKey: ["ticket-history", id] });  // 毕业写「关联建立」节点
-      void qc.invalidateQueries({ queryKey: ["tickets"] });  // 毕业后工单列表 + 任务表都变
-      void qc.invalidateQueries({ queryKey: ["hub-issues"] });
-    },
-    onError: (e) => setGradErr(hubErrMsg(e)),
   });
   // 运营正常跟进：把处理说明作为答复发出（纯文本，不带附件）
   const [replyErr, setReplyErr] = useState<string | null>(null);
@@ -421,12 +408,6 @@ export function TicketDetailPage() {
     aiAutoReplied &&
     (isSupervisor() ||
       (d?.handler_user_id != null && currentUserId() === d.handler_user_id));
-  // 改判类型默认取 AI 预测类型（在 HUB_TYPES 内才采纳）
-  useEffect(() => {
-    if (d?.predicted_type && HUB_TYPES.includes(d.predicted_type as (typeof HUB_TYPES)[number])) {
-      setClassifyType(d.predicted_type);
-    }
-  }, [d?.predicted_type]);
 
   return (
     <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-2.5 pt-5 pb-10">
@@ -435,55 +416,57 @@ export function TicketDetailPage() {
 
       {d && (
         <div className="space-y-3">
-          {/* 1. 标题区 + 操作按钮同一行、顶端对齐 */}
-          <div className="flex items-start justify-between gap-3 flex-wrap px-1">
-            <header>
-              <div className="flex items-baseline gap-3 flex-wrap">
-                <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
-                  {d.short_code}
-                </h1>
-                {(d.source_ticket_number ?? d.source_ticket_id) && (
-                  <span className="text-[12px] text-hub-textMuted font-mono">
-                    来源编号：{d.source_ticket_number ?? d.source_ticket_id}
-                  </span>
-                )}
+          {/* 1. 标题区 + 操作按钮同一行、顶端对齐，白底矩形吸顶固定 */}
+          <div className="sticky top-0 z-30 bg-white border border-hub-border rounded-[10px] p-4 shadow-sm mb-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <header>
+                <div className="flex items-baseline gap-3 flex-wrap">
+                  <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
+                    {d.short_code}
+                  </h1>
+                  {(d.source_ticket_number ?? d.source_ticket_id) && (
+                    <span className="text-[12px] text-hub-textMuted font-mono">
+                      来源编号：{d.source_ticket_number ?? d.source_ticket_id}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
+                  <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
+                  {d.predicted_type && (
+                    <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
+                  )}
+                  <ProcessStatusBadge
+                    opStatus={opStatus}
+                    hubStatus={hub.data?.status}
+                    predictedType={d.predicted_type}
+                    hubIssueId={d.hub_issue_id}
+                    ticketStatus={d.status}
+                    ticketStatusLabel={ticketStatusLabel}
+                  />
+                  <RemainingTag hours={d.remaining_hours} />
+                  {showReflectBtn && (
+                    <button
+                      type="button"
+                      onClick={() => setReflectOpen(true)}
+                      title="查看反思诊断详情（黄金三元组/病因判定/skill修订/发布）"
+                      className="px-2.5 py-1 text-[11.5px] font-semibold rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border hover:brightness-95"
+                    >
+                      🧠 反思
+                    </button>
+                  )}
+                </div>
+              </header>
+              {/* 返回列表 */}
+              <div className="flex items-center gap-2.5 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={handleBackToList}
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
+                >
+                  返回列表
+                </button>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
-                <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
-                {d.predicted_type && (
-                  <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
-                )}
-                <ProcessStatusBadge
-                  opStatus={opStatus}
-                  hubStatus={hub.data?.status}
-                  predictedType={d.predicted_type}
-                  hubIssueId={d.hub_issue_id}
-                  ticketStatus={d.status}
-                  ticketStatusLabel={ticketStatusLabel}
-                />
-                <RemainingTag hours={d.remaining_hours} />
-                {showReflectBtn && (
-                  <button
-                    type="button"
-                    onClick={() => setReflectOpen(true)}
-                    title="查看反思诊断详情（黄金三元组/病因判定/skill修订/发布）"
-                    className="px-2.5 py-1 text-[11.5px] font-semibold rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border hover:brightness-95"
-                  >
-                    🧠 反思
-                  </button>
-                )}
-              </div>
-            </header>
-            {/* 返回列表（确认按钮已去除；转派移至处理区「提交答复」左侧） */}
-            <div className="flex items-center gap-2.5 flex-wrap justify-end">
-              <button
-                type="button"
-                onClick={handleBackToList}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-              >
-                返回列表
-              </button>
             </div>
           </div>
           {confirmNotice && (
@@ -522,26 +505,51 @@ export function TicketDetailPage() {
           )}
           {retryErr && <div className="px-1 text-[11px] text-hub-rose">{retryErr}</div>}
 
-          {/* 2. 客户信息容器：两行、每行 3 字段、平铺左右对齐 */}
-          <Card title="客户信息">
-            <div className="bg-hub-panel border border-hub-borderLight rounded-[8px] px-4 py-3.5">
-              <div className="grid grid-cols-3 gap-x-6 gap-y-3.5">
-                <Field label="提单公司">{d.reporter_company ?? "—"}</Field>
-                <Field label="公司税号">
-                  <span className="font-mono">{d.reporter_tax_no ?? "—"}</span>
-                </Field>
-                <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
-                <Field label="提单人">{d.reporter_name ?? "—"}</Field>
-                <Field label="提单人手机">
-                  <span className="font-mono">{d.reporter_mobile ?? "—"}</span>
-                </Field>
-                <Field label="提单人邮箱">{d.reporter_email ?? "—"}</Field>
-              </div>
-            </div>
-          </Card>
+          {/* 2. 客户信息容器：去除灰色矩形框，一行显示 4 个元素，平铺展示 */}
+          {(() => {
+            const p = (d as any).source_payload;
+            const contactName =
+              (d as any).contact_name ??
+              (d as any).reporter?.contact_name ??
+              p?.extend_fields_list?.find((f: any) => f.field_name === "联系人")?.field_value ??
+              p?.contact_name;
 
-          {/* 3. 工单描述容器：主题 / 问题描述 / 附件，垂直分布，字段名 + 字段值两列左对齐 */}
-          <Card title="工单描述">
+            const contactMobile =
+              (d as any).contact_mobile ??
+              (d as any).reporter?.contact_mobile ??
+              p?.extend_fields_list?.find((f: any) => f.field_name === "联系手机")?.field_value ??
+              p?.contact_mobile;
+
+            const contactEmail =
+              (d as any).contact_email ??
+              (d as any).reporter?.contact_email ??
+              p?.user_emails ??
+              p?.contact_email;
+
+            return (
+              <Card title="客户信息">
+                <div className="px-1 py-1">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+                    <Field label="提单公司">{d.reporter_company ?? "—"}</Field>
+                    <Field label="联系人">{contactName ?? "—"}</Field>
+                    <Field label="联系人手机">
+                      <span className="font-mono">{contactMobile ?? "—"}</span>
+                    </Field>
+                    <Field label="联系人邮箱">{contactEmail ?? "—"}</Field>
+                    <Field label="提单人">{d.reporter_name ?? "—"}</Field>
+                    <Field label="提单人手机">
+                      <span className="font-mono">{d.reporter_mobile ?? "—"}</span>
+                    </Field>
+                    <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
+                    <Field label="服务等级">{d.service_level ?? "标准服务"}</Field>
+                  </div>
+                </div>
+              </Card>
+            );
+          })()}
+
+          {/* 3. 工单描述容器：标题修改为【客户工单】其他保持不变 */}
+          <Card title="客户工单">
             <dl className="space-y-6 py-2">
               <DescRow label="主题">{d.title ?? "—"}</DescRow>
               <DescRow label="问题描述">
@@ -562,12 +570,12 @@ export function TicketDetailPage() {
           </Card>
 
 
-          {/* 5. 工单处理容器：左=处理节点（KSM 展示源系统 handleSteps 流转；非 KSM 走本系统时间轴），
-                右=节点处理详情（编辑说明/回复/转派等能力，两类工单共用） */}
+          {/* 5. 工单处理容器：左=处理节点（宽度 300px 垂直时间轴），
+                右=节点处理详情（编辑说明/回复/转派等能力） */}
           <Card title="工单处理">
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
               {/* 5.1 左：处理节点时间轴 */}
-              <div>
+              <div className="w-full lg:w-[300px] flex-none">
                 <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px] mb-2">
                   处理节点
                 </div>
@@ -620,279 +628,282 @@ export function TicketDetailPage() {
 
               {/* 5.2 右：节点处理详情 */}
               <div className="space-y-5 lg:border-l lg:border-hub-borderLight lg:pl-4">
-                <Field label="处理状态">
-                  <span className="inline-flex items-center gap-2">
-                    <ProcessStatusBadge
-                      opStatus={d.op_status}
-                      hubStatus={hub.data?.status}
-                      predictedType={d.predicted_type}
-                      hubIssueId={d.hub_issue_id}
-                      ticketStatus={d.status}
-                      ticketStatusLabel={ticketStatusLabel}
-                    />
-                  </span>
-                </Field>
+                <div className="flex items-center gap-2.5">
+                  <div className="text-[12px] font-bold text-black tracking-wide">节点详情</div>
+                  <ProcessStatusBadge
+                    opStatus={d.op_status}
+                    hubStatus={hub.data?.status}
+                    predictedType={d.predicted_type}
+                    hubIssueId={d.hub_issue_id}
+                    ticketStatus={d.status}
+                    ticketStatusLabel={ticketStatusLabel}
+                  />
+                </div>
 
                 {/* hub 加载中（已毕业但尚未取到 status）：先占位，避免误判已确认闪现 */}
                 {d.hub_issue_id != null && hub.isLoading && (
                   <p className="text-[11px] text-hub-textFaint">分类状态加载中…</p>
                 )}
 
-                {/* 待确认分类（研发类自动毕业 pending_review）：工单参数编辑 + 确认推送 */}
+                {/* 待确认分类（研发类自动毕业 pending_review）：工单标签编辑 + 确认推送 */}
                 {pendingReview && hub.data && (
                   <TicketAttributesEditor ticket={d} hub={hub.data} />
                 )}
 
-                {/* 分类未明确（未毕业 hub_issue）：工单参数编辑 + 确认分类一步毕业 */}
+                {/* 分类未明确（未毕业 hub_issue）：工单标签编辑 + 确认分类一步毕业 */}
                 {!classified && d.hub_issue_id == null && (
                   <TicketAttributesEditor ticket={d} hub={null} />
                 )}
 
                 {/* 明确分类且为运营类：处理建议 + 处理说明 + 处理附件（研发类/内部任务见下方分流） */}
                 {classified && isOperation && (
-                <div className="space-y-5">
-                {/* 处理中(processing)可改判转研发：运营沟通中发现是需求/Bug → 改类型 →「转研发并推送」。
-                    已答复/已关闭不显示（处理完成，不转 Linear）。 */}
-                {opStatus === "processing" && hub.data && (
-                  <TicketAttributesEditor ticket={d} hub={hub.data} />
-                )}
-                <div>
-                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
-                    处理建议
-                  </div>
-                  {/* 可选，前端记录选择；第一版本默认「正常跟进」；提交动作待后端接口 */}
-                  <select
-                    aria-label="处理建议"
-                    value={suggestion}
-                    onChange={(e) => setSuggestion(e.target.value)}
-                    disabled={opDone}
-                    className="text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="normal">正常跟进</option>
-                    <option value="return">退回转单</option>
-                    <option value="split">拆分转单</option>
-                  </select>
-                  <span className="ml-2 text-[10.5px] text-hub-textFaint">
-                    {suggestion === "return"
-                      ? "确认后退回 KSM（执行逻辑待后端）"
-                      : suggestion === "split"
-                        ? "确认后拆分多单，发票云接回 1 单（执行逻辑待后端）"
-                        : "判断为发票云问题，正常处理跟进"}
-                  </span>
-                </div>
-
-                <div>
-                  <div className="text-[11px] font-bold text-hub-textMuted tracking-wide mb-1.5">
-                    处理说明
-                    <span className="ml-2 font-normal text-hub-textFaint">
-                      {isCurrentNode ? "（当前节点）" : "（历史节点）"}
-                    </span>
-                  </div>
-                  {d.op_status === "reviewing" && (
-                    <div className="mb-1.5 text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-1">
-                      AI 草稿待审核，确认后正式发出
-                    </div>
-                  )}
-                  {/* AI 转人工时已尝试的问答（只读提示，非正式草稿）：processing 态 +
-                      最新 auto_reply 判 transfer 时后端回填，帮人工判断 AI 是否已答过、答了什么。
-                      不预填进下方文本框，避免被误当草稿改改就直接发出。 */}
-                  {opStatus === "processing" && hub.data?.last_transfer_attempt && (
-                    <div className="mb-1.5 text-[11px] text-hub-textMuted bg-hub-panel border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
-                      <div className="font-semibold text-hub-textFaint mb-0.5">
-                        🤖 AI 已尝试回答（未采纳，转人工处理）
-                      </div>
-                      <div>
-                        <span className="text-hub-textFaint">问：</span>
-                        {hub.data.last_transfer_attempt.question}
-                      </div>
-                      <div>
-                        <span className="text-hub-textFaint">答：</span>
-                        {hub.data.last_transfer_attempt.answer}
-                      </div>
-                    </div>
-                  )}
-                  {/* 当前节点(idx0)：可编辑文本框（默认取 cached_reply_content，无独立保存按钮，入库随页面「确认」）。
-                      历史节点：有逐节点记录则只读展示，无内容才「无数据」——不显示任何可操作控件。
-                      逐节点处理说明后端暂无字段，历史内容目前仅来自本地草稿 noteDrafts。 */}
-                  {isCurrentNode ? (
-                    <>
-                      {(() => {
-                        // 待审核可编辑（审核人改草稿）；否则答复完成/关单 → 只读。运营
-                        // 工单的「是否处理完」权威在 hub.op_status，不看 ticket.status
-                        // ——后者可能因历史原因脱节（如曾观察到 reviewing 单
-                        // ticket.status=closed），信了会把仍在处理中的单误锁只读。
-                        const editable = !opDone;
-                        // 补料态默认填 AI 生成的「需补充资料」清单（cached_reply_content 补料态为空）
-                        const supplyNote =
-                          opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
-                        // reviewing 态回落 hub 草稿答复（未级联到 ticket，cached_reply_content 为空）
-                        const val =
-                          noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
-                        return (
-                          <textarea
-                            readOnly={!editable}
-                            maxLength={2000}
-                            value={val}
-                            onChange={(e) =>
-                              setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
-                            }
-                            placeholder={
-                              editable
-                                ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
-                                : opStatus === "closed"
-                                  ? "已关单，只读"
-                                  : "已答复完成，只读"
-                            }
-                            className={
-                              "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
-                              (editable
-                                ? "bg-white focus:border-hub-teal"
-                                : "bg-hub-panel cursor-not-allowed")
-                            }
-                          />
-                        );
-                      })()}
-                      <div className="mt-1 text-[10.5px] text-hub-textFaint">
-                        {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
-                        最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
-                      </div>
-                    </>
-                  ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
-                    <div className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-hub-panel whitespace-pre-wrap break-words">
-                      {noteDrafts[nodeIdx]}
-                    </div>
-                  ) : (
-                    <EmptyNodeData />
-                  )}
-                </div>
-
-                {/* 「处理附件 / 补充凭证」区已按需求隐藏（出站附件后端未支持，先撤下上传占位） */}
-
-                {/* 处理意见确认动作：转派（分类完成后、答复前可用）| 提交答复；退回/拆分=前端占位 */}
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  {isSupervisor() && (
-                    <button
-                      type="button"
-                      onClick={() => setTransferOpen(true)}
-                      disabled={opDone}
-                      title="转派处理人（提交答复前可转派）"
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      转派
-                    </button>
-                  )}
-                  {/* 退回 KSM（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明作退回意见 */}
-                  {d.source_code === "ksm" &&
-                    (isSupervisor() ||
-                      (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
-                      <button
-                        type="button"
-                        disabled={returnKsm.isPending}
-                        title="退回 KSM 重新分派（不可逆）"
-                        onClick={() => {
-                          const content = (
-                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                          ).trim();
-                          if (!content) {
-                            setReturnErr("处理说明为空，无法退回");
-                            return;
-                          }
-                          if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
-                            return;
-                          }
-                          returnKsm.mutate(content);
-                        }}
-                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {returnKsm.isPending ? "退回中…" : "退回 KSM"}
-                      </button>
+                  <div className="space-y-5">
+                    {/* 处理中(processing)可改判转研发 */}
+                    {opStatus === "processing" && hub.data && (
+                      <TicketAttributesEditor ticket={d} hub={hub.data} />
                     )}
-                  {/* 补充资料（仅 KSM 来源工单 + 处理人本人/主管可操作）：取处理说明
-                      作补料说明提交，工单转 supplementing；客户补料后自动交 AI 重答。
-                      智齿无补料接口，不显示。镜像 HubIssueDetailPage.tsx 同名按钮，
-                      补上工单详情页原先缺失的入口。 */}
-                  {d.source_code === "ksm" &&
-                    (isSupervisor() ||
-                      (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
-                      <button
-                        type="button"
-                        disabled={supply.isPending || opDone}
-                        title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
-                        onClick={() => {
-                          const content = (
-                            noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                          ).trim();
-                          if (!content) {
-                            setSupplyErr("处理说明为空，无法请求补料");
-                            return;
-                          }
-                          supply.mutate(content);
-                        }}
-                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-amber text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {supply.isPending ? "提交中…" : "补充资料"}
-                      </button>
-                    )}
-                  {/* 诊断：运营单 AI 自动答复有问题 → 送反思诊断（处理人本人/主管可点） */}
-                  {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
-                    <button
-                      type="button"
-                      onClick={() => setDiagnosisOpen(true)}
-                      title="AI 自动答复有问题？标记后送知识运营复核诊断"
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95"
-                    >
-                      诊断
-                    </button>
-                  )}
-                  {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
-                    <span className="text-[10.5px] text-hub-textFaint">
-                      已标记诊断，等待知识运营复核
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    disabled={reply.isPending || suggestion === "split" || opDone}
-                    onClick={() => {
-                      if (suggestion === "normal") {
-                        const content = (
-                          noteDrafts[0] ??
-                          d.cached_reply_content ??
-                          draftReply ??
-                          ""
-                        ).trim();
-                        if (!content) {
-                          setReplyErr("处理说明为空，无法答复");
-                          return;
-                        }
-                        reply.mutate(content);
-                      } else if (suggestion === "return") {
-                        setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
-                        setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
-                      } else if (suggestion === "split") {
-                        setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
-                        setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
-                      }
-                    }}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {suggestion === "normal"
-                      ? reply.isPending
-                        ? "提交中…"
-                        : "提交答复"
-                      : suggestion === "return"
-                        ? "退回转单"
-                        : "拆分转单（待后端）"}
-                  </button>
-                  {opDone && (
-                    <span className="ml-2 text-[10.5px] text-hub-textFaint">
-                      已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
-                    </span>
-                  )}
-                  {replyErr && <span className="ml-2 text-[11px] text-hub-rose">{replyErr}</span>}
-                  {returnErr && <span className="ml-2 text-[11px] text-hub-rose">{returnErr}</span>}
-                  {supplyErr && <span className="ml-2 text-[11px] text-hub-rose">{supplyErr}</span>}
-                </div>
-                </div>
+                    {/* 2.4 处理建议（左右结构，录入框宽 300px） */}
+                    <div className="space-y-1.5">
+                      <div className="text-[12px] font-bold text-black tracking-wide">
+                        处理建议
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <select
+                          aria-label="处理建议"
+                          value={suggestion}
+                          onChange={(e) => setSuggestion(e.target.value)}
+                          disabled={opDone}
+                          className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-transparent outline-none focus:border-hub-teal disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <option value="normal" className="bg-white">正常跟进</option>
+                          <option value="supplement" className="bg-white">补充资料</option>
+                          <option value="escalate_dev" className="bg-white">升级产研</option>
+                          <option value="return" className="bg-white">退回转单</option>
+                          <option value="split" className="bg-white">拆分转单</option>
+                        </select>
+                        <span className="text-[11.5px] text-hub-textFaint">
+                          {suggestion === "supplement"
+                            ? "备注：客户工单内容不全，需要客户补充资料"
+                            : suggestion === "escalate_dev"
+                              ? "备注：需要查验处理的需求/bug"
+                              : suggestion === "return"
+                                ? "确认后退回 KSM（执行逻辑待后端）"
+                                : suggestion === "split"
+                                  ? "确认后拆分多单，发票云接回 1 单（执行逻辑待后端）"
+                                  : "判断为发票云问题，正常处理跟进"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2.5 处理说明（操作按钮移到右侧，和处理说明标题同一行） */}
+                    <div>
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold text-black tracking-wide">
+                            处理说明
+                          </span>
+                          <span className="text-[11.5px] text-hub-textFaint">
+                            {isCurrentNode ? "（当前节点）" : "（历史节点）"}
+                          </span>
+                        </div>
+
+                        {/* 操作按钮移至标题行右侧，按【提交答复、转派、补充资料、拆单】顺序排布 */}
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                          <button
+                            type="button"
+                            disabled={reply.isPending || suggestion === "split" || opDone}
+                            onClick={() => {
+                              if (suggestion === "normal" || suggestion === "supplement" || suggestion === "escalate_dev") {
+                                const content = (
+                                  noteDrafts[0] ??
+                                  d.cached_reply_content ??
+                                  draftReply ??
+                                  ""
+                                ).trim();
+                                if (!content) {
+                                  setReplyErr("处理说明为空，无法答复");
+                                  return;
+                                }
+                                reply.mutate(content);
+                              } else if (suggestion === "return") {
+                                setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
+                                setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
+                              } else if (suggestion === "split") {
+                                setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
+                                setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
+                              }
+                            }}
+                            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            {suggestion === "return"
+                              ? "退回转单"
+                              : suggestion === "split"
+                                ? "拆分转单（待后端）"
+                                : reply.isPending
+                                  ? "提交中…"
+                                  : "提交答复"}
+                          </button>
+                          {isSupervisor() && (
+                            <button
+                              type="button"
+                              onClick={() => setTransferOpen(true)}
+                              disabled={opDone}
+                              title="转派处理人（提交答复前可转派）"
+                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              转派
+                            </button>
+                          )}
+                          {d.source_code === "ksm" &&
+                            (isSupervisor() ||
+                              (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                              <button
+                                type="button"
+                                disabled={returnKsm.isPending}
+                                title="退回 KSM 重新分派（不可逆）"
+                                onClick={() => {
+                                  const content = (
+                                    noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                                  ).trim();
+                                  if (!content) {
+                                    setReturnErr("处理说明为空，无法退回");
+                                    return;
+                                  }
+                                  if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
+                                    return;
+                                  }
+                                  returnKsm.mutate(content);
+                                }}
+                                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                {returnKsm.isPending ? "退回中…" : "退回 KSM"}
+                              </button>
+                            )}
+                          {d.source_code === "ksm" &&
+                            (isSupervisor() ||
+                              (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
+                              <button
+                                type="button"
+                                disabled={supply.isPending || opDone}
+                                title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                                onClick={() => {
+                                  const content = (
+                                    noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                                  ).trim();
+                                  if (!content) {
+                                    setSupplyErr("处理说明为空，无法请求补料");
+                                    return;
+                                  }
+                                  supply.mutate(content);
+                                }}
+                                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                {supply.isPending ? "提交中…" : "补充资料"}
+                              </button>
+                            )}
+                          <button
+                            type="button"
+                            onClick={() => setAddSubOpen(true)}
+                            disabled={opDone}
+                            title="拆分多单/新建子工单"
+                            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            拆单
+                          </button>
+                          {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
+                            <button
+                              type="button"
+                              onClick={() => setDiagnosisOpen(true)}
+                              title="AI 自动答复有问题？标记后送知识运营复核诊断"
+                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 cursor-pointer"
+                            >
+                              诊断
+                            </button>
+                          )}
+                          {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
+                            <span className="text-[10.5px] text-hub-textFaint">
+                              已标记诊断
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {d.op_status === "reviewing" && (
+                        <div className="mb-1.5 text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-1">
+                          AI 草稿待审核，确认后正式发出
+                        </div>
+                      )}
+                      {opStatus === "processing" && hub.data?.last_transfer_attempt && (
+                        <div className="mb-1.5 text-[11px] text-hub-textMuted bg-transparent border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
+                          <div className="font-semibold text-hub-textFaint mb-0.5">
+                            🤖 AI 已尝试回答（未采纳，转人工处理）
+                          </div>
+                          <div>
+                            <span className="text-hub-textFaint">问：</span>
+                            {hub.data.last_transfer_attempt.question}
+                          </div>
+                          <div>
+                            <span className="text-hub-textFaint">答：</span>
+                            {hub.data.last_transfer_attempt.answer}
+                          </div>
+                        </div>
+                      )}
+
+                      {isCurrentNode ? (
+                        <>
+                          {(() => {
+                            const editable = !opDone;
+                            const supplyNote =
+                              opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
+                            const val =
+                              noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
+                            return (
+                              <textarea
+                                readOnly={!editable}
+                                maxLength={2000}
+                                value={val}
+                                onChange={(e) =>
+                                  setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
+                                }
+                                placeholder={
+                                  editable
+                                    ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
+                                    : opStatus === "closed"
+                                      ? "已关单，只读"
+                                      : "已答复完成，只读"
+                                }
+                                className={
+                                  "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
+                                  (editable
+                                    ? "bg-transparent focus:border-hub-teal"
+                                    : "bg-transparent cursor-not-allowed opacity-60")
+                                }
+                              />
+                            );
+                          })()}
+                          <div className="mt-1 text-[10.5px] text-hub-textFaint">
+                            {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
+                            最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
+                          </div>
+                        </>
+                      ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
+                        <div className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-transparent whitespace-pre-wrap break-words">
+                          {noteDrafts[nodeIdx]}
+                        </div>
+                      ) : (
+                        <EmptyNodeData />
+                      )}
+
+                      {opDone && (
+                        <div className="mt-1 text-[10.5px] text-hub-textFaint text-right">
+                          已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
+                        </div>
+                      )}
+                      {replyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{replyErr}</div>}
+                      {returnErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{returnErr}</div>}
+                      {supplyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{supplyErr}</div>}
+                    </div>
+                  </div>
                 )}
 
                 {/* 明确分类且为研发类（Bug 修复 / 需求）且已真正推送 Linear：研发跟进，无对客答复 */}
@@ -903,68 +914,38 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                {/* 研发类已毕业但未推送（未推送过/推送失败/待选责任人）：只提醒现状，
-                    具体操作（重推/去工作台选人）已在下方「工单参数」区给出对应按钮，
-                    避免引导语与按钮区重复。 */}
+                {/* 研发类已毕业但未推送 */}
                 {classified && isDevType && d.predicted_type && !pushedToLinear && (
                   <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
                     {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
-                    类工单尚未推送 Linear，见下方「工单参数」区操作。
+                    类工单尚未推送 Linear，见下方「工单标签」区操作。
                   </div>
                 )}
 
                 {/* 明确分类但非运营 / 非研发（内部任务等）：无对客答复流程 */}
                 {classified && !isOperation && !isDevType && (
-                  <div className="border border-hub-borderLight rounded-[8px] px-3 py-2.5 text-[12px] text-hub-textFaint bg-hub-panel">
+                  <div className="border border-hub-borderLight rounded-[8px] px-3 py-2.5 text-[12px] text-hub-textFaint bg-transparent">
                     内部任务已建立，无对客答复流程。
                   </div>
                 )}
 
+                {/* 2.6 子任务列表 */}
                 <div>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <div className="text-[11px] font-bold text-hub-textMuted tracking-wide">
-                      子任务列表
-                    </div>
-                    <div className="flex-1" />
-                    {isCurrentNode && isSupervisor() && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setAddSubOpen(true)}
-                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                        >
-                          添加子任务
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => graduate.mutate()}
-                          disabled={graduate.isPending || d.hub_issue_id != null}
-                          title={
-                            d.hub_issue_id != null
-                              ? `已关联 HUB-${d.hub_issue_id}`
-                              : "确认并创建工单任务（hub_issue）"
-                          }
-                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {graduate.isPending ? "确认中…" : "确认子任务"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  {isCurrentNode && gradErr && (
-                    <div className="text-[11px] text-hub-rose mb-1">{gradErr}</div>
-                  )}
-                  {/* 只有当前节点展示子任务列表；历史节点无逐节点记录 → 「无数据」。
-                      拆分关联子任务：逐个拉取 children_ticket_ids 的工单详情（无批量端点，N+1）。
-                      编号/说明/类型/状态/处理人真实；解决方案=处理方案。draft 为「添加子任务」本地草稿。 */}
                   {isCurrentNode ? (
                     <SubTicketList
                       childIds={d.children_ticket_ids ?? []}
                       drafts={subDrafts}
+                      onDeleteDrafts={(indices) => {
+                        setSubDrafts((prev) => prev.filter((_, i) => !indices.includes(i)));
+                      }}
+                      onAdd={() => setAddSubOpen(true)}
+                      canEdit={isCurrentNode && isSupervisor()}
                       self={{
                         short_code: d.short_code,
                         title: d.title,
                         predicted_type: d.predicted_type,
+                        product_line_code: d.product_line_code,
+                        module: d.module,
                         status: d.status,
                         assigned_user_name: d.assigned_user_name,
                         assigned_user_id: d.assigned_user_id,
@@ -972,7 +953,12 @@ export function TicketDetailPage() {
                       }}
                     />
                   ) : (
-                    <EmptyNodeData />
+                    <>
+                      <div className="text-[12px] font-bold text-black tracking-wide mb-2">
+                        子任务列表
+                      </div>
+                      <EmptyNodeData />
+                    </>
                   )}
                 </div>
               </div>
@@ -1091,9 +1077,156 @@ export function TicketDetailPage() {
   );
 }
 
-// ---- 工单参数编辑（类型/产品线/模块）------------------------------------------
-// 按毕业状态分流：未毕业改 ticket → 点「确认分类」一步毕业（create-hub-issue 带产品线/
-// 模块）；已毕业改 hub（PATCH /attributes 只改数据不联动）+ pending_review「确认推送」。
+// ---- 可搜索下拉输入框（产品分类 / 问题模块快速筛选） ----
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder = "请选择",
+  disabled = false,
+  ariaLabel,
+  width = 300,
+  align = "left",
+  loading = false,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  options: { code: string; name: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+  width?: number;
+  align?: "left" | "right";
+  loading?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [kw, setKw] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const selectedOpt = options.find((o) => o.code === value);
+  const displayLabel = selectedOpt ? selectedOpt.name : value || placeholder;
+
+  const filtered = useMemo(() => {
+    if (!kw.trim()) return options;
+    const lower = kw.toLowerCase();
+    return options.filter(
+      (o) => o.name.toLowerCase().includes(lower) || o.code.toLowerCase().includes(lower),
+    );
+  }, [options, kw]);
+
+  return (
+    <div ref={containerRef} className="relative inline-block" style={{ width }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((prev) => !prev);
+            setKw("");
+          }
+        }}
+        aria-label={ariaLabel}
+        title={displayLabel}
+        className="w-full text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal flex items-center justify-between gap-1 text-left disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer h-[32px] text-slate-800"
+      >
+        <span
+          className={`truncate ${selectedOpt ? "text-slate-800" : "text-hub-textFaint"}`}
+          title={displayLabel}
+        >
+          {displayLabel}
+        </span>
+        <svg className="w-3.5 h-3.5 text-slate-400 flex-none" viewBox="0 0 20 20" fill="currentColor">
+          <path
+            fillRule="evenodd"
+            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className={`absolute ${
+            align === "right" ? "right-0" : "left-0"
+          } top-[36px] z-50 min-w-full w-max max-w-[480px] bg-white border border-hub-border rounded-[8px] shadow-xl p-2 text-[12px]`}
+        >
+          <div className="relative mb-2">
+            <input
+              type="text"
+              autoFocus
+              value={kw}
+              onChange={(e) => setKw(e.target.value)}
+              placeholder="输入关键字快速定位..."
+              className="w-full pl-7 pr-2.5 py-1.5 border border-hub-border rounded-[6px] bg-slate-50/70 outline-none focus:border-hub-teal focus:bg-white text-[12px] text-slate-800"
+            />
+            <svg
+              className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+          <div className="max-h-[280px] overflow-y-auto flex flex-col gap-1 pr-1">
+            <button
+              type="button"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+              className="text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 text-hub-textFaint cursor-pointer"
+            >
+              —（清空）
+            </button>
+            {filtered.map((opt) => (
+              <button
+                key={opt.code}
+                type="button"
+                onClick={() => {
+                  onChange(opt.code);
+                  setOpen(false);
+                }}
+                className={`text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 whitespace-normal break-words leading-relaxed cursor-pointer transition-colors ${
+                  opt.code === value
+                    ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
+                    : "text-slate-700"
+                }`}
+                title={opt.name}
+              >
+                {opt.name}
+              </button>
+            ))}
+            {loading ? (
+              <div className="text-center py-4 text-hub-textFaint text-[11px]">加载中…</div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-4 text-hub-textFaint text-[11px]">无匹配选项</div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- 工单标签编辑（类型/产品分类/问题模块/分析根因）------------------------------------------
 type HubDetailData =
   paths["/api/hub-issues/{hub_issue_id}"]["get"]["responses"]["200"]["content"]["application/json"];
 type ProductLineOut = { code: string; name: string; is_active?: boolean };
@@ -1120,6 +1253,7 @@ function TicketAttributesEditor({
   const [type, setType] = useState<string>(initType);
   const [plc, setPlc] = useState<string>(initPlc);
   const [module, setModule] = useState<string>(initModule);
+  const [rootCause, setRootCause] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -1147,9 +1281,6 @@ function TicketAttributesEditor({
     enabled: canEdit && !!plc,
   });
 
-  // 产品线加载完后，若当前未选产品线（工单未归类/归类落 NULL），默认落「其他非发票云
-  // 问题」兜底线（语义=未分类，不误导），匹配不到再回落第一个 active。不留空。
-  // 工单已有产品线值不会被覆盖（plc 非空则跳过）。选中后下方模块 effect 链式补齐。
   const activeLines = useMemo(
     () => (productLines.data ?? []).filter((p) => p.is_active !== false),
     [productLines.data],
@@ -1160,13 +1291,27 @@ function TicketAttributesEditor({
     setPlc((fallback ?? activeLines[0]).code);
   }, [plc, activeLines]);
 
-  // 模块列表加载完后，若当前未选模块（切换产品线清空、或工单本无模块），默认选第一个，
-  // 不留空。工单已有模块值不会被覆盖（module 非空则跳过）。
   const moduleOptions = modules.data;
   useEffect(() => {
     if (!plc || !moduleOptions || moduleOptions.length === 0) return;
     if (!module) setModule(moduleOptions[0].code);
   }, [plc, module, moduleOptions]);
+
+  const productLineOptions = useMemo(() => {
+    const list = activeLines.map((p) => ({ code: p.code, name: p.name }));
+    if (plc && !list.some((p) => p.code === plc)) {
+      list.push({ code: plc, name: `${plc}（停用）` });
+    }
+    return list;
+  }, [activeLines, plc]);
+
+  const moduleOptionsList = useMemo(() => {
+    const list = (modules.data ?? []).map((m) => ({ code: m.code, name: m.name }));
+    if (module && !list.some((m) => m.code === module)) {
+      list.push({ code: module, name: module });
+    }
+    return list;
+  }, [modules.data, module]);
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["ticket-detail", ticket.id] });
@@ -1189,7 +1334,7 @@ function TicketAttributesEditor({
         { type, product_line_code: plc || null, module: module || null },
       ),
     onSuccess: () => {
-      setNotice("已保存工单参数");
+      setNotice("已保存工单标签");
       refresh();
     },
     onError: onErr,
@@ -1208,7 +1353,7 @@ function TicketAttributesEditor({
     onError: onErr,
   });
 
-  // 未毕业：确认分类一步毕业（带上改后的类型/产品线/模块）
+  // 未毕业：确认分类一步毕业（带上改后的类型/产品分类/问题模块）
   const graduate = useMutation({
     mutationFn: () =>
       api.post("/api/supervisor/create-hub-issue", {
@@ -1224,11 +1369,10 @@ function TicketAttributesEditor({
     onError: onErr,
   });
 
-  // 处理中的 Operation 转研发类并直推 Linear（运营处理中发现是需求/Bug）。
-  // 已答复/已关闭=处理完成，不可转（后端也校验）。改判即清 op 字段 + 直推 Linear。
+  // 处理中的 Operation 转研发类并直推 Linear
   const reclassifyToDev = useMutation({
     mutationFn: async () => {
-      if (dirty) await save.mutateAsync(); // 先落产品线/模块改动
+      if (dirty) await save.mutateAsync();
       return api.post("/api/supervisor/reclassify", {
         hub_issue_id: hub!.id,
         new_type: type,
@@ -1242,9 +1386,7 @@ function TicketAttributesEditor({
     onError: onErr,
   });
 
-  // 研发类已毕业但未成功推送（未推送过，或推送过但失败）→ 重推 Linear。守卫与后端
-  // repush-linear 一致（linear_uuid/identifier 均空才允许），覆盖 TKT-006458 那种
-  // "改类型为 Bug_fix 后只点了保存，从未真正推送过" 的场景。
+  // 研发类已毕业但未成功推送 → 重推 Linear
   const repush = useMutation({
     mutationFn: () => api.post("/api/supervisor/repush-linear", { hub_issue_id: hub!.id }),
     onSuccess: (d: { pushed: boolean; linear_identifier: string | null; pending_reason: string | null }) => {
@@ -1267,217 +1409,213 @@ function TicketAttributesEditor({
     reclassifyToDev.isPending ||
     repush.isPending;
   const pendingReview = graduated && hub.status === "pending_review";
-  // 待人工确认责任人才能推送（模块负责人不确定）：跳工作台「待推 Linear」队列选人。
   const pendingLinearReview = graduated && hub.status === "pending_linear_review";
-  // 处理中的 Operation（可转研发）：已毕业 + 类型 Operation + op_status=processing
   const isProcessingOp =
     graduated && hub.type === "Operation" && hub.op_status === "processing";
-  // 已是研发类但未成功推送（linear_identifier 空），且不是上面两种待确认态——
-  // 覆盖"从未推送"与"推送失败待重试"两种情况，与后端 repush-linear 的守卫对齐。
   const devUnpushed =
     graduated &&
     (hub.type === "Bug_fix" || hub.type === "Demand") &&
     !hub.linear_identifier &&
     !pendingReview &&
     !pendingLinearReview;
-  // 当前选中的是研发类
   const devTypeSelected = type === "Bug_fix" || type === "Demand";
 
   if (!canEdit) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 text-[12.5px]">
-        <div>
-          <span className="text-hub-textFaint">类型：</span>
-          {HUB_TYPE_LABELS[initType] ?? initType}
-        </div>
-        <div>
-          <span className="text-hub-textFaint">产品线：</span>
-          {initPlc || "—"}
-        </div>
-        <div>
-          <span className="text-hub-textFaint">模块：</span>
-          {initModule || "—"}
+      <div className="space-y-2">
+        <div className="text-[12px] font-bold text-black tracking-wide">工单标签</div>
+        <div className="px-[5px] flex flex-wrap items-center gap-[15px] text-[12.5px]">
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">工单类型：</span>
+            <span className="text-slate-800 font-medium">{HUB_TYPE_LABELS[initType] ?? initType}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">产品分类：</span>
+            <span className="text-slate-800 font-medium">{initPlc || "—"}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">问题模块：</span>
+            <span className="text-slate-800 font-medium">{initModule || "—"}</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  const selCls =
-    "text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-hub-panel outline-none focus:border-hub-teal focus:bg-white";
   return (
     <div className="space-y-2.5">
-      <div className="text-[11px] font-bold text-hub-textMuted tracking-wide">工单参数</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-hub-textMuted">工单类型</span>
-          <select
-            aria-label="工单类型"
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            disabled={busy}
-            className={selCls}
-          >
-            {HUB_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {HUB_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-hub-textMuted">产品线</span>
-          <select
-            aria-label="产品线"
-            value={plc}
-            onChange={(e) => {
-              setPlc(e.target.value);
-              setModule("");
-            }}
-            disabled={busy}
-            className={selCls}
-          >
-            <option value="">—</option>
-            {(productLines.data ?? [])
-              .filter((p) => p.is_active !== false)
-              .map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.name}
+      <div className="text-[12px] font-bold text-black tracking-wide">工单标签</div>
+      <div className="px-[5px] space-y-2.5">
+        {/* 第一行：工单类型、产品分类、问题模块（3组左右平铺，录入框均为 300px） */}
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">工单类型</span>
+            <select
+              aria-label="工单类型"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              disabled={busy}
+              className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px] cursor-pointer text-slate-800"
+            >
+              {HUB_TYPES.map((t) => (
+                <option key={t} value={t} className="bg-white">
+                  {HUB_TYPE_LABELS[t]}
                 </option>
               ))}
-            {/* 当前值是停用/未知产品线（如旧码历史工单）→ 补一个 option 保证可见可选 */}
-            {plc &&
-              !(productLines.data ?? []).some((p) => p.code === plc && p.is_active !== false) && (
-                <option value={plc}>{plc}（停用）</option>
-              )}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-hub-textMuted">模块</span>
-          <select
-            aria-label="模块"
-            value={module}
-            onChange={(e) => setModule(e.target.value)}
-            disabled={busy || !plc}
-            className={selCls}
-          >
-            <option value="">—</option>
-            {(modules.data ?? []).map((m) => (
-              <option key={m.code} value={m.code}>
-                {m.name}
-              </option>
-            ))}
-            {module && !(modules.data ?? []).some((m) => m.code === module) && (
-              <option value={module}>{module}</option>
-            )}
-          </select>
-        </label>
-      </div>
-      {ticket.predicted_module && (
-        <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-hub-textMuted bg-hub-panel border border-hub-border rounded-[7px] px-2.5 py-1.5">
-          <span className="font-semibold text-hub-teal-deep">AI 建议</span>
-          <span>
-            {ticket.predicted_product_line_code || "—"} / {ticket.predicted_module}
-            {ticket.predicted_module_confidence != null &&
-              `（置信度 ${Math.round(ticket.predicted_module_confidence * 100)}%）`}
-          </span>
-          {(ticket.predicted_product_line_code !== plc ||
-            ticket.predicted_module !== module) && (
-            <button
-              type="button"
-              onClick={() => {
-                setPlc(ticket.predicted_product_line_code ?? "");
-                setModule(ticket.predicted_module ?? "");
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">产品分类</span>
+            <SearchableSelect
+              ariaLabel="产品分类"
+              value={plc}
+              onChange={(val) => {
+                setPlc(val);
+                setModule("");
               }}
+              options={productLineOptions}
               disabled={busy}
-              className="px-2 py-0.5 text-[11px] font-semibold rounded bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40"
-            >
-              采纳
-            </button>
-          )}
+              width={300}
+              align="left"
+              loading={productLines.isLoading}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">问题模块</span>
+            <SearchableSelect
+              ariaLabel="问题模块"
+              value={module}
+              onChange={(val) => setModule(val)}
+              options={moduleOptionsList}
+              disabled={busy || !plc}
+              width={300}
+              align="right"
+              placeholder={!plc ? "请先选择产品分类" : "请选择"}
+              loading={modules.isLoading}
+            />
+          </div>
         </div>
-      )}
-      <div className="flex items-center gap-2 flex-wrap">
-        {graduated ? (
-          <>
-            <button
-              type="button"
-              onClick={() => save.mutate()}
-              disabled={!dirty || busy}
-              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {save.isPending ? "保存中…" : "保存"}
-            </button>
-            {/* pending_review 始终显示确认按钮，文案随选中类型：研发=确认推送(推Linear)，
-                运营/内部任务=确认分类(走答复链/无外部动作)。都调 confirm-classification
-                后端按类型自动分流——否则运营单藏了按钮会卡在 pending_review 出不去。 */}
-            {pendingReview && (
+
+        {/* AI 建议 */}
+        {ticket.predicted_module && (
+          <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-hub-textMuted bg-transparent border border-hub-border rounded-[7px] px-2.5 py-1.5">
+            <span className="font-semibold text-hub-teal-deep">AI 建议</span>
+            <span>
+              {ticket.predicted_product_line_code || "—"} / {ticket.predicted_module}
+              {ticket.predicted_module_confidence != null &&
+                `（置信度 ${Math.round(ticket.predicted_module_confidence * 100)}%）`}
+            </span>
+            {(ticket.predicted_product_line_code !== plc ||
+              ticket.predicted_module !== module) && (
               <button
                 type="button"
-                onClick={() => confirm.mutate()}
+                onClick={() => {
+                  setPlc(ticket.predicted_product_line_code ?? "");
+                  setModule(ticket.predicted_module ?? "");
+                }}
                 disabled={busy}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40"
+                className="px-2 py-0.5 text-[11px] font-semibold rounded bg-transparent text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40 cursor-pointer"
               >
-                {confirm.isPending
+                采纳
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 第二行：分析根因 + 确认 按钮（与上方左右对齐：工单类型和分析根因左对齐，问题模块录入框和【确认】按钮右对齐） */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 flex-1">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">分析根因</span>
+            <input
+              type="text"
+              aria-label="分析根因"
+              value={rootCause}
+              onChange={(e) => setRootCause(e.target.value)}
+              placeholder="请输入分析根因"
+              disabled={busy}
+              className="w-full flex-1 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px]"
+            />
+          </div>
+          <div className="flex items-center gap-2 flex-none">
+            {graduated ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => save.mutate()}
+                  disabled={!dirty || busy}
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
+                >
+                  {save.isPending ? "确认中…" : "确认"}
+                </button>
+                {pendingReview && (
+                  <button
+                    type="button"
+                    onClick={() => confirm.mutate()}
+                    disabled={busy}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40 cursor-pointer h-[32px]"
+                  >
+                    {confirm.isPending
+                      ? "确认中…"
+                      : type === "Bug_fix" || type === "Demand"
+                        ? "确认推送"
+                        : "确认分类"}
+                  </button>
+                )}
+                {isProcessingOp && devTypeSelected && (
+                  <button
+                    type="button"
+                    onClick={() => reclassifyToDev.mutate()}
+                    disabled={busy}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
+                  >
+                    {reclassifyToDev.isPending ? "转研发中…" : "转研发并推送"}
+                  </button>
+                )}
+                {devUnpushed && (
+                  <button
+                    type="button"
+                    onClick={() => repush.mutate()}
+                    disabled={busy}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
+                  >
+                    {repush.isPending ? "推送中…" : "转研发并推送"}
+                  </button>
+                )}
+                {pendingLinearReview && (
+                  <Link
+                    to="/workbench?tab=linear"
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light flex items-center h-[32px]"
+                  >
+                    未找到责任人，请到工作台选择责任人推送 →
+                  </Link>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => graduate.mutate()}
+                disabled={busy}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
+              >
+                {graduate.isPending
                   ? "确认中…"
-                  : type === "Bug_fix" || type === "Demand"
-                    ? "确认推送"
+                  : type === "Operation"
+                    ? "确认"
                     : "确认分类"}
               </button>
             )}
-            {/* 处理中 Operation 改选研发类 → 转研发并直推 Linear（运营处理中发现是需求/Bug）。
-                非 pending_review、不与上方确认按钮共存。 */}
-            {isProcessingOp && devTypeSelected && (
-              <button
-                type="button"
-                onClick={() => reclassifyToDev.mutate()}
-                disabled={busy}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {reclassifyToDev.isPending ? "转研发中…" : "转研发并推送"}
-              </button>
-            )}
-            {/* 研发类已毕业但从未成功推送（未推送 或 推送失败）：常驻可点，不依赖
-                op_status（TKT-006458 教训：改类型为 Bug_fix 后 op_status 已被清空，
-                之前的可见性条件 isProcessingOp 天然漏了这种单）。 */}
-            {devUnpushed && (
-              <button
-                type="button"
-                onClick={() => repush.mutate()}
-                disabled={busy}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {repush.isPending ? "推送中…" : "转研发并推送"}
-              </button>
-            )}
-            {/* 模块负责人不确定，需人工选人后才能推送——跳工作台现成的选人队列，
-                不在详情页重复实现一套选人 UI。 */}
-            {pendingLinearReview && (
-              <Link
-                to="/workbench?tab=linear"
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light"
-              >
-                未找到责任人，请到工作台选择责任人推送 →
-              </Link>
-            )}
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => graduate.mutate()}
-            disabled={busy}
-            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {graduate.isPending ? "确认中…" : "确认分类"}
-          </button>
-        )}
+          </div>
+        </div>
       </div>
       {!graduated && (
-        <div className="text-[10.5px] text-hub-textFaint">
+        <div className="text-[10.5px] text-hub-textFaint px-[5px]">
           确认分类后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
         </div>
       )}
-      {notice && <div className="text-[11px] text-hub-green font-semibold">{notice}</div>}
-      {error && <div className="text-[11px] text-hub-rose">{error}</div>}
+      {notice && <div className="text-[11px] text-hub-green font-semibold px-[5px]">{notice}</div>}
+      {error && <div className="text-[11px] text-hub-rose px-[5px]">{error}</div>}
     </div>
   );
 }
@@ -1497,9 +1635,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// ---- 竖向处理时间轴（当前节点=最上，橙黄灯管闪烁；已完成节点圆圈打√） --------
-// A1：一条贯穿的粗竖线把节点串起来。A2：节点可点选，selectedIdx 高亮，onSelect 回调。
-// terminal=true（工单已终态 done/closed/…）时，最新节点也算「已完成」打√，不再闪烁在处理中。
+// ---- 竖向处理时间轴（垂直贯穿线，直径 20px 圆形标签，当前节点灯管闪烁，已完成填充绿色的√） --------
 function VerticalTimeline({
   events,
   terminal,
@@ -1512,81 +1648,97 @@ function VerticalTimeline({
   onSelect: (idx: number) => void;
 }) {
   return (
-    // 卡片式节点，纵向排列；每张卡之间以居中 ▾ 连接（对齐参考图控制台风格）。超高滚动查看。
-    <ol className="overflow-y-auto pr-1 m-0 list-none p-0" style={{ maxHeight: 420 }}>
+    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 480 }}>
       {events.map((ev, idx) => {
-        const isCurrent = idx === 0 && !terminal; // 倒序后最上=当前节点（终态则无进行中节点）
+        const isCurrent = idx === 0 && !terminal;
         const isSel = idx === selectedIdx;
-        // 处理人：优先后端人性化 actor_display（姓名/中文角色），回落原 changed_by。
+        const isLast = idx === events.length - 1;
+
         const actor =
           ev.kind === "status"
             ? (ev.actor_display ?? ev.changed_by ?? "—")
-            : (ev.change_reason ?? "system"); // link 事件：优先展示变更原因
+            : (ev.change_reason ?? "system");
         const ts = fmtDateTime(ev.occurred_at);
         const label =
           ev.kind === "status"
-            ? // 操作审计事件（不改状态 from==to）优先用 reason 作为操作说明；
-              // 真实状态流转显示 "from → to"。均优先后端中文化字段。
-              ev.from_status === ev.to_status && (ev.reason_display ?? ev.reason)
+            ? ev.from_status === ev.to_status && (ev.reason_display ?? ev.reason)
               ? (ev.reason_display ?? ev.reason ?? "")
               : `${ev.from_status_zh ?? ev.from_status ?? "∅"} → ${ev.to_status_zh ?? ev.to_status ?? ""}`
             : ev.effective_to !== null
               ? `关联关闭 HUB-${ev.hub_issue_id}`
               : `关联建立 HUB-${ev.hub_issue_id}`;
+        const statusText = isCurrent ? "处理中" : "已完成";
+
         return (
-          <li key={idx}>
+          <li key={idx} className="relative flex items-start">
+            {/* 时间轴垂直贯穿连接线 */}
+            {!isLast && (
+              <div className="absolute left-[9px] top-[22px] bottom-0 w-[2px] bg-slate-200" />
+            )}
+
+            {/* 直径 20px 的圆形标签 */}
+            <div className="relative z-10 mt-0.5 flex-none">
+              {isCurrent ? (
+                <span
+                  title="当前处理中节点"
+                  className="w-[20px] h-[20px] rounded-full bg-[#f59e0b] border-2 border-white shadow-md hub-node-blink flex items-center justify-center text-white shrink-0"
+                >
+                  <span className="w-2 h-2 rounded-full bg-white" />
+                </span>
+              ) : (
+                <span
+                  title="已完成"
+                  className="w-[20px] h-[20px] rounded-full bg-[#edfdf2] border-2 border-[#16a34a] text-[#16a34a] flex items-center justify-center font-bold text-[11px] leading-none shrink-0"
+                >
+                  ✓
+                </span>
+              )}
+            </div>
+
+            {/* 节点内容：纵向分布（节点名称、处理人、处理时间、处理状态） */}
             <div
               onClick={() => onSelect(idx)}
-              className={
-                "relative flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors " +
-                (isCurrent
-                  ? "border-hub-teal-border bg-hub-teal-light"
-                  : isSel
-                    ? "border-hub-teal-border bg-white"
-                    : "border-hub-border bg-white hover:bg-hub-panel")
-              }
+              className={`ml-3.5 pb-6 min-w-0 flex-1 flex flex-col cursor-pointer group ${
+                isSel ? "opacity-100" : "opacity-90 hover:opacity-100"
+              }`}
             >
-              {/* 选中/当前节点左侧 teal 竖条 */}
-              {(isCurrent || isSel) && (
-                <span
-                  className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-hub-teal"
-                  aria-hidden
-                />
-              )}
-              <span
-                className={
-                  "mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
-                  (isCurrent
-                    ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
-                    : "bg-hub-green text-white border-hub-green")
-                }
+              {/* 1. 节点名称 */}
+              <div
+                className={`text-[12.5px] font-bold break-words leading-snug transition-colors ${
+                  isSel
+                    ? "text-hub-teal-deep"
+                    : isCurrent
+                      ? "text-[#b45309]"
+                      : "text-slate-800 group-hover:text-hub-teal"
+                }`}
+                title={label}
               >
-                {isCurrent ? "" : "✓"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div
-                  className={
-                    "text-[11.5px] truncate " +
-                    (isCurrent
-                      ? "font-bold text-hub-amber-deep"
-                      : isSel
-                        ? "font-semibold text-hub-teal-deep"
-                        : "text-hub-text font-medium")
-                  }
-                  title={label}
+                {label}
+              </div>
+
+              {/* 2. 处理人 */}
+              <div className="text-[11.5px] text-slate-600 mt-1">
+                处理人：{actor}
+              </div>
+
+              {/* 3. 处理时间 */}
+              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                {ts}
+              </div>
+
+              {/* 4. 处理状态 */}
+              <div className="mt-1">
+                <span
+                  className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-semibold border ${
+                    isCurrent
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  }`}
                 >
-                  {label}
-                </div>
-                <div className="text-[10.5px] text-hub-textMuted font-mono truncate">{ts}</div>
-                <div className="text-[10.5px] text-hub-textFaint truncate">处理人：{actor}</div>
+                  {statusText}
+                </span>
               </div>
             </div>
-            {/* 连接符：非末节点显示居中 ▾ */}
-            {idx < events.length - 1 && (
-              <div className="text-center text-hub-textFaint text-[11px] leading-none py-1" aria-hidden>
-                ▾
-              </div>
-            )}
           </li>
         );
       })}
@@ -1594,87 +1746,117 @@ function VerticalTimeline({
   );
 }
 
-// ---- KSM 处理节点（源系统 handleSteps 流转，只读；左时间轴 + 右节点详情）----------
-// KSM 工单的处理节点展示 KSM 侧各流转节点（受理/协同处理/…），每节点带处理人 + 处理内容
-// （dealopinion）。与本系统操作记录（底部表格）分离：这里是源系统怎么流转的只读视图。
+// ---- KSM 处理节点（源系统 handleSteps 流转：垂直时间轴，倒序排列，直径 20px 标签）----------
 type KsmNodeT = NonNullable<
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["ksm_nodes"]
 >[number];
 
 function KsmProcessNodes({ nodes }: { nodes: KsmNodeT[] }) {
-  // 默认展开最后一个（最新流转节点）。点击节点展开/收起，看该节点处理内容（dealopinion）。
-  const [sel, setSel] = useState(nodes.length > 0 ? nodes.length - 1 : 0);
-  if (nodes.length === 0) {
+  // 按时间倒序显示（最新的在最上面）
+  const reversedNodes = useMemo(() => [...nodes].reverse(), [nodes]);
+  const [sel, setSel] = useState<number>(0);
+
+  if (reversedNodes.length === 0) {
     return <p className="text-[11px] text-hub-textFaint">暂无处理节点</p>;
   }
+
+  // 找到当前进行中的节点（倒序列表中首个未完成 !done 的节点）
+  const firstUndoneIdx = reversedNodes.findIndex((n) => !n.done);
+
   return (
-    <ol className="overflow-y-auto pr-1 m-0 list-none p-0" style={{ maxHeight: 460 }}>
-      {nodes.map((n, idx) => {
+    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 480 }}>
+      {reversedNodes.map((n, idx) => {
+        const isCurrent = idx === firstUndoneIdx;
+        const isDone = n.done;
         const isSel = idx === sel;
-        const isLast = idx === nodes.length - 1;
+        const isLast = idx === reversedNodes.length - 1;
+        const statusText = n.done ? "处理完成" : "处理中";
+
         return (
-          <li key={idx}>
+          <li key={idx} className="relative flex items-start">
+            {/* 时间轴垂直贯穿连接线 */}
+            {!isLast && (
+              <div className="absolute left-[9px] top-[22px] bottom-0 w-[2px] bg-slate-200" />
+            )}
+
+            {/* 直径 20px 的圆形标签 */}
+            <div className="relative z-10 mt-0.5 flex-none">
+              {isCurrent ? (
+                <span
+                  title="当前处理中节点"
+                  className="w-[20px] h-[20px] rounded-full bg-[#f59e0b] border-2 border-white shadow-md hub-node-blink flex items-center justify-center text-white shrink-0"
+                >
+                  <span className="w-2 h-2 rounded-full bg-white" />
+                </span>
+              ) : isDone ? (
+                <span
+                  title="已完成"
+                  className="w-[20px] h-[20px] rounded-full bg-[#edfdf2] border-2 border-[#16a34a] text-[#16a34a] flex items-center justify-center font-bold text-[11px] leading-none shrink-0"
+                >
+                  ✓
+                </span>
+              ) : (
+                <span
+                  title="待处理"
+                  className="w-[20px] h-[20px] rounded-full bg-slate-100 border-2 border-slate-300 text-slate-400 flex items-center justify-center shrink-0"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                </span>
+              )}
+            </div>
+
+            {/* 节点内容：纵向分布（节点名称、处理人、处理时间、处理状态） */}
             <div
               onClick={() => setSel(isSel ? -1 : idx)}
-              className={
-                "relative flex items-start gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors " +
-                (isSel
-                  ? "border-hub-teal-border bg-hub-teal-light"
-                  : "border-hub-border bg-white hover:bg-hub-panel")
-              }
+              className={`ml-3.5 pb-6 min-w-0 flex-1 flex flex-col cursor-pointer group ${
+                isSel ? "opacity-100" : "opacity-90 hover:opacity-100"
+              }`}
             >
-              {isSel && (
-                <span
-                  className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-hub-teal"
-                  aria-hidden
-                />
-              )}
-              <span
-                className={
-                  "mt-0.5 flex-none w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border " +
-                  (n.done
-                    ? "bg-hub-green text-white border-hub-green"
-                    : isLast
-                      ? "bg-hub-amber text-white border-hub-amber hub-node-blink"
-                      : "bg-hub-neutral text-white border-hub-neutral")
-                }
-              >
-                {n.done ? "✓" : ""}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={
-                      "text-[12px] truncate " +
-                      (isSel ? "font-semibold text-hub-teal-deep" : "text-hub-text font-medium")
-                    }
-                    title={n.node_name}
-                  >
-                    {n.node_name}
-                  </span>
-                  <span className="flex-none text-[10px] text-hub-textFaint">
-                    {n.done ? "处理完成" : "处理中"}
-                  </span>
-                </div>
-                <div className="text-[10.5px] text-hub-textMuted font-mono">{n.handled_at ?? "—"}</div>
-                <div className="text-[10.5px] text-hub-textFaint">处理人：{n.handler_name}</div>
-                {/* 展开：该节点处理内容（dealopinion） */}
-                {isSel && (
-                  <div className="mt-2 text-[12px] text-hub-text whitespace-pre-wrap break-words bg-white border border-hub-border rounded-[6px] px-2.5 py-2">
-                    <span className="text-[10.5px] font-bold text-hub-textMuted">处理内容</span>
-                    <div className="mt-1">{n.content ?? "（无处理内容）"}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-            {idx < nodes.length - 1 && (
+              {/* 1. 节点名称 */}
               <div
-                className="text-center text-hub-textFaint text-[11px] leading-none py-1"
-                aria-hidden
+                className={`text-[12.5px] font-bold break-words leading-snug transition-colors ${
+                  isSel
+                    ? "text-hub-teal-deep"
+                    : isCurrent
+                      ? "text-[#b45309]"
+                      : "text-slate-800 group-hover:text-hub-teal"
+                }`}
+                title={n.node_name}
               >
-                ▾
+                {n.node_name}
               </div>
-            )}
+
+              {/* 2. 处理人 */}
+              <div className="text-[11.5px] text-slate-600 mt-1">
+                处理人：{n.handler_name || "—"}
+              </div>
+
+              {/* 3. 处理时间 */}
+              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                {n.handled_at || "—"}
+              </div>
+
+              {/* 4. 处理状态 */}
+              <div className="mt-1">
+                <span
+                  className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-medium border ${
+                    n.done
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  }`}
+                >
+                  {statusText}
+                </span>
+              </div>
+
+              {/* 展开：该节点处理内容（dealopinion） */}
+              {isSel && n.content && (
+                <div className="mt-2 text-[11.5px] text-slate-700 whitespace-pre-wrap break-words bg-slate-50 border border-slate-200 rounded-[6px] px-2.5 py-2">
+                  <span className="text-[10px] font-bold text-slate-500 block mb-0.5">处理内容</span>
+                  {n.content}
+                </div>
+              )}
+            </div>
           </li>
         );
       })}
@@ -1722,26 +1904,32 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// 子任务列表：逐个拉取子工单详情（children_ticket_ids，无批量端点）。
-// 编号/说明/类型/状态/处理人/解决方案(=工单任务处理方案 cached_reply_content) 均来自子工单任务数据。
-// drafts：「添加子任务」录入的本地草稿行（尚未落库，落库待后端接口）。
+// 子任务列表：逐个拉取子工单详情（children_ticket_ids）。
+// 任务编号/说明最左固定；增加产品分类、问题模块；说明支持气泡弹窗；支持多选与添加|删除链接。
 function SubTicketList({
   childIds,
   drafts,
   self,
+  onDeleteDrafts,
+  onAdd,
+  canEdit = true,
 }: {
   childIds: number[];
-  drafts: { title: string; type: string }[];
-  // 未拆分时回落显示的当前工单本身
+  drafts: { title: string; type: string; product_line?: string; module?: string }[];
   self: {
     short_code: string;
     title: string | null | undefined;
     predicted_type: string | null | undefined;
+    product_line_code?: string | null;
+    module?: string | null;
     status: string;
     assigned_user_name: string | null | undefined;
     assigned_user_id: number | null | undefined;
     cached_reply_content: string | null | undefined;
   };
+  onDeleteDrafts?: (indices: number[]) => void;
+  onAdd?: () => void;
+  canEdit?: boolean;
 }) {
   const results = useQueries({
     queries: childIds.map((cid) => ({
@@ -1750,95 +1938,314 @@ function SubTicketList({
       staleTime: 30_000,
     })),
   });
-  // 列名对齐工单任务表字段（子任务=关联的工单任务表数据）
-  const cols = ["任务编号", "任务说明", "任务类型", "任务状态", "任务处理人", "任务解决方案"];
+
+  const [selectedKeys, setSelectedKeys] = useState<Set<string | number>>(new Set());
+  const [popoverText, setPopoverText] = useState<string | null>(null);
+
   const empty = childIds.length === 0 && drafts.length === 0;
+
+  const allRowKeys: (string | number)[] = useMemo(() => {
+    if (empty) return ["self"];
+    const keys: (string | number)[] = [...childIds];
+    drafts.forEach((_, i) => keys.push(`draft-${i}`));
+    return keys;
+  }, [empty, childIds, drafts]);
+
+  const allSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedKeys(new Set());
+    } else {
+      setSelectedKeys(new Set(allRowKeys));
+    }
+  };
+
+  const toggleRow = (k: string | number) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const handleDelete = () => {
+    if (selectedKeys.size === 0) return;
+    const draftIndices: number[] = [];
+    selectedKeys.forEach((k) => {
+      if (typeof k === "string" && k.startsWith("draft-")) {
+        const idx = parseInt(k.replace("draft-", ""), 10);
+        if (!isNaN(idx)) draftIndices.push(idx);
+      }
+    });
+    if (draftIndices.length > 0) {
+      onDeleteDrafts?.(draftIndices);
+    }
+    setSelectedKeys(new Set());
+  };
+
   return (
-    <div className="overflow-x-auto border border-hub-border rounded-[7px]">
-      <table className="min-w-full text-[11.5px]">
-        <thead>
-          <tr className="bg-hub-panel text-hub-textMuted">
-            {cols.map((h) => (
-              <th key={h} className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">
-                {h}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[12px] font-bold text-black tracking-wide">
+          子任务列表
+        </div>
+        {canEdit && (
+          <div className="flex items-center gap-1.5 text-[12px]">
+            <button
+              type="button"
+              onClick={onAdd}
+              className="text-[#6085e7] hover:underline font-medium cursor-pointer"
+            >
+              添加
+            </button>
+            <span className="text-slate-300">|</span>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={selectedKeys.size === 0}
+              className="text-hub-rose hover:underline font-medium cursor-pointer disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+            >
+              删除
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto border border-hub-border rounded-[7px]">
+        <table className="min-w-full text-[11.5px] border-collapse">
+          <thead>
+            <tr style={{ backgroundColor: "rgb(234, 237, 245)" }} className="text-slate-700">
+              <th
+                className="px-2 py-1.5 text-center whitespace-nowrap"
+                style={{
+                  position: "sticky",
+                  left: 0,
+                  backgroundColor: "rgb(234, 237, 245)",
+                  zIndex: 10,
+                  width: 40,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="rounded border-slate-300 cursor-pointer"
+                />
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {/* 未拆分（无子单、无草稿）：回落显示当前工单本身一行 */}
-          {empty && (
-            <tr className="border-t border-hub-borderLight hover:bg-hub-panel">
-              <td className="px-2.5 py-1.5 whitespace-nowrap">
-                <span className="font-mono text-hub-textMuted">{self.short_code}</span>
-              </td>
-              <td className="px-2.5 py-1.5 max-w-[220px] truncate" title={self.title ?? ""}>
-                {self.title ?? "—"}
-              </td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap">
-                {self.predicted_type ? <PredictedTypeBadge type={self.predicted_type} /> : "—"}
-              </td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap">{ticketStatusLabel(self.status)}</td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap">
-                {self.assigned_user_name ??
-                  (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
-              </td>
-              <td className="px-2.5 py-1.5 max-w-[260px]">
-                <span className="truncate block" title={self.cached_reply_content ?? ""}>
-                  {self.cached_reply_content ?? "—"}
-                </span>
-              </td>
+              <th
+                className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap"
+                style={{
+                  position: "sticky",
+                  left: 40,
+                  backgroundColor: "rgb(234, 237, 245)",
+                  zIndex: 10,
+                  width: 100,
+                }}
+              >
+                任务编号
+              </th>
+              <th
+                className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap"
+                style={{
+                  position: "sticky",
+                  left: 140,
+                  backgroundColor: "rgb(234, 237, 245)",
+                  zIndex: 10,
+                  width: 180,
+                }}
+              >
+                任务说明
+              </th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务类型</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">产品分类</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">问题模块</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务解决方案</th>
             </tr>
-          )}
-          {results.map((r, i) => {
-            const c = r.data;
-            return (
-              <tr key={childIds[i]} className="border-t border-hub-borderLight hover:bg-hub-panel">
+          </thead>
+          <tbody>
+            {/* 未拆分（无子单、无草稿）：回落显示当前工单本身一行 */}
+            {empty && (
+              <tr className="group border-t border-hub-borderLight hover:bg-slate-50">
+                <td
+                  className="px-2 py-1.5 text-center whitespace-nowrap bg-white group-hover:bg-slate-50"
+                  style={{ position: "sticky", left: 0, zIndex: 2 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedKeys.has("self")}
+                    onChange={() => toggleRow("self")}
+                    className="rounded border-slate-300 cursor-pointer"
+                  />
+                </td>
+                <td
+                  className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
+                  style={{ position: "sticky", left: 40, zIndex: 2 }}
+                >
+                  <span className="font-mono text-hub-textMuted">{self.short_code}</span>
+                </td>
+                <td
+                  className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
+                  style={{ position: "sticky", left: 140, zIndex: 2 }}
+                  title="点击查看完整任务说明"
+                  onClick={() => self.title && setPopoverText(self.title)}
+                >
+                  {self.title ?? "—"}
+                </td>
                 <td className="px-2.5 py-1.5 whitespace-nowrap">
-                  <Link
-                    to={`/tickets/${childIds[i]}`}
-                    className="text-hub-teal hover:underline font-mono"
-                  >
-                    {c?.short_code ?? `#${childIds[i]}`}
-                  </Link>
+                  {self.predicted_type ? <PredictedTypeBadge type={self.predicted_type} /> : "—"}
                 </td>
-                <td className="px-2.5 py-1.5 max-w-[220px] truncate" title={c?.title ?? ""}>
-                  {r.isLoading ? "加载中…" : (c?.title ?? "—")}
+                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
+                  {self.product_line_code || "—"}
                 </td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
+                  {self.module || "—"}
+                </td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap">{ticketStatusLabel(self.status)}</td>
                 <td className="px-2.5 py-1.5 whitespace-nowrap">
-                  {c?.predicted_type ? <PredictedTypeBadge type={c.predicted_type} /> : "—"}
+                  {self.assigned_user_name ??
+                    (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
                 </td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap">{c?.status ?? "—"}</td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap">
-                  {c?.assigned_user_name ??
-                    (c?.assigned_user_id ? `#${c.assigned_user_id}` : "—")}
-                </td>
-                {/* 解决方案 = 该工单任务的处理方案（cached_reply_content 缓存答复）；后端补更精确字段后替换 */}
                 <td className="px-2.5 py-1.5 max-w-[260px]">
-                  <span className="truncate block" title={c?.cached_reply_content ?? ""}>
-                    {c?.cached_reply_content ?? "—"}
+                  <span className="truncate block" title={self.cached_reply_content ?? ""}>
+                    {self.cached_reply_content ?? "—"}
                   </span>
                 </td>
               </tr>
-            );
-          })}
-          {/* 本地草稿行（添加子任务，尚未落库） */}
-          {drafts.map((dft, i) => (
-            <tr key={`draft-${i}`} className="border-t border-hub-borderLight bg-hub-amber-light/40">
-              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">待生成</td>
-              <td className="px-2.5 py-1.5 max-w-[220px] truncate" title={dft.title}>
-                {dft.title}
-              </td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap">
-                <PredictedTypeBadge type={dft.type} />
-              </td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-amber-deep">待创建</td>
-              <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
-              <td className="px-2.5 py-1.5 text-hub-textFaint">—</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            )}
+
+            {results.map((r, i) => {
+              const c = r.data;
+              const cid = childIds[i];
+              return (
+                <tr key={cid} className="group border-t border-hub-borderLight hover:bg-slate-50">
+                  <td
+                    className="px-2 py-1.5 text-center whitespace-nowrap bg-white group-hover:bg-slate-50"
+                    style={{ position: "sticky", left: 0, zIndex: 2 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(cid)}
+                      onChange={() => toggleRow(cid)}
+                      className="rounded border-slate-300 cursor-pointer"
+                    />
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
+                    style={{ position: "sticky", left: 40, zIndex: 2 }}
+                  >
+                    <Link
+                      to={`/tickets/${cid}`}
+                      className="text-[#6085e7] hover:underline font-mono"
+                    >
+                      {c?.short_code ?? `#${cid}`}
+                    </Link>
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
+                    style={{ position: "sticky", left: 140, zIndex: 2 }}
+                    title="点击查看完整任务说明"
+                    onClick={() => c?.title && setPopoverText(c.title)}
+                  >
+                    {r.isLoading ? "加载中…" : (c?.title ?? "—")}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {c?.predicted_type ? <PredictedTypeBadge type={c.predicted_type} /> : "—"}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
+                    {c?.product_line_code || "—"}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
+                    {c?.module || "—"}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">{c?.status ?? "—"}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {c?.assigned_user_name ??
+                      (c?.assigned_user_id ? `#${c.assigned_user_id}` : "—")}
+                  </td>
+                  <td className="px-2.5 py-1.5 max-w-[260px]">
+                    <span className="truncate block" title={c?.cached_reply_content ?? ""}>
+                      {c?.cached_reply_content ?? "—"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {/* 本地草稿行 */}
+            {drafts.map((dft, i) => {
+              const draftKey = `draft-${i}`;
+              return (
+                <tr key={draftKey} className="group border-t border-hub-borderLight bg-amber-50/50 hover:bg-amber-50">
+                  <td
+                    className="px-2 py-1.5 text-center whitespace-nowrap bg-amber-50/50 group-hover:bg-amber-50"
+                    style={{ position: "sticky", left: 0, zIndex: 2 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(draftKey)}
+                      onChange={() => toggleRow(draftKey)}
+                      className="rounded border-slate-300 cursor-pointer"
+                    />
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint bg-amber-50/50 group-hover:bg-amber-50"
+                    style={{ position: "sticky", left: 40, zIndex: 2 }}
+                  >
+                    待生成
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 max-w-[180px] truncate bg-amber-50/50 group-hover:bg-amber-50 cursor-pointer hover:text-[#6085e7]"
+                    style={{ position: "sticky", left: 140, zIndex: 2 }}
+                    title="点击查看完整任务说明"
+                    onClick={() => dft.title && setPopoverText(dft.title)}
+                  >
+                    {dft.title}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <PredictedTypeBadge type={dft.type} />
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">{dft.product_line || "—"}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">{dft.module || "—"}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-amber-deep font-semibold">待创建</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
+                  <td className="px-2.5 py-1.5 text-hub-textFaint">—</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 任务说明气泡弹窗 */}
+      {popoverText && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+          onClick={() => setPopoverText(null)}
+        >
+          <div
+            className="bg-white rounded-[10px] p-5 max-w-[480px] w-full shadow-2xl border border-slate-200 text-[13px] relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+              <span className="font-bold text-black text-[14px]">任务说明详情</span>
+              <button
+                type="button"
+                className="text-slate-400 hover:text-slate-700 text-[15px] cursor-pointer"
+                onClick={() => setPopoverText(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="text-slate-700 whitespace-pre-wrap max-h-[360px] overflow-y-auto leading-relaxed">
+              {popoverText}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2308,7 +2715,7 @@ function DescRow({ label, children }: { label: string; children: ReactNode }) {
 // AI 分类徽标语义色（对齐设计稿 4-工单列表 CAT）：
 //   Operation 运营=amber / Bug_fix Bug=rose / Demand 需求=blue / Internal_task 内部=neutral
 const TYPE_LABELS: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
-  Operation: { label: "运营", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
+  Operation: { label: "应用类", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
   Bug_fix: { label: "Bug 修复", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
   Demand: { label: "需求", bg: "#eaf0f8", fg: "#3d6bb3", bd: "#cfdcee" },
   Internal_task: { label: "内部任务", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },

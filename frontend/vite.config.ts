@@ -14,8 +14,17 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8080",
-      "/health": "http://localhost:8080",
+      // 代理到远程 SIT 后端，本地无需启动 backend
+      "/api": {
+        target: "http://43.139.250.182",
+        changeOrigin: true,
+        rewrite: (path: string) => "/hub-issue" + path,
+      },
+      "/health": {
+        target: "http://43.139.250.182",
+        changeOrigin: true,
+        rewrite: (path: string) => "/hub-issue" + path,
+      },
     },
   },
   test: {

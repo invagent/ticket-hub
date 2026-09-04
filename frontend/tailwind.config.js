@@ -9,7 +9,7 @@ export default {
     extend: {
       colors: {
         hub: {
-          page: "#f6f4ef",
+          page: "#e3e7ee",
           panel: "#fbf9f5",
           card: "#ffffff",
           segment: "#ece7dc",
@@ -18,7 +18,7 @@ export default {
           // 暗色系（仅侧边栏 + 页签栏；内容区保持 page 灰）
           sidebar: "#1c1b19",
           sidebarHover: "#2a2825",
-          tabbar: "#e3ddd0",
+          tabbar: "#dbe2ed",
           badgeNeutralBg: "#f3f0e9",
           controlBorder: "#c9c3b6",
           text: "#2b2a26",
@@ -39,12 +39,37 @@ export default {
       },
       fontFamily: {
         hub: [
+          "Sarasa Term SC",
+          "Sarasa UI SC",
+          "Sarasa Gothic SC",
           "-apple-system",
           "PingFang SC",
           "Hiragino Sans GB",
           "Microsoft YaHei",
           "system-ui",
           "sans-serif",
+        ],
+        sans: [
+          "Sarasa Term SC",
+          "Sarasa UI SC",
+          "Sarasa Gothic SC",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif",
+        ],
+        mono: [
+          "Sarasa Term SC",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          "monospace",
         ],
       },
     },

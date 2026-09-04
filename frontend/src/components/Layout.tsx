@@ -225,13 +225,13 @@ export function Layout() {
           </button>
         </div>
       </nav>
-      <main className="flex-1 min-w-0 flex flex-col h-screen">
+      <main className="flex-1 min-w-0 flex flex-col h-screen bg-[#e3e7ee]">
         <TabBar />
         {/* keep-alive：所有已打开 tab 同时挂载，非活跃 hidden。每个 tab 用自己的
             location 冻结渲染，useParams/useSearchParams 读到的是该 tab 的参数。 */}
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-auto bg-[#e3e7ee]">
           {tabs.map((t) => (
-            <div key={t.key} hidden={t.key !== activeKey} className="p-6">
+            <div key={t.key} hidden={t.key !== activeKey} className="p-6 bg-[#e3e7ee]">
               <Routes location={t.path}>{authedRoutes}</Routes>
             </div>
           ))}
