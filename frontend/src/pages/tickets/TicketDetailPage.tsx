@@ -1249,11 +1249,12 @@ function TicketAttributesEditor({
       : "Operation";
   const initPlc = (graduated ? hub.product_line_code : ticket.product_line_code) ?? "";
   const initModule = (graduated ? hub.module : ticket.module) ?? "";
+  const initRootCause = (graduated ? hub.root_cause_analysis : "") ?? "";
 
   const [type, setType] = useState<string>(initType);
   const [plc, setPlc] = useState<string>(initPlc);
   const [module, setModule] = useState<string>(initModule);
-  const [rootCause, setRootCause] = useState<string>("");
+  const [rootCause, setRootCause] = useState<string>(initRootCause);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -1323,7 +1324,11 @@ function TicketAttributesEditor({
   };
   const onErr = (e: unknown) => setError(hubErrMsg(e));
 
-  const dirty = type !== initType || plc !== initPlc || module !== initModule;
+  const dirty =
+    type !== initType ||
+    plc !== initPlc ||
+    module !== initModule ||
+    rootCause !== initRootCause;
 
   // 已毕业：保存改 hub 参数（只改数据不联动）
   const save = useMutation({
@@ -1331,7 +1336,12 @@ function TicketAttributesEditor({
       patchByPath(
         "/api/hub-issues/{hub_issue_id}/attributes",
         { hub_issue_id: hub!.id },
-        { type, product_line_code: plc || null, module: module || null },
+        {
+          type,
+          product_line_code: plc || null,
+          module: module || null,
+          root_cause_analysis: rootCause || null,
+        },
       ),
     onSuccess: () => {
       setNotice("已保存工单标签");
@@ -1361,6 +1371,7 @@ function TicketAttributesEditor({
         type,
         product_line_code: plc || null,
         module: module || null,
+        root_cause_analysis: rootCause || null,
       }),
     onSuccess: () => {
       setNotice("已确认分类");

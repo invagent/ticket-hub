@@ -2736,6 +2736,8 @@ export interface components {
             module?: string | null;
             /** Product Line Code */
             product_line_code?: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis?: string | null;
             /** Ticket Id */
             ticket_id: number;
             /** Type */
@@ -3453,6 +3455,8 @@ export interface components {
             reply_is_draft: boolean;
             /** Reply Updated At */
             reply_updated_at: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis: string | null;
             /** Scheduled Iteration */
             scheduled_iteration: string | null;
             /**
@@ -5014,6 +5018,8 @@ export interface components {
             module?: string | null;
             /** Product Line Code */
             product_line_code?: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis?: string | null;
             /** Type */
             type?: string | null;
         };
@@ -9046,9 +9052,11 @@ export interface operations {
         parameters: {
             query?: {
                 source_code?: string | null;
+                source_codes?: string[] | null;
                 type?: string | null;
                 status?: string | null;
                 assigned_user_id?: number | null;
+                assigned_user_ids?: number[] | null;
                 handler_user_ids?: number[] | null;
                 predicted_types?: string[] | null;
                 unassigned_only?: boolean;
@@ -9056,6 +9064,16 @@ export interface operations {
                 hub_issue_id?: number | null;
                 source_ticket_q?: string | null;
                 op_status?: string | null;
+                op_statuses?: string[] | null;
+                received_from?: string | null;
+                received_to?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                resolved_from?: string | null;
+                resolved_to?: string | null;
+                closed_from?: string | null;
+                closed_to?: string | null;
+                reporter_company?: string | null;
                 page?: number;
                 page_size?: number;
             };

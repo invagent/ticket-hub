@@ -550,6 +550,7 @@ class HubIssue(Base):
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     canonical_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    root_cause_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     product_line_code: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("product_lines.code"), nullable=True
     )

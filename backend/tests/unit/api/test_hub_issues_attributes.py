@@ -114,6 +114,29 @@ def test_attributes_change_product_line_and_module(app_client: TestClient, db_se
     )
 
 
+def test_attributes_change_root_cause_analysis(app_client: TestClient, db_session: Session):
+    """根因分析文本落库 hub.root_cause_analysis + 审计文案（不打印全文）。"""
+    from app.models import StatusHistory
+
+    hid = _mk(db_session, hub_id=214)
+    r = app_client.patch(
+        f"/api/hub-issues/{hid}/attributes",
+        json={"root_cause_analysis": "客户环境配置错误导致的误报"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    h = db_session.get(HubIssue, hid)
+    assert h.root_cause_analysis == "客户环境配置错误导致的误报"
+    hist = (
+        db_session.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hid)
+        .order_by(StatusHistory.id.desc())
+        .first()
+    )
+    assert hist is not None and "根因分析已更新" in hist.reason
+
+
 def test_attributes_no_linear_push_on_type_change(app_client: TestClient, db_session: Session):
     """改 type 会规整 status/op_status（见 test_attributes_into_operation_* 等），
     但绝不主动推 Linear/走 outbox——研发类改判后仍需人工 repush-linear 把关。"""

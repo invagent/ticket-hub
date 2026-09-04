@@ -137,6 +137,17 @@ def test_create_with_product_line_and_module_override(app_client: TestClient, hu
     )
 
 
+def test_create_with_root_cause_analysis(app_client: TestClient, hub_world: Session) -> None:
+    resp = app_client.post(
+        "/api/supervisor/create-hub-issue",
+        json={"ticket_id": 300, "root_cause_analysis": "版本升级引入的兼容性问题"},
+        headers=_bearer(2),
+    )
+    assert resp.status_code == 200, resp.text
+    hub = hub_world.get(HubIssue, resp.json()["hub_issue_id"])
+    assert hub.root_cause_analysis == "版本升级引入的兼容性问题"
+
+
 def test_create_by_handler_allowed(app_client: TestClient, db_session: Session) -> None:
     from app.models import Source, Ticket, User
 
