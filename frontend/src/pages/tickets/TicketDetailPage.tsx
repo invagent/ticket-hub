@@ -914,11 +914,16 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                {/* 研发类已毕业但未推送 */}
-                {classified && isDevType && d.predicted_type && !pushedToLinear && (
-                  <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
-                    {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
-                    类工单尚未推送 Linear，见下方「工单标签」区操作。
+                {/* 研发类已毕业但未推送：提示 + 工单标签编辑区（转研发并推送按钮就在这里，
+                    此前只有 pendingReview/未毕业/运营类三种情况渲染 TicketAttributesEditor，
+                    「已分类研发类但未推 Linear」这个状态落在空隙里，提示文案指向的区域实际不存在） */}
+                {classified && isDevType && d.predicted_type && !pushedToLinear && hub.data && (
+                  <div className="space-y-2.5">
+                    <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
+                      {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
+                      类工单尚未推送 Linear，见下方「工单标签」区操作。
+                    </div>
+                    <TicketAttributesEditor ticket={d} hub={hub.data} />
                   </div>
                 )}
 
