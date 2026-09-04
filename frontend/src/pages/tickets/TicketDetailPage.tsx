@@ -1086,6 +1086,8 @@ function SearchableSelect({
   disabled = false,
   ariaLabel,
   width = 300,
+  align = "left",
+  loading = false,
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -1094,6 +1096,8 @@ function SearchableSelect({
   disabled?: boolean;
   ariaLabel?: string;
   width?: number;
+  align?: "left" | "right";
+  loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [kw, setKw] = useState("");
@@ -1134,9 +1138,13 @@ function SearchableSelect({
           }
         }}
         aria-label={ariaLabel}
+        title={displayLabel}
         className="w-full text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal flex items-center justify-between gap-1 text-left disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer h-[32px] text-slate-800"
       >
-        <span className={`truncate ${selectedOpt ? "text-slate-800" : "text-hub-textFaint"}`}>
+        <span
+          className={`truncate ${selectedOpt ? "text-slate-800" : "text-hub-textFaint"}`}
+          title={displayLabel}
+        >
           {displayLabel}
         </span>
         <svg className="w-3.5 h-3.5 text-slate-400 flex-none" viewBox="0 0 20 20" fill="currentColor">
@@ -1149,25 +1157,44 @@ function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-[36px] z-50 w-full bg-white border border-hub-border rounded-[8px] shadow-lg p-2 text-[12px]">
-          <input
-            type="text"
-            autoFocus
-            value={kw}
-            onChange={(e) => setKw(e.target.value)}
-            placeholder="输入关键字快速定位..."
-            className="w-full px-2 py-1 border border-hub-border rounded-[5px] bg-transparent outline-none focus:border-hub-teal mb-1.5 text-[12px]"
-          />
-          <div className="max-h-[180px] overflow-y-auto flex flex-col gap-0.5">
+        <div
+          className={`absolute ${
+            align === "right" ? "right-0" : "left-0"
+          } top-[36px] z-50 min-w-full w-max max-w-[480px] bg-white border border-hub-border rounded-[8px] shadow-xl p-2 text-[12px]`}
+        >
+          <div className="relative mb-2">
+            <input
+              type="text"
+              autoFocus
+              value={kw}
+              onChange={(e) => setKw(e.target.value)}
+              placeholder="输入关键字快速定位..."
+              className="w-full pl-7 pr-2.5 py-1.5 border border-hub-border rounded-[6px] bg-slate-50/70 outline-none focus:border-hub-teal focus:bg-white text-[12px] text-slate-800"
+            />
+            <svg
+              className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+          <div className="max-h-[280px] overflow-y-auto flex flex-col gap-1 pr-1">
             <button
               type="button"
               onClick={() => {
                 onChange("");
                 setOpen(false);
               }}
-              className="text-left px-2 py-1 rounded hover:bg-slate-100 text-hub-textFaint cursor-pointer"
+              className="text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 text-hub-textFaint cursor-pointer"
             >
-              —
+              —（清空）
             </button>
             {filtered.map((opt) => (
               <button
@@ -1177,17 +1204,21 @@ function SearchableSelect({
                   onChange(opt.code);
                   setOpen(false);
                 }}
-                className={`text-left px-2 py-1 rounded hover:bg-slate-100 truncate cursor-pointer ${
-                  opt.code === value ? "bg-hub-teal-light text-hub-teal-deep font-semibold" : "text-slate-700"
+                className={`text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 whitespace-normal break-words leading-relaxed cursor-pointer transition-colors ${
+                  opt.code === value
+                    ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
+                    : "text-slate-700"
                 }`}
                 title={opt.name}
               >
                 {opt.name}
               </button>
             ))}
-            {filtered.length === 0 && (
-              <div className="text-center py-2 text-hub-textFaint text-[11px]">无匹配选项</div>
-            )}
+            {loading ? (
+              <div className="text-center py-4 text-hub-textFaint text-[11px]">加载中…</div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-4 text-hub-textFaint text-[11px]">无匹配选项</div>
+            ) : null}
           </div>
         </div>
       )}
@@ -1446,6 +1477,8 @@ function TicketAttributesEditor({
               options={productLineOptions}
               disabled={busy}
               width={300}
+              align="left"
+              loading={productLines.isLoading}
             />
           </div>
 
@@ -1458,6 +1491,9 @@ function TicketAttributesEditor({
               options={moduleOptionsList}
               disabled={busy || !plc}
               width={300}
+              align="right"
+              placeholder={!plc ? "请先选择产品分类" : "请选择"}
+              loading={modules.isLoading}
             />
           </div>
         </div>

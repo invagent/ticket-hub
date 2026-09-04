@@ -272,4 +272,56 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     fireEvent.click(await screen.findByRole("button", { name: "重试" }));
     await waitFor(() => expect(screen.getByText("重试成功，已送达")).toBeInTheDocument());
   });
+
+  it("产品分类与问题模块下拉面板支持完整查看超长选项值且无截断折叠", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    renderTicket({
+      hub_issue_id: null,
+      predicted_type: null,
+      product_line_code: "pl-long",
+      module: "m-long",
+    });
+    server.use(
+      http.get("*/api/admin/product-lines", () =>
+        HttpResponse.json([
+          { code: "pl-long", name: "数电票/全电发票系统服务支持超长产品分类名称", is_active: true },
+        ]),
+      ),
+      http.get("*/api/hub-issues/catalog/modules", () =>
+        HttpResponse.json([
+          { code: "m-long", name: "增值税发票综合服务平台（企业端）全流程开票管理模块" },
+        ]),
+      ),
+    );
+
+    // 1. 等待产品分类触发按钮渲染并点击打开下拉
+    const plcTrigger = await screen.findByLabelText("产品分类");
+    fireEvent.click(plcTrigger);
+
+    // 2. 下拉面板中的选项具有 whitespace-normal break-words 类名，且不包含 truncate
+    const longPlcOpt = await screen.findByRole("button", {
+      name: "数电票/全电发票系统服务支持超长产品分类名称",
+    });
+    expect(longPlcOpt).toBeInTheDocument();
+    expect(longPlcOpt.className).toContain("whitespace-normal");
+    expect(longPlcOpt.className).toContain("break-words");
+    expect(longPlcOpt.className).not.toContain("truncate");
+
+    // 3. 点击选中该分类并关闭下拉
+    fireEvent.click(longPlcOpt);
+
+    // 4. 点击打开问题模块下拉
+    const moduleTrigger = screen.getByLabelText("问题模块");
+    fireEvent.click(moduleTrigger);
+
+    // 5. 问题模块下拉面板内的选项也是完整展示无截断
+    const longModuleOpt = await screen.findByRole("button", {
+      name: "增值税发票综合服务平台（企业端）全流程开票管理模块",
+    });
+    expect(longModuleOpt).toBeInTheDocument();
+    expect(longModuleOpt.className).toContain("whitespace-normal");
+    expect(longModuleOpt.className).toContain("break-words");
+    expect(longModuleOpt.className).not.toContain("truncate");
+  });
 });
+
