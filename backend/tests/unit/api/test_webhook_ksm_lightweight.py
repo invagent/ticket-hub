@@ -159,6 +159,53 @@ def test_lightweight_ping_returns_code0_immediately(
 
 
 @respx.mock
+def test_lightweight_ping_takes_over_immediately_after_dispatch(
+    app_client, ingest_world: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """派单后立即接管（不等人工审核确认分类）。派单命中 user id=1（alice），
+    接管身份回落全局配置（alice 无 ksm_account/employee_no）。lock+handle
+    都成功 → ksm_takeover_status 在 BackgroundTask 跑完后即为 'handled'，
+    此时 ticket 还没经过 triage（不依赖分类结果）。"""
+    monkeypatch.setenv("KSM_AUTO_TAKEOVER_ENABLED", "true")
+    monkeypatch.setenv("KSM_WRITEBACK_DRY_RUN", "false")
+    monkeypatch.setenv("KSM_HANDLER_NAME", "杨慧莉")
+    monkeypatch.setenv("KSM_HANDLER_NUMBER", "53690")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    _stub_ksm_auth(respx)
+    _stub_subscribe_callback(
+        respx,
+        {
+            "billId": "BILL-TO-1",
+            "title": "接管测试",
+            "status": "1",
+            "node": {"id": "N-1"},
+            "version": {"mainproductname": "金蝶云星空"},
+            "module": {"name": "财务模块"},
+            "customerInfo": {"customerNumber": "C-TO", "customerName": "测试公司"},
+        },
+    )
+    respx.post(f"{KSM_BASE}/ierp/kapi/v2/kded/kded_wos/lockKsmOrder").mock(
+        return_value=httpx.Response(200, json={"status": True, "data": {}})
+    )
+    respx.post(f"{KSM_BASE}/ierp/kapi/v2/kded/kded_wos/handleKsmOrder").mock(
+        return_value=httpx.Response(200, json={"status": True, "data": {}})
+    )
+
+    resp = app_client.post(
+        "/webhook/ksm?access_token=test-token",
+        json={"billId": "BILL-TO-1", "noticeNum": "N-200", "subscribeNum": "S-200"},
+    )
+    assert resp.status_code == 200
+
+    t = ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-TO-1").one()
+    assert t.assigned_user_id == 1  # 派单已生效
+    assert t.ksm_takeover_status == "handled"  # 接管随派单立即完成，不等审核确认
+
+
+@respx.mock
 def test_lightweight_ping_id_field_fallback(app_client, ingest_world: Session) -> None:
     """Per doc: KSM sometimes uses `id` instead of `billId`."""
     _stub_ksm_auth(respx)

@@ -11,10 +11,14 @@ lock 后 node.id 会流转，必须重拉拿新 node 才能 handle（否则报"�
   * 新工单（首次入库）        → 完整 lock → 重拉 → handle（进处理中）
   * 已存在工单（重复推/退回后再进来）→ 只 lock 接管，不 handle（之前已受理过）
 
-改版（入库即分派改造）：接管不再在入库瞬间发生，改为人工审核确认分类（含模块
-归类）之后由 `trigger_ksm_takeover_after_review` 触发——分类/模块判断错误时
-接管还没发生，可以回退。接管身份也不再固定用全局配置，改用 ticket 的处理人
-（见 identity.py），全局配置降级为处理人未配 ksm_account 时的兜底。
+改版（2026-09-04，二次调整）：接管时机改回入库/派单后立即触发（`webhooks.py::
+_run_ksm_takeover`，在 dispatch_handler 拿到处理人之后），不再等人工审核确认
+分类——用户明确要求"派单后面需要拿到处理人就接管"，分类判断错误与接管解耦，
+交由后续人工审核处理（不影响是否分流/推 Linear 的判断，接管早晚无关）。
+`trigger_ksm_takeover_after_review` 仍保留，作为审核确认时的兜底重试（若
+入库瞬间接管因故失败，审核确认时会再尝试一次；已接管则内部幂等跳过）。
+接管身份不再固定用全局配置，改用 ticket 的处理人（见 identity.py），全局
+配置降级为处理人未配 ksm_account 时的兜底。
 
 安全：
   * 灰度门 ksm_auto_takeover_enabled（默认关）+ 复用 ksm_writeback_dry_run。
@@ -248,9 +252,11 @@ def _refresh(
 
 
 def trigger_ksm_takeover_after_review(ticket_id: int) -> None:
-    """人工审核确认分类（含模块归类）之后触发接管。独立 session/client，供
-    supervisor.py 的 confirm_classification/reclassify 通过 background_tasks 调用
-    ——网络 IO 不阻塞审核请求的响应。
+    """人工审核确认分类兜底重试入口（主路径已改回入库/派单后立即接管，见
+    webhooks.py::_run_ksm_takeover）。已接管（locked/handled）直接跳过，只在
+    入库瞬间接管因故失败时补一次。独立 session/client，供 supervisor.py 的
+    confirm_classification/reclassify 通过 background_tasks 调用——网络 IO
+    不阻塞审核请求的响应。
 
     detail 来源：优先重新调 get_order_detail（需要 NoticeStore 里的 notice 仍未
     过期，24h TTL）；notice 已过期（审核发生在入库超过 24h 之后）时退化为直接用

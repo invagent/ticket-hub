@@ -51,6 +51,7 @@ from app.services.ingest.zammad_ingester import ZammadIngester
 from app.services.ingest.zhichi_ingester import IngestError as ZhichiIngestError
 from app.services.ingest.zhichi_ingester import ZhichiIngester
 from app.services.ksm.notice_store import NoticeInfo, NoticeStore
+from app.services.ksm.takeover import takeover_ksm_ticket
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -223,6 +224,37 @@ def _get_notice_store() -> NoticeStore | object:
     return _notice_store
 
 
+def _run_ksm_takeover(
+    db: Session,
+    *,
+    ticket_id: int,
+    is_new: bool,
+    detail: dict[str, Any],
+    client: KSMClient,
+    notice_store: Any,
+    settings: Any,
+) -> None:
+    """派单后立即接管（用刚分配好的处理人身份），独立 try 保证接管失败不影响
+    入库/后续 triage/人工审核。commits。"""
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return
+        takeover_ksm_ticket(
+            db,
+            ticket,
+            detail=detail,
+            is_new=is_new,
+            client=client,
+            notice_store=notice_store,
+            settings=settings,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("ksm_takeover_unexpected_failure", ticket_id=ticket_id)
+
+
 def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
     """BackgroundTask body. Fetch latest detail from KSM via subscribeCallback,
     then run it through KSMIngester in a fresh DB session.
@@ -244,50 +276,63 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         account_id=settings.ksm_account_id,
         user=settings.ksm_user,
     )
+    # client 生命周期覆盖到派单即接管（takeover 需在 detail 拉取后、同一 client 上
+    # lock→重拉→handle），故 close 延后到最外层 finally。
     client = KSMClient(cfg)
-    try:
-        detail = client.get_order_detail(
-            bill_id=bill_id,
-            notice_num=notice.notice_num,
-            subscribe_num=notice.subscribe_num,
-        )
-    except KSMError as e:
-        logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
-        return
-    finally:
-        client.close()
-
-    payload = from_subscribe_callback(detail)
-    if not payload.get("billId"):
-        logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
-        return
-
     ingested_ticket_id: int | None = None
-    db = make_session()
     try:
         try:
-            result = KSMIngester(db).ingest(payload)
-        except KSMIngestError as e:
-            db.rollback()
-            logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
+            detail = client.get_order_detail(
+                bill_id=bill_id,
+                notice_num=notice.notice_num,
+                subscribe_num=notice.subscribe_num,
+            )
+        except KSMError as e:
+            logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
             return
-        db.commit()
-        ingested_ticket_id = result.ticket_id if not result.deduped else None
-        logger.info(
-            "ksm_async_ingest_committed",
-            bill_id=bill_id,
-            ticket_id=result.ticket_id,
-            short_code=result.short_code,
-            deduped=result.deduped,
-            routing_decision=result.routing_decision,
-        )
-        # 接管改为人工审核确认分类之后才触发（见 supervisor.py confirm_classification/
-        # reclassify），入库瞬间不再接管——分类/模块判断错误时接管还没发生，可以回退。
-    except Exception:
-        db.rollback()
-        logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
+
+        payload = from_subscribe_callback(detail)
+        if not payload.get("billId"):
+            logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
+            return
+
+        db = make_session()
+        try:
+            try:
+                result = KSMIngester(db).ingest(payload)
+            except KSMIngestError as e:
+                db.rollback()
+                logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
+                return
+            db.commit()
+            ingested_ticket_id = result.ticket_id if not result.deduped else None
+            logger.info(
+                "ksm_async_ingest_committed",
+                bill_id=bill_id,
+                ticket_id=result.ticket_id,
+                short_code=result.short_code,
+                deduped=result.deduped,
+                routing_decision=result.routing_decision,
+            )
+            # 派单（dispatch_handler，在 ingest 内）已拿到处理人 → 立即用该处理人
+            # 身份接管 KSM，不再等 triage/模块归类/人工审核确认分类。分类判断仍走
+            # 后续人工审核，与接管解耦——接管早晚不影响分流/推 Linear 的判断。
+            _run_ksm_takeover(
+                db,
+                ticket_id=result.ticket_id,
+                is_new=not result.deduped,
+                detail=detail,
+                client=client,
+                notice_store=_get_notice_store(),
+                settings=settings,
+            )
+        except Exception:
+            db.rollback()
+            logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
+        finally:
+            db.close()
     finally:
-        db.close()
+        client.close()
 
     # D3-C/D: post-ingest agents (classify + conflict_detect). Skip on
     # dedupe (already processed) and on ingest failure. Errors swallowed

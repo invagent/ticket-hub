@@ -1990,8 +1990,10 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
 def _schedule_ksm_takeover(
     background_tasks: BackgroundTasks, db: Session, hub_issue_id: int
 ) -> None:
-    """人工审核确认分类后触发 KSM 接管（任意类型，不限于 Operation）。一个 hub 可能
-    挂多条 ticket（dedup 合并），逐条判断来源，非 KSM 直接在 trigger 内部跳过。"""
+    """人工审核确认分类后的接管兜底重试（主路径已改回入库/派单后立即接管，见
+    webhooks.py::_run_ksm_takeover）。已接管的 ticket 在 trigger 内部幂等跳过，
+    故这里只补偿入库瞬间接管失败的情况。一个 hub 可能挂多条 ticket（dedup 合并），
+    逐条判断来源，非 KSM 直接在 trigger 内部跳过。"""
     from app.services.ksm.takeover import trigger_ksm_takeover_after_review
 
     ticket_ids = [
@@ -2120,8 +2122,10 @@ def confirm_classification(
     if hub.type in ("Bug_fix", "Demand") and hub.status == "created":
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
-    # 接管改到人工审核确认之后才触发（不再在入库瞬间）；非 KSM 来源/关闭时
-    # 函数内部自行判断跳过。任意类型都接管，不限于 Operation。
+    # 接管主路径已改回入库/派单后立即触发（webhooks.py::_run_ksm_takeover）；
+    # 此处保留兜底重试——若入库瞬间接管因故失败（网络/KSM侧异常），审核确认
+    # 时再补一次，takeover_ksm_ticket 内部按 ksm_takeover_status 幂等跳过已接管。
+    # 非 KSM 来源/关闭时函数内部自行判断跳过。
     _schedule_ksm_takeover(background_tasks, db, hub.id)
 
     logger.info(
