@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import (
-    DispatchAssignee,
-    DispatchRule,
     HubIssue,
     Source,
     Ticket,
@@ -72,68 +70,25 @@ def test_resolve_falls_back_when_preassigned_inactive(db_session: Session) -> No
     assert resolve_op_handler(db_session, h, get_settings()) == "主管"
 
 
-def test_graduation_preassigns_op_handler_user_id(db_session: Session) -> None:
-    """creator 毕业 Operation 时按规则预分配运营（写 op_handler_user_id），
-    但 op_handler 名字仍是 'agent'——不打断 drain 自动答复口径。"""
+def test_graduation_propagates_ticket_handler_to_op_handler_user_id(db_session: Session) -> None:
+    """入库即分派改造后：处理人已在入库时由 dispatch_handler 写进
+    ticket.handler_user_id，毕业时 creator 只是把它传播到 hub.op_handler_user_id，
+    不再重新跑分派规则。op_handler 名字仍是 'agent'——不打断 drain 自动答复口径。"""
     db_session.add(Source(code="ksm", name="KSM"))
     _user(db_session, 7, "运营阿强")
-    rule = DispatchRule(
-        name="PL_A 运营池",
-        match_sources=[],
-        match_product_lines=["PL_A"],
-        match_modules=["MOD_X"],
-        match_sla=[],
-        dispatch_mode="count",
-        rule_type="primary",
-        priority=10,
-    )
-    db_session.add(rule)
-    db_session.flush()
-    db_session.add(
-        DispatchAssignee(rule_id=rule.id, user_id=7, daily_cap=20, tier="main", is_active=True)
-    )
-    t = _op_ticket(db_session, 1)
+    t = _op_ticket(db_session, 1, handler_user_id=7)
 
     res = ensure_hub_issue_for_ticket(t.id, created_by="user:test", db=db_session)
     hub = db_session.get(HubIssue, res.hub_issue_id)
     assert hub is not None
     assert hub.type == "Operation"
-    assert hub.op_handler_user_id == 7  # 预分配运营写进去了
+    assert hub.op_handler_user_id == 7  # 从 ticket.handler_user_id 传播过来
     assert hub.op_handler == "agent"  # 名字仍是 agent，drain 口径不受影响
 
 
-def test_graduation_matches_non_empty_match_sources(db_session: Session) -> None:
-    """Bug#1 回归：规则 match_sources=["ksm"]（非空）时，毕业时 ticket 必须已挂
-    hub_issue_id，_hub_source_code 才能反查到 source_code='ksm' 命中该规则。
-    dispatch 调用若仍在 ticket.hub_issue_id 赋值之前，source 恒为 None，
-    非空 match_sources 规则永远匹配不中，本测试会失败。"""
-    db_session.add(Source(code="ksm", name="KSM"))
-    _user(db_session, 8, "运营小来源")
-    rule = DispatchRule(
-        name="ksm 来源运营池",
-        match_sources=["ksm"],
-        match_product_lines=["PL_A"],
-        match_modules=["MOD_X"],
-        match_sla=[],
-        dispatch_mode="count",
-        rule_type="primary",
-        priority=10,
-    )
-    db_session.add(rule)
-    db_session.flush()
-    db_session.add(
-        DispatchAssignee(rule_id=rule.id, user_id=8, daily_cap=20, tier="main", is_active=True)
-    )
-    t = _op_ticket(db_session, 3, source_code="ksm")
-
-    res = ensure_hub_issue_for_ticket(t.id, created_by="user:test", db=db_session)
-    hub = db_session.get(HubIssue, res.hub_issue_id)
-    assert hub is not None
-    assert hub.op_handler_user_id == 8
-
-
-def test_graduation_no_rule_leaves_op_handler_unassigned(db_session: Session) -> None:
-    """无匹配规则时毕业 Operation：op_handler_user_id 留 None，op_handler 仍 'agent'。"""
+def test_graduation_no_ticket_handler_leaves_op_handler_unassigned(db_session: Session) -> None:
+    """入库时未分派（ticket.handler_user_id 为空）→ 毕业时 op_handler_user_id
+    留 None（dispatch_missed），op_handler 仍 'agent'。"""
     db_session.add(Source(code="ksm", name="KSM"))
     t = _op_ticket(db_session, 2)
 

@@ -538,7 +538,7 @@ def test_supply_refill_full_loop(db_session: Session) -> None:
     assert hub.op_status == "supplementing"
 
     # 4. 客户补料，KSM 重推同 billId → 转回 processing/agent
-    ing = KSMIngester(db_session, default_pool_user_id=None)
+    ing = KSMIngester(db_session)
     ing.ingest({"billId": ticket.source_ticket_id, "content": "这是补充的报错截图说明"})
     db_session.commit()
     db_session.refresh(hub)

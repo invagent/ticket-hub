@@ -6,10 +6,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AssignmentScopeModule,
     Attachment,
     Customer,
     CustomerIdentity,
+    DispatchAssignee,
+    DispatchRule,
     ProductLine,
     Source,
     Ticket,
@@ -25,6 +26,23 @@ def world(db_session: Session) -> Session:
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
     db_session.commit()
     return db_session
+
+
+def _rule(db: Session, *, match_sources: list | None = None) -> DispatchRule:  # type: ignore[type-arg]
+    rule = DispatchRule(
+        name="zhichi-rule",
+        match_sources=match_sources or [],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+        rule_type="primary",
+        priority=100,
+        is_active=True,
+    )
+    db.add(rule)
+    db.flush()
+    return rule
 
 
 def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
@@ -47,7 +65,8 @@ def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
 
 
 def test_first_ingest(world: Session) -> None:
-    world.add(AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理"))
+    rule = _rule(world, match_sources=["zhichi"])
+    world.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     world.commit()
     res = ZhichiIngester(world).ingest(_payload())
     world.commit()
@@ -63,7 +82,8 @@ def test_first_ingest(world: Session) -> None:
 
 def test_ingest_handler_defaults_to_assignee(world: Session) -> None:
     """入库时处理人(handler_user_id)默认=责任人(assigned_user_id)。"""
-    world.add(AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理"))
+    rule = _rule(world, match_sources=["zhichi"])
+    world.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     world.commit()
     res = ZhichiIngester(world).ingest(_payload())
     world.commit()
@@ -123,9 +143,8 @@ def test_webhook_zhichi_e2e(app_client, db_session: Session) -> None:  # type: i
     db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
     db_session.flush()
-    db_session.add(
-        AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理")
-    )
+    rule = _rule(db_session, match_sources=["zhichi"])
+    db_session.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     db_session.commit()
     resp = app_client.post(
         "/webhook/zhichi?access_token=test-token",
@@ -336,9 +355,7 @@ def test_native_flat_creates_attachment_from_file_str(world: Session) -> None:
 
 def test_native_flat_multiple_file_str(world: Session) -> None:
     """file_str 多个 URL（逗号/空格分隔）→ 每个建一行。"""
-    two = (
-        "https://img.sobot.com/a/1.jpg, https://img.sobot.com/b/2.png"
-    )
+    two = "https://img.sobot.com/a/1.jpg, https://img.sobot.com/b/2.png"
     res = ZhichiIngester(world).ingest(_native_flat(file_str=two))
     world.commit()
     atts = world.query(Attachment).filter_by(ticket_id=res.ticket_id).all()

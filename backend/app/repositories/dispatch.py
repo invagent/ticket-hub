@@ -36,24 +36,19 @@ class DispatchRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def find_matching_rules(
-        self, *, source: str | None, product_line_code: str | None,
-        module: str | None, sla: str | None,
-    ) -> list[DispatchRule]:
+    def find_matching_rules(self, *, source: str | None, sla: str | None) -> list[DispatchRule]:
+        """match_product_lines/match_modules 暂停使用（分派提前到产品线/模块判定
+        之前），不再接入匹配条件，只留来源+SLA。"""
         rules = list(
             self._db.execute(
                 select(DispatchRule)
                 .where(DispatchRule.is_active.is_(True), DispatchRule.rule_type == "primary")
                 .order_by(DispatchRule.priority.asc(), DispatchRule.id.asc())
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
-        return [
-            r for r in rules
-            if _match(r.match_sources, source)
-            and _match(r.match_product_lines, product_line_code)
-            and _match(r.match_modules, module)
-            and _match(r.match_sla, sla)
-        ]
+        return [r for r in rules if _match(r.match_sources, source) and _match(r.match_sla, sla)]
 
     def get_rule(self, rule_id: int) -> DispatchRule | None:
         return self._db.get(DispatchRule, rule_id)
@@ -61,12 +56,16 @@ class DispatchRepository:
     def active_assignees(self, rule_id: int, tier: str = "main") -> list[DispatchAssignee]:
         return list(
             self._db.execute(
-                select(DispatchAssignee).where(
+                select(DispatchAssignee)
+                .where(
                     DispatchAssignee.rule_id == rule_id,
                     DispatchAssignee.tier == tier,
                     DispatchAssignee.is_active.is_(True),
-                ).order_by(DispatchAssignee.id.asc())
-            ).scalars().all()
+                )
+                .order_by(DispatchAssignee.id.asc())
+            )
+            .scalars()
+            .all()
         )
 
     def today_counts(self, rule_id: int) -> dict[int, int]:
@@ -82,11 +81,20 @@ class DispatchRepository:
         return row.value if row else None
 
     def add_log(
-        self, *, hub_issue_id: int, rule_id: int | None, assignee_user_id: int, tier_hit: str
+        self,
+        *,
+        ticket_id: int,
+        rule_id: int | None,
+        assignee_user_id: int,
+        tier_hit: str,
+        hub_issue_id: int | None = None,
     ) -> DispatchLog:
         log = DispatchLog(
-            hub_issue_id=hub_issue_id, rule_id=rule_id,
-            assignee_user_id=assignee_user_id, tier_hit=tier_hit,
+            ticket_id=ticket_id,
+            hub_issue_id=hub_issue_id,
+            rule_id=rule_id,
+            assignee_user_id=assignee_user_id,
+            tier_hit=tier_hit,
         )
         self._db.add(log)
         self._db.flush()

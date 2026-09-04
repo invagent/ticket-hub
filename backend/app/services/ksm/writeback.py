@@ -58,6 +58,7 @@ from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
+from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
 from app.services.ksm.notice_store import NoticeStoreLike
 
 if TYPE_CHECKING:
@@ -242,6 +243,14 @@ class KSMWritebackSender:
             report.skipped += 1
             return
 
+        identity = resolve_ksm_identity(self._db, ticket, self._settings)
+        if identity is None:
+            self._mark_skipped(
+                row, "no handler identity (ticket has no handler/ksm_account, no fallback config)"
+            )
+            report.skipped += 1
+            return
+
         action = self._resolve_action(row)
         if action is None:
             self._mark_skipped(row, f"no KSM action for kind={row.kind} payload={row.payload}")
@@ -254,7 +263,9 @@ class KSMWritebackSender:
             return
 
         try:
-            self._execute(action, row, fields, persisted_node_id=ticket.ksm_current_node_id)
+            self._execute(
+                action, row, fields, identity, persisted_node_id=ticket.ksm_current_node_id
+            )
         except KSMError as e:
             self._record_failure(row, report, str(e))
             return
@@ -386,21 +397,22 @@ class KSMWritebackSender:
         action: str,
         row: SyncOutbox,
         fields: _KSMFields,
+        identity: KsmIdentity,
         *,
         persisted_node_id: str | None = None,
     ) -> None:
         if action == "lock":
-            self._lock(fields)
+            self._lock(fields, identity)
             return
         # 退回：不先 lock（lock 是「接管」语义，与退回相悖，实测未 lock 直接 return 成功）。
         # 目标节点=「最新节点的上一个节点」，必须基于刚实时拉取的数据算，拉不到就
         # 拒绝退回（绝不用旧快照猜，猜错等于把工单退到错误节点，KSM 还不一定报错）。
         if action == "return":
             fresh = self._refresh_for_return(fields)
-            self._return(fresh, _s((row.payload or {}).get("deal_opinion")).strip())
+            self._return(fresh, identity, _s((row.payload or {}).get("deal_opinion")).strip())
             return
         # all remaining actions need a fresh node → lock then refresh
-        self._lock(fields)
+        self._lock(fields, identity)
         fresh = self._refresh(fields)
         # notice 24h 过期时 _refresh 回落入库快照节点（比 takeover 节点旧），
         # KSM 报「已流转至其他节点」。refresh 回落的标志是 node_id 与入库快照相同。
@@ -409,28 +421,28 @@ class KSMWritebackSender:
         if persisted_node_id and fresh.node_id == fields.node_id:
             fresh = replace(fresh, node_id=persisted_node_id)
         if action == "reply":
-            self._handle_close(fresh, self._reply_text(row))
+            self._handle_close(fresh, identity, self._reply_text(row))
         elif action == "release_note":
             # 发版通知（研发协同）：文案在 payload.note，同 reply 走答复关单
-            self._handle_close(fresh, _s((row.payload or {}).get("note")).strip())
+            self._handle_close(fresh, identity, _s((row.payload or {}).get("note")).strip())
         elif action == "progress_note":
             # owner-split 进度通知（ADR-0016 P4）：x<n 只回复不关单
             # （is_deal=False —— 第 1 条通知就关掉客户单是 review 抓出的坑）
-            self._handle_progress(fresh, _s((row.payload or {}).get("note")).strip())
+            self._handle_progress(fresh, identity, _s((row.payload or {}).get("note")).strip())
         elif action == "close":
-            self._handle_close(fresh, self._released_text(row))
+            self._handle_close(fresh, identity, self._released_text(row))
         elif action == "supply":
-            self._supply(fresh, self._supply_text(row))
+            self._supply(fresh, identity, self._supply_text(row))
 
     # ---- KSM ops -------------------------------------------------------
 
-    def _lock(self, fields: _KSMFields) -> None:
+    def _lock(self, fields: _KSMFields, identity: KsmIdentity) -> None:
         try:
             self._client.lock_order(
                 LockOrderRequest(
-                    account=self._settings.ksm_handler_name,
-                    account_name=self._settings.ksm_handler_name,
-                    account_number=self._settings.ksm_handler_number,
+                    account=identity.account,
+                    account_name=identity.account_name,
+                    account_number=identity.account_number,
                     bill_id=fields.bill_id,
                 )
             )
@@ -440,12 +452,12 @@ class KSMWritebackSender:
                 return
             raise
 
-    def _handle_close(self, fields: _KSMFields, reply: str) -> None:
+    def _handle_close(self, fields: _KSMFields, identity: KsmIdentity, reply: str) -> None:
         self._client.handle_order(
             HandleOrderRequest(
-                account=self._settings.ksm_handler_name,
-                account_name=self._settings.ksm_handler_name,
-                account_number=self._settings.ksm_handler_number,
+                account=identity.account,
+                account_name=identity.account_name,
+                account_number=identity.account_number,
                 bill_id=fields.bill_id,
                 linkman=fields.linkman,
                 customer_email=fields.email,
@@ -460,13 +472,13 @@ class KSMWritebackSender:
             )
         )
 
-    def _handle_progress(self, fields: _KSMFields, note: str) -> None:
+    def _handle_progress(self, fields: _KSMFields, identity: KsmIdentity, note: str) -> None:
         """回复不关单（is_deal=False）——owner-split x/n 进度通知。"""
         self._client.handle_order(
             HandleOrderRequest(
-                account=self._settings.ksm_handler_name,
-                account_name=self._settings.ksm_handler_name,
-                account_number=self._settings.ksm_handler_number,
+                account=identity.account,
+                account_name=identity.account_name,
+                account_number=identity.account_number,
                 bill_id=fields.bill_id,
                 linkman=fields.linkman,
                 customer_email=fields.email,
@@ -481,19 +493,19 @@ class KSMWritebackSender:
             )
         )
 
-    def _supply(self, fields: _KSMFields, note: str) -> None:
+    def _supply(self, fields: _KSMFields, identity: KsmIdentity, note: str) -> None:
         self._client.supply_order(
             SupplyOrderRequest(
-                account=self._settings.ksm_handler_name,
-                account_name=self._settings.ksm_handler_name,
-                account_number=self._settings.ksm_handler_number,
+                account=identity.account,
+                account_name=identity.account_name,
+                account_number=identity.account_number,
                 bill_id=fields.bill_id,
                 node_id=fields.node_id,
                 deal_opinion=note[:4000],
             )
         )
 
-    def _return(self, fields: _KSMFields, deal_opinion: str) -> None:
+    def _return(self, fields: _KSMFields, identity: KsmIdentity, deal_opinion: str) -> None:
         """退回 KSM（returnKsmOrder）——转错模块打回重新分派，不关单。
 
         current_node_id（源节点）= 刚实时拉取的最新 node.id；opercache_id（退回
@@ -503,9 +515,9 @@ class KSMWritebackSender:
         """
         self._client.return_order(
             ReturnOrderRequest(
-                account=self._settings.ksm_handler_name,
-                account_name=self._settings.ksm_handler_name,
-                account_number=self._settings.ksm_handler_number,
+                account=identity.account,
+                account_name=identity.account_name,
+                account_number=identity.account_number,
                 bill_id=fields.bill_id,
                 deal_opinion=deal_opinion[:4000],
                 opercache_id=fields.opercache_id,
@@ -615,15 +627,15 @@ def drain_ksm_outbox(
     """Entry point. Builds a KSM client from settings if not injected.
 
     Returns an empty report (and touches nothing) when the writeback switch
-    is off or the handler identity is unconfigured — same skip-quietly
-    posture as the Linear poller."""
+    is off — same skip-quietly posture as the Linear poller. Identity is now
+    resolved per-row (处理人优先, 全局配置兜底, see identity.py) — no longer
+    gated here on the global fallback being configured, since a ticket's
+    handler may have its own ksm_account even when the fallback is empty.
+    """
     settings = settings or get_settings()
     report = DrainReport()
     if not settings.ksm_writeback_enabled:
         logger.info("ksm_writeback_disabled")
-        return report
-    if not settings.ksm_handler_name or not settings.ksm_handler_number:
-        logger.warning("ksm_writeback_no_handler_identity")
         return report
 
     owns_client = client is None

@@ -6,9 +6,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AssignmentScopeModule,
     Customer,
     CustomerIdentity,
+    DispatchAssignee,
+    DispatchConfig,
+    DispatchRule,
     ProductLine,
     Source,
     StatusHistory,
@@ -32,6 +34,23 @@ def ingest_world(db_session: Session) -> Session:
     return db_session
 
 
+def _rule(db: Session, *, match_sources: list | None = None, priority: int = 100) -> DispatchRule:  # type: ignore[type-arg]
+    rule = DispatchRule(
+        name="ksm-rule",
+        match_sources=match_sources or [],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+        rule_type="primary",
+        priority=priority,
+        is_active=True,
+    )
+    db.add(rule)
+    db.flush()
+    return rule
+
+
 def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
     base = {
         "billId": "ksm-bill-001",
@@ -53,9 +72,8 @@ def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
 
 
 def test_first_ingest_creates_customer_and_routes(ingest_world: Session) -> None:
-    ingest_world.add(
-        AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理")
-    )
+    rule = _rule(ingest_world, match_sources=["ksm"])
+    ingest_world.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     ingest_world.commit()
 
     res = KSMIngester(ingest_world).ingest(_payload())
@@ -131,32 +149,29 @@ def test_existing_customer_matched_by_erp_uid(ingest_world: Session) -> None:
     assert new_ident.resolved_by_key == "erp_uid"
 
 
-# ---- routing branches -----------------------------------------------------
+# ---- dispatch branches -----------------------------------------------------
 
 
-def test_no_route_match_falls_to_default_pool(ingest_world: Session) -> None:
-    res = KSMIngester(ingest_world, default_pool_user_id=99).ingest(_payload())
+def test_no_rule_match_falls_to_default_config(ingest_world: Session) -> None:
+    """规则命中但无可用 assignee → 兜底配置 default_operation_assignee。"""
+    _rule(ingest_world)  # 命中但零 assignee，dispatch_handler 才会走到兜底配置
+    ingest_world.add(DispatchConfig(key="default_operation_assignee", value="99"))
     ingest_world.commit()
-    assert res.routing_decision == "default_pool"
+
+    res = KSMIngester(ingest_world).ingest(_payload())
+    ingest_world.commit()
+    assert res.routing_decision == "assigned"
     assert res.assigned_user_ids == [99]
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
     assert ticket.assigned_user_id == 99
 
 
-def test_multi_match_leaves_assigned_null(ingest_world: Session) -> None:
-    """2 partner-less users own the same module → multi_match. ticket.assigned_user_id stays NULL."""
-    ingest_world.add_all(
-        [
-            AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理"),
-            AssignmentScopeModule(user_id=99, product_line_code="cloud-erp", module="应付管理"),
-        ]
-    )
-    ingest_world.commit()
-
+def test_no_rule_no_default_leaves_assigned_null(ingest_world: Session) -> None:
+    """无匹配规则 + 无兜底配置 → assigned_user_id 留 NULL，交人工归属。"""
     res = KSMIngester(ingest_world).ingest(_payload())
     ingest_world.commit()
-    assert res.routing_decision == "multi_match"
+    assert res.routing_decision == "no_match"
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
     assert ticket.assigned_user_id is None
@@ -190,9 +205,8 @@ def test_webhook_ksm_e2e_full_payload(app_client, db_session: Session) -> None: 
     db_session.add(ProductLine(code="cloud-erp", name="Cloud ERP"))
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
     db_session.flush()
-    db_session.add(
-        AssignmentScopeModule(user_id=1, product_line_code="cloud-erp", module="应付管理")
-    )
+    rule = _rule(db_session, match_sources=["ksm"])
+    db_session.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     db_session.commit()
 
     resp = app_client.post(
@@ -317,7 +331,7 @@ def test_ingest_supplement_reopens_to_processing(db_session, monkeypatch) -> Non
         return True
 
     monkeypatch.setattr(mod, "apply_content_refresh", fake_refresh)
-    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    ing = mod.KSMIngester(db_session)
     result = ing.ingest({"billId": "bill-supp-1", "content": "新补料"})
     db_session.commit()
 
@@ -348,7 +362,7 @@ def test_ingest_supplement_reopen_is_idempotent(db_session, monkeypatch) -> None
     db_session.commit()
 
     monkeypatch.setattr(mod, "apply_content_refresh", lambda db, ticket, payload: True)
-    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    ing = mod.KSMIngester(db_session)
 
     ing.ingest({"billId": "bill-supp-2", "content": "第一次补料"})  # supplementing→processing
     db_session.commit()
@@ -383,7 +397,7 @@ def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ig
         "apply_content_refresh",
         lambda db, ticket, payload: called.setdefault("ticket_id", ticket.id) or True,
     )
-    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    ing = mod.KSMIngester(db_session)
     result = ing.ingest({"billId": "bill-reject-1", "content": "客户不满意"})
     db_session.commit()
 
@@ -394,7 +408,7 @@ def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ig
     db_session.refresh(hub)
     assert hub.op_status == OP_PROCESSING
     assert hub.reject_count == 1
-    assert hub.op_handler == "主管"  # default_pool_user_id 未配 → 兜底 "主管"
+    assert hub.op_handler == "主管"  # resolve_op_handler 未配预分配运营 → 兜底 "主管"
 
 
 def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -412,7 +426,7 @@ def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore
 
     called = {"n": 0}
     monkeypatch.setattr(mod, "apply_content_refresh", lambda *a, **k: called.__setitem__("n", 1))
-    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    ing = mod.KSMIngester(db_session)
     result = ing.ingest({"billId": "bill-closed-1", "content": "又发一遍"})
     db_session.commit()
 
@@ -445,7 +459,7 @@ def test_ingest_dedup_noop_when_no_hub(db_session, monkeypatch) -> None:  # type
 
     called = {"n": 0}
     monkeypatch.setattr(mod, "apply_content_refresh", lambda *a, **k: called.__setitem__("n", 1))
-    ing = mod.KSMIngester(db_session, default_pool_user_id=None)
+    ing = mod.KSMIngester(db_session)
     result = ing.ingest({"billId": "bill-refill-2", "content": "重复心跳"})
     assert called["n"] == 0
     assert result.deduped is True

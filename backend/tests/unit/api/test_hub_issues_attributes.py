@@ -14,7 +14,9 @@ def _bearer(user_id=1, *, name="carol", role="supervisor"):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _mk(db, hub_id=200, *, type_="Bug_fix", status="pending_review", op_status=None, handler_uid=None):
+def _mk(
+    db, hub_id=200, *, type_="Bug_fix", status="pending_review", op_status=None, handler_uid=None
+):
     db.add(
         HubIssue(
             id=hub_id,
@@ -46,9 +48,13 @@ def _mk(db, hub_id=200, *, type_="Bug_fix", status="pending_review", op_status=N
     return hub_id
 
 
-def test_attributes_change_type_syncs_ticket_and_audits(app_client: TestClient, db_session: Session):
+def test_attributes_change_type_syncs_ticket_and_audits(
+    app_client: TestClient, db_session: Session
+):
     hid = _mk(db_session)
-    r = app_client.patch(f"/api/hub-issues/{hid}/attributes", json={"type": "Demand"}, headers=_bearer())
+    r = app_client.patch(
+        f"/api/hub-issues/{hid}/attributes", json={"type": "Demand"}, headers=_bearer()
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["type"] == "Demand" and body["updated_ticket_count"] == 1
@@ -101,7 +107,9 @@ def test_attributes_change_product_line_and_module(app_client: TestClient, db_se
 
     assert db_session.query(ProductLine).filter_by(code="cloud-fapiao").first() is not None
     assert (
-        db_session.query(Module).filter_by(product_line_code="cloud-fapiao", name="开票管理").first()
+        db_session.query(Module)
+        .filter_by(product_line_code="cloud-fapiao", name="开票管理")
+        .first()
         is not None
     )
 
@@ -112,7 +120,9 @@ def test_attributes_no_linear_push_on_type_change(app_client: TestClient, db_ses
     from app.models import SyncOutbox
 
     hid = _mk(db_session, hub_id=202, type_="Bug_fix", status="pending_review")
-    app_client.patch(f"/api/hub-issues/{hid}/attributes", json={"type": "Operation"}, headers=_bearer())
+    app_client.patch(
+        f"/api/hub-issues/{hid}/attributes", json={"type": "Operation"}, headers=_bearer()
+    )
     db_session.expire_all()
     assert db_session.query(SyncOutbox).filter_by(hub_issue_id=hid).count() == 0
 
@@ -191,7 +201,9 @@ def test_attributes_into_internal_task_clears_orphaned_pending_linear_review(
 
 def test_attributes_rejected_on_closed(app_client: TestClient, db_session: Session):
     hid = _mk(db_session, hub_id=203, type_="Operation", status="created", op_status="closed")
-    r = app_client.patch(f"/api/hub-issues/{hid}/attributes", json={"type": "Demand"}, headers=_bearer())
+    r = app_client.patch(
+        f"/api/hub-issues/{hid}/attributes", json={"type": "Demand"}, headers=_bearer()
+    )
     assert r.status_code == 409, r.text
 
 
@@ -222,15 +234,26 @@ def test_attributes_operation_to_dev_clears_operation_fields(
 
 
 def test_attributes_handler_allowed_stranger_403(app_client: TestClient, db_session: Session):
-    hid = _mk(db_session, hub_id=204, type_="Operation", status="created", op_status="processing", handler_uid=7)
+    hid = _mk(
+        db_session,
+        hub_id=204,
+        type_="Operation",
+        status="created",
+        op_status="processing",
+        handler_uid=7,
+    )
     # 处理人本人（uid=7）放行
     r_ok = app_client.patch(
-        f"/api/hub-issues/{hid}/attributes", json={"module": "x"}, headers=_bearer(7, name="handler", role="assignee")
+        f"/api/hub-issues/{hid}/attributes",
+        json={"module": "x"},
+        headers=_bearer(7, name="handler", role="assignee"),
     )
     assert r_ok.status_code == 200, r_ok.text
     # 路人（uid=8, member）403
     r_no = app_client.patch(
-        f"/api/hub-issues/{hid}/attributes", json={"module": "y"}, headers=_bearer(8, name="stranger", role="member")
+        f"/api/hub-issues/{hid}/attributes",
+        json={"module": "y"},
+        headers=_bearer(8, name="stranger", role="member"),
     )
     assert r_no.status_code == 403, r_no.text
 
@@ -252,7 +275,14 @@ def test_catalog_modules_readable_by_user(app_client: TestClient, db_session: Se
 
 
 def test_detail_exposes_op_handler_user_id(app_client: TestClient, db_session: Session):
-    hid = _mk(db_session, hub_id=205, type_="Operation", status="created", op_status="processing", handler_uid=42)
+    hid = _mk(
+        db_session,
+        hub_id=205,
+        type_="Operation",
+        status="created",
+        op_status="processing",
+        handler_uid=42,
+    )
     r = app_client.get(f"/api/hub-issues/{hid}", headers=_bearer())
     assert r.status_code == 200, r.text
     assert r.json()["op_handler_user_id"] == 42

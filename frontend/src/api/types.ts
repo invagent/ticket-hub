@@ -1003,8 +1003,11 @@ export interface paths {
         head?: never;
         /**
          * Update Hub Attributes
-         * @description 只改数据（type/product_line_code/module），不联动下游（不推 Linear/不重分派/
-         *     不重答/不改 hub.status/op_status）。处理人本人/主管/管理员可改；已关闭 409。
+         * @description 改 type/product_line_code/module。改 type 时按新类型规整下游状态（status/
+         *     op_status/dispatch），口径与 reclassify 一致，避免留下 pending_linear_review
+         *     等旧类型专属状态卡死的孤儿态；但不主动推 Linear（研发类改判后仍需人工
+         *     repush-linear 或走 confirm-linear-push，保留主管手动把关）。
+         *     处理人本人/主管/管理员可改；已关闭 409。
          */
         patch: operations["update_hub_attributes_api_hub_issues__hub_issue_id__attributes_patch"];
         trace?: never;
@@ -2688,6 +2691,10 @@ export interface components {
         ConfirmClassificationBody: {
             /** Hub Issue Id */
             hub_issue_id: number;
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
         };
         /** ConfirmLinearPushBody */
         ConfirmLinearPushBody: {
@@ -3786,11 +3793,13 @@ export interface components {
             /** Created At */
             created_at: string;
             /** Hub Issue Id */
-            hub_issue_id: number;
+            hub_issue_id?: number | null;
             /** Id */
             id: number;
             /** Rule Id */
             rule_id: number | null;
+            /** Ticket Id */
+            ticket_id: number;
             /** Tier Hit */
             tier_hit: string;
         };
@@ -3945,8 +3954,16 @@ export interface components {
             confidence: number | null;
             /** Hub Issue Id */
             hub_issue_id: number;
+            /** Module */
+            module: string | null;
+            /** Predicted Module */
+            predicted_module: string | null;
+            /** Predicted Module Confidence */
+            predicted_module_confidence: number | null;
             /** Predicted Type */
             predicted_type: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
             /** Reason */
             reason: string | null;
             /** Short Code */
@@ -4358,10 +4375,6 @@ export interface components {
              * @default true
              */
             is_active: boolean;
-            /** Match Modules */
-            match_modules?: string[];
-            /** Match Product Lines */
-            match_product_lines?: string[];
             /** Match Sla */
             match_sla?: string[];
             /** Match Sources */
@@ -4394,10 +4407,6 @@ export interface components {
              * @default true
              */
             is_active: boolean;
-            /** Match Modules */
-            match_modules?: string[];
-            /** Match Product Lines */
-            match_product_lines?: string[];
             /** Match Sla */
             match_sla?: string[];
             /** Match Sources */

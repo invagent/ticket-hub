@@ -1,4 +1,10 @@
-"""研发类工单走分派引擎单测。"""
+"""研发类/运营类工单毕业时处理人传播单测.
+
+入库即分派改造后，处理人分派发生在 ticket 入库阶段（dispatch_handler，见
+test_dispatch_engine.py），毕业（ensure_hub_issue_for_ticket）不再重新分派，
+只是把 ticket.handler_user_id 传播到 hub 层（Operation→op_handler_user_id）。
+这里直接在 fixture 上设置 handler_user_id 模拟「入库时已分派」的结果。
+"""
 
 from __future__ import annotations
 
@@ -7,14 +13,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models import (
-    DispatchAssignee,
-    DispatchRule,
-    HubIssue,
-    Source,
-    Ticket,
-    User,
-)
+from app.models import HubIssue, Source, Ticket, User
 from app.services.hub_issues.creator import (
     create_hub_issue_for_ticket_auto,
     ensure_hub_issue_for_ticket,
@@ -38,35 +37,10 @@ def _seed_user(db: Session, name: str) -> User:
     return u
 
 
-def _seed_dispatch_rule(db: Session, assignee_user_id: int) -> DispatchRule:
-    """一条 match-all（空维度全通配）count 规则，命中任意 hub。"""
-    rule = DispatchRule(
-        name="all",
-        priority=1,
-        is_active=True,
-        match_sources=[],
-        match_product_lines=[],
-        match_modules=[],
-        match_sla=[],
-        dispatch_mode="count",
-    )
-    db.add(rule)
-    db.flush()
-    db.add(
-        DispatchAssignee(
-            rule_id=rule.id,
-            user_id=assignee_user_id,
-            tier="main",
-            alloc_value=1,
-            daily_cap=None,
-            is_active=True,
-        )
-    )
-    db.flush()
-    return rule
-
-
-def _seed_classified_ticket(db: Session, *, ptype: str, reporter_uid: int) -> Ticket:
+def _seed_classified_ticket(
+    db: Session, *, ptype: str, reporter_uid: int, handler_uid: int | None = None
+) -> Ticket:
+    """handler_uid=None 模拟「入库时无匹配分派规则」；传入值模拟「入库时已分派」。"""
     if db.query(Source).filter_by(code="ksm").first() is None:
         db.add(Source(code="ksm", name="KSM"))
         db.flush()
@@ -81,6 +55,7 @@ def _seed_classified_ticket(db: Session, *, ptype: str, reporter_uid: int) -> Ti
         predicted_type=ptype,
         predicted_confidence=0.95,
         assigned_user_id=reporter_uid,  # 入库责任人
+        handler_user_id=handler_uid,  # 入库时 dispatch_handler 已分派的处理人
     )
     db.add(t)
     db.flush()
@@ -88,13 +63,14 @@ def _seed_classified_ticket(db: Session, *, ptype: str, reporter_uid: int) -> Ti
 
 
 @pytest.mark.parametrize("ptype", ["Bug_fix", "Demand"])
-def test_dev_class_dispatch_writes_handler_not_assigned(db_session: Session, ptype: str) -> None:
-    """研发类命中分派 → 写 ticket.handler_user_id（HubIssue 无此列）；
+def test_dev_class_handler_propagates_not_assigned(db_session: Session, ptype: str) -> None:
+    """研发类：ticket.handler_user_id 已在入库时分派好，毕业不改写它；
     hub.assigned_user_id 保持入库责任人不变。"""
     reporter = _seed_user(db_session, f"reporter_{ptype}")
     handler = _seed_user(db_session, f"handler_{ptype}")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype=ptype, reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype=ptype, reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
 
     result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
@@ -103,15 +79,15 @@ def test_dev_class_dispatch_writes_handler_not_assigned(db_session: Session, pty
     assert result.dispatch_missed is False
     hub = db_session.get(HubIssue, result.hub_issue_id)
     db_session.refresh(t)
-    assert t.handler_user_id == handler.id  # 分派写 ticket 层 handler
+    assert t.handler_user_id == handler.id  # 入库时已分派，毕业不改写
     assert hub.assigned_user_id == reporter.id  # 责任人不被覆盖
     assert hub.op_handler_user_id is None  # 研发类不写 op_handler_user_id
 
 
-def test_dev_class_dispatch_missed_sets_flag(db_session: Session) -> None:
-    """研发类无匹配规则+无兜底 → dispatch_missed=True，assigned_user_id 保持入库责任人。"""
+def test_dev_class_no_handler_sets_dispatch_missed_flag(db_session: Session) -> None:
+    """研发类入库时未分派到处理人（handler_user_id 为空）→ dispatch_missed=True，
+    assigned_user_id 保持入库责任人。"""
     reporter = _seed_user(db_session, "reporter2")
-    # 不建任何 DispatchRule → 分派无结果
     t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
     db_session.commit()
 
@@ -122,12 +98,14 @@ def test_dev_class_dispatch_missed_sets_flag(db_session: Session) -> None:
     assert hub.assigned_user_id == reporter.id  # 无分派 → 保持责任人不变
 
 
-def test_operation_dispatch_writes_op_handler_not_override(db_session: Session) -> None:
-    """Operation 命中分派 → 写 op_handler_user_id，assigned_user_id 保持入库责任人。"""
+def test_operation_handler_propagates_to_op_handler_not_override(db_session: Session) -> None:
+    """Operation：ticket.handler_user_id 传播到 hub.op_handler_user_id，
+    assigned_user_id 保持入库责任人。"""
     reporter = _seed_user(db_session, "reporter3")
     handler = _seed_user(db_session, "ophandler")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype="Operation", reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype="Operation", reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
 
     result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
@@ -141,7 +119,7 @@ def test_operation_dispatch_writes_op_handler_not_override(db_session: Session) 
 def test_auto_dispatch_missed_gate_off_marks_pending_no_linear(
     db_session: Session, monkeypatch
 ) -> None:
-    """闸门①关 + 研发类分派无结果 → status=pending，不调 push_hub_issue_to_linear。"""
+    """闸门①关 + 研发类入库未分派 → status=pending，不调 push_hub_issue_to_linear。"""
     reporter = _seed_user(db_session, "reporter4")
     t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
     db_session.commit()
@@ -175,7 +153,7 @@ def test_auto_dispatch_missed_gate_off_marks_pending_no_linear(
 
 
 def test_auto_dispatch_missed_gate_on_goes_pending_review(db_session: Session, monkeypatch) -> None:
-    """闸门①开 + 研发类分派无结果 → 仍先停 pending_review（分类确认优先于分派缺人转人工）。
+    """闸门①开 + 研发类入库未分派 → 仍先停 pending_review（分类确认优先于分派缺人转人工）。
 
     回归 bug：dispatch_missed 提前分流曾绕过闸门①，让分派缺人的研发类工单
     直接进 pending 队列而非 pending_review 分类确认队列（TKT-005963）。
@@ -212,11 +190,12 @@ def test_auto_dispatch_missed_gate_on_goes_pending_review(db_session: Session, m
 def test_auto_dispatch_hit_with_review_goes_pending_review(
     db_session: Session, monkeypatch
 ) -> None:
-    """auto 路径命中分派 + review 开 → pending_review（不误判为 dispatch pending）。"""
+    """auto 路径入库已分派 + review 开 → pending_review（不误判为 dispatch pending）。"""
     reporter = _seed_user(db_session, "reporter5")
     handler = _seed_user(db_session, "handler5")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype="Bug_fix", reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
     ticket_id = t.id
 
@@ -305,8 +284,9 @@ def test_gate_classify_off_devclass_pushes(db_session, monkeypatch) -> None:
     """闸门①关 + 模块负责人确定 → 研发类自动推 Linear。"""
     reporter = _seed_user(db_session, "rep_off")
     handler = _seed_user(db_session, "h_off")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype="Bug_fix", reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
     ticket_id = t.id
     monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
@@ -337,8 +317,9 @@ def test_gate_classify_off_module_owner_unresolved_parks_pending_linear_review(
     """闸门①关 + 模块负责人不确定 → 停 pending_linear_review，不直推 Linear。"""
     reporter = _seed_user(db_session, "rep_indep_on")
     handler = _seed_user(db_session, "h_indep_on")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype="Bug_fix", reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
     ticket_id = t.id
     monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)
@@ -355,15 +336,13 @@ def test_gate_classify_off_module_owner_unresolved_parks_pending_linear_review(
             },
         )(),
     )
-    monkeypatch.setattr(
-        "app.services.hub_issues.creator.peek_module_owner", lambda *a, **k: None
-    )
+    monkeypatch.setattr("app.services.hub_issues.creator.peek_module_owner", lambda *a, **k: None)
     with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear") as mp:
         result = create_hub_issue_for_ticket_auto(ticket_id)
     mp.assert_not_called()
     hub = db_session.get(HubIssue, result.hub_issue_id)
     assert hub.status == "pending_linear_review"
-    # 责任人默认值 = 处理人（毕业时 dispatch_handler 已写入 ticket.handler_user_id）
+    # 责任人默认值 = 处理人（入库时 dispatch_handler 已写入 ticket.handler_user_id）
     assert hub.owner_user_id == handler.id
 
 
@@ -371,8 +350,9 @@ def test_gate_classify_off_module_owner_resolved_pushes(db_session, monkeypatch)
     """闸门①关 + 模块负责人确定 → 直推 Linear（status=created）。"""
     reporter = _seed_user(db_session, "rep_indep_off")
     handler = _seed_user(db_session, "h_indep_off")
-    _seed_dispatch_rule(db_session, handler.id)
-    t = _seed_classified_ticket(db_session, ptype="Bug_fix", reporter_uid=reporter.id)
+    t = _seed_classified_ticket(
+        db_session, ptype="Bug_fix", reporter_uid=reporter.id, handler_uid=handler.id
+    )
     db_session.commit()
     ticket_id = t.id
     monkeypatch.setattr("app.services.hub_issues.creator.make_session", lambda: db_session)

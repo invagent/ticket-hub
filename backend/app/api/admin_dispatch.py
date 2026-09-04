@@ -41,10 +41,10 @@ logger = get_logger(__name__)
 
 
 class RuleBody(BaseModel):
+    # match_product_lines/match_modules 暂停使用（分派提前到 ticket 入库、
+    # 产品线/模块判定之前），不再暴露在 API，模型列/历史数据仍保留。
     name: str = Field(..., min_length=1, max_length=128)
     match_sources: list[str] = Field(default_factory=list)
-    match_product_lines: list[str] = Field(default_factory=list)
-    match_modules: list[str] = Field(default_factory=list)
     match_sla: list[str] = Field(default_factory=list)
     dispatch_mode: str = Field(pattern="^(count|ratio)$")
     rule_type: str = Field(default="primary", pattern="^(primary|overflow)$")
@@ -81,7 +81,8 @@ class ConfigBody(BaseModel):
 
 class LogOut(BaseModel):
     id: int
-    hub_issue_id: int
+    ticket_id: int
+    hub_issue_id: int | None = None
     rule_id: int | None
     assignee_user_id: int
     tier_hit: str
@@ -108,8 +109,6 @@ def _rule_out(r: DispatchRule) -> RuleOut:
         rule_code=r.rule_code,
         name=r.name,
         match_sources=r.match_sources,
-        match_product_lines=r.match_product_lines,
-        match_modules=r.match_modules,
         match_sla=r.match_sla,
         dispatch_mode=r.dispatch_mode,
         rule_type=r.rule_type,
@@ -143,7 +142,9 @@ def list_rules(
     db: Session = Depends(get_session),
 ) -> list[RuleOut]:
     rows = (
-        db.execute(select(DispatchRule).order_by(DispatchRule.priority.asc(), DispatchRule.id.asc()))
+        db.execute(
+            select(DispatchRule).order_by(DispatchRule.priority.asc(), DispatchRule.id.asc())
+        )
         .scalars()
         .all()
     )
@@ -157,7 +158,9 @@ def create_rule(
     db: Session = Depends(get_session),
 ) -> RuleOut:
     code = _generate_rule_code(db)
-    r = DispatchRule(**body.model_dump(), rule_code=code, updated_by=admin.name or str(admin.user_id))
+    r = DispatchRule(
+        **body.model_dump(), rule_code=code, updated_by=admin.name or str(admin.user_id)
+    )
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -211,7 +214,9 @@ def list_assignees(
         raise HTTPException(status_code=404, detail="rule not found")
     rows = (
         db.execute(
-            select(DispatchAssignee).where(DispatchAssignee.rule_id == rule_id).order_by(DispatchAssignee.id)
+            select(DispatchAssignee)
+            .where(DispatchAssignee.rule_id == rule_id)
+            .order_by(DispatchAssignee.id)
         )
         .scalars()
         .all()
@@ -239,7 +244,9 @@ def add_assignee(
     db.add(a)
     db.commit()
     db.refresh(a)
-    logger.info("admin_dispatch_assignee_added", rule_id=rule_id, assignee_id=a.id, by=admin.user_id)
+    logger.info(
+        "admin_dispatch_assignee_added", rule_id=rule_id, assignee_id=a.id, by=admin.user_id
+    )
     return _assignee_out(a)
 
 
@@ -254,7 +261,12 @@ def delete_assignee(
     if a is not None and a.rule_id == rule_id:
         db.delete(a)
         db.commit()
-        logger.info("admin_dispatch_assignee_deleted", rule_id=rule_id, assignee_id=assignee_id, by=admin.user_id)
+        logger.info(
+            "admin_dispatch_assignee_deleted",
+            rule_id=rule_id,
+            assignee_id=assignee_id,
+            by=admin.user_id,
+        )
     return Response(status_code=204)
 
 
@@ -314,6 +326,7 @@ def list_logs(
     return [
         {
             "id": r.id,
+            "ticket_id": r.ticket_id,
             "hub_issue_id": r.hub_issue_id,
             "rule_id": r.rule_id,
             "assignee_user_id": r.assignee_user_id,

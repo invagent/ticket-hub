@@ -6,9 +6,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models import (
-    AssignmentScopeModule,
     Customer,
     CustomerIdentity,
+    DispatchAssignee,
+    DispatchConfig,
+    DispatchRule,
     ProductLine,
     Source,
     Ticket,
@@ -24,6 +26,23 @@ def world(db_session: Session) -> Session:
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
     db_session.commit()
     return db_session
+
+
+def _rule(db: Session, *, match_sources: list | None = None) -> DispatchRule:  # type: ignore[type-arg]
+    rule = DispatchRule(
+        name="zammad-rule",
+        match_sources=match_sources or [],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+        rule_type="primary",
+        priority=100,
+        is_active=True,
+    )
+    db.add(rule)
+    db.flush()
+    return rule
 
 
 def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
@@ -63,7 +82,8 @@ def _payload(**overrides) -> dict:  # type: ignore[no-untyped-def]
 
 
 def test_first_ingest(world: Session) -> None:
-    world.add(AssignmentScopeModule(user_id=1, product_line_code="cloud-fapiao", module="数电开票"))
+    rule = _rule(world, match_sources=["zammad"])
+    world.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     world.commit()
     res = ZammadIngester(world).ingest(_payload())
     world.commit()
@@ -119,14 +139,16 @@ def test_customer_match_via_email(world: Session) -> None:
     assert res.customer_id == cust.id
 
 
-def test_default_pool_fallback(world: Session) -> None:
-    """No matching scope → default_pool."""
+def test_default_config_fallback(world: Session) -> None:
+    """规则命中但无可用 assignee → default_operation_assignee 兜底配置。"""
     pool_user = User(id=99, feishu_uid="ou_pool", name="pool", role="supervisor")
     world.add(pool_user)
+    _rule(world)  # 命中但零 assignee，dispatch_handler 才会走到兜底配置
+    world.add(DispatchConfig(key="default_operation_assignee", value="99"))
     world.commit()
-    res = ZammadIngester(world, default_pool_user_id=99).ingest(_payload())
+    res = ZammadIngester(world).ingest(_payload())
     world.commit()
-    assert res.routing_decision == "default_pool"
+    assert res.routing_decision == "assigned"
     assert 99 in res.assigned_user_ids
 
 
@@ -179,9 +201,8 @@ def test_webhook_zammad_e2e(app_client, db_session: Session) -> None:  # type: i
     db_session.add(ProductLine(code="cloud-fapiao", name="金蝶发票云"))
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
     db_session.flush()
-    db_session.add(
-        AssignmentScopeModule(user_id=1, product_line_code="cloud-fapiao", module="全票池同步")
-    )
+    rule = _rule(db_session, match_sources=["zammad"])
+    db_session.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     db_session.commit()
     resp = app_client.post(
         "/webhook/zammad?access_token=test-token",

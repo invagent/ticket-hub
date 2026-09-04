@@ -29,6 +29,7 @@ def act_world(db_session: Session) -> Session:
                 title="t",
                 canonical_body="b",
                 status="pending_review",
+                module="发票管理",
             )
         )
     db_session.flush()
@@ -143,27 +144,14 @@ def test_reclassify_to_operation_enters_answer_chain(
 
 
 def test_reclassify_to_operation_runs_dispatch(app_client: TestClient, act_world: Session) -> None:
-    """改判进 Operation 要走分派引擎(与自动/手动毕业一致),写 op_handler_user_id;
-    否则该 hub 永远拿不到预分配运营,转人工只能走兜底。"""
-    from app.models import DispatchAssignee, DispatchRule, User
+    """改判进 Operation 要把 ticket.handler_user_id(入库时分派好的处理人)传播到
+    op_handler_user_id;处理人在入库时确定,改判不重新分派(入库即分派改造)。"""
+    from app.models import User
 
     act_world.add(User(id=7, feishu_uid="ou_op7", name="op7", role="assignee"))
-    rule = DispatchRule(
-        name="all",
-        match_sources=[],
-        match_product_lines=[],
-        match_modules=[],
-        match_sla=[],
-        dispatch_mode="count",
-        rule_type="primary",
-        priority=100,
-        is_active=True,
-    )
-    act_world.add(rule)
-    act_world.flush()
-    act_world.add(
-        DispatchAssignee(rule_id=rule.id, user_id=7, daily_cap=20, tier="main", is_active=True)
-    )
+    ticket = act_world.get(Ticket, 710)
+    assert ticket is not None
+    ticket.handler_user_id = 7
     act_world.commit()
 
     r = app_client.post(
@@ -174,7 +162,7 @@ def test_reclassify_to_operation_runs_dispatch(app_client: TestClient, act_world
     assert r.status_code == 200, r.text
     hub = act_world.get(HubIssue, 71)
     act_world.refresh(hub)
-    assert hub.op_handler_user_id == 7  # 分派引擎预分配了运营处理人
+    assert hub.op_handler_user_id == 7  # 入库时分派好的处理人传播到 op_handler_user_id
 
 
 def test_dismiss_closes(app_client: TestClient, act_world: Session) -> None:
@@ -226,6 +214,7 @@ def type_world(db_session: Session) -> Session:
             title="配置咨询",
             canonical_body="b",
             status="pending_review",
+            module="发票管理",
         )
     )
     db_session.add(
@@ -236,6 +225,7 @@ def type_world(db_session: Session) -> Session:
             title="报错",
             canonical_body="b",
             status="pending_review",
+            module="发票管理",
         )
     )
     db_session.add(
@@ -246,6 +236,7 @@ def type_world(db_session: Session) -> Session:
             title="内部任务",
             canonical_body="b",
             status="pending_review",
+            module="发票管理",
         )
     )
     db_session.add(
@@ -256,6 +247,7 @@ def type_world(db_session: Session) -> Session:
             title="需求",
             canonical_body="b",
             status="pending_review",
+            module="发票管理",
         )
     )
     db_session.commit()
@@ -399,6 +391,7 @@ def test_confirm_by_handler_allowed(app_client: TestClient, act_world: Session) 
             canonical_body="b",
             status="pending_review",
             op_handler_user_id=7,
+            module="发票管理",
         )
     )
     act_world.commit()
@@ -453,6 +446,7 @@ def op_world(db_session: Session) -> Session:
             status="created",
             op_status="processing",
             op_handler="agent",
+            module="发票管理",
         )
     )
     db_session.flush()

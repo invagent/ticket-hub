@@ -18,7 +18,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, postByPath, ApiError } from "@/api/client";
 import { OpsPanel } from "@/pages/workbench/OpsPanel";
-import { UserSelect } from "@/components/selectors";
+import { UserSelect, ProductLineSelect, ModuleSelect } from "@/components/selectors";
 
 type RangeKey = "today" | "week" | "month";
 
@@ -483,15 +483,21 @@ function PendingClassificationQueue() {
   const onErr = (e: unknown) => setError(errMsg(e));
 
   const confirm = useMutation({
-    mutationFn: (hubIssueId: number) =>
-      api.post("/api/supervisor/confirm-classification", { hub_issue_id: hubIssueId }),
+    mutationFn: (v: { hubIssueId: number; productLineCode?: string; module?: string }) =>
+      api.post("/api/supervisor/confirm-classification", {
+        hub_issue_id: v.hubIssueId,
+        product_line_code: v.productLineCode ?? null,
+        module: v.module ?? null,
+      }),
     onSuccess: () => {
-      setFlash("已确认并推送 Linear");
+      setFlash("已确认分类");
       invalidate();
     },
     onError: onErr,
   });
 
+  // 改判不带模块覆盖参数（后端 reclassify 未开放该组合）：改判类型后模块沿用现值；
+  // 若需同时修正模块，先在卡片里编辑模块归类再点击「确认分类」。
   const reclassify = useMutation({
     mutationFn: (v: { hubIssueId: number; newType: string }) =>
       api.post("/api/supervisor/reclassify", {
@@ -565,7 +571,7 @@ function PendingClassificationQueue() {
               key={item.hub_issue_id}
               item={item}
               busy={busy}
-              onConfirm={() => confirm.mutate(item.hub_issue_id)}
+              onConfirm={(v) => confirm.mutate({ hubIssueId: item.hub_issue_id, ...v })}
               onReclassify={(newType) =>
                 reclassify.mutate({ hubIssueId: item.hub_issue_id, newType })
               }
@@ -594,13 +600,20 @@ function PendingClassificationCard({
     predicted_type: string | null;
     confidence: number | null;
     reason: string | null;
+    product_line_code: string | null;
+    module: string | null;
+    predicted_module: string | null;
+    predicted_module_confidence: number | null;
   };
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (v: { productLineCode?: string; module?: string }) => void;
   onReclassify: (newType: string) => void;
   onDismiss: () => void;
 }) {
   const [newType, setNewType] = useState<string>("Operation");
+  const [plc, setPlc] = useState<string | undefined>(item.product_line_code ?? undefined);
+  const [mod, setMod] = useState<string | undefined>(item.module ?? undefined);
+  const moduleEmpty = !(mod ?? "").trim();
 
   return (
     <div className="bg-hub-blue-light/60 border border-hub-blue-border rounded-[10px] p-3.5 flex flex-col gap-2">
@@ -621,13 +634,45 @@ function PendingClassificationCard({
           AI 理由：{item.reason}
         </div>
       )}
+
+      <div className="flex items-center gap-1.5 flex-wrap bg-white/70 border border-hub-blue-border rounded-md px-2 py-1.5">
+        <span className="text-[11px] text-hub-textFaint font-semibold flex-none">模块归类</span>
+        <ProductLineSelect
+          value={plc}
+          onChange={(v) => {
+            setPlc(v);
+            setMod(undefined); // 换产品线后模块需重选
+          }}
+          className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px] min-w-[8.5rem]"
+        />
+        <ModuleSelect
+          productLineCode={plc}
+          value={mod}
+          onChange={setMod}
+          className="text-[11.5px] rounded-md border border-hub-border bg-white px-1.5 py-[4px] min-w-[8.5rem]"
+        />
+        {item.predicted_module && (
+          <span className="text-[10.5px] text-hub-textFaint">
+            AI 原判：{item.predicted_module}
+            {item.predicted_module_confidence != null &&
+              ` ${Math.round(item.predicted_module_confidence * 100)}%`}
+          </span>
+        )}
+      </div>
+      {moduleEmpty && (
+        <div className="text-[11px] text-hub-rose bg-hub-rose/10 rounded-md px-2 py-1">
+          模块归类为空，需先选定模块才能确认分类。
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <button
-          onClick={onConfirm}
-          disabled={busy}
+          onClick={() => onConfirm({ productLineCode: plc, module: mod })}
+          disabled={busy || moduleEmpty}
+          title={moduleEmpty ? "模块归类不能为空" : undefined}
           className="text-[11.5px] font-semibold px-[11px] py-[4.5px] rounded-md bg-hub-teal text-white border border-hub-teal disabled:opacity-50 hover:brightness-95"
         >
-          确认推送
+          确认分类
         </button>
         <div className="flex items-center gap-1">
           <select

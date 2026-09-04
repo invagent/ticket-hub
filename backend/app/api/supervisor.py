@@ -1871,6 +1871,11 @@ class PendingClassificationItem(BaseModel):
     predicted_type: str | None
     confidence: float | None
     reason: str | None
+    # 模块归类审核（module_resolve 已写好的生效值 + AI 原始判定，供处理人对比确认）
+    product_line_code: str | None
+    module: str | None
+    predicted_module: str | None
+    predicted_module_confidence: float | None
 
 
 class PendingClassificationResponse(BaseModel):
@@ -1933,6 +1938,14 @@ def list_pending_classification(
                 predicted_type=h.type,
                 confidence=conf,
                 reason=reason,
+                product_line_code=h.product_line_code,
+                module=h.module,
+                predicted_module=tk.predicted_module if tk is not None else None,
+                predicted_module_confidence=(
+                    float(tk.predicted_module_confidence)
+                    if tk is not None and tk.predicted_module_confidence is not None
+                    else None
+                ),
             )
         )
     return PendingClassificationResponse(items=items)
@@ -1940,6 +1953,9 @@ def list_pending_classification(
 
 class ConfirmClassificationBody(BaseModel):
     hub_issue_id: int
+    # 审核时可修正模块归类（不传则保留 AI 判定的现有值）；确认前必须非空。
+    product_line_code: str | None = None
+    module: str | None = Field(None, max_length=128)
 
 
 class ReclassifyBody(BaseModel):
@@ -1969,6 +1985,38 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
             detail=f"hub {hub.short_code} status={hub.status!r} 非 pending_review，不可操作",
         )
     return hub
+
+
+def _schedule_ksm_takeover(
+    background_tasks: BackgroundTasks, db: Session, hub_issue_id: int
+) -> None:
+    """人工审核确认分类后触发 KSM 接管（任意类型，不限于 Operation）。一个 hub 可能
+    挂多条 ticket（dedup 合并），逐条判断来源，非 KSM 直接在 trigger 内部跳过。"""
+    from app.services.ksm.takeover import trigger_ksm_takeover_after_review
+
+    ticket_ids = [
+        tid
+        for (tid,) in db.query(Ticket.id).filter(
+            Ticket.hub_issue_id == hub_issue_id, Ticket.deleted_at.is_(None)
+        )
+    ]
+    for tid in ticket_ids:
+        background_tasks.add_task(trigger_ksm_takeover_after_review, tid)
+
+
+def _require_module_assigned(hub: HubIssue) -> None:
+    """确认分类前模块归类不能为空（用户新规则）：module 为空或落在兜底模块时拒绝，
+    要求先补齐模块归类再确认。兜底模块（module_resolve 四级回退最后一档）视为
+    「未真正归类」，不算已确认。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not (hub.module or "").strip() or hub.module == settings.module_fallback_module:
+        raise HTTPException(
+            status_code=422,
+            detail=f"hub {hub.short_code} 模块归类为空或仍是兜底模块「{hub.module}」，"
+            "请先补齐模块归类再确认分类",
+        )
 
 
 def _get_reclassifiable_hub(db: Session, hub_issue_id: int) -> HubIssue:
@@ -2010,6 +2058,25 @@ def confirm_classification(
     _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = _get_pending_review_hub(db, body.hub_issue_id)
     prev = hub.status
+
+    # 审核时可修正模块归类（覆盖 AI 判定），同步回关联 ticket + upsert_catalog 建目录。
+    if body.product_line_code is not None or body.module is not None:
+        from app.services.ingest.catalog_upsert import upsert_catalog
+
+        eff_plc = (
+            body.product_line_code if body.product_line_code is not None else hub.product_line_code
+        )
+        eff_module = body.module if body.module is not None else hub.module
+        upsert_catalog(db, product_line_code=eff_plc, module=eff_module)
+        hub.product_line_code = eff_plc
+        hub.module = eff_module
+        for tk in db.query(Ticket).filter(
+            Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)
+        ):
+            tk.product_line_code = eff_plc
+            tk.module = eff_module
+
+    _require_module_assigned(hub)
 
     if hub.type == "Operation":
         hub.status = "created"
@@ -2053,6 +2120,10 @@ def confirm_classification(
     if hub.type in ("Bug_fix", "Demand") and hub.status == "created":
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
+    # 接管改到人工审核确认之后才触发（不再在入库瞬间）；非 KSM 来源/关闭时
+    # 函数内部自行判断跳过。任意类型都接管，不限于 Operation。
+    _schedule_ksm_takeover(background_tasks, db, hub.id)
+
     logger.info(
         "supervisor_confirm_classification",
         hub_issue_id=hub.id,
@@ -2077,9 +2148,6 @@ def reclassify(
       不确定 → pending_linear_review 待处理人确认（工作台选人推送）。
     - Internal_task/Complaint → created，不推 Linear、不走答复。
     """
-    from app.services.dispatch import dispatch_handler
-    from app.services.hub_issues.op_status import set_hub_tickets_handler
-
     # 处理中 Operation 转研发是「处理人跟客户沟通后判断是需求/Bug」的场景，
     # 处理人本人即可操作（对齐 PATCH /attributes 的授权口径），无需主管介入。
     _authorize_hub_handler(db, body.hub_issue_id, user)
@@ -2123,6 +2191,8 @@ def reclassify(
                 },
             )
         )
+    _require_module_assigned(hub)
+
     if body.new_type == "Operation":
         hub.status = "created"
         apply_op_status(
@@ -2132,15 +2202,12 @@ def reclassify(
             handler="agent",
             reason=f"改判 {old_zh}→运营，回炉答复链",
         )
-        # 与自动/手动毕业的 Operation 路径一致：按规则预分配运营处理人。
-        # 否则改判进 Operation 的 hub 的 op_handler_user_id 恒 NULL，转人工永远
-        # 走兜底，拿不到分派引擎的预分配运营。（linked ticket 已挂 hub，
-        # dispatch 内的来源维度反查可命中。）
+        # 处理人已在入库时按来源+规则分派好（ticket.handler_user_id），改判类型
+        # 不重新分派，直接沿用（同 confirm-classification/PATCH attributes 口径）。
         db.flush()
-        dr = dispatch_handler(db, hub)
-        if dr.user_id is not None:
-            hub.op_handler_user_id = dr.user_id
-            set_hub_tickets_handler(db, hub, dr.user_id)
+        handler_uid = default_owner_from_ticket_handler(db, hub)
+        if handler_uid is not None:
+            hub.op_handler_user_id = handler_uid
     elif body.new_type in ("Bug_fix", "Demand"):
         # 按模块负责人是否确定分流：确定 → created 直推 Linear；不确定 →
         # pending_linear_review 待处理人确认（工作台选人推送）。统一口径，不再
@@ -2173,6 +2240,9 @@ def reclassify(
     # status='created' 即已定为直推分支，据此触发（与上方 status 分流一致）。
     if body.new_type in ("Bug_fix", "Demand") and hub.status == "created":
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
+
+    # 改判本身即视为已确认分类，同 confirm-classification 一样触发接管。
+    _schedule_ksm_takeover(background_tasks, db, hub.id)
 
     logger.info(
         "supervisor_reclassify",

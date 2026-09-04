@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.api import webhooks as webhook_module
 from app.models import (
-    AssignmentScopeModule,
+    DispatchAssignee,
+    DispatchRule,
     ProductLine,
     Source,
     Ticket,
@@ -68,9 +69,21 @@ def ingest_world(db_session: Session) -> Session:
     db_session.add(ProductLine(code="cloud-erp-star", name="金蝶云星空"))
     db_session.add(ProductLine(code="cloud-fapiao", name="金蝶发票云"))
     db_session.add(User(id=1, feishu_uid="ou_alice", name="alice", role="assignee"))
-    db_session.add(
-        AssignmentScopeModule(user_id=1, product_line_code="cloud-erp-star", module="财务模块")
+    db_session.flush()
+    rule = DispatchRule(
+        name="ksm-rule",
+        match_sources=["ksm"],
+        match_product_lines=[],
+        match_modules=[],
+        match_sla=[],
+        dispatch_mode="count",
+        rule_type="primary",
+        priority=100,
+        is_active=True,
     )
+    db_session.add(rule)
+    db_session.flush()
+    db_session.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     db_session.commit()
     return db_session
 

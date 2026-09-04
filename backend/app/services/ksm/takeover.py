@@ -11,9 +11,10 @@ lock 后 node.id 会流转，必须重拉拿新 node 才能 handle（否则报"�
   * 新工单（首次入库）        → 完整 lock → 重拉 → handle（进处理中）
   * 已存在工单（重复推/退回后再进来）→ 只 lock 接管，不 handle（之前已受理过）
 
-方案 X（用户确认）：takeover 在入库直后、工单毕业成 hub 之前运行，此刻无
-op_status 可置。只管 KSM 锁定 + ticket.ksm_takeover_status，不碰 hub——
-op_status=processing 交后续 Operation 毕业自然设置；处理人 Router 入库时已分配。
+改版（入库即分派改造）：接管不再在入库瞬间发生，改为人工审核确认分类（含模块
+归类）之后由 `trigger_ksm_takeover_after_review` 触发——分类/模块判断错误时
+接管还没发生，可以回退。接管身份也不再固定用全局配置，改用 ticket 的处理人
+（见 identity.py），全局配置降级为处理人未配 ksm_account 时的兜底。
 
 安全：
   * 灰度门 ksm_auto_takeover_enabled（默认关）+ 复用 ksm_writeback_dry_run。
@@ -28,11 +29,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from adapters.ksm import HandleOrderRequest, KSMClient, KSMError, LockOrderRequest
+from adapters.ksm import HandleOrderRequest, KSMClient, KSMConfig, KSMError, LockOrderRequest
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.db import make_session
 from app.models import Ticket
-from app.services.ksm.notice_store import NoticeStoreLike
+from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
+from app.services.ksm.notice_store import NoticeStore, NoticeStoreLike
 from app.services.ksm.writeback import (
     _ALREADY_LOCKED_HINTS,
     _extract_ksm_fields,
@@ -79,6 +82,11 @@ def takeover_ksm_ticket(
         logger.info("ksm_takeover_already", bill_id=bill_id, status=ticket.ksm_takeover_status)
         return
 
+    identity = resolve_ksm_identity(db, ticket, settings)
+    if identity is None:
+        logger.warning("ksm_takeover_no_identity", bill_id=bill_id, ticket_id=ticket.id)
+        return
+
     fields = _extract_ksm_fields(ticket.source_payload, fallback_bill_id=bill_id)
     if not fields.bill_id:
         logger.warning("ksm_takeover_no_billid", ticket_id=ticket.id)
@@ -95,19 +103,20 @@ def takeover_ksm_ticket(
             would="lock+handle" if is_new else "lock",
             node_id=fields.node_id,
             linkman=fields.linkman,
+            identity_source=identity.source,
         )
         return
 
     # ---- 1. 接管（lockKsmOrder），写操作不重试 ----
     try:
-        _lock(client, fields, settings)
+        _lock(client, fields, identity)
     except KSMError as e:
         ticket.ksm_takeover_status = "failed"
         ticket.ksm_takeover_error = str(e)[:1000]
         logger.warning("ksm_takeover_lock_failed", bill_id=fields.bill_id, error=str(e))
         return
     ticket.ksm_takeover_status = "locked"
-    logger.info("ksm_takeover_locked", bill_id=fields.bill_id)
+    logger.info("ksm_takeover_locked", bill_id=fields.bill_id, identity_source=identity.source)
 
     # 已存在工单：只接管，不处理（之前已受理过）
     if not is_new:
@@ -119,9 +128,9 @@ def takeover_ksm_ticket(
 
     # ---- 3. 处理（handleKsmOrder, is_deal=False → 只受理不关单）----
     try:
-        _handle(client, fresh, settings)
+        _handle(client, fresh, identity)
     except KSMError as e:
-        if not _handle_with_compensation(db, client, fresh, fields, settings, e, notice_store):
+        if not _handle_with_compensation(db, client, fresh, fields, identity, e, notice_store):
             ticket.ksm_takeover_status = "failed"
             ticket.ksm_takeover_error = str(e)[:1000]
             logger.warning("ksm_takeover_handle_failed", bill_id=fields.bill_id, error=str(e))
@@ -141,7 +150,7 @@ def _handle_with_compensation(
     client: KSMClient,
     fresh: _KSMFields,
     base: _KSMFields,
-    settings: Settings,
+    identity: KsmIdentity,
     err: KSMError,
     notice_store: NoticeStoreLike | None,
 ) -> bool:
@@ -152,7 +161,7 @@ def _handle_with_compensation(
         logger.info("ksm_takeover_compensate_stale_node", bill_id=base.bill_id)
         refreshed = _refresh(client, base, notice_store)
         try:
-            _handle(client, refreshed, settings)
+            _handle(client, refreshed, identity)
             return True
         except KSMError as e2:
             logger.warning(
@@ -163,9 +172,9 @@ def _handle_with_compensation(
     if any(h in msg for h in _NOT_LOCKED_HINTS):
         logger.info("ksm_takeover_compensate_relock", bill_id=base.bill_id)
         try:
-            _lock(client, base, settings)
+            _lock(client, base, identity)
             refreshed = _refresh(client, base, notice_store)
-            _handle(client, refreshed, settings)
+            _handle(client, refreshed, identity)
             return True
         except KSMError as e3:
             logger.warning(
@@ -176,13 +185,13 @@ def _handle_with_compensation(
     return False
 
 
-def _lock(client: KSMClient, fields: _KSMFields, settings: Settings) -> None:
+def _lock(client: KSMClient, fields: _KSMFields, identity: KsmIdentity) -> None:
     try:
         client.lock_order(
             LockOrderRequest(
-                account=settings.ksm_handler_name,
-                account_name=settings.ksm_handler_name,
-                account_number=settings.ksm_handler_number,
+                account=identity.account,
+                account_name=identity.account_name,
+                account_number=identity.account_number,
                 bill_id=fields.bill_id,
                 deal_opinion=_LOCK_OPINION,
             )
@@ -194,12 +203,12 @@ def _lock(client: KSMClient, fields: _KSMFields, settings: Settings) -> None:
         raise
 
 
-def _handle(client: KSMClient, fields: _KSMFields, settings: Settings) -> None:
+def _handle(client: KSMClient, fields: _KSMFields, identity: KsmIdentity) -> None:
     client.handle_order(
         HandleOrderRequest(
-            account=settings.ksm_handler_name,
-            account_name=settings.ksm_handler_name,
-            account_number=settings.ksm_handler_number,
+            account=identity.account,
+            account_name=identity.account_name,
+            account_number=identity.account_number,
             bill_id=fields.bill_id,
             linkman=fields.linkman,
             customer_email=fields.email,
@@ -236,3 +245,74 @@ def _refresh(
         logger.warning("ksm_takeover_refresh_failed", bill_id=fields.bill_id, error=str(e))
         return fields
     return _merge_refreshed(fields, detail)
+
+
+def trigger_ksm_takeover_after_review(ticket_id: int) -> None:
+    """人工审核确认分类（含模块归类）之后触发接管。独立 session/client，供
+    supervisor.py 的 confirm_classification/reclassify 通过 background_tasks 调用
+    ——网络 IO 不阻塞审核请求的响应。
+
+    detail 来源：优先重新调 get_order_detail（需要 NoticeStore 里的 notice 仍未
+    过期，24h TTL）；notice 已过期（审核发生在入库超过 24h 之后）时退化为直接用
+    入库时存的 `_subscribe_callback` 快照——takeover 内部 `_refresh` 会在 lock 后
+    再拉一次，只要那时 notice 仍有效就能收敛到最新状态；若彻底失效，让 handle
+    报错落 ksm_takeover_status='failed'，不静默。
+
+    接管失败不影响审核确认本身（调用方已提交事务）；本函数内部吞异常自行
+    commit/rollback。非 KSM 来源直接跳过。
+    """
+    settings = get_settings()
+    if not settings.ksm_auto_takeover_enabled:
+        return
+
+    db = make_session()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None or ticket.source_code != "ksm":
+            return
+        if ticket.ksm_takeover_status in _TAKEN_OVER_STATUSES:
+            return
+
+        bill_id = ticket.source_ticket_id or ""
+        notice_store = NoticeStore(redis_url=settings.redis_url)
+        notice = notice_store.get(bill_id)
+
+        client = KSMClient(KSMConfig.from_settings(settings))
+        try:
+            detail: dict[str, Any] | None = None
+            if notice is not None:
+                try:
+                    detail = client.get_order_detail(
+                        bill_id=bill_id,
+                        notice_num=notice.notice_num,
+                        subscribe_num=notice.subscribe_num,
+                    )
+                except KSMError as e:
+                    logger.warning(
+                        "ksm_takeover_review_refetch_failed", bill_id=bill_id, error=str(e)
+                    )
+            if detail is None:
+                # notice 过期或重拉失败 → 退化用入库快照，takeover 内部 _refresh 会再试一次。
+                snapshot = (ticket.source_payload or {}).get("_subscribe_callback")
+                if not isinstance(snapshot, dict):
+                    logger.warning("ksm_takeover_review_no_detail", bill_id=bill_id)
+                    return
+                detail = snapshot
+
+            takeover_ksm_ticket(
+                db,
+                ticket,
+                detail=detail,
+                is_new=ticket.ksm_takeover_status is None,
+                client=client,
+                notice_store=notice_store,
+                settings=settings,
+            )
+            db.commit()
+        finally:
+            client.close()
+    except Exception:
+        db.rollback()
+        logger.exception("ksm_takeover_review_unexpected_failure", ticket_id=ticket_id)
+    finally:
+        db.close()

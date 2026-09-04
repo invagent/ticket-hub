@@ -28,9 +28,9 @@ from app.core.logging import get_logger
 from app.models import Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
+from app.services.dispatch import dispatch_handler
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
-from app.services.routing.router import Router, RouteRequest
 
 logger = get_logger(__name__)
 
@@ -53,12 +53,11 @@ class IngestError(Exception):
 class ZammadIngester:
     """Processes a single Zammad webhook payload end-to-end."""
 
-    def __init__(self, db: Session, *, default_pool_user_id: int | None = None) -> None:
+    def __init__(self, db: Session) -> None:
         self._db = db
         self._tickets = TicketRepository(db)
         self._history = StatusHistoryRepository(db)
         self._resolver = IdentityResolver(db)
-        self._router = Router(db, default_pool_user_id=default_pool_user_id)
 
     def ingest(self, payload: dict[str, Any]) -> IngestResult:
         zt = self._parse(payload)
@@ -124,22 +123,13 @@ class ZammadIngester:
             },
         )
         self._tickets.add(ticket)
+        self._db.flush()  # dispatch_handler.add_log 需要 ticket.id 已落库
 
-        route = self._router.route(
-            RouteRequest(
-                ticket_id=ticket.id,
-                source_code="zammad",
-                product_line_code=ticket.product_line_code,
-                raw_module=ticket.module,
-                raw_feature=ticket.feature,
-                customer_id=resolve.customer_id,
-            )
-        )
-        if (route.decision == "assigned" and len(route.assigned_user_ids) == 1) or (
-            route.decision == "default_pool" and route.assigned_user_ids
-        ):
-            ticket.assigned_user_id = route.assigned_user_ids[0]
-            ticket.handler_user_id = ticket.assigned_user_id  # 处理人初始=责任人
+        dr = dispatch_handler(self._db, ticket)
+        if dr.user_id is not None:
+            ticket.assigned_user_id = dr.user_id
+            ticket.handler_user_id = dr.user_id  # 处理人初始=责任人
+        dispatch_decision = "assigned" if dr.user_id is not None else "no_match"
 
         self._db.flush()
 
@@ -154,9 +144,9 @@ class ZammadIngester:
                 "source": "zammad",
                 "zammad_state": zt.state,
                 "zammad_priority": zt.priority,
-                "routing_decision": route.decision,
-                "matched_scope": route.matched_scope,
-                "rationale": route.rationale,
+                "routing_decision": dispatch_decision,
+                "matched_scope": "dispatch_rule" if dr.rule_id is not None else "none",
+                "rationale": dr.reason,
             },
         )
 
@@ -166,15 +156,15 @@ class ZammadIngester:
             short_code=short_code,
             zammad_id=zt.id,
             customer_id=resolve.customer_id,
-            routing_decision=route.decision,
+            routing_decision=dispatch_decision,
         )
         return IngestResult(
             ticket_id=ticket.id,
             short_code=short_code,
             customer_id=resolve.customer_id,
             customer_identity_id=resolve.customer_identity_id,
-            routing_decision=route.decision,
-            assigned_user_ids=route.assigned_user_ids,
+            routing_decision=dispatch_decision,
+            assigned_user_ids=[dr.user_id] if dr.user_id is not None else [],
             deduped=False,
         )
 

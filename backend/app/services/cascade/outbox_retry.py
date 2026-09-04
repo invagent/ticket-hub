@@ -66,7 +66,9 @@ def retry_outbox_row(
         raise OutboxRetryError(f"该行当前状态是 {row.status}，非 failed，无需重试")
 
     if row.target_source_code == "ksm":
-        result = _retry_ksm(db, row, client=ksm_client, notice_store=notice_store, settings=settings)
+        result = _retry_ksm(
+            db, row, client=ksm_client, notice_store=notice_store, settings=settings
+        )
     elif row.target_source_code == "zhichi":
         result = _retry_zhichi(db, row, client=zhichi_client, settings=settings)
     else:
@@ -98,8 +100,9 @@ def _retry_ksm(
         settings = get_settings()
     if not settings.ksm_writeback_enabled:
         raise OutboxRetryError("KSM 回写总开关未开启（ksm_writeback_enabled=false）")
-    if not settings.ksm_handler_name or not settings.ksm_handler_number:
-        raise OutboxRetryError("KSM 处理人身份未配置（KSM_HANDLER_NAME/NUMBER）")
+    # 身份改按处理人优先 + 全局兜底解析（identity.py），不再要求全局兜底一定配置——
+    # 该行对应 ticket 的处理人可能自己有 ksm_account。真正缺身份时 _process_row 内部
+    # 会 mark_skipped，不在此处提前拦截。
 
     owns_client = client is None
     if client is None:

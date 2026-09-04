@@ -25,7 +25,6 @@ from app.services import knowledge_feedback as kf
 from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
-from app.services.dispatch import dispatch_handler
 from app.services.hub_issues.module_owner import peek_module_owner
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
@@ -705,8 +704,9 @@ def update_hub_attributes(
                 hub.status = "created"
 
             if body.type == "Operation":
-                # 进入运营类：回炉自动答复链（op_status=processing/agent）+ 按
-                # 分派引擎预分配运营处理人，口径与 reclassify/confirm-classification 一致。
+                # 进入运营类：回炉自动答复链（op_status=processing/agent）。处理人
+                # 已在入库时按来源+规则分派好（ticket.handler_user_id），改判类型
+                # 不重新分派，直接沿用（同 confirm-classification/reclassify 口径）。
                 hub.status = "created"
                 apply_op_status(
                     db,
@@ -716,10 +716,9 @@ def update_hub_attributes(
                     reason=f"手动修改 {old}→运营，回炉答复链",
                 )
                 db.flush()
-                dr = dispatch_handler(db, hub)
-                if dr.user_id is not None:
-                    hub.op_handler_user_id = dr.user_id
-                    set_hub_tickets_handler(db, hub, dr.user_id)
+                handler_uid = default_owner_from_ticket_handler(db, hub)
+                if handler_uid is not None:
+                    hub.op_handler_user_id = handler_uid
             elif body.type in ("Bug_fix", "Demand") and hub.status not in (
                 "pending_linear_review",
                 "pending",

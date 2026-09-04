@@ -169,13 +169,17 @@ def test_disabled_touches_nothing(world: Session) -> None:
     assert row.status == "pending"
 
 
-def test_no_handler_identity_touches_nothing(world: Session) -> None:
+def test_no_handler_identity_skips_row(world: Session) -> None:
+    """身份改按处理人优先+全局兜底解析（identity.py）：ticket 无处理人 + 全局
+    兜底也未配置 → 该行 skipped（不再是全局网关直接短路 scanned=0）。"""
     hub = _hub(world)
     t = _ticket(world, hub)
-    _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
+    row = _outbox(world, t, hub, kind="reply", payload={"reply_content": "ok"})
     client = FakeKSMClient()
     report = drain_ksm_outbox(world, client=client, settings=_settings(ksm_handler_number=""))
-    assert report.scanned == 0 and not client.locks
+    assert report.scanned == 1 and report.skipped == 1 and not client.locks
+    world.refresh(row)
+    assert row.status == "skipped"
 
 
 def test_dry_run_assembles_but_skips(world: Session) -> None:

@@ -1,11 +1,11 @@
 /**
  * /admin/dispatch — 派单规则配置页.
  *
- * 0032 改版：
- *   - 列表：序号/规则编码/规则名称/适配产品线/适配模块/适配来源/适配服务等级/
+ * 入库即分派改造：分派提前到 ticket 入库、产品线/模块判定之前，适配产品线/
+ * 适配模块两个匹配维度暂停使用（不再展示/编辑，历史数据保留在库里）。
+ *   - 列表：序号/规则编码/规则名称/适配来源/适配服务等级/
  *           派单规则/状态/优先级/人员和数量/溢出关联/兜底人员/最后更新时间/最后更新人/操作
- *   - 编辑弹窗：1.8× 宽 / 1.5× 高；SLA 多选；产品线×模块联动；人员表格行；
- *              溢出复选+溢出人员表；兜底人员单选
+ *   - 编辑弹窗：SLA 多选；人员表格行；溢出复选+溢出人员表；兜底人员单选
  */
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
@@ -14,12 +14,9 @@ import { ApiError } from "@/api/client";
 import {
   MultiCheckSelect,
   MultiUserSelect,
-  useAllModuleOptions,
-  useProductLineOptions,
   useSourceOptions,
   useUserName,
   useUserOptions,
-  type AllModuleOpt,
   type SourceOpt,
 } from "@/components/selectors";
 import { AdminTabs } from "../AdminTabs";
@@ -107,36 +104,6 @@ function OverflowCell({ items, maxChars, renderItem, emptyLabel = "全部" }: {
       {anchor && hiddenCount > 0 && (
         <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
           {items.map(fmt).join("、")}
-        </TooltipPopup>
-      )}
-    </div>
-  );
-}
-
-// max 10 product line tags in cell, rest as +N, click to show all
-function ProductLineCellItems({ codes, plMap }: { codes: string[]; plMap: Map<string, string> }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  if (!codes.length) return <span className="text-hub-textFaint">全部</span>;
-  const visible = codes.slice(0, 10);
-  const hidden = codes.slice(10);
-  return (
-    <div className="inline-flex items-center gap-1 whitespace-nowrap flex-wrap">
-      {visible.map((c) => (
-        <span key={c} className="bg-hub-teal-light text-hub-teal-deep text-[10.5px] px-1.5 py-px rounded-full border border-hub-teal-border whitespace-nowrap">
-          {plMap.get(c) ?? c}
-        </span>
-      ))}
-      {hidden.length > 0 && (
-        <span
-          className="text-hub-teal text-[11px] cursor-pointer select-none font-semibold"
-          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        >
-          +{hidden.length}
-        </span>
-      )}
-      {anchor && hidden.length > 0 && (
-        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
-          {codes.map((c) => plMap.get(c) ?? c).join("、")}
         </TooltipPopup>
       )}
     </div>
@@ -256,44 +223,6 @@ function AssigneeSummaryCell({ assignees, mode }: { assignees: AssigneeOut[]; mo
   );
 }
 
-// ---- module cell: each item on its own line, truncate at 10 chars, +N popup -
-function ModuleCell({ items }: { items: string[] }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const MAX_ROWS = 3; // show at most 3 rows before +N
-
-  if (!items.length) return <span className="text-hub-textFaint">全部</span>;
-
-  const visible = items.slice(0, MAX_ROWS);
-  const hidden = items.slice(MAX_ROWS);
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      {visible.map((m, i) => (
-        <span key={i} className="block text-[11.5px] leading-snug" style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m}>
-          {m}
-        </span>
-      ))}
-      {hidden.length > 0 && (
-        <span
-          className="text-hub-teal text-[11px] cursor-pointer select-none font-semibold"
-          onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        >
-          +{hidden.length}
-        </span>
-      )}
-      {anchor && hidden.length > 0 && (
-        <TooltipPopup anchor={anchor} onClose={() => setAnchor(null)}>
-          <div className="flex flex-col gap-0.5">
-            {items.map((m, i) => <span key={i} className="block">{m}</span>)}
-          </div>
-        </TooltipPopup>
-      )}
-    </div>
-  );
-}
-
-
-
 export function DispatchRulesPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<RuleOut | "new" | null>(null);
@@ -318,12 +247,6 @@ export function DispatchRulesPage() {
     },
     enabled: (rules.data ?? []).length > 0,
   });
-
-  // product line name map for display
-  const plQ = useProductLineOptions();
-  const plMap = new Map<string, string>(
-    ((plQ.data ?? []) as { code: string; name: string }[]).map((p) => [p.code, p.name])
-  );
 
   // source name map for display
   const sourceQ = useSourceOptions();
@@ -366,8 +289,8 @@ export function DispatchRulesPage() {
       <AdminTabs />
       <div className="flex items-center justify-between mb-3">
         <p className="text-[11.5px] text-hub-textMuted m-0">
-          派单规则列表 —— Operation 工单毕业时按来源/产品线/模块/服务等级匹配规则，
-          在多个运营处理人之间按数量或比例预分配。
+          派单规则列表 —— 工单入库时按来源/服务等级匹配规则，
+          在多个处理人之间按数量或比例预分配。
         </p>
         <button onClick={() => setEditing("new")} className={PRIMARY_BTN}>
           ＋ 新建规则
@@ -390,8 +313,6 @@ export function DispatchRulesPage() {
                 <th className="text-center font-semibold px-2 py-2 whitespace-nowrap sticky left-0 z-20" style={{ width: 40, minWidth: 40, backgroundColor: "#f4f6f8" }}>序号</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[40px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 112, minWidth: 112, backgroundColor: "#f4f6f8" }}>规则编码</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap sticky left-[152px] z-20 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.08)]" style={{ width: 128, minWidth: 128, backgroundColor: "#f4f6f8" }}>规则名称</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 200, minWidth: 200 }}>适配产品线</th>
-                <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 112, minWidth: 112 }}>适配模块</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配来源系统</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>适配服务等级</th>
                 <th className="text-left font-semibold px-2 py-2 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>派单规则</th>
@@ -422,12 +343,6 @@ export function DispatchRulesPage() {
                     </td>
                     <td className="px-2 py-2 font-semibold whitespace-nowrap sticky left-[152px] z-10 bg-white group-hover:bg-[#f4f6f8] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">
                       {r.name}
-                    </td>
-                    <td className="px-2 py-2 whitespace-nowrap">
-                      <ProductLineCellItems codes={r.match_product_lines} plMap={plMap} />
-                    </td>
-                    <td className="px-2 py-2" style={{ wordBreak: "break-all", maxWidth: 112 }}>
-                      <ModuleCell items={r.match_modules} />
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
                       <OverflowCell
@@ -529,7 +444,6 @@ export function DispatchRulesPage() {
         <RuleViewDialog
           rule={viewing}
           assignees={(allAssigneesQ.data?.[viewing.id] ?? []) as AssigneeOut[]}
-          plMap={plMap}
           sourceMap={sourceMap}
           slaMap={slaMap}
           onClose={() => setViewing(null)}
@@ -553,7 +467,6 @@ export function DispatchRulesPage() {
 function RuleViewDialog({
   rule,
   assignees,
-  plMap,
   sourceMap,
   slaMap,
   onClose,
@@ -561,7 +474,6 @@ function RuleViewDialog({
 }: {
   rule: RuleOut;
   assignees: AssigneeOut[];
-  plMap: Map<string, string>;
   sourceMap: Map<string, string>;
   slaMap: Map<string, string>;
   onClose: () => void;
@@ -643,12 +555,6 @@ function RuleViewDialog({
         <div className="grid grid-cols-2 gap-4 mb-5 border-t border-hub-borderLight pt-4">
           <Field label="适配来源系统">
             <TagList items={rule.match_sources} mapper={(c) => sourceMap.get(c) ?? c} />
-          </Field>
-          <Field label="适配产品线">
-            <TagList items={rule.match_product_lines} mapper={(c) => plMap.get(c) ?? c} />
-          </Field>
-          <Field label="适配模块">
-            <TagList items={rule.match_modules} />
           </Field>
           <Field label="适配服务等级">
             <TagList items={rule.match_sla} mapper={(c) => slaMap.get(c) ?? c} />
@@ -734,8 +640,6 @@ function ruleBodyOf(r: RuleOut): RuleBody {
   return {
     name: r.name,
     match_sources: r.match_sources ?? [],
-    match_product_lines: r.match_product_lines ?? [],
-    match_modules: r.match_modules ?? [],
     match_sla: r.match_sla ?? [],
     dispatch_mode: r.dispatch_mode,
     rule_type: r.rule_type,
@@ -771,8 +675,6 @@ function RuleEditorDialog({
 
   const [name, setName] = useState(rule?.name ?? "");
   const [sources, setSources] = useState<string[]>(rule?.match_sources ?? []);
-  const [productLines, setProductLines] = useState<string[]>(rule?.match_product_lines ?? []);
-  const [modules, setModules] = useState<string[]>(rule?.match_modules ?? []);
   const [slaList, setSlaList] = useState<string[]>(rule?.match_sla ?? []);
   const [mode, setMode] = useState<"count" | "ratio">((rule?.dispatch_mode as "count" | "ratio") ?? "count");
   const [priority, setPriority] = useState(rule?.priority ?? 100);
@@ -791,34 +693,10 @@ function RuleEditorDialog({
 
   // selector data
   const sourceQ = useSourceOptions();
-  const plQ = useProductLineOptions();
-  const modQ = useAllModuleOptions();
 
   const sourceOpts = ((sourceQ.data ?? []) as SourceOpt[])
     .filter((s) => s.is_active)
     .map((s) => ({ value: s.code, label: `${s.name}` }));
-
-  const allPls = ((plQ.data ?? []) as { code: string; name: string; is_active: boolean }[])
-    .filter((p) => p.is_active);
-  const plOpts = allPls.map((p) => ({ value: p.code, label: p.name }));
-
-  // module opts: if product lines selected, filter; else show all; if pl is empty (全部), all modules
-  const allMods = ((modQ.data ?? []) as AllModuleOpt[]);
-  const filteredMods = productLines.length > 0
-    ? allMods.filter((m) => productLines.includes(m.product_line_code))
-    : allMods;
-  const modOpts = filteredMods.map((m) => ({ value: m.name, label: m.name }));
-
-  // when product lines change and modules are empty-means-all, keep; if specific mods selected, prune invalid ones
-  const handleProductLinesChange = (next: string[]) => {
-    setProductLines(next);
-    if (modules.length > 0 && next.length > 0) {
-      const validMods = allMods
-        .filter((m) => next.includes(m.product_line_code))
-        .map((m) => m.name);
-      setModules(modules.filter((mod) => validMods.includes(mod)));
-    }
-  };
 
   // when mode changes, clear draft values
   const handleModeChange = (next: "count" | "ratio") => {
@@ -847,8 +725,6 @@ function RuleEditorDialog({
       const body: RuleBody = {
         name: name.trim(),
         match_sources: sources,
-        match_product_lines: productLines,
-        match_modules: modules,
         match_sla: slaList,
         dispatch_mode: mode,
         rule_type: rule?.rule_type ?? "primary",
@@ -954,30 +830,6 @@ function RuleEditorDialog({
               value={sources}
               onChange={setSources}
               loading={sourceQ.isLoading}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted font-semibold">适配产品线（空=全部不限）</span>
-            <MultiCheckSelect
-              options={plOpts}
-              value={productLines}
-              onChange={handleProductLinesChange}
-              loading={plQ.isLoading}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-hub-textMuted font-semibold">
-              适配模块（空=全部不限）
-              {productLines.length === 0 && (
-                <span className="ml-1 text-hub-textFaint font-normal">产品线全选时模块也全选不限</span>
-              )}
-            </span>
-            <MultiCheckSelect
-              options={modOpts}
-              value={modules}
-              onChange={setModules}
-              loading={modQ.isLoading}
-              disabled={productLines.length === 0}
             />
           </label>
           <label className="flex flex-col gap-1">

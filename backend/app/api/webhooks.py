@@ -51,7 +51,6 @@ from app.services.ingest.zammad_ingester import ZammadIngester
 from app.services.ingest.zhichi_ingester import IngestError as ZhichiIngestError
 from app.services.ingest.zhichi_ingester import ZhichiIngester
 from app.services.ksm.notice_store import NoticeInfo, NoticeStore
-from app.services.system_settings import get_default_pool_user_id
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -92,19 +91,17 @@ def _route_child(child_id: int) -> None:
     _route_by_type(child_id, ptype, pconf or 0.0, bar=settings.hub_issue_auto_confidence)
 
 
-def _resolve_module_and_route(ticket_id: int) -> None:
-    """AI 产品模块归类 + 按规范模块重新路由。
+def _resolve_module(ticket_id: int) -> None:
+    """AI 产品模块归类（判定 product_line_code/module，供人工审核确认分类时校验/展示）。
 
-    归类链把 ticket.product_line_code/module 覆盖成现有 active 目录内的规范值
-    （绝不自建），再复用 RerouteService 按规范模块重新分配处理人——入库时的路由
-    已推迟到此（ingester 不再即时分配）。归类失败/关闭时静默跳过，不阻塞分流。
+    处理人已在入库阶段由 dispatch_handler 按来源+规则分配好，不再因模块归类
+    结果重新路由——归类只覆盖 ticket.product_line_code/module 为现有 active
+    目录内的规范值（绝不自建）。归类失败/关闭时静默跳过，不阻塞分流。
     """
     settings = get_settings()
     if not settings.module_classify_enabled:
         return
     from app.services.agents.module_resolve import resolve_module
-    from app.services.routing.router import Router, RouteRequest
-    from app.services.system_settings import get_default_pool_user_id
 
     db = make_session()
     try:
@@ -113,29 +110,9 @@ def _resolve_module_and_route(ticket_id: int) -> None:
             return
         resolve_module(db, ticket)
         db.commit()
-        # 按归类后的规范模块路由分配（入库时路由已推迟到此）。直接调 Router，
-        # 复刻 ingester 的分配口径（单一命中才落人；multi_match 留 NULL 交人工）。
-        db.refresh(ticket)
-        route = Router(db, default_pool_user_id=get_default_pool_user_id(db)).route(
-            RouteRequest(
-                ticket_id=ticket.id,
-                source_code=ticket.source_code or "",
-                product_line_code=ticket.product_line_code,
-                raw_module=ticket.module,
-                raw_feature=ticket.feature,
-                customer_id=ticket.customer_identity_id,
-            )
-        )
-        if (route.decision == "assigned" and len(route.assigned_user_ids) == 1) or (
-            route.decision == "default_pool" and route.assigned_user_ids
-        ):
-            ticket.assigned_user_id = route.assigned_user_ids[0]
-            if ticket.handler_user_id is None:
-                ticket.handler_user_id = ticket.assigned_user_id
-            db.commit()
     except Exception:
         db.rollback()
-        logger.exception("module_resolve_and_route_failed", ticket_id=ticket_id)
+        logger.exception("module_resolve_failed", ticket_id=ticket_id)
     finally:
         db.close()
 
@@ -144,7 +121,8 @@ def run_post_ingest_agents(ticket_id: int) -> None:
     """入库后 LLM 链（ADR-0016 P2c 重排）：分诊 → 归类模块 → 先原子化 → 按类型分流.
 
     vision_extract(截图OCR) → triage(classify+conflict 合一：定型+是否混合) →
-      module_resolve(AI 判产品线/模块，覆盖生效值为现有目录规范值 + 重新路由) →
+      module_resolve(AI 判产品线/模块，覆盖生效值为现有目录规范值；处理人已在
+      入库阶段分配好，不再重新路由) →
       混合: 自动拆开关开且过门槛 → split 原子化 → 每子单按继承类型分流；
             否则停摆进「待拆分」人工队列（split_ticket 审计已由 triage 写）。
       非混合: 按 type 分流（Complaint 停 ticket 层；其余毕业 hub_issue）。
@@ -161,8 +139,8 @@ def run_post_ingest_agents(ticket_id: int) -> None:
         # 不继续模块归类/自动分流，工单在列表可见、需人工手动确认才会毕业。
         return
 
-    # 产品模块归类（覆盖生效 plc/module + 重新路由）。在分流前——毕业 hub 要继承规范值。
-    _resolve_module_and_route(ticket_id)
+    # 产品模块归类（覆盖生效 plc/module，供人工审核）。在分流前——毕业 hub 要继承规范值。
+    _resolve_module(ticket_id)
 
     if tri.is_mixed:
         if settings.split_auto_enabled and tri.confidence >= settings.split_auto_confidence:
@@ -266,101 +244,56 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
         account_id=settings.ksm_account_id,
         user=settings.ksm_user,
     )
-    # client 生命周期覆盖到入库即接管（takeover 需在 detail 拉取后、同一 client 上
-    # lock→重拉→handle），故 close 延后到 finally 末尾。
     client = KSMClient(cfg)
-    ingested_ticket_id: int | None = None
     try:
-        try:
-            detail = client.get_order_detail(
-                bill_id=bill_id,
-                notice_num=notice.notice_num,
-                subscribe_num=notice.subscribe_num,
-            )
-        except KSMError as e:
-            logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
-            return
-
-        payload = from_subscribe_callback(detail)
-        if not payload.get("billId"):
-            logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
-            return
-
-        db = make_session()
-        try:
-            try:
-                result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-                    payload
-                )
-            except KSMIngestError as e:
-                db.rollback()
-                logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
-                return
-            db.commit()
-            ingested_ticket_id = result.ticket_id if not result.deduped else None
-            logger.info(
-                "ksm_async_ingest_committed",
-                bill_id=bill_id,
-                ticket_id=result.ticket_id,
-                short_code=result.short_code,
-                deduped=result.deduped,
-                routing_decision=result.routing_decision,
-            )
-            # 入库即接管受理：新工单（非 dedup）完整受理，已存在工单（dedup）只接管。
-            # takeover 内部有灰度门/dry_run，失败只记 ticket 字段不抛。绝不阻塞入库/agents。
-            _run_ksm_takeover(
-                db,
-                ticket_id=result.ticket_id,
-                is_new=not result.deduped,
-                detail=detail,
-                client=client,
-                settings=settings,
-            )
-        except Exception:
-            db.rollback()
-            logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
-        finally:
-            db.close()
+        detail = client.get_order_detail(
+            bill_id=bill_id,
+            notice_num=notice.notice_num,
+            subscribe_num=notice.subscribe_num,
+        )
+    except KSMError as e:
+        logger.exception("ksm_async_fetch_detail_failed", bill_id=bill_id, error=str(e))
+        return
     finally:
         client.close()
+
+    payload = from_subscribe_callback(detail)
+    if not payload.get("billId"):
+        logger.warning("ksm_async_detail_missing_billid", bill_id=bill_id)
+        return
+
+    ingested_ticket_id: int | None = None
+    db = make_session()
+    try:
+        try:
+            result = KSMIngester(db).ingest(payload)
+        except KSMIngestError as e:
+            db.rollback()
+            logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
+            return
+        db.commit()
+        ingested_ticket_id = result.ticket_id if not result.deduped else None
+        logger.info(
+            "ksm_async_ingest_committed",
+            bill_id=bill_id,
+            ticket_id=result.ticket_id,
+            short_code=result.short_code,
+            deduped=result.deduped,
+            routing_decision=result.routing_decision,
+        )
+        # 接管改为人工审核确认分类之后才触发（见 supervisor.py confirm_classification/
+        # reclassify），入库瞬间不再接管——分类/模块判断错误时接管还没发生，可以回退。
+    except Exception:
+        db.rollback()
+        logger.exception("ksm_async_ingest_unexpected_failure", bill_id=bill_id)
+    finally:
+        db.close()
 
     # D3-C/D: post-ingest agents (classify + conflict_detect). Skip on
     # dedupe (already processed) and on ingest failure. Errors swallowed
     # inside each agent.
     if ingested_ticket_id is not None:
         run_post_ingest_agents(ingested_ticket_id)
-
-
-def _run_ksm_takeover(
-    db: Session,
-    *,
-    ticket_id: int,
-    is_new: bool,
-    detail: dict[str, Any],
-    client: KSMClient,
-    settings: Any,
-) -> None:
-    """入库即接管，独立 try 保证接管失败不影响入库/后续 agents。commits。"""
-    from app.models import Ticket
-    from app.services.ksm.takeover import takeover_ksm_ticket
-
-    try:
-        ticket = db.get(Ticket, ticket_id)
-        if ticket is None:
-            return
-        takeover_ksm_ticket(
-            db,
-            ticket,
-            detail=detail,
-            is_new=is_new,
-            client=client,
-            notice_store=_get_notice_store(),  # type: ignore[arg-type]
-            settings=settings,
-        )
-        db.commit()
-    except Exception:
-        db.rollback()
-        logger.exception("ksm_takeover_unexpected_failure", ticket_id=ticket_id)
 
 
 @router.post("/ksm", response_model=KSMAck)
@@ -430,7 +363,7 @@ async def ksm_webhook(
         logger.warning("ksm_webhook_full_payload_missing_billid")
         return KSMAck(code=0)
     try:
-        result = KSMIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(payload)
+        result = KSMIngester(db).ingest(payload)
     except KSMIngestError as e:
         logger.warning("ksm_webhook_sync_validation_failed", bill_id=bill_id, error=str(e))
         return KSMAck(code=0)
@@ -461,9 +394,7 @@ async def zhichi_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZhichiIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-            payload
-        )
+        result = ZhichiIngester(db).ingest(payload)
     except ZhichiIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()
@@ -501,9 +432,7 @@ async def cs_escalation_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = EscalationIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-            payload
-        )
+        result = EscalationIngester(db).ingest(payload)
     except EscalationIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()
@@ -541,9 +470,7 @@ async def feishu_ai_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = FeishuAiIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-            payload
-        )
+        result = FeishuAiIngester(db).ingest(payload)
     except FeishuAiIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()
@@ -580,9 +507,7 @@ async def zammad_webhook(
     _verify_webhook_token(access_token)
     payload = await _read_object(request)
     try:
-        result = ZammadIngester(db, default_pool_user_id=get_default_pool_user_id(db)).ingest(
-            payload
-        )
+        result = ZammadIngester(db).ingest(payload)
     except ZammadIngestError as e:
         raise HTTPException(status_code=400, detail=f"ingest failed: {e}") from e
     db.commit()

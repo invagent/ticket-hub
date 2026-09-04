@@ -464,7 +464,9 @@ class Ticket(Base):
     # 源系统原始分类另存 source_payload["_original_catalog"]。
     predicted_product_line_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     predicted_module: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    predicted_module_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
+    predicted_module_confidence: Mapped[Decimal | None] = mapped_column(
+        Numeric(3, 2), nullable=True
+    )
     module_classified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -1239,7 +1241,12 @@ class SlaLevel(Base):
 
 
 class DispatchRule(Base):
-    """运营处理人分派规则（多维匹配 + count/ratio）。与 routing 研发责任田正交。"""
+    """运营处理人分派规则（多维匹配 + count/ratio）。与 routing 研发责任田正交。
+
+    match_product_lines/match_modules：入库即分派改造后暂停使用（分派提前到
+    ticket 入库、模块归类之前，此时产品线/模块尚未判定），列保留历史数据，
+    不再接进 find_matching_rules 的匹配逻辑，也不再暴露在 admin API/前端。
+    """
 
     __tablename__ = "dispatch_rules"
 
@@ -1300,13 +1307,20 @@ class DispatchConfig(Base):
 
 
 class DispatchLog(Base):
-    """派单留痕 + 按天计数来源（count/ratio 查 created_at >= 今日零点）。"""
+    """派单留痕 + 按天计数来源（count/ratio 查 created_at >= 今日零点）。
+
+    迁移 0041：分派提前到 ticket 入库阶段，此时 hub_issue 尚不存在，改为
+    ticket_id 必填、hub_issue_id 可空（历史行仍有值，新行留空）。
+    """
 
     __tablename__ = "dispatch_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    hub_issue_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("hub_issues.id"), nullable=False, index=True
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tickets.id"), nullable=False, index=True
+    )
+    hub_issue_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("hub_issues.id"), nullable=True, index=True
     )
     rule_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("dispatch_rules.id"), nullable=True

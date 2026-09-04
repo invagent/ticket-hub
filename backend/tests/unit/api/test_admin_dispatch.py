@@ -87,7 +87,9 @@ def test_update_unknown_rule_404(app_client: TestClient, admin_world: Session) -
 
 
 def test_delete_unknown_rule_is_noop_204(app_client: TestClient, admin_world: Session) -> None:
-    assert app_client.delete("/api/admin/dispatch/rules/9999", headers=_bearer(99)).status_code == 204
+    assert (
+        app_client.delete("/api/admin/dispatch/rules/9999", headers=_bearer(99)).status_code == 204
+    )
 
 
 def test_invalid_dispatch_mode_rejected(app_client: TestClient, admin_world: Session) -> None:
@@ -169,13 +171,18 @@ def test_config_upsert_and_get(app_client: TestClient, admin_world: Session) -> 
         headers=h,
     )
     assert rc2.status_code == 200
-    assert app_client.get("/api/admin/dispatch/config", headers=h).json()["default_operation_assignee"] == "3"
+    assert (
+        app_client.get("/api/admin/dispatch/config", headers=h).json()["default_operation_assignee"]
+        == "3"
+    )
 
 
 # ---- logs ---------------------------------------------------------------------
 
 
-def test_logs_list_and_filter(app_client: TestClient, admin_world: Session, db_session: Session) -> None:
+def test_logs_list_and_filter(
+    app_client: TestClient, admin_world: Session, db_session: Session
+) -> None:
     from app.models import HubIssue
 
     db_session.add(
@@ -206,10 +213,18 @@ def test_logs_list_and_filter(app_client: TestClient, admin_world: Session, db_s
     db_session.add_all(
         [
             DispatchLog(
-                hub_issue_id=hub_issue_id, rule_id=rule.id, assignee_user_id=50, tier_hit="main"
+                ticket_id=1,
+                hub_issue_id=hub_issue_id,
+                rule_id=rule.id,
+                assignee_user_id=50,
+                tier_hit="main",
             ),
             DispatchLog(
-                hub_issue_id=hub_issue_id, rule_id=None, assignee_user_id=3, tier_hit="default"
+                ticket_id=2,
+                hub_issue_id=hub_issue_id,
+                rule_id=None,
+                assignee_user_id=3,
+                tier_hit="default",
             ),
         ]
     )
@@ -226,7 +241,9 @@ def test_logs_list_and_filter(app_client: TestClient, admin_world: Session, db_s
     assert r2.json()[0]["rule_id"] == rule.id
 
 
-def test_config_table_isolated_from_rules(app_client: TestClient, admin_world: Session, db_session: Session) -> None:
+def test_config_table_isolated_from_rules(
+    app_client: TestClient, admin_world: Session, db_session: Session
+) -> None:
     # sanity: DispatchConfig row is keyed by string key, not autoincrement id
     db_session.add(DispatchConfig(key="foo", value="bar"))
     db_session.commit()

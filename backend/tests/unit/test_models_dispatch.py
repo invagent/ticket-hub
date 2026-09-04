@@ -28,7 +28,8 @@ def test_dispatch_rule_roundtrip(db_session: Session) -> None:
     )
     db_session.add(a)
     db_session.add(DispatchConfig(key="default_operation_assignee", value="9"))
-    db_session.add(DispatchLog(hub_issue_id=1, rule_id=r.id, assignee_user_id=1, tier_hit="main"))
+    # ticket_id 是分派提前到入库阶段后的落地主键（迁移 0041）；hub_issue_id 此时可空。
+    db_session.add(DispatchLog(ticket_id=1, rule_id=r.id, assignee_user_id=1, tier_hit="main"))
     db_session.commit()
     assert r.id is not None and a.daily_cap == 20
     assert db_session.query(DispatchLog).count() == 1

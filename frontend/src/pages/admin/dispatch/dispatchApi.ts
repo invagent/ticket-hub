@@ -11,14 +11,14 @@ export type AssigneeOut = components["schemas"]["AssigneeOut"];
 export type ConfigBody = components["schemas"]["ConfigBody"];
 export type LogOut = components["schemas"]["LogOut"];
 
-// RuleOut is extended with 0032 fields (not yet in generated types)
+// RuleOut is extended with 0032 fields (not yet in generated types).
+// match_product_lines/match_modules 暂停使用（分派提前到 ticket 入库、产品线/
+// 模块判定之前），后端已不再暴露这两个字段。
 export interface RuleOut {
   id: number;
   rule_code?: string | null;
   name: string;
   match_sources: string[];
-  match_product_lines: string[];
-  match_modules: string[];
   match_sla: string[];
   dispatch_mode: string;
   rule_type: string;

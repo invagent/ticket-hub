@@ -168,29 +168,18 @@ def ensure_hub_issue_for_ticket(
             )
 
     ticket.hub_issue_id = hub.id
-    db.flush()  # autoflush=False：_hub_source_code 的裸查询看不到未 flush 的挂载
+    db.flush()
 
-    # 毕业分派：按多维规则选处理人（Operation 运营 + 研发类共用规则/人池）。
-    # Operation → op_handler_user_id（op_handler 名保持 'agent' 不打断 drain）；
-    # Bug_fix/Demand → 写 ticket.handler_user_id（处理人），**不覆盖** hub/ticket
-    # 的 assigned_user_id（责任人保持入库值，人工可回退查看原始责任人归属）。
-    # 放在 ticket 挂 hub + flush 之后：dispatch_handler 的 _hub_source_code 反查
-    # 需要 ticket.hub_issue_id 已落库。研发类分派无结果 → dispatch_missed，
-    # auto 路径据此转 pending 人工（见 create_hub_issue_for_ticket_auto）。
+    # 处理人已在入库时按来源+规则分派好（ticket.handler_user_id），毕业时不再
+    # 重新分派——这里只是把已有值传播到 hub 层（Operation 用 op_handler_user_id
+    # 承载「处理人本人可操作」的权限判断；研发类 ticket.handler_user_id 本身已是
+    # 处理人，不需要额外写）。入库分派无匹配（handler_user_id 为空）→
+    # dispatch_missed，auto 路径据此转 pending 人工（见 create_hub_issue_for_ticket_auto）。
     dispatch_missed = False
-    if issue_type in ("Operation", "Bug_fix", "Demand"):
-        from app.services.dispatch import dispatch_handler
-        from app.services.hub_issues.op_status import set_hub_tickets_handler
-
-        dr = dispatch_handler(db, hub)
-        if dr.user_id is not None:
-            if issue_type == "Operation":
-                hub.op_handler_user_id = dr.user_id
-            # 研发类：HubIssue 无 handler_user_id 列，写 ticket 层处理人，
-            # 不覆盖 hub.assigned_user_id（责任人保持入库时的值）。
-            set_hub_tickets_handler(db, hub, dr.user_id)
-        elif issue_type in ("Bug_fix", "Demand"):
-            dispatch_missed = True
+    if issue_type == "Operation":
+        hub.op_handler_user_id = ticket.handler_user_id
+    elif issue_type in ("Bug_fix", "Demand") and ticket.handler_user_id is None:
+        dispatch_missed = True
 
     db.add(
         TicketHubIssueHistory(
