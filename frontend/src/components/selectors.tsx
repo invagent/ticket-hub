@@ -103,6 +103,7 @@ export function MultiUserSelect({
   placeholder = "处理人",
   roles,
   className,
+  buttonClassName,
   useFixed = false,
   nameOnly = false,
 }: {
@@ -111,6 +112,7 @@ export function MultiUserSelect({
   placeholder?: string;
   roles?: string[];
   className?: string;
+  buttonClassName?: string;
   useFixed?: boolean;
   nameOnly?: boolean;
 }) {
@@ -163,9 +165,9 @@ export function MultiUserSelect({
   const label =
     value.length === 0
       ? placeholder
-      : value.length === 1
-        ? (all.find((u: UserOpt) => u.id === value[0])?.name ?? `#${value[0]}`)
-        : `已选 ${value.length} 人`;
+      : value
+          .map((id) => all.find((u: UserOpt) => u.id === id)?.name ?? `#${id}`)
+          .join(",");
 
   const dropdown = open ? (
     <div
@@ -211,7 +213,7 @@ export function MultiUserSelect({
         ref={btnRef}
         type="button"
         onClick={handleToggleOpen}
-        className="w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"
+        className={buttonClassName ?? "w-full text-xs px-2.5 py-1.5 border border-hub-border rounded-[7px] bg-hub-panel outline-none focus:border-hub-teal hover:bg-white text-left flex items-center gap-1"}
       >
         <span className={`truncate ${value.length ? "text-hub-text" : "text-hub-textMuted"}`}>{label}</span>
         <span className="flex-1" />
@@ -498,9 +500,9 @@ export function MultiCheckSelect({
   const label =
     value.length === 0
       ? placeholder
-      : value.length === 1
-        ? (options.find((o) => o.value === value[0])?.label ?? value[0])
-        : `已选 ${value.length} 项`;
+      : value
+          .map((v) => options.find((o) => o.value === v)?.label ?? v)
+          .join(",");
 
   return (
     <div ref={boxRef} className={`relative ${className ?? ""}`}>

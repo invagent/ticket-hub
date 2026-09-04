@@ -337,33 +337,33 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  // 确认子任务按钮（原「毕业为 hub_issue」，移到子任务列表右上角）
-  it("supervisor + 未毕业 → 显示「确认子任务」按钮，可点击", async () => {
+  // 子任务列表操作按钮：【添加子任务】修改为【添加】，删除【确认子任务】，增加【删除】
+  it("supervisor + 未毕业 → 显示「添加」「删除」按钮，可点击", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(300, null);
     renderPage(300);
     expect(await screen.findByRole("heading", { name: "TKT-300" })).toBeInTheDocument();
-    const btn = screen.getByRole("button", { name: "确认子任务" });
+    const btn = screen.getByRole("button", { name: "添加" });
     expect(btn).toBeEnabled();
     localStorage.clear();
   });
 
-  it("已毕业（hub_issue_id 非空）→「确认子任务」禁用", async () => {
+  it("已毕业（hub_issue_id 非空）→ 未勾选子任务时「删除」禁用", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(301, 55);
     renderPage(301);
     expect(await screen.findByRole("heading", { name: "TKT-301" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "确认子任务" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "删除" })).toBeDisabled();
     localStorage.clear();
   });
 
-  it("member → 不显示确认子任务/添加子任务按钮", async () => {
+  it("member → 不显示添加/删除操作按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "member" }));
     stubTicket(302, null);
     renderPage(302);
     expect(await screen.findByRole("heading", { name: "TKT-302" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "确认子任务" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "添加子任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 
@@ -373,7 +373,7 @@ describe("TicketDetailPage", () => {
     stubTicket(308, null);
     renderPage(308);
     expect(await screen.findByRole("heading", { name: "TKT-308" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "添加子任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
     const ta = await screen.findByPlaceholderText("描述子任务内容");
     await userEvent.type(ta, "导出接口报错");
     // 弹窗内确认
@@ -401,7 +401,7 @@ describe("TicketDetailPage", () => {
     );
     renderPage(306);
     expect(await screen.findByRole("heading", { name: "TKT-306" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "转派" }));
+    await userEvent.click(await screen.findByRole("button", { name: "转派" }));
     expect(await screen.findByText("转派处理人")).toBeInTheDocument();
     expect(screen.getByText(/当前处理人/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("填写转派原因（原因记录待后端支持）")).toBeInTheDocument();
@@ -491,7 +491,7 @@ describe("TicketDetailPage", () => {
     stubTicket(321, 70); // stubTicket predicted_type=Bug_fix
     renderPage(321);
     expect(await screen.findByRole("heading", { name: "TKT-321" })).toBeInTheDocument();
-    expect(screen.getByText(/已推送 Linear/)).toBeInTheDocument();
+    expect(await screen.findByText(/已推送 Linear/)).toBeInTheDocument();
     expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
     localStorage.clear();
   });
@@ -501,7 +501,7 @@ describe("TicketDetailPage", () => {
     stubOperationTicket(322);
     renderPage(322);
     expect(await screen.findByRole("heading", { name: "TKT-322" })).toBeInTheDocument();
-    expect(screen.getByText("处理建议")).toBeInTheDocument();
+    expect(await screen.findByText("处理建议")).toBeInTheDocument();
     expect(screen.getByText("处理说明")).toBeInTheDocument();
     localStorage.clear();
   });
@@ -547,7 +547,7 @@ describe("TicketDetailPage", () => {
     );
     renderPage(324);
     expect(await screen.findByRole("heading", { name: "TKT-324" })).toBeInTheDocument();
-    expect(screen.getByText(/AI 草稿待审核/)).toBeInTheDocument();
+    expect(await screen.findByText(/AI 草稿待审核/)).toBeInTheDocument();
     // 处理说明框（textarea）显示 hub 草稿答复，供审核人查看/编辑后发出
     expect(
       await screen.findByDisplayValue(/AI 草稿：标准版不支持预览开票/),
@@ -721,10 +721,10 @@ describe("TicketDetailPage", () => {
     );
     renderPage(341);
     await screen.findByRole("heading", { name: "TKT-341" });
-    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    const ta = (await screen.findByPlaceholderText(/已答复完成，只读/)) as HTMLTextAreaElement;
     expect(ta.readOnly).toBe(true);
     // 处理建议下拉禁用
-    const sel = screen.getByRole("combobox") as HTMLSelectElement;
+    const sel = (await screen.findByRole("combobox", { name: "处理建议" })) as HTMLSelectElement;
     expect(sel.disabled).toBe(true);
     // 提交答复按钮禁用
     expect(screen.getByRole("button", { name: "提交答复" })).toBeDisabled();
@@ -815,8 +815,9 @@ describe("TicketDetailPage", () => {
     );
     renderPage(351);
     await screen.findByRole("heading", { name: "TKT-351" });
-    // 处理中 Operation 现在也渲染「工单参数」编辑器（多个 combobox），故用 aria-label 精确定位处理建议下拉
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "处理建议" }), "return");
+    // 处理中 Operation 现在也渲染「工单标签」编辑器（多个 combobox），故用 aria-label 精确定位处理建议下拉
+    const sel = await screen.findByRole("combobox", { name: "处理建议" });
+    await userEvent.selectOptions(sel, "return");
     await userEvent.click(screen.getByRole("button", { name: "退回转单" }));
     // 时间轴出现本地占位节点
     expect(await screen.findByText("退回转单（待后端）")).toBeInTheDocument();
@@ -853,7 +854,8 @@ describe("TicketDetailPage", () => {
     renderPage(352);
     await screen.findByRole("heading", { name: "TKT-352" });
     // 处理中 Operation 渲染「工单参数」编辑器；改类型为需求 → 出现「转研发并推送」
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "工单类型" }), "Demand");
+    const typeSelect = await screen.findByRole("combobox", { name: "工单类型" });
+    await userEvent.selectOptions(typeSelect, "Demand");
     const btn = await screen.findByRole("button", { name: "转研发并推送" });
     await userEvent.click(btn);
     await screen.findByText("已转研发并推送 Linear");

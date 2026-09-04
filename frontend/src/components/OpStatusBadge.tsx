@@ -7,11 +7,15 @@ import { computeProcessStage, STAGE_TONE_STYLE } from "../api/processStage";
 
 export const OP_STATUS_LABEL: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
   processing: { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
-  answered: { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  closed: { label: "已关闭", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
-  supplementing: { label: "补料中", bg: "#fbe9d4", fg: "#a05a10", bd: "#eec99a" },
-  exception: { label: "处理异常", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+  resubmitted: { label: "补充重提", bg: "#fef3c7", fg: "#b45309", bd: "#fde68a" },
   reviewing: { label: "待审核", bg: "#e0e7ff", fg: "#3730a3", bd: "#c7d2fe" },
+  supplementing: { label: "补充资料", bg: "#fbe9d4", fg: "#a05a10", bd: "#eec99a" },
+  unresolved_return: { label: "未解决退回", bg: "#fef2f2", fg: "#b91c1c", bd: "#fecaca" },
+  transferred: { label: "转单", bg: "#f5f3ff", fg: "#6d28d9", bd: "#ddd6fe" },
+  pending_accept: { label: "待受理", bg: "#eff6ff", fg: "#1d4ed8", bd: "#bfdbfe" },
+  answered: { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
+  closed: { label: "处理关闭", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
+  exception: { label: "处理异常", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
 };
 
 function _badge(c: { label: string; bg: string; fg: string; bd: string }) {

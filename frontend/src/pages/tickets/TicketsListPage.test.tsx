@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -78,6 +78,8 @@ describe("TicketsListPage", () => {
       "处理人",
       "处理状态",
       "工单处理说明",
+      "产研责任人",
+      "提单时间",
       "创建时间",
       "最后更新时间",
     ]) {
@@ -139,7 +141,7 @@ describe("TicketsListPage", () => {
     const cellText = (kw: string) =>
       Array.from(table.querySelectorAll("tbody td")).some((td) => (td.textContent ?? "").includes(kw));
     expect(cellText("苗一琳")).toBe(true); // 处理人列显示 handler
-    expect(cellText("杨慧莉")).toBe(false); // 不显示责任人
+    expect(cellText("杨慧莉")).toBe(true); // 产研责任人列显示 assigned
   });
 
   it("处理人筛选包含 member 角色用户（真实处理人，非仅 assignee/supervisor/admin）", async () => {
@@ -243,5 +245,120 @@ describe("TicketsListPage", () => {
 
     const actuallyClosedTitle = await screen.findByTitle("真正已关闭的单");
     expect(actuallyClosedTitle.className).toContain("text-hub-textFaint");
+  });
+
+  it("renders 超时状态 column and 4 metric tags correctly without hint text", async () => {
+    localStorage.clear();
+    const rows = [
+      {
+        ...sample.items[0],
+        id: 101,
+        short_code: "TKT-101",
+        service_level: "绿色战略客户",
+        remaining_hours: -2.5,
+        created_at: new Date().toISOString(),
+        handler_user_id: undefined,
+        handler_user_name: undefined,
+      },
+      {
+        ...sample.items[0],
+        id: 102,
+        short_code: "TKT-102",
+        service_level: "标准服务",
+        remaining_hours: 5.0,
+        created_at: "2020-01-01T00:00:00Z",
+        handler_user_id: 12,
+        handler_user_name: "李四",
+      },
+    ];
+
+    server.use(
+      http.get("*/api/tickets", () => {
+        return HttpResponse.json({
+          items: rows,
+          total: rows.length,
+          page: 1,
+          page_size: 50,
+          has_more: false,
+        });
+      }),
+    );
+
+    renderPage();
+    await screen.findByText("TKT-101");
+
+    // 1. 超时状态列显示
+    expect(screen.getAllByText("已超时").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("未超时").length).toBeGreaterThanOrEqual(1);
+
+    // 2. 4 个统计标签存在且显示正确数值
+    expect(screen.getByRole("button", { name: /绿色战略客户/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /今日新增工单/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /超时未关闭工单/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /未分配/ })).toBeInTheDocument();
+
+    // 3. 勾选工单提示文本已被移除
+    expect(screen.queryByText(/勾选工单后可批量退回提单人补料/)).toBeNull();
+
+    // 4. 点击"绿色战略客户"标签可筛选下方列表
+    const vipTag = screen.getByRole("button", { name: /绿色战略客户/ });
+    act(() => {
+      fireEvent.click(vipTag);
+    });
+    expect(screen.getByText("TKT-101")).toBeInTheDocument();
+    expect(screen.queryByText("TKT-102")).toBeNull();
+
+    // 5. 工单号为高对比蓝色加粗链接 (RGB: 43, 94, 209 -> #2b5ed1)
+    const tktLink = screen.getByText("TKT-101");
+    expect(tktLink.className).toContain("text-[#2b5ed1]");
+    expect(tktLink.className).toContain("font-bold");
+  });
+
+  it("renders 批量补充资料 and 批量移交 with #6085e7 color and opens 批量移交 dialog", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(sample)));
+    renderPage();
+    await screen.findByText("TKT-1");
+
+    // 1. 批量补充资料按钮颜色严格为 96,133,231 (#6085e7)，且 opacity 为 1
+    const supplyBtn = screen.getByRole("button", { name: "批量补充资料" });
+    expect(supplyBtn).toBeInTheDocument();
+    expect(supplyBtn.className).toContain("bg-[#6085e7]");
+    expect(supplyBtn.style.backgroundColor).toBe("rgb(96, 133, 231)");
+    expect(supplyBtn.style.opacity).toBe("1");
+
+    // 2. 批量移交按钮存在，填充颜色、饱和度、透明度、RGB 与刷新按钮严格一模一样
+    const transferBtn = screen.getByRole("button", { name: "批量移交" });
+    expect(transferBtn).toBeInTheDocument();
+    expect(transferBtn.className).toContain("bg-[#6085e7]");
+    expect(transferBtn.style.backgroundColor).toBe("rgb(96, 133, 231)");
+    expect(transferBtn.style.opacity).toBe("1");
+
+    // 刷新按钮也是同样的颜色和 opacity
+    const refreshBtn = screen.getByRole("button", { name: "刷新" });
+    expect(refreshBtn.style.backgroundColor).toBe("rgb(96, 133, 231)");
+    expect(refreshBtn.style.opacity).toBe("1");
+
+    // 3. 勾选行后，点击批量移交打开批量移交操作面板
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] || checkboxes[0]);
+
+    // 4. 点击批量移交，打开批量移交操作面板
+    fireEvent.click(transferBtn);
+    expect(screen.getByText("批量移交操作面板")).toBeInTheDocument();
+    expect(
+      screen.getByText("选择移交对象确认后，勾选工单的处理人将更新为移交人"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/当前勾选工单处理人：/)).toBeInTheDocument();
+    expect(screen.getByText(/移交人：/)).toBeInTheDocument();
+
+    const confirmBtn = screen.getByRole("button", { name: "确认移交" });
+    expect(confirmBtn.className).toContain("bg-[#6085e7]");
+
+    // 5. 点击弹窗内取消关闭弹窗
+    const dialog = screen.getByText("批量移交操作面板").closest(".bg-white")!;
+    const cancelBtn = within(dialog as HTMLElement).getByRole("button", { name: "取消" });
+    fireEvent.click(cancelBtn);
+    expect(screen.queryByText("批量移交操作面板")).toBeNull();
   });
 });

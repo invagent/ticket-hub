@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root { color-scheme: light dark; }
-body { @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100; font-family: "Sarasa Term SC", "Sarasa UI SC", "Sarasa Gothic SC", -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif; }
 
 /* 时间轴当前处理节点：橙黄色灯管闪烁效果（工单调整 V1.0） */
 @keyframes hub-node-glow {

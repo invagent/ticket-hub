@@ -89,10 +89,10 @@ describe("TicketDetailPage 工单参数编辑", () => {
   it("未毕业工单显示三下拉+确认分类，无保存按钮", async () => {
     renderTicket({ hub_issue_id: null, predicted_type: "Bug_fix", product_line_code: "pl-1", module: "m-1" });
     expect(await screen.findByLabelText("工单类型")).toBeInTheDocument();
-    expect(screen.getByLabelText("产品线")).toBeInTheDocument();
-    expect(screen.getByLabelText("模块")).toBeInTheDocument();
+    expect(screen.getByLabelText("产品分类")).toBeInTheDocument();
+    expect(screen.getByLabelText("问题模块")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "确认分类" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
   });
 });
 
@@ -116,7 +116,7 @@ describe("TicketDetailPage 已毕业单参数编辑", () => {
         sub_issues: [],
       },
     );
-    expect(await screen.findByRole("button", { name: "保存" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "确认" })).toBeDisabled();
     // 研发类 → 确认推送
     expect(screen.getByRole("button", { name: "确认推送" })).toBeInTheDocument();
     // 改选运营 → 确认按钮仍在，文案变「确认分类」（不再隐藏，避免运营单卡死）
@@ -124,7 +124,7 @@ describe("TicketDetailPage 已毕业单参数编辑", () => {
     fireEvent.change(sel, { target: { value: "Operation" } });
     expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "确认分类" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "确认" })).not.toBeDisabled();
   });
 
   it("运营类 pending_review 单显示「确认分类」按钮（不卡死）", async () => {

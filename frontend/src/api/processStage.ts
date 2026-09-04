@@ -67,10 +67,14 @@ export const STAGE_TONE_STYLE: Record<StageTone, { bg: string; fg: string; bd: s
 /** Operation op_status → {中文, tone}。 */
 const OP_STAGE: Record<string, ProcessStage> = {
   processing: { label: "处理中", tone: "progress" },
-  answered: { label: "已答复", tone: "done" },
-  closed: { label: "已关闭", tone: "closed" },
-  supplementing: { label: "补料中", tone: "progress" },
+  resubmitted: { label: "补充重提", tone: "progress" },
   reviewing: { label: "待审核", tone: "progress" },
+  supplementing: { label: "补充资料", tone: "progress" },
+  unresolved_return: { label: "未解决退回", tone: "exception" },
+  transferred: { label: "转单", tone: "progress" },
+  pending_accept: { label: "待受理", tone: "pending" },
+  answered: { label: "处理完成", tone: "done" },
+  closed: { label: "处理关闭", tone: "closed" },
   exception: { label: "处理异常", tone: "exception" },
 };
 
@@ -119,7 +123,7 @@ export function computeProcessStage(input: StageInput): ProcessStage {
 
   // hub 终态（修缺陷1：resolved/closed 不再被误显示为"进行中"）。
   if (hubStatus && HUB_CLOSED.has(hubStatus)) {
-    return { label: "已关闭", tone: "closed" };
+    return { label: "处理关闭", tone: "closed" };
   }
 
   // 研发类通用态（细粒度进度另见「研发进度」列）

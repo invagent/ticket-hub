@@ -10,7 +10,7 @@ All authenticated users can read (any role). D2 may add row-level visibility
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -177,9 +177,11 @@ def list_tickets(
     user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
     source_code: str | None = Query(None),
+    source_codes: list[str] | None = Query(None),
     type: str | None = Query(None, alias="type"),
     status: str | None = Query(None),
     assigned_user_id: int | None = Query(None),
+    assigned_user_ids: list[int] | None = Query(None),  # 产研责任人多选筛选
     handler_user_ids: list[int] | None = Query(None),  # 处理人多选筛选
     predicted_types: list[str] | None = Query(None),  # AI 分类类型多选筛选（1.2）
     unassigned_only: bool = Query(False),
@@ -187,16 +189,39 @@ def list_tickets(
     hub_issue_id: int | None = Query(None),
     source_ticket_q: str | None = Query(None),  # 来源工单号/本系统编号子串搜索（全表）
     op_status: str | None = Query(None),  # 处理状态筛选（所挂 hub_issue 的 op_status）
+    op_statuses: list[str] | None = Query(None),  # 处理状态多选筛选
+    received_from: date | None = Query(None),  # 提单时间起
+    received_to: date | None = Query(None),  # 提单时间止
+    created_from: date | None = Query(None),  # 创建时间起
+    created_to: date | None = Query(None),  # 创建时间止
+    resolved_from: date | None = Query(None),  # 处理完成时间起
+    resolved_to: date | None = Query(None),  # 处理完成时间止
+    closed_from: date | None = Query(None),  # 处理关闭时间起
+    closed_to: date | None = Query(None),  # 处理关闭时间止
+    reporter_company: str | None = Query(None),  # 提单企业
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> TicketListResponse:
     # 行级可见性：admin + supervisor 看全部；其余角色只看处理人=自己的工单
     is_privileged = user.role in ("admin", "supervisor")
+
+    def _bounds(df: date | None, dt: date | None) -> tuple[datetime | None, datetime | None]:
+        start = datetime.combine(df, time.min, tzinfo=UTC) if df else None
+        end = datetime.combine(dt, time.max, tzinfo=UTC) if dt else None
+        return start, end
+
+    rf_start, rf_end = _bounds(received_from, received_to)
+    cf_start, cf_end = _bounds(created_from, created_to)
+    res_start, res_end = _bounds(resolved_from, resolved_to)
+    cls_start, cls_end = _bounds(closed_from, closed_to)
+
     p = TicketRepository(db).list_paginated(
         source_code=source_code,
+        source_codes=source_codes,
         type_=type,
         status=status,
         assigned_user_id=assigned_user_id,
+        assigned_user_ids=assigned_user_ids,
         handler_user_ids=handler_user_ids,
         visible_to_user_id=None if is_privileged else user.user_id,
         predicted_types=predicted_types,
@@ -205,6 +230,16 @@ def list_tickets(
         hub_issue_id=hub_issue_id,
         source_ticket_q=source_ticket_q,
         op_status=op_status,
+        op_statuses=op_statuses,
+        received_from=rf_start,
+        received_to=rf_end,
+        created_from=cf_start,
+        created_to=cf_end,
+        resolved_from=res_start,
+        resolved_to=res_end,
+        closed_from=cls_start,
+        closed_to=cls_end,
+        reporter_company=reporter_company,
         page=page,
         page_size=page_size,
     )
