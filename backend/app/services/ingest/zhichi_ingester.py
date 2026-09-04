@@ -21,9 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.core.storage.minio_store import classify_attachment_kind, filename_from_url
-from app.models import Attachment, Ticket
+from app.models import Attachment, HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
+from app.services.hub_issues.creator import ensure_hub_issue_for_ticket
+from app.services.hub_issues.op_status import OP_ANSWERED, OP_CLOSED, apply_op_status
 from app.services.identity.resolver import IdentityInput, IdentityResolver
 from app.services.ingest.catalog_upsert import safe_product_line_code, upsert_catalog
 from app.services.routing.router import Router, RouteRequest
@@ -121,6 +123,7 @@ def _flatten_envelope(payload: dict[str, Any]) -> dict[str, Any]:
             pick(fields.get("问题描述"), raw.get("ticket_content")),
         ),
         "content": pick(fields.get("问题描述"), raw.get("ticket_content")),
+        "ticketStatus": raw.get("ticket_status"),  # fields 中文块无此字段，只能从 raw 拿
         "productLineCode": pick(fields.get("产品线"), ext.get("产品分类")),
         "moduleName": pick(fields.get("产品模块"), ext.get("产品分类")),
         "customer": {
@@ -156,6 +159,7 @@ def _flatten_native(payload: dict[str, Any]) -> dict[str, Any]:
         "ticketid": payload.get("ticketid"),
         "title": _derive_title(payload.get("ticket_title"), payload.get("ticket_content")),
         "content": payload.get("ticket_content"),  # body 保留完整（含 HTML），只标题去 HTML
+        "ticketStatus": payload.get("ticket_status"),
         "productLineCode": ext.get("产品分类"),
         "moduleName": ext.get("产品分类"),  # 智齿无独立模块，产品分类兼作模块
         "customer": {
@@ -181,10 +185,28 @@ class IngestResult:
     routing_decision: str
     assigned_user_ids: list[int] = field(default_factory=list)
     deduped: bool = False
+    # True 仅在「全新工单入库即终态」路径：已直接毕业 Operation hub 并落
+    # answered/closed，调用方（webhook）不应再调度 run_post_ingest_agents
+    # 触发 triage 分类。已存在工单的终态同步走 dedup 分支，deduped=True 本就
+    # 让调用方跳过 agent 链，不需要这个标志。
+    skip_post_ingest: bool = False
 
 
 class IngestError(Exception):
     """Validation failure."""
+
+
+# 智齿 ticket_status → 终态 op_status 映射（3=已解决→已答复，99=已关闭→已关闭）。
+# 其他状态（0/1/2/98）不受影响，继续走正常 triage 分流。
+_ZHICHI_TERMINAL_OP_STATUS = {"3": OP_ANSWERED, "99": OP_CLOSED}
+
+
+def _terminal_op_status(ticket_status: Any) -> str | None:
+    """智齿 ticket_status 值可能是 int 或 str（docs 里两种类型定义都出现过），
+    统一转字符串比较，不对提取处的类型做假设。"""
+    if ticket_status is None:
+        return None
+    return _ZHICHI_TERMINAL_OP_STATUS.get(str(ticket_status).strip())
 
 
 class ZhichiIngester:
@@ -201,22 +223,48 @@ class ZhichiIngester:
 
         existing = self._tickets.find_by_source("zhichi", ticketid)
         if existing is not None:
+            target_op = _terminal_op_status(payload.get("ticketStatus"))
+            if target_op is not None:
+                hub = (
+                    self._db.get(HubIssue, existing.hub_issue_id)
+                    if existing.hub_issue_id
+                    else None
+                )
+                if hub is not None and hub.deleted_at is None and hub.type == "Operation":
+                    # 已毕业 Operation hub：直接转态（镜像 KSM ingester 的转态处理）。
+                    apply_op_status(
+                        self._db,
+                        hub,
+                        to_status=target_op,
+                        handler="agent",
+                        reason=f"智齿工单状态同步（ticket_status={payload.get('ticketStatus')}）",
+                    )
+                    logger.info(
+                        "zhichi_ingest_terminal_status_transition",
+                        ticketid=ticketid,
+                        existing_ticket_id=existing.id,
+                        hub_issue_id=hub.id,
+                        to_status=target_op,
+                    )
+                elif existing.hub_issue_id is None:
+                    # 尚未毕业：直接建 Operation hub 并落终态（同新单逻辑）。
+                    self._graduate_as_terminal_operation(
+                        existing, target_op, payload.get("ticketStatus")
+                    )
+                    logger.info(
+                        "zhichi_ingest_terminal_status_graduated",
+                        ticketid=ticketid,
+                        existing_ticket_id=existing.id,
+                        to_status=target_op,
+                    )
+                # else: 已毕业但非 Operation（研发类/Internal_task）—— 不该出现，保护性 no-op
+                return self._dedup_result(existing)
             logger.info(
                 "zhichi_ingest_dedup",
                 ticketid=ticketid,
                 existing_ticket_id=existing.id,
             )
-            return IngestResult(
-                ticket_id=existing.id,
-                short_code=existing.short_code,
-                customer_id=self._customer_id_of(existing),
-                customer_identity_id=existing.customer_identity_id or 0,
-                routing_decision="dedup",
-                assigned_user_ids=(
-                    [existing.assigned_user_id] if existing.assigned_user_id else []
-                ),
-                deduped=True,
-            )
+            return self._dedup_result(existing)
 
         identity_input = self._extract_identity(payload)
         resolve = self._resolver.resolve(identity_input)
@@ -280,6 +328,15 @@ class ZhichiIngester:
 
         self._db.flush()
 
+        # 全新工单首次入库即为终态（ticket_status=3/99）：跳过分类，直接毕业为
+        # Operation hub 并落终态，不进正常 triage 链路。
+        skip_post_ingest = False
+        target_op = _terminal_op_status(payload.get("ticketStatus"))
+        if target_op is not None:
+            skip_post_ingest = self._graduate_as_terminal_operation(
+                ticket, target_op, payload.get("ticketStatus")
+            )
+
         # 建附件行（仅建行，不下载；下载+OCR 由异步流水线 drain_attachments 处理）。
         # 智齿附件来自 file_str，可能是图片/日志/zip 等；按扩展名判定 kind——
         # 只 image 进 OCR，其余（pdf/video/other）仅下载存档供处理人查看/下载。
@@ -324,7 +381,54 @@ class ZhichiIngester:
             routing_decision=route.decision,
             assigned_user_ids=route.assigned_user_ids,
             deduped=False,
+            skip_post_ingest=skip_post_ingest,
         )
+
+    def _dedup_result(self, existing: Ticket) -> IngestResult:
+        return IngestResult(
+            ticket_id=existing.id,
+            short_code=existing.short_code,
+            customer_id=self._customer_id_of(existing),
+            customer_identity_id=existing.customer_identity_id or 0,
+            routing_decision="dedup",
+            assigned_user_ids=([existing.assigned_user_id] if existing.assigned_user_id else []),
+            deduped=True,
+        )
+
+    def _graduate_as_terminal_operation(
+        self, ticket: Ticket, target_op: str, raw_status: Any
+    ) -> bool:
+        """智齿工单已处于终态（3已解决/99已关闭）：直接毕业为 Operation hub 并
+        落终态 op_status，跳过 triage 分类。复用 ensure_hub_issue_for_ticket 建
+        hub（内部固定把 op_status 先置 processing，见 creator.py），再用
+        apply_op_status 覆盖成 answered/closed——两步操作，不是一步到位。
+        不 commit（复用调用方事务）。返回 True 表示已处理（供调用方决定是否跳过
+        run_post_ingest_agents）。"""
+        from app.services.hub_issues.creator import HubIssueCreateError
+
+        try:
+            result = ensure_hub_issue_for_ticket(
+                ticket.id,
+                created_by="system:zhichi_terminal_sync",
+                type_override="Operation",
+                db=self._db,
+            )
+        except HubIssueCreateError as e:
+            logger.warning(
+                "zhichi_terminal_graduate_failed", ticket_id=ticket.id, error=str(e)
+            )
+            return False
+        hub = self._db.get(HubIssue, result.hub_issue_id)
+        if hub is None:
+            return False
+        apply_op_status(
+            self._db,
+            hub,
+            to_status=target_op,
+            handler="agent",
+            reason=f"智齿工单入库即终态（ticket_status={raw_status}）",
+        )
+        return True
 
     @staticmethod
     def _require_str(payload: dict[str, Any], key: str) -> str:

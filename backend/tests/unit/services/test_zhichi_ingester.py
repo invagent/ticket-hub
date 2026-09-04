@@ -10,11 +10,13 @@ from app.models import (
     Attachment,
     Customer,
     CustomerIdentity,
+    HubIssue,
     ProductLine,
     Source,
     Ticket,
     User,
 )
+from app.services.hub_issues.op_status import OP_PROCESSING
 from app.services.ingest.zhichi_ingester import IngestError, ZhichiIngester
 
 
@@ -409,3 +411,112 @@ def test_native_flat_empty_title_and_content_falls_back(world: Session) -> None:
     t = world.get(Ticket, res.ticket_id)
     assert t is not None
     assert t.title == "客户留言-13800000000"
+
+
+# ---- ticket_status → op_status 终态同步（新单/已存在工单/已毕业 hub 三场景）----
+
+
+def test_ticket_status_0_unaffected(world: Session) -> None:
+    """ticket_status=0（尚未受理）不受影响，正常入库，不建 hub。"""
+    res = ZhichiIngester(world).ingest(_native_flat(ticket_status=0))
+    world.commit()
+    assert res.skip_post_ingest is False
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.hub_issue_id is None
+
+
+def test_ticket_status_3_new_ticket_answered(world: Session) -> None:
+    """全新工单首次入库即 ticket_status=3（已解决）→ 直接建 Operation hub 落 answered。"""
+    res = ZhichiIngester(world).ingest(_native_flat(ticket_status=3))
+    world.commit()
+    assert res.skip_post_ingest is True
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    assert t.hub_issue_id is not None
+    hub = world.get(HubIssue, t.hub_issue_id)
+    assert hub is not None
+    assert hub.type == "Operation"
+    assert hub.op_status == "answered"
+
+
+def test_ticket_status_99_new_ticket_closed(world: Session) -> None:
+    """全新工单首次入库即 ticket_status=99（已关闭）→ 直接建 Operation hub 落 closed。"""
+    res = ZhichiIngester(world).ingest(_native_flat(ticket_status=99))
+    world.commit()
+    assert res.skip_post_ingest is True
+    t = world.get(Ticket, res.ticket_id)
+    assert t is not None
+    hub = world.get(HubIssue, t.hub_issue_id)
+    assert hub is not None
+    assert hub.op_status == "closed"
+
+
+def test_ticket_status_3_existing_no_hub_graduates(world: Session) -> None:
+    """已存在工单（未毕业）重推变 ticket_status=3 → 命中 dedup 分支，直接建 hub 落 answered。"""
+    ingester = ZhichiIngester(world)
+    res1 = ingester.ingest(_native_flat(ticket_status=0))
+    world.commit()
+    t1 = world.get(Ticket, res1.ticket_id)
+    assert t1 is not None
+    assert t1.hub_issue_id is None
+
+    res2 = ingester.ingest(_native_flat(ticket_status=3))
+    world.commit()
+    assert res2.deduped is True
+    assert res2.ticket_id == res1.ticket_id
+    t2 = world.get(Ticket, res2.ticket_id)
+    assert t2 is not None
+    assert t2.hub_issue_id is not None
+    hub = world.get(HubIssue, t2.hub_issue_id)
+    assert hub is not None
+    assert hub.type == "Operation"
+    assert hub.op_status == "answered"
+
+
+def test_ticket_status_99_existing_with_hub_transitions(world: Session) -> None:
+    """已毕业 Operation hub（processing）重推变 ticket_status=99 → 转态为 closed。"""
+    ingester = ZhichiIngester(world)
+    res1 = ingester.ingest(_native_flat(ticket_status=0))
+    world.commit()
+    t1 = world.get(Ticket, res1.ticket_id)
+    assert t1 is not None
+
+    hub = HubIssue(
+        short_code="HUB-000001",
+        type="Operation",
+        status="created",
+        op_status=OP_PROCESSING,
+        title=t1.title,
+    )
+    world.add(hub)
+    world.flush()
+    t1.hub_issue_id = hub.id
+    world.commit()
+
+    res2 = ingester.ingest(_native_flat(ticket_status=99))
+    world.commit()
+    assert res2.deduped is True
+    world.refresh(hub)
+    assert hub.op_status == "closed"
+
+
+def test_ticket_status_string_and_int_both_work(world: Session) -> None:
+    """ticket_status 字符串 "3" 和整数 3 都能命中终态映射（智齿文档类型定义不一致）。"""
+    res_str = ZhichiIngester(world).ingest(_native_flat(ticketid="T-STR", ticket_status="3"))
+    world.commit()
+    assert res_str.skip_post_ingest is True
+    t_str = world.get(Ticket, res_str.ticket_id)
+    assert t_str is not None
+    hub_str = world.get(HubIssue, t_str.hub_issue_id)
+    assert hub_str is not None
+    assert hub_str.op_status == "answered"
+
+    res_int = ZhichiIngester(world).ingest(_native_flat(ticketid="T-INT", ticket_status=3))
+    world.commit()
+    assert res_int.skip_post_ingest is True
+    t_int = world.get(Ticket, res_int.ticket_id)
+    assert t_int is not None
+    hub_int = world.get(HubIssue, t_int.hub_issue_id)
+    assert hub_int is not None
+    assert hub_int.op_status == "answered"
