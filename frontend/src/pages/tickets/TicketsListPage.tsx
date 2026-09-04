@@ -1482,9 +1482,9 @@ export function TicketsListPage() {
       )}
 
       {/* 顶部固定控制区：筛选条 + 按钮操作区，吸顶固定不随页面上下滚动 */}
-      <div className="sticky top-0 z-30 bg-hub-page pt-1 pb-2">
-        {/* 筛选条：背景换为纯白色、每行 4 个平铺、宽度占满、左右 10px、高度 30px */}
-        <div className="bg-white border border-[#cbd5e1] rounded-[10px] px-[10px] py-2.5 mb-2.5 shadow-sm">
+      <div className="sticky top-0 z-30 bg-hub-page pt-1">
+        {/* 筛选条：背景换为纯白色、每行 4 个平铺、宽度占满、左右 10px、高度 30px，与下方按钮区间距 15px */}
+        <div className="bg-white border border-[#cbd5e1] rounded-[10px] px-[10px] py-2.5 mb-[15px] shadow-sm">
           <div className="grid grid-cols-4 gap-2.5 items-center">
             {/* 1. 工单号搜索 */}
             <input
@@ -1614,8 +1614,8 @@ export function TicketsListPage() {
           </div>
         </div>
 
-        {/* 列表操作栏（按钮区）：固定吸顶，批量补充资料 + 刷新 + 重置默认排序 */}
-        <div className="flex items-center gap-2.5 flex-wrap mb-[10px]">
+        {/* 列表操作栏（按钮区）：固定吸顶，批量补充资料 + 批量移交 + 刷新 + 重置筛选条件，与下方列表间距 5px */}
+        <div className="flex items-center gap-2.5 flex-wrap mb-[5px]">
           {isSupervisor && (
             <button
               type="button"
