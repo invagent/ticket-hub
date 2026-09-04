@@ -27,18 +27,18 @@ describe("linearStatusToCN", () => {
 describe("computeProcessStage", () => {
   const dev = { predictedType: "Bug_fix", hubIssueId: 1 };
 
-  it("缺陷1修复：resolved/closed 的 hub 显示已关闭（不再是进行中）", () => {
-    expect(computeProcessStage({ ...dev, hubStatus: "resolved" }).label).toBe("已关闭");
-    expect(computeProcessStage({ ...dev, hubStatus: "closed" }).label).toBe("已关闭");
+  it("缺陷1修复：resolved/closed 的 hub 显示处理关闭（不再是进行中）", () => {
+    expect(computeProcessStage({ ...dev, hubStatus: "resolved" }).label).toBe("处理关闭");
+    expect(computeProcessStage({ ...dev, hubStatus: "closed" }).label).toBe("处理关闭");
     expect(computeProcessStage({ ...dev, hubStatus: "closed" }).tone).toBe("closed");
   });
 
-  it("缺陷2修复：研发已发版显示「已发版」，运营已答复显示「已答复」（不撞词）", () => {
+  it("缺陷2修复：研发已发版显示「已发版」，运营已答复显示「处理完成」（不撞词）", () => {
     expect(computeProcessStage({ ...dev, hubStatus: "released" }).label).toBe("已发版");
     expect(
       computeProcessStage({ predictedType: "Operation", hubIssueId: 1, opStatus: "answered" })
         .label,
-    ).toBe("已答复");
+    ).toBe("处理完成");
   });
 
   it("pending 系列各自文案", () => {
@@ -52,7 +52,7 @@ describe("computeProcessStage", () => {
   it("Operation 走运营处理机", () => {
     const op = { predictedType: "Operation", hubIssueId: 1 };
     expect(computeProcessStage({ ...op, opStatus: "processing" }).label).toBe("处理中");
-    expect(computeProcessStage({ ...op, opStatus: "supplementing" }).label).toBe("补料中");
+    expect(computeProcessStage({ ...op, opStatus: "supplementing" }).label).toBe("补充资料");
     expect(computeProcessStage({ ...op, opStatus: "exception" }).tone).toBe("exception");
   });
 
@@ -67,18 +67,18 @@ describe("computeProcessStage", () => {
       hubStatus: "resolved",
       opStatus: "answered",
     });
-    expect(stage.label).toBe("已答复");
+    expect(stage.label).toBe("处理完成");
     expect(stage.tone).toBe("done");
   });
 
-  it("Operation op_status=closed（T+7 已到）+ hub.status=resolved → 已关闭", () => {
+  it("Operation op_status=closed（T+7 已到）+ hub.status=resolved → 处理关闭", () => {
     const stage = computeProcessStage({
       predictedType: "Operation",
       hubIssueId: 1,
       hubStatus: "resolved",
       opStatus: "closed",
     });
-    expect(stage.label).toBe("已关闭");
+    expect(stage.label).toBe("处理关闭");
   });
 
   it("Operation 毕业时 op_status 已预置 processing，但闸门开时 hub.status 仍卡 pending_review → 显示闸门态而非处理中", () => {

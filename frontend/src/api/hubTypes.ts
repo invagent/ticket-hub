@@ -2,7 +2,7 @@
 export const HUB_TYPES = ["Operation", "Bug_fix", "Demand", "Internal_task"] as const;
 
 export const HUB_TYPE_LABELS: Record<string, string> = {
-  Operation: "运营",
+  Operation: "应用类",
   Bug_fix: "Bug 修复",
   Demand: "需求",
   Internal_task: "内部任务",

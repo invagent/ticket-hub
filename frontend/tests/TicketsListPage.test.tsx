@@ -108,8 +108,10 @@ describe("TicketsListPage", () => {
 
     await waitFor(() => expect(lastQuery).not.toBeNull());
 
-    const select = screen.getByDisplayValue("全部来源系统");
-    await user.selectOptions(select, "zhichi");
+    const dropdownBtn = screen.getByRole("button", { name: /全部来源系统/ });
+    await user.click(dropdownBtn);
+    const zhichiOption = await screen.findByLabelText("智齿");
+    await user.click(zhichiOption);
 
     await waitFor(() => expect(lastQuery!.get("source_code")).toBe("zhichi"));
   });
