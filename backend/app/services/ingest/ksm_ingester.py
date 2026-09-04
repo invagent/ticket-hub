@@ -98,7 +98,11 @@ class KSMIngester:
                 return self._dedup_result(existing)
             if op == OP_ANSWERED:
                 # 驳回：已答复但客户不满意重提同一单。更新内容 + reject_count+1，
-                # op_status 转回 processing 交主管人工介入。
+                # op_status 转回 processing 交主管人工介入。上一轮答复关单回写
+                # 成功时 ticket.status 已被置 closed（见 writeback._close_local）；
+                # 这里 hub 重新进入处理中，ticket 必须跟着 reopen，否则会出现
+                # ticket=closed 但 hub.op_status=processing 的矛盾态（工单列表
+                # 展示为已关闭，实际还在处理）。
                 assert hub is not None
                 apply_content_refresh(self._db, existing, payload)
                 hub.reject_count += 1
@@ -109,6 +113,17 @@ class KSMIngester:
                     handler=resolve_op_handler(self._db, hub, get_settings()),
                     reason=f"客户驳回（第{hub.reject_count}次）",
                 )
+                if existing.status == "closed":
+                    prev = existing.status
+                    existing.status = "received"
+                    self._history.record(
+                        entity_type="ticket",
+                        entity_id=existing.id,
+                        from_status=prev,
+                        to_status="received",
+                        changed_by="system:ksm_ingest",
+                        reason=f"客户驳回（第{hub.reject_count}次），重新打开工单",
+                    )
                 logger.info(
                     "ksm_ingest_reject",
                     bill_id=bill_id,
