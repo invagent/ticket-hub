@@ -2736,6 +2736,8 @@ export interface components {
             module?: string | null;
             /** Product Line Code */
             product_line_code?: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis?: string | null;
             /** Ticket Id */
             ticket_id: number;
             /** Type */
@@ -3453,6 +3455,8 @@ export interface components {
             reply_is_draft: boolean;
             /** Reply Updated At */
             reply_updated_at: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis: string | null;
             /** Scheduled Iteration */
             scheduled_iteration: string | null;
             /**
@@ -5030,6 +5034,8 @@ export interface components {
             module?: string | null;
             /** Product Line Code */
             product_line_code?: string | null;
+            /** Root Cause Analysis */
+            root_cause_analysis?: string | null;
             /** Type */
             type?: string | null;
         };

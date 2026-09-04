@@ -436,7 +436,9 @@ def test_ingest_supplement_reopen_is_idempotent(db_session, monkeypatch) -> None
 
 
 def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """已存在 ticket 且 hub.op_status=answered → 驳回：content_refresh + op_status→processing/主管 + reject_count+1。"""
+    """已存在 ticket 且 hub.op_status=answered → 驳回：content_refresh + op_status→processing/主管
+    + reject_count+1 + ticket 从 closed reopen 回 received（上一轮答复关单回写已把 ticket 置
+    closed，驳回重新进处理中时必须联动 reopen，否则 ticket=closed 但 hub 仍处理中的矛盾态）。"""
     from app.services.hub_issues.op_status import OP_ANSWERED, OP_PROCESSING
     from app.services.ingest import ksm_ingester as mod
 
@@ -447,6 +449,8 @@ def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ig
         short_code="TKT-RJ-1",
         hub_short_code="HUB-RJ-1",
     )
+    existing.status = "closed"
+    db_session.flush()
     assert hub.reject_count == 0
 
     called: dict = {}
@@ -467,6 +471,30 @@ def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ig
     assert hub.op_status == OP_PROCESSING
     assert hub.reject_count == 1
     assert hub.op_handler == "主管"  # resolve_op_handler 未配预分配运营 → 兜底 "主管"
+
+    db_session.refresh(existing)
+    assert existing.status == "received"
+
+
+def test_ingest_reject_on_answered_ticket_already_open(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """驳回时 ticket 若本来就不是 closed（未走关单回写），保持原状态不动，不误触发审计。"""
+    from app.services.hub_issues.op_status import OP_ANSWERED
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, _hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_ANSWERED,
+        bill_id="bill-reject-2",
+        short_code="TKT-RJ-2",
+        hub_short_code="HUB-RJ-2",
+    )
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda db, ticket, payload: True)
+    ing = mod.KSMIngester(db_session)
+    ing.ingest({"billId": "bill-reject-2", "content": "客户不满意"})
+    db_session.commit()
+
+    db_session.refresh(existing)
+    assert existing.status == "received"
 
 
 def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -927,6 +927,18 @@
             ],
             "title": "Product Line Code"
           },
+          "root_cause_analysis": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Analysis"
+          },
           "ticket_id": {
             "title": "Ticket Id",
             "type": "integer"
@@ -3037,6 +3049,17 @@
             ],
             "title": "Reply Updated At"
           },
+          "root_cause_analysis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Analysis"
+          },
           "scheduled_iteration": {
             "anyOf": [
               {
@@ -3151,6 +3174,7 @@
           "reply_updated_at",
           "feishu_task_status",
           "canonical_body",
+          "root_cause_analysis",
           "reply_content",
           "reply_authored_by",
           "linear_uuid",
@@ -8348,6 +8372,18 @@
               }
             ],
             "title": "Product Line Code"
+          },
+          "root_cause_analysis": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Cause Analysis"
           },
           "type": {
             "anyOf": [
