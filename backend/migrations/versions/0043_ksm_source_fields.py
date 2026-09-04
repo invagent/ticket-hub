@@ -1,7 +1,7 @@
 """tickets 加 KSM 源字段落库（提单产品线/模块、联系人、关单节点）.
 
-Revision ID: 0042_ksm_source_fields
-Revises: 0041_dispatch_log_ticket_id
+Revision ID: 0043_ksm_source_fields
+Revises: 0042_hub_root_cause_analysis
 
 新增：
   ksm_reporter_product_line / ksm_reporter_module — KSM 原始 product.name/module.name
@@ -18,8 +18,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0042_ksm_source_fields"
-down_revision: str | Sequence[str] | None = "0041_dispatch_log_ticket_id"
+revision: str = "0043_ksm_source_fields"
+down_revision: str | Sequence[str] | None = "0042_hub_root_cause_analysis"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
