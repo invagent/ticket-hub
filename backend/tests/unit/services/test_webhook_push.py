@@ -122,9 +122,9 @@ def test_build_fields_full_mapping(world: Session) -> None:
     assert fields["description"] == "详细复现步骤"
     assert fields["ticketSource"] == "KSM"
     assert fields["priority"] == "高"
-    assert fields["ticketType"] == "Bug_fix"
+    assert fields["ticketType"] == "bug"
     assert fields["ticketId"] == "ksm-bill-999"
-    assert fields["ticketNo"] == "TKT-WH-1"
+    assert fields["ticketNo"] == "ksm-bill-999"  # 无 source_ticket_number → 回落 source_ticket_id
     assert fields["customerName"] == "金蝶软件"
     assert fields["tenantName"] == "租户A"
     assert fields["productLine"] == "金蝶发票云"  # 默认顶级产品
@@ -169,7 +169,7 @@ def test_build_fields_demand_operate_text(world: Session) -> None:
     hub = _make_hub(world, 2, type="Demand")
     _make_ksm_ticket(world, hub, short_code="TKT-WH-2")
     fields = build_webhook_fields(world, hub)
-    assert fields["ticketType"] == "Demand"
+    assert fields["ticketType"] == "需求"
     assert fields["transferType"] == "需求转产研"
     assert fields["operate"] == "需求转产研修改工单状态及提单类型"
 
@@ -219,6 +219,22 @@ def test_build_fields_productline_missing_default(world: Session) -> None:
     assert fields["productCategory"] == "unknown_code"  # 查无 → 回落 code
 
 
+def test_build_fields_ticket_no_uses_source_ticket_number(world: Session) -> None:
+    """ticketNo 传来源系统编号（KSM billNumber），不是本系统 short_code。
+    2026-09-04 与用户确认修正——旧代码错传了 src.short_code。"""
+    hub = _make_hub(world, 61)
+    _make_ksm_ticket(
+        world,
+        hub,
+        short_code="TKT-WH-61",
+        source_ticket_id="59EF880B9C6C04D4E0639BCAA8C0A984",
+        source_ticket_number="R20260827-3491",
+    )
+    fields = build_webhook_fields(world, hub)
+    assert fields["ticketId"] == "59EF880B9C6C04D4E0639BCAA8C0A984"
+    assert fields["ticketNo"] == "R20260827-3491"
+
+
 def test_push_via_webhook_writes_back(world: Session) -> None:
     hub = _make_hub(world, 6)
     _make_ksm_ticket(world, hub, short_code="TKT-WH-6")
@@ -230,7 +246,8 @@ def test_push_via_webhook_writes_back(world: Session) -> None:
 
 
 def test_push_hub_issue_to_linear_routes_to_webhook(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """linear_webhook_enabled=true → push_hub_issue_to_linear 走 webhook，回写占位。"""
+    """linear_webhook_enabled=true → push_hub_issue_to_linear 走 webhook；对方响应
+    不含 data（旧假设/格式有出入）时回落占位符。"""
     from app.services.hub_issues import webhook_push
 
     hub = _make_hub(world, 7)
@@ -242,13 +259,45 @@ def test_push_hub_issue_to_linear_routes_to_webhook(world: Session, monkeypatch)
     res = push_hub_issue_to_linear(hub.id, world)
     assert res is not None
     assert res.linear_identifier == f"WEBHOOK-{hub.short_code}"
-    assert res.linear_uuid == ""  # webhook 不产生真实 Linear UUID
+    assert res.linear_uuid == ""  # 响应无 data → 解析不到真实 UUID
     world.refresh(hub)
     assert hub.linear_uuid is None  # 保持 NULL，避免 status_sync 误查
     assert hub.linear_identifier == f"WEBHOOK-{hub.short_code}"
     assert hub.linear_status == "已转产研"
     assert hub.linear_status_synced_at is not None
     assert len(fake.sent) == 1
+
+
+def test_push_hub_issue_to_linear_webhook_uses_real_identifier(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """2026-09-04 实测确认：对方响应体带真实 Linear {"data":{"id","identifier","url"}}
+    时，必须回写真实值，不能再用占位符（旧 bug：真实 identifier 从未落库）。"""
+    from app.services.hub_issues import webhook_push
+
+    hub = _make_hub(world, 71)
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-71")
+
+    fake = _FakeWebhookClient()
+    fake_response = {
+        "code": "0000",
+        "message": "创建成功",
+        "data": {
+            "id": "a04f4aa3-6c2f-4f27-ac72-2eeccebf0ccd",
+            "identifier": "CNPRD-1514",
+            "url": "https://linear.app/invagent/issue/CNPRD-1514/foo",
+        },
+    }
+    monkeypatch.setattr(fake, "send_ticket", lambda fields: fake_response)
+    monkeypatch.setattr(webhook_push, "LinearWebhookClient", lambda cfg, **kw: fake)
+
+    res = push_hub_issue_to_linear(hub.id, world)
+    assert res is not None
+    assert res.linear_identifier == "CNPRD-1514"
+    assert res.linear_uuid == "a04f4aa3-6c2f-4f27-ac72-2eeccebf0ccd"
+    assert res.linear_url == "https://linear.app/invagent/issue/CNPRD-1514/foo"
+    world.refresh(hub)
+    assert hub.linear_identifier == "CNPRD-1514"
+    assert hub.linear_uuid == "a04f4aa3-6c2f-4f27-ac72-2eeccebf0ccd"
+    assert hub.linear_status == "已转产研"
 
 
 def test_push_hub_issue_to_linear_webhook_consumes_module_owner(

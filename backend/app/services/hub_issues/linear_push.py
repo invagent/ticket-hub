@@ -90,10 +90,14 @@ def _build_description(db: Session, hub: HubIssue) -> str:
 
 
 def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
-    """转研发 webhook 分支。成功回写占位 identifier + linear_status（供展示/幂等）。
+    """转研发 webhook 分支。成功回写真实 Linear id/identifier（供展示/幂等/状态回同步）。
 
-    webhook 不返回 Linear UUID —— linear_uuid 保持 NULL，避免 linear_status_sync
-    拿假 UUID 去查 Linear。幂等靠 linear_identifier 非空（占位 WEBHOOK-{short_code}）。
+    2026-09-04 手工重推实测纠正：webhook 响应体其实带真实 Linear
+    {"data":{"id","identifier","url"}}（旧代码/旧注释误以为拿不到，一直只存占位符
+    WEBHOOK-{short_code}，真实 identifier/url 从未落库，导致展示的是假编号、
+    linear_status_sync 也因 linear_uuid 恒 NULL 而无法回同步）。现在优先用
+    webhook_push 解析出的真实值；对方响应格式有出入解析不到时，才回落占位符
+    （不阻断推送，幂等仍靠 linear_identifier 非空）。
     """
     owner = consume_module_owner(db, hub.product_line_code, hub.module)
     assignee_name = ""
@@ -105,14 +109,15 @@ def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
         if fallback is not None:
             assignee_name = fallback.name or ""
     try:
-        push_hub_issue_to_webhook(db, hub, assignee_name=assignee_name)
+        push_result = push_hub_issue_to_webhook(db, hub, assignee_name=assignee_name)
     except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
         logger.warning("linear_webhook_push_failed", hub_issue_id=hub.id, error=str(e))
         _mark_pending(db, hub, reason=f"转研发 webhook 推送失败：{e}")
         return None
 
-    placeholder = f"WEBHOOK-{hub.short_code}"
-    hub.linear_identifier = placeholder
+    identifier = push_result.linear_identifier or f"WEBHOOK-{hub.short_code}"
+    hub.linear_uuid = push_result.linear_uuid or None
+    hub.linear_identifier = identifier
     hub.linear_status = "已转产研"
     hub.linear_status_synced_at = datetime.now(UTC)
     if hub.status == "pending":
@@ -126,12 +131,12 @@ def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
         )
         hub.status = "created"
     db.commit()
-    logger.info("linear_webhook_push_committed", hub_issue_id=hub.id, identifier=placeholder)
+    logger.info("linear_webhook_push_committed", hub_issue_id=hub.id, identifier=identifier)
     return LinearPushResult(
         hub_issue_id=hub.id,
-        linear_uuid="",
-        linear_identifier=placeholder,
-        linear_url="",
+        linear_uuid=push_result.linear_uuid,
+        linear_identifier=identifier,
+        linear_url=push_result.linear_url,
     )
 
 

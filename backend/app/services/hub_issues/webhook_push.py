@@ -15,7 +15,10 @@
   handleUser         处理人姓名（模块研发责任人，查不到回落 assigned_user.name）
   handleSteps        KSM 主源工单节点串（非 KSM 为空）
   feishuUrl          本系统工单详情链接 {hub_public_base_url}/tickets/{主源工单 id}
-  ticketId/ticketNo  主源工单 source_ticket_id / short_code
+  ticketId    主源工单 source_ticket_id（来源系统原始 ID，如 KSM billId）
+  ticketNo    主源工单来源编号 source_ticket_number（人看编号，如 KSM billNumber），
+              无编号回落 source_ticket_id ——不是本系统 short_code
+  ticketType  hub.type 中文映射（Bug_fix→bug、Demand→需求，与用户确认 2026-09-04）
   ticketSource       来源中文名（KSM / 智齿）
   transferType/operate  按 hub.type 固定文案
 """
@@ -60,12 +63,35 @@ _TRANSFER_TEXT = {
 }
 _TRANSFER_TYPE = {"Bug_fix": "BUG转产研", "Demand": "需求转产研"}
 
+# hub.type → ticketType 中文文案（与用户确认，2026-09-04）。「协助」暂无对应
+# hub 类型，先不加映射；未来新增时补这张表即可。
+_TICKET_TYPE_ZH = {"Bug_fix": "bug", "Demand": "需求"}
+
 
 @dataclass(slots=True, frozen=True)
 class WebhookPushResult:
     hub_issue_id: int
     ok: bool
     response: dict[str, Any]
+    # 对方实测响应形如 {"code":"0000","message":"创建成功","data":{"id","identifier","url"}}
+    # （2026-09-04 手工重推实测确认）。之前这里被完全忽略，回写的是占位符
+    # WEBHOOK-{short_code}，真实 identifier/url 从未落库。解析到就用真实值；
+    # 对方响应格式有出入（data 缺失/字段改名）时留空，调用方回落占位符，不报错。
+    linear_uuid: str = ""
+    linear_identifier: str = ""
+    linear_url: str = ""
+
+
+def _parse_webhook_response(resp: dict[str, Any]) -> tuple[str, str, str]:
+    """从对方响应体尝试解析真实 Linear id/identifier/url，解析不到时全部返回空串。"""
+    data = resp.get("data")
+    if not isinstance(data, dict):
+        return "", "", ""
+    return (
+        str(data.get("id") or ""),
+        str(data.get("identifier") or ""),
+        str(data.get("url") or ""),
+    )
 
 
 def _primary_source_ticket(db: Session, hub: HubIssue) -> Ticket | None:
@@ -160,9 +186,12 @@ def build_webhook_fields(
         "description": hub.canonical_body or "",
         "ticketSource": _SOURCE_ZH.get(src.source_code or "", src.source_code or "") if src else "",
         "priority": _PRIORITY_ZH.get(hub.priority or "", ""),
-        "ticketType": hub.type,
+        "ticketType": _TICKET_TYPE_ZH.get(hub.type, hub.type),
         "ticketId": (src.source_ticket_id or "") if src else "",
-        "ticketNo": (src.short_code or "") if src else "",
+        # 来源系统工单编号（人看的编号，如 KSM billNumber R20260827-3491），不是
+        # 本系统内部短码；无编号的老工单回落 source_ticket_id（同 tickets.py
+        # _source_ticket_number 口径）。
+        "ticketNo": ((src.source_ticket_number or src.source_ticket_id or "") if src else ""),
         "customerName": _customer_name(db, src),
         "tenantName": (src.reporter_tenant or "") if src else "",
         "productLine": product_line,
@@ -203,10 +232,23 @@ def push_hub_issue_to_webhook(
         if owns_client:
             client.close()
 
+    # HTTP 2xx 已由 LinearWebhookClient 判定为成功；这里仅记录响应体本身，
+    # 不据此拦截——对方业务码约定（code/msg）尚未确认，先留痕供排查用，
+    # 避免真成功的推送被误判 pending。
+    linear_uuid, linear_identifier, linear_url = _parse_webhook_response(resp)
     logger.info(
         "linear_webhook_push_ok",
         hub_issue_id=hub.id,
         type=hub.type,
         ticket_no=fields.get("ticketNo"),
+        response=resp,
+        linear_identifier=linear_identifier,
     )
-    return WebhookPushResult(hub_issue_id=hub.id, ok=True, response=resp)
+    return WebhookPushResult(
+        hub_issue_id=hub.id,
+        ok=True,
+        response=resp,
+        linear_uuid=linear_uuid,
+        linear_identifier=linear_identifier,
+        linear_url=linear_url,
+    )
