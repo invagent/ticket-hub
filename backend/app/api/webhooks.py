@@ -404,8 +404,10 @@ async def zhichi_webhook(
         short_code=result.short_code,
         deduped=result.deduped,
     )
-    # D3-C/D: post-ingest agents after ingest (skip dedup).
-    if not result.deduped:
+    # D3-C/D: post-ingest agents after ingest (skip dedup). skip_post_ingest：
+    # 全新工单入库即终态（ticket_status=3/99）已直接毕业 Operation hub 落终态，
+    # 不再进 triage 分类链路（见 ZhichiIngester._graduate_as_terminal_operation）。
+    if not result.deduped and not result.skip_post_ingest:
         background_tasks.add_task(run_post_ingest_agents, result.ticket_id)
     return IngestResponse(
         ticket_id=result.ticket_id,
