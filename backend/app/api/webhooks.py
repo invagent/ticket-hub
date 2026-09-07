@@ -3,6 +3,8 @@
   POST /webhook/ksm?access_token=<webhook_token>      → KSMIngester
   POST /webhook/zhichi?access_token=<webhook_token>   → ZhichiIngester
   POST /webhook/zammad?access_token=<webhook_token>   → ZammadIngester
+  GET  /webhook/tickets/lookup?access_token=&ticket_no= → 第三方工单号/本系统
+                                                           short_code 查详情
 
   Future:
     - /webhook/linear (D4)
@@ -28,11 +30,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from adapters.ksm import KSMClient, KSMConfig, KSMError
+from app.api.tickets import TicketDetail, build_ticket_detail
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.trace import get_trace_id
 from app.db import get_session, make_session
 from app.models import Ticket
+from app.repositories.ticket import TicketRepository
 from app.services.agents.classify import classify_ticket
 from app.services.agents.escalation_classify import classify_escalation_ticket
 from app.services.agents.split import execute_split_for_ticket
@@ -584,3 +588,34 @@ async def zammad_webhook(
         assigned_user_ids=result.assigned_user_ids,
         trace_id=get_trace_id(),
     )
+
+
+# ---- 外部工单号查询 ---------------------------------------------------------
+
+
+class TicketLookupResponse(BaseModel):
+    items: list[TicketDetail]
+
+
+@router.get("/tickets/lookup", response_model=TicketLookupResponse)
+def lookup_ticket(
+    ticket_no: str = Query(..., min_length=1, max_length=128),
+    access_token: str = Query(...),
+    db: Session = Depends(get_session),
+) -> TicketLookupResponse:
+    """供第三方系统按工单号查询工单详情，鉴权复用 webhook 同一个
+    access_token（settings.webhook_access_token），非登录用户 token。
+
+    ticket_no 同时精确匹配三个字段之一（同 /api/tickets 列表页
+    source_ticket_q 的字段口径，但这里是精确匹配不是子串搜索）：
+      - source_ticket_number（来源工单编号，如 KSM billNumber）
+      - source_ticket_id（来源工单 id，如 KSM billId）
+      - short_code（本系统工单号，如 TKT-006797）
+
+    三者理论上不会跨行冲突，但历史数据不排除极少数例外，命中多条时
+    全部返回，交调用方按自己的字段辨认；未命中返回空列表（不是 404，
+    「查无此单」对第三方系统是正常结果，不是错误）。
+    """
+    _verify_webhook_token(access_token)
+    tickets = TicketRepository(db).find_by_any_ticket_no(ticket_no)
+    return TicketLookupResponse(items=[build_ticket_detail(db, t) for t in tickets])

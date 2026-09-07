@@ -2359,6 +2359,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhook/tickets/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lookup Ticket
+         * @description 供第三方系统按工单号查询工单详情，鉴权复用 webhook 同一个
+         *     access_token（settings.webhook_access_token），非登录用户 token。
+         *
+         *     ticket_no 同时精确匹配三个字段之一（同 /api/tickets 列表页
+         *     source_ticket_q 的字段口径，但这里是精确匹配不是子串搜索）：
+         *       - source_ticket_number（来源工单编号，如 KSM billNumber）
+         *       - source_ticket_id（来源工单 id，如 KSM billId）
+         *       - short_code（本系统工单号，如 TKT-006797）
+         *
+         *     三者理论上不会跨行冲突，但历史数据不排除极少数例外，命中多条时
+         *     全部返回，交调用方按自己的字段辨认；未命中返回空列表（不是 404，
+         *     「查无此单」对第三方系统是正常结果，不是错误）。
+         */
+        get: operations["lookup_ticket_webhook_tickets_lookup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/zammad": {
         parameters: {
             query?: never;
@@ -4928,6 +4959,11 @@ export interface components {
             page_size: number;
             /** Total */
             total: number;
+        };
+        /** TicketLookupResponse */
+        TicketLookupResponse: {
+            /** Items */
+            items: components["schemas"]["TicketDetail"][];
         };
         /** TicketSummary */
         TicketSummary: {
@@ -9403,6 +9439,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KSMAck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_ticket_webhook_tickets_lookup_get: {
+        parameters: {
+            query: {
+                ticket_no: string;
+                access_token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketLookupResponse"];
                 };
             };
             /** @description Validation Error */

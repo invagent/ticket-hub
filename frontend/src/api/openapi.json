@@ -7939,6 +7939,22 @@
         "title": "TicketListResponse",
         "type": "object"
       },
+      "TicketLookupResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TicketDetail"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TicketLookupResponse",
+        "type": "object"
+      },
       "TicketSummary": {
         "properties": {
           "assigned_user_id": {
@@ -15649,6 +15665,60 @@
           }
         },
         "summary": "Ksm Webhook",
+        "tags": [
+          "webhook"
+        ]
+      }
+    },
+    "/webhook/tickets/lookup": {
+      "get": {
+        "description": "供第三方系统按工单号查询工单详情，鉴权复用 webhook 同一个\naccess_token（settings.webhook_access_token），非登录用户 token。\n\nticket_no 同时精确匹配三个字段之一（同 /api/tickets 列表页\nsource_ticket_q 的字段口径，但这里是精确匹配不是子串搜索）：\n  - source_ticket_number（来源工单编号，如 KSM billNumber）\n  - source_ticket_id（来源工单 id，如 KSM billId）\n  - short_code（本系统工单号，如 TKT-006797）\n\n三者理论上不会跨行冲突，但历史数据不排除极少数例外，命中多条时\n全部返回，交调用方按自己的字段辨认；未命中返回空列表（不是 404，\n「查无此单」对第三方系统是正常结果，不是错误）。",
+        "operationId": "lookup_ticket_webhook_tickets_lookup_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ticket_no",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Ticket No",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "access_token",
+            "required": true,
+            "schema": {
+              "title": "Access Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketLookupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lookup Ticket",
         "tags": [
           "webhook"
         ]

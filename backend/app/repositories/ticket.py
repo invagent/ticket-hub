@@ -59,6 +59,22 @@ class TicketRepository:
 
     # ---- read API ------------------------------------------------------
 
+    def find_by_any_ticket_no(self, ticket_no: str) -> list[Ticket]:
+        """外部工单号查询：一个参数同时匹配 source_ticket_number（来源编号，如
+        KSM billNumber）、source_ticket_id（来源 id，如 billId）、short_code
+        （本系统 TKT-xxx）——同 list_tickets 的 source_ticket_q 口径（精确匹配，
+        不是子串搜索）。三个字段理论上互相独立不会同时命中同一条以外的行，
+        但历史数据不排除跨来源冲突，故返回列表交调用方判断。"""
+        stmt = select(Ticket).where(
+            Ticket.deleted_at.is_(None),
+            or_(
+                Ticket.source_ticket_number == ticket_no,
+                Ticket.source_ticket_id == ticket_no,
+                Ticket.short_code == ticket_no,
+            ),
+        )
+        return list(self._db.execute(stmt).scalars().all())
+
     def get(self, ticket_id: int) -> Ticket | None:
         """Get a non-deleted ticket by id."""
         t = self._db.get(Ticket, ticket_id)

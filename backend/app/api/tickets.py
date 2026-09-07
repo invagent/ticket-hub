@@ -392,6 +392,15 @@ def get_ticket(
     # 行级可见性：非 admin/主管 只能看处理人=自己的工单（否则等同不存在）
     if auth_user.role not in ("admin", "supervisor") and ticket.handler_user_id != auth_user.user_id:
         raise HTTPException(status_code=404, detail="ticket not found")
+    return build_ticket_detail(db, ticket)
+
+
+def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
+    """把一条 Ticket ORM 对象组装成完整 TicketDetail（含 hub 衍生字段/客户/
+    提单人/附件/出站回写失败详情）。get_ticket 和 webhooks.py 的外部工单
+    查询接口共用同一份组装逻辑，保持两处口径一致。不做行级可见性/鉴权
+    判断——调用方各自负责。"""
+    ticket_id = ticket.id
     detail = TicketDetail.model_validate(ticket)
     if ticket.assigned_user_id is not None:
         u = db.get(User, ticket.assigned_user_id)
