@@ -352,7 +352,9 @@ def test_return_refreshes_then_returns_without_lock(world: Session) -> None:
 
 
 def test_return_target_picks_node_before_latest_by_time(world: Session) -> None:
-    """多条记录 → 按 handleDateTime 排序取倒数第二条的 opercacheId，不管节点名是否相同。"""
+    """当前节点名不是"协同处理"（如"技术分析"）时，仍要靠节点身份过滤排掉当前
+    节点自己最新的一条，否则会被 nodeName 规则放过、误判成退回目标（等于把
+    工单退回给自己）。"""
     hub = _hub(world)
     t = _ticket(world, hub)
     _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})

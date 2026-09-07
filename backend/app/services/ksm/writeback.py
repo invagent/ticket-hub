@@ -112,40 +112,39 @@ def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
 
     2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」。要求
     detail 必须是**刚刚实时拉取**的（调用方负责 refresh，本函数不兜底旧快照），
-    否则"最新节点"判断本身就可能过期。步数不足 2 条或缺字段 → 回落空串，调用
-    方据此拒绝退回，不猜测。
+    否则"最新节点"判断本身就可能过期。
 
-    2026-09-07 修复：原实现按 handleDateTime 字符串排序取倒数第二条——但
-    handleDateTime 只精确到秒，同一秒内连续流转两个节点时（如"受理"后立即
-    自动转"协同处理"，或本函数之前算错导致的一次失败退回本身也会在
-    handleSteps 里多记一条自环记录）会撞车，且 KSM 返回数组本身的顺序不保证
-    等于真实发生顺序（实测 TKT-006851/R20260907-0988 复现：数组里"协同处理"
-    排在"受理"前面），纯时间/数组下标排序都无法可靠断档。
-
-    改用节点身份过滤：detail 顶层 `node.id` 是 KSM 给出的权威"当前节点"，
-    先排除 handleSteps 里 nodeId 与当前节点相同的记录（无论它们出现在数组
-    哪个位置——包括撞车的同秒记录、或之前误退回到自己留下的自环记录），
-    剩下的候选里按 handleDateTime 取最新一条，就是"上一个不同节点"，不再
-    依赖同秒记录的相对顺序。若拿不到当前节点 id 或过滤后无候选（退化场景），
-    回落旧的纯时间序取倒数第二条，不让这类边缘情况直接报错卡死。
+    2026-09-07 双重过滤（同时保留节点身份过滤 + nodeName 规则过滤，缺一都会
+    复现自退回 bug）：
+      1. nodeName 为空的记录是系统操作记录（如"客户提交"/"未处理退回"），其
+         opercacheId 不对应真实节点，排除。
+      2. nodeName == "协同处理" 的记录不能作为退回目标，排除（这是我们接管
+         后长期停留的节点，把工单退回给它等于没退）。
+      3. nodeId 与 detail 顶层 `node.id`（KSM 给出的权威"当前节点"）相同的
+         记录排除——仅靠 nodeName 规则不够：当前节点名不是"协同处理"时（如
+         "技术分析"/"受理"），它自己最新的一条 handleStep 会绕开上面两条
+         nodeName 过滤，若不按节点身份再排一次，会被误判成退回目标，等于把
+         工单退回给自己（TKT-006851/R20260907-0988 那类 bug 的同源变种）。
+      剩下的候选里取 handleDateTime 最新一条的 opercacheId 作为退回目标。
+      过滤后一条候选都没有 → 直接抛 ValueError，调用方据此拒绝退回，不猜测。
     """
     steps = detail.get("handleSteps")
     if not isinstance(steps, list):
-        return ""
+        raise ValueError("未找到可退回的目标节点，无法退回")
     valid = [h for h in steps if isinstance(h, dict)]
-    if len(valid) < 2:
-        return ""
-    indexed = list(enumerate(valid))
     node = detail.get("node")
     current_node_id = _s(node.get("id")) if isinstance(node, dict) else ""
-    if current_node_id:
-        candidates = [pair for pair in indexed if _s(pair[1].get("nodeId")) != current_node_id]
-        if candidates:
-            candidates.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
-            return _s(candidates[-1][1].get("opercacheId"))
-    # 回落：无法按节点身份区分时，退回旧的纯时间序取倒数第二条。
-    indexed.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
-    return _s(indexed[-2][1].get("opercacheId"))
+    candidates = [
+        h
+        for h in valid
+        if _s(h.get("nodeName"))
+        and _s(h.get("nodeName")) != "协同处理"
+        and (not current_node_id or _s(h.get("nodeId")) != current_node_id)
+    ]
+    if not candidates:
+        raise ValueError("未找到可退回的目标节点，无法退回")
+    candidates.sort(key=lambda h: _s(h.get("handleDateTime")))
+    return _s(candidates[-1].get("opercacheId"))
 
 
 def _extract_ksm_fields(
@@ -538,8 +537,9 @@ class KSMWritebackSender:
         """退回 KSM（returnKsmOrder）——转错模块打回重新分派，不关单。
 
         current_node_id（源节点）= 刚实时拉取的最新 node.id；opercache_id（退回
-        目标）= 同一次拉取里，按时间排序的倒数第二条 handleStep 的 opercacheId
-        （即"最新节点的上一个节点"）。二者都来自 _refresh_for_return 的同一份
+        目标）= 同一次拉取的 handleSteps 里，排除空 nodeName/"协同处理"/当前
+        节点自身后剩余候选中 handleDateTime 最新一条的 opercacheId（见
+        _previous_node_opercache_id）。二者都来自 _refresh_for_return 的同一份
         新鲜数据，不接受过期快照。
         """
         self._client.return_order(
@@ -622,9 +622,12 @@ class KSMWritebackSender:
         node = detail.get("node")
         if isinstance(node, dict):
             node_id = _s(node.get("id"))
-        opercache_id = _previous_node_opercache_id(detail)
-        if not node_id or not opercache_id:
-            raise KSMError(f"退回目标节点计算失败（节点数不足或缺字段）: bill_id={fields.bill_id}")
+        try:
+            opercache_id = _previous_node_opercache_id(detail)
+        except ValueError as e:
+            raise KSMError(f"{e}: bill_id={fields.bill_id}") from e
+        if not node_id:
+            raise KSMError(f"退回目标节点计算失败（缺当前节点 id）: bill_id={fields.bill_id}")
         return replace(fields, node_id=node_id, opercache_id=opercache_id)
 
     def _return_target_from_snapshot(
@@ -642,8 +645,11 @@ class KSMWritebackSender:
         node = raw.get("node")
         if isinstance(node, dict):
             node_id = _s(node.get("id"))
-        opercache_id = _previous_node_opercache_id(raw)
-        if not node_id or not opercache_id:
+        try:
+            opercache_id = _previous_node_opercache_id(raw)
+        except ValueError:
+            return None
+        if not node_id:
             return None
         return replace(fields, node_id=node_id, opercache_id=opercache_id)
 
