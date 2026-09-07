@@ -317,6 +317,383 @@ function MultiCheckDropdown({
   );
 }
 
+interface HeaderFilterState {
+  mode: "fuzzy" | "exact";
+  value: string;
+}
+
+function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
+  const p = (ticket as any).source_payload;
+  switch (colId) {
+    case "short_code":
+      return ticket.short_code ?? "";
+    case "source_ticket_id":
+      return ticket.source_ticket_number ?? ticket.source_ticket_id ?? "";
+    case "title":
+      return ticket.title ?? "";
+    case "body":
+      return (ticket as any).body ?? p?.ticket_content ?? (ticket as any).description ?? "";
+    case "product_category":
+      return (
+        (ticket as any).product_category ??
+        (ticket as any).predicted_product_line_code ??
+        ticket.product_line_code ??
+        ""
+      );
+    case "module":
+      return ticket.module ?? "";
+    case "closing_note":
+      return (
+        (ticket as any).closing_note ??
+        (ticket as any).cached_reply_content ??
+        p?.reply_content ??
+        ""
+      );
+    case "predicted_type":
+      if (!ticket.predicted_type) return "未分类";
+      if (ticket.predicted_type === "Demand") return "需求";
+      if (ticket.predicted_type === "Bug_fix") return "Bug 修复";
+      if (ticket.predicted_type === "Operation") return "应用类";
+      return ticket.predicted_type;
+    case "op_status": {
+      const stage = computeProcessStage({
+        predictedType: ticket.predicted_type,
+        hubIssueId: ticket.hub_issue_id,
+        hubStatus: ticket.hub_status,
+        opStatus: ticket.op_status,
+        ticketStatus: ticket.status,
+        ticketStatusLabel,
+      });
+      return stage.label ?? "";
+    }
+    case "handler_user":
+      return ticket.handler_user_name ?? (ticket.handler_user_id ? String(ticket.handler_user_id) : "");
+    case "assigned_user":
+      return ticket.assigned_user_name ?? (ticket.assigned_user_id ? String(ticket.assigned_user_id) : "");
+    case "product_name":
+      return ticket.product_name ?? "";
+    case "source_module":
+      return (
+        (ticket as any).source_module ??
+        p?._original_catalog?.module ??
+        p?.module ??
+        ""
+      );
+    case "reject_count":
+      return String(ticket.reject_count ?? 0);
+    case "children_count":
+      return String(ticket.children_count ?? 1);
+    case "dev_progress":
+      return (
+        devProgressLabel({
+          predictedType: ticket.predicted_type,
+          hubIssueId: ticket.hub_issue_id,
+          linearStatus: ticket.linear_status,
+        }) ?? ""
+      );
+    case "service_level":
+      return ticket.service_level ?? "标准服务";
+    case "sla_standard_hours": {
+      const h = (ticket as any).sla_standard_hours;
+      return h != null ? `${h}h` : "";
+    }
+    case "remaining_hours": {
+      const h = ticket.remaining_hours;
+      return h != null ? `${h}h` : "";
+    }
+    case "overdue_status": {
+      const h = ticket.remaining_hours;
+      return h != null && h < 0 ? "已超时" : "未超时";
+    }
+    case "reporter_company":
+      return ticket.reporter_company ?? "";
+    case "reporter_tax_no":
+      return ticket.reporter_tax_no ?? "";
+    case "reporter_name":
+      return ticket.reporter_name ?? "";
+    case "reporter_mobile":
+      return ticket.reporter_mobile ?? "";
+    case "reporter_email":
+      return ticket.reporter_email ?? "";
+    case "contact_name":
+      return (
+        (ticket as any).contact_name ??
+        (ticket as any).reporter?.contact_name ??
+        p?.extend_fields_list?.find((f: any) => f.field_name === "联系人")?.field_value ??
+        ""
+      );
+    case "contact_mobile":
+      return (
+        (ticket as any).contact_mobile ??
+        (ticket as any).reporter?.contact_mobile ??
+        p?.extend_fields_list?.find((f: any) => f.field_name === "联系手机")?.field_value ??
+        ""
+      );
+    case "contact_email":
+      return (
+        (ticket as any).contact_email ??
+        (ticket as any).reporter?.contact_email ??
+        p?.user_emails ??
+        ""
+      );
+    case "tenant_id":
+      return (
+        (ticket as any).tenant_id ??
+        (ticket as any).reporter_tenant_id ??
+        p?.extend_fields_list?.find((f: any) => f.field_name === "租户编号")?.field_value ??
+        ""
+      );
+    case "reporter_tenant":
+      return (
+        ticket.reporter_tenant ??
+        p?.extend_fields_list?.find((f: any) => f.field_name === "租户名称")?.field_value ??
+        ""
+      );
+    case "source_code":
+      return sourceLabel(ticket.source_code);
+    case "submit_time": {
+      const time =
+        ticket.received_at ??
+        p?.create_time ??
+        p?.createtime ??
+        p?.createTime ??
+        ticket.created_at;
+      return fmtTime(time);
+    }
+    case "created_at":
+      return fmtTime(ticket.created_at ?? ticket.received_at);
+    case "resolved_at": {
+      const time = (ticket as any).actual_resolved_at ?? (ticket as any).resolved_at;
+      return fmtTime(time);
+    }
+    case "closed_at": {
+      const time =
+        (ticket as any).closed_at ??
+        (ticket as any).actual_released_at ??
+        p?.closed_time;
+      return fmtTime(time);
+    }
+    default:
+      return (ticket as any)[colId] != null ? String((ticket as any)[colId]) : "";
+  }
+}
+
+function ColumnFilterDropdown({
+  columnId,
+  columnName,
+  filter,
+  onApply,
+  onReset,
+}: {
+  columnId: string;
+  columnName: string;
+  filter?: HeaderFilterState;
+  onApply: (f: HeaderFilterState) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"fuzzy" | "exact">(filter?.mode ?? "fuzzy");
+  const [val, setVal] = useState(filter?.value ?? "");
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const hasFilter = Boolean(filter?.value && filter.value.trim() !== "");
+
+  useEffect(() => {
+    if (open) {
+      setMode(filter?.mode ?? "fuzzy");
+      setVal(filter?.value ?? "");
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open, filter]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const handleApply = () => {
+    if (!val.trim()) {
+      onReset();
+    } else {
+      onApply({ mode, value: val.trim() });
+    }
+    setOpen(false);
+  };
+
+  const handleReset = () => {
+    setVal("");
+    onReset();
+    setOpen(false);
+  };
+
+  return (
+    <div
+      className="relative inline-flex items-center ml-1 flex-none"
+      ref={popoverRef}
+      draggable={false}
+      onDragStart={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        draggable={false}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label={`筛选 ${columnName}`}
+        title={
+          hasFilter
+            ? `当前已筛选: ${filter?.mode === "exact" ? "精确" : "模糊"} "${filter?.value}"`
+            : `筛选 ${columnName}`
+        }
+        className={`inline-flex items-center justify-center p-0.5 rounded transition-all cursor-pointer ${
+          hasFilter
+            ? "text-[#2b5ed1] bg-[#e3ecff] opacity-100 shadow-xs"
+            : "text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 opacity-0 group-hover:opacity-100"
+        }`}
+      >
+        <svg
+          className="w-3.5 h-3.5"
+          viewBox="0 0 16 16"
+          fill={hasFilter ? "currentColor" : "none"}
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polygon points="1.5 2.5, 14.5 2.5, 9.5 8.5, 9.5 13.5, 6.5 13.5, 6.5 8.5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute top-full mt-1.5 z-50 w-[220px] bg-white border border-slate-200 rounded-[8px] shadow-2xl p-2.5 text-[12px] text-slate-800 select-auto font-normal ${
+            [
+              "closed_at",
+              "resolved_at",
+              "created_at",
+              "submit_time",
+              "source_code",
+              "reporter_tenant",
+              "tenant_id",
+              "contact_email",
+              "contact_mobile",
+              "contact_name",
+              "reporter_email",
+              "reporter_mobile",
+              "reporter_name",
+              "reporter_tax_no",
+              "reporter_company",
+              "overdue_status",
+              "remaining_hours",
+              "sla_standard_hours",
+              "service_level",
+              "dev_progress",
+              "children_count",
+              "reject_count",
+              "source_module",
+              "product_name",
+              "assigned_user",
+              "handler_user",
+            ].includes(columnId)
+              ? "right-0"
+              : "left-0"
+          }`}
+        >
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100">
+            <span className="font-bold text-slate-700 text-[11.5px] truncate max-w-[170px]">
+              筛选：{columnName}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="text-slate-400 hover:text-slate-600 text-sm leading-none p-0.5 cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* 模式选择：模糊搜索 / 精确查询 */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-[6px] mb-2 text-[11px] font-medium">
+            <button
+              type="button"
+              onClick={() => setMode("fuzzy")}
+              className={`flex-1 py-1 rounded-[5px] transition-colors cursor-pointer text-center ${
+                mode === "fuzzy"
+                  ? "bg-white text-[#2b5ed1] font-bold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              模糊搜索
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("exact")}
+              className={`flex-1 py-1 rounded-[5px] transition-colors cursor-pointer text-center ${
+                mode === "exact"
+                  ? "bg-white text-[#2b5ed1] font-bold shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              精确查询
+            </button>
+          </div>
+
+          {/* 输入框 */}
+          <div className="mb-2.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleApply();
+                }
+              }}
+              placeholder={`输入${columnName}...`}
+              className="w-full px-2.5 py-1 text-[12px] border border-slate-300 rounded-[6px] outline-none focus:border-[#2b5ed1] bg-slate-50 focus:bg-white text-slate-800 placeholder:text-slate-400"
+            />
+          </div>
+
+          {/* 操作按钮 */}
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="px-2.5 py-1 text-[11.5px] rounded-[5px] border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              重置
+            </button>
+            <button
+              type="button"
+              onClick={handleApply}
+              className="px-3 py-1 text-[11.5px] font-medium rounded-[5px] bg-[#2b5ed1] hover:bg-[#204cb0] text-white transition-colors shadow-xs cursor-pointer"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TicketsListPage() {
   const [params, setParams] = useSearchParams();
   // 来源系统多选（支持外部 ?source_code= 或 ?source_codes=）
@@ -338,6 +715,7 @@ export function TicketsListPage() {
 
   const overdueFilter = params.get("overdue_status") ?? "";
   const [quickTag, setQuickTag] = useState<"green_vip" | "today" | "overdue" | "unassigned" | null>(null);
+  const [headerFilters, setHeaderFilters] = useState<Record<string, HeaderFilterState>>({});
 
   const unassigned = params.get("unassigned") === "true";
   const page = Number(params.get("page") ?? "1");
@@ -540,8 +918,25 @@ export function TicketsListPage() {
     } else if (quickTag === "unassigned") {
       list = list.filter((t) => !t.handler_user_id);
     }
+
+    const filterEntries = Object.entries(headerFilters).filter(
+      ([, f]) => f && f.value && f.value.trim() !== "",
+    );
+    if (filterEntries.length > 0) {
+      list = list.filter((ticket) => {
+        return filterEntries.every(([colId, f]) => {
+          const val = getTicketColumnValue(ticket, colId).trim().toLowerCase();
+          const target = f.value.trim().toLowerCase();
+          if (f.mode === "exact") {
+            return val === target;
+          }
+          return val.includes(target);
+        });
+      });
+    }
+
     return list;
-  }, [rawItems, overdueFilter, quickTag, todayStr]);
+  }, [rawItems, overdueFilter, quickTag, todayStr, headerFilters]);
 
   const currentHandlersDisplay = useMemo(() => {
     const handlerNames = new Set<string>();
@@ -614,6 +1009,7 @@ export function TicketsListPage() {
     setSourceTicketInput("");
     setReporterCompanyInput("");
     setQuickTag(null);
+    setHeaderFilters({});
   }
 
 
@@ -1697,8 +2093,8 @@ export function TicketsListPage() {
       {tickets.error && <p className="text-xs text-hub-rose">{String(tickets.error)}</p>}
 
       {tickets.data && (
-        <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden shadow-sm">
-          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] min-h-[400px] max-w-full">
+        <div className="bg-white border border-hub-border rounded-[10px] overflow-hidden shadow-sm flex flex-col h-[calc(100vh-270px)] min-h-[500px]">
+          <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0 max-w-full">
             <table
               className="border-separate border-spacing-0 min-w-full"
               style={{ width: table.getTotalSize(), tableLayout: "fixed" }}
@@ -1729,14 +2125,42 @@ export function TicketsListPage() {
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={() => onHeaderDrop(header.column.id)}
                           title={pinned ? "固定列" : "拖动可调整列顺序"}
-                          className={`relative px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-700 tracking-[.3px] whitespace-nowrap border-b border-slate-300 bg-[#e9edf5] select-none ${
+                          className={`group relative px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-700 tracking-[.3px] whitespace-nowrap border-b border-slate-300 bg-[#e9edf5] select-none ${
                             pinned ? "z-40" : "cursor-move"
                           } ${isLastPinned ? "border-r border-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.06)]" : ""} ${
                             dragCol === header.column.id ? "opacity-50" : ""
                           }`}
                           style={stickyStyle(header.column.id, header.getSize(), true)}
                         >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          <div className="flex items-center justify-between gap-1 min-w-0 pr-1">
+                            <span className="truncate">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                            </span>
+                            {header.column.id !== "select" && (
+                              <ColumnFilterDropdown
+                                columnId={header.column.id}
+                                columnName={
+                                  typeof header.column.columnDef.header === "string"
+                                    ? header.column.columnDef.header
+                                    : header.column.id
+                                }
+                                filter={headerFilters[header.column.id]}
+                                onApply={(f) => {
+                                  setHeaderFilters((prev) => ({
+                                    ...prev,
+                                    [header.column.id]: f,
+                                  }));
+                                }}
+                                onReset={() => {
+                                  setHeaderFilters((prev) => {
+                                    const next = { ...prev };
+                                    delete next[header.column.id];
+                                    return next;
+                                  });
+                                }}
+                              />
+                            )}
+                          </div>
                           {header.column.getCanResize() && (
                             <span
                               draggable={false}
@@ -1795,7 +2219,7 @@ export function TicketsListPage() {
             </table>
           </div>
           {/* 分页 */}
-          <div className="flex items-center gap-2 px-3.5 py-2 bg-hub-panel flex-wrap">
+          <div className="flex-none flex items-center gap-2 px-3.5 py-2 bg-hub-panel flex-wrap border-t border-hub-borderLight">
             <div className="text-[11px] text-hub-textFaint">
               页 {tickets.data.page}/
               {Math.max(1, Math.ceil(tickets.data.total / tickets.data.page_size))} · 共{" "}

@@ -6,7 +6,8 @@
  * 后端暂无数据源 → 搭 UI 骨架 + 占位「待后端支持」，结构就位后续接后端只补数据。
  */
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getByPath, patchByPath, postByPath } from "@/api/client";
@@ -233,9 +234,24 @@ export function TicketDetailPage() {
       navigate("/tickets"); // 无 tab 环境（如测试）回退到普通导航
     }
   };
-  // 处理建议（前端态，默认正常跟进）+ 确认按钮提示（逻辑待后端）
-  const [suggestion, setSuggestion] = useState<string>("normal");
+  // 处理建议（前端态，默认正常跟进，UI已隐藏）
+  const [suggestion] = useState<string>("normal");
   const [confirmNotice, setConfirmNotice] = useState<string | null>(null);
+  const [topToast, setTopToast] = useState<{
+    message: string;
+    type: "success" | "warning";
+  } | null>(null);
+  const topToastTimerRef = useRef<any>(null);
+
+  const showTopToast = useCallback((message: string, type: "success" | "warning" = "success") => {
+    if (topToastTimerRef.current) {
+      clearTimeout(topToastTimerRef.current);
+    }
+    setTopToast({ message, type });
+    topToastTimerRef.current = setTimeout(() => {
+      setTopToast(null);
+    }, 4000);
+  }, []);
   const [transferOpen, setTransferOpen] = useState(false);
   const [addSubOpen, setAddSubOpen] = useState(false);
   // 添加子任务：本地草稿行（后端"查工单任务列表→无则建/有则关联"接口待补，草稿仅前端可见）
@@ -250,6 +266,68 @@ export function TicketDetailPage() {
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   // 退回/拆分转单：后端动作待做，点击先在时间轴插一条前端本地占位节点
   const [localActions, setLocalActions] = useState<{ label: string }[]>([]);
+
+  // 处理说明附件：支持本地选择上传与 Ctrl+V / ⌘+V 粘贴图片及文件
+  const [procAttachments, setProcAttachments] = useState<{
+    id: string;
+    name: string;
+    size: number;
+    type: string;
+    url?: string;
+    file?: File;
+    uploadedAt: string;
+  }[]>([]);
+  const [previewImgUrl, setPreviewImgUrl] = useState<string | null>(null);
+
+  const handleAddProcFiles = (files: FileList | File[]) => {
+    const newItems: typeof procAttachments = [];
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    Array.from(files).forEach((f) => {
+      const isImg = f.type.startsWith("image/");
+      const url = isImg ? URL.createObjectURL(f) : undefined;
+      newItems.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: f.name || `附件_${Date.now()}`,
+        size: f.size,
+        type: f.type,
+        url,
+        file: f,
+        uploadedAt: timeStr,
+      });
+    });
+    if (newItems.length > 0) {
+      setProcAttachments((prev) => [...prev, ...newItems]);
+    }
+  };
+
+  const handleRemoveProcAttachment = (id: string) => {
+    setProcAttachments((prev) => {
+      const it = prev.find((x) => x.id === id);
+      if (it?.url) URL.revokeObjectURL(it.url);
+      return prev.filter((x) => x.id !== id);
+    });
+  };
+
+  const handleProcPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const f = item.getAsFile();
+        if (f) {
+          const ext = f.type.split("/")[1] || "png";
+          const named = new File([f], f.name || `截图_${Date.now()}.${ext}`, { type: f.type });
+          files.push(named);
+        }
+      }
+    }
+    if (files.length > 0) {
+      handleAddProcFiles(files);
+    }
+  };
   const assign = useMutation({
     mutationFn: (uid: number) =>
       api.post("/api/supervisor/assign", { ticket_ids: [id], assigned_user_id: uid }),
@@ -410,7 +488,7 @@ export function TicketDetailPage() {
       (d?.handler_user_id != null && currentUserId() === d.handler_user_id));
 
   return (
-    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-2.5 pt-5 pb-10">
+    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-6 pt-5 pb-10">
       {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
       {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
 
@@ -469,6 +547,32 @@ export function TicketDetailPage() {
               </div>
             </div>
           </div>
+          {/* 页面顶部提示条（子任务确认/缺失校验等，与现有提示风格一致） */}
+          {topToast && (
+            <div className="px-1 mb-1.5">
+              <div
+                className={`text-[12px] px-3 py-1.5 rounded-[7px] border flex items-center justify-between gap-2 shadow-sm transition-all ${
+                  topToast.type === "warning"
+                    ? "text-amber-800 bg-amber-50 border-amber-300"
+                    : "text-emerald-700 bg-emerald-50 border-emerald-200"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">{topToast.type === "warning" ? "⚠️" : "✓"}</span>
+                  <span className="font-medium">{topToast.message}</span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭提示"
+                  className="text-slate-400 hover:text-slate-600 font-bold ml-2 cursor-pointer leading-none text-xs"
+                  onClick={() => setTopToast(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
           {confirmNotice && (
             <div className="px-1 text-[11px] text-hub-amber-deep">
               <span className="bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
@@ -573,9 +677,9 @@ export function TicketDetailPage() {
           {/* 5. 工单处理容器：左=处理节点（宽度 300px 垂直时间轴），
                 右=节点处理详情（编辑说明/回复/转派等能力） */}
           <Card title="工单处理">
-            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] gap-6 min-h-[520px]">
               {/* 5.1 左：处理节点时间轴 */}
-              <div className="w-full lg:w-[300px] flex-none">
+              <div className="w-full lg:w-[230px] flex-none">
                 <div className="text-[11px] font-bold text-hub-textMuted tracking-[.4px] mb-2">
                   处理节点
                 </div>
@@ -589,7 +693,10 @@ export function TicketDetailPage() {
                 )}
                 {/* KSM 工单：源系统流转节点（handleSteps）；非 KSM：本系统 status_history 时间轴 */}
                 {history.data && d.source_code === "ksm" ? (
-                  <KsmProcessNodes nodes={history.data.ksm_nodes ?? []} />
+                  <KsmProcessNodes
+                    nodes={history.data.ksm_nodes ?? []}
+                    terminal={DONE_STATUSES.includes(d.status)}
+                  />
                 ) : (
                 (() => {
                   if (!history.data) return null;
@@ -627,7 +734,7 @@ export function TicketDetailPage() {
               </div>
 
               {/* 5.2 右：节点处理详情 */}
-              <div className="space-y-5 lg:border-l lg:border-hub-borderLight lg:pl-4">
+              <div className="min-w-0 space-y-6 lg:border-l lg:border-hub-borderLight lg:pl-5">
                 <div className="flex items-center gap-2.5">
                   <div className="text-[12px] font-bold text-black tracking-wide">节点详情</div>
                   <ProcessStatusBadge
@@ -645,56 +752,53 @@ export function TicketDetailPage() {
                   <p className="text-[11px] text-hub-textFaint">分类状态加载中…</p>
                 )}
 
-                {/* 待确认分类（研发类自动毕业 pending_review）：工单标签编辑 + 确认推送 */}
-                {pendingReview && hub.data && (
-                  <TicketAttributesEditor ticket={d} hub={hub.data} />
-                )}
+                {/* 节点信息下方的【工单标签】：常驻展示在节点详情下方，包含工单类型、产品分类、问题模块与操作按钮 */}
+                <TicketAttributesEditor ticket={d} hub={hub.data ?? null} />
 
-                {/* 分类未明确（未毕业 hub_issue）：工单标签编辑 + 确认分类一步毕业 */}
-                {!classified && d.hub_issue_id == null && (
-                  <TicketAttributesEditor ticket={d} hub={null} />
-                )}
-
-                {/* 明确分类且为运营类：处理建议 + 处理说明 + 处理附件（研发类/内部任务见下方分流） */}
-                {classified && isOperation && (
-                  <div className="space-y-5">
-                    {/* 处理中(processing)可改判转研发 */}
-                    {opStatus === "processing" && hub.data && (
-                      <TicketAttributesEditor ticket={d} hub={hub.data} />
-                    )}
-                    {/* 2.4 处理建议（左右结构，录入框宽 300px） */}
-                    <div className="space-y-1.5">
-                      <div className="text-[12px] font-bold text-black tracking-wide">
-                        处理建议
+                {/* 2.6 子任务列表（位置与处理说明互换，置于处理说明上方） */}
+                <div>
+                  {isCurrentNode ? (
+                    <SubTicketList
+                      childIds={d.children_ticket_ids ?? []}
+                      drafts={subDrafts}
+                      onDeleteDrafts={(indices) => {
+                        setSubDrafts((prev) => prev.filter((_, i) => !indices.includes(i)));
+                      }}
+                      onAdd={() => setAddSubOpen(true)}
+                      onToast={showTopToast}
+                      onSyncNote={(taskTitle, solution) => {
+                        const formatted = `任务说明：${taskTitle || "无"}\n解决方案：${solution || "无"}`;
+                        setNoteDrafts((prev) => {
+                          const cur = (prev[0] ?? d.cached_reply_content ?? draftReply ?? "").trim();
+                          const nextVal = cur ? `${cur}\n\n${formatted}` : formatted;
+                          return { ...prev, 0: nextVal };
+                        });
+                      }}
+                      canEdit={isCurrentNode && isSupervisor()}
+                      self={{
+                        short_code: d.short_code,
+                        title: d.title,
+                        predicted_type: d.predicted_type,
+                        product_line_code: d.product_line_code,
+                        module: d.module,
+                        status: d.status,
+                        assigned_user_name: d.assigned_user_name,
+                        assigned_user_id: d.assigned_user_id,
+                        cached_reply_content: d.cached_reply_content,
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <div className="text-[12px] font-bold text-black tracking-wide mb-2">
+                        子任务列表
                       </div>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <select
-                          aria-label="处理建议"
-                          value={suggestion}
-                          onChange={(e) => setSuggestion(e.target.value)}
-                          disabled={opDone}
-                          className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1.5 bg-transparent outline-none focus:border-hub-teal disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="normal" className="bg-white">正常跟进</option>
-                          <option value="supplement" className="bg-white">补充资料</option>
-                          <option value="escalate_dev" className="bg-white">升级产研</option>
-                          <option value="return" className="bg-white">退回转单</option>
-                          <option value="split" className="bg-white">拆分转单</option>
-                        </select>
-                        <span className="text-[11.5px] text-hub-textFaint">
-                          {suggestion === "supplement"
-                            ? "备注：客户工单内容不全，需要客户补充资料"
-                            : suggestion === "escalate_dev"
-                              ? "备注：需要查验处理的需求/bug"
-                              : suggestion === "return"
-                                ? "确认后退回 KSM（执行逻辑待后端）"
-                                : suggestion === "split"
-                                  ? "确认后拆分多单，发票云接回 1 单（执行逻辑待后端）"
-                                  : "判断为发票云问题，正常处理跟进"}
-                        </span>
-                      </div>
-                    </div>
+                      <EmptyNodeData />
+                    </>
+                  )}
+                </div>
 
+                {/* 节点详情：处理说明 + 处理附件常驻显示（取消分类与类型限制） */}
+                <div className="space-y-6">
                     {/* 2.5 处理说明（操作按钮移到右侧，和处理说明标题同一行） */}
                     <div>
                       <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
@@ -702,12 +806,19 @@ export function TicketDetailPage() {
                           <span className="text-[12px] font-bold text-black tracking-wide">
                             处理说明
                           </span>
-                          <span className="text-[11.5px] text-hub-textFaint">
-                            {isCurrentNode ? "（当前节点）" : "（历史节点）"}
-                          </span>
+                          {(d.op_status === "reviewing" || opStatus === "reviewing") && (
+                            <span className="text-[11.5px] text-hub-amber-deep font-normal">
+                              AI 草稿待审核，确认后正式发出
+                            </span>
+                          )}
+                          {!isCurrentNode && (
+                            <span className="text-[11.5px] text-hub-textFaint">
+                              （历史节点）
+                            </span>
+                          )}
                         </div>
 
-                        {/* 操作按钮移至标题行右侧，按【提交答复、转派、补充资料、拆单】顺序排布 */}
+                        {/* 操作按钮移至标题行右侧，按【提交答复、转派、退回 KSM、补充资料、拆单、诊断】排布 */}
                         <div className="flex items-center gap-2 flex-wrap justify-end">
                           <button
                             type="button"
@@ -754,53 +865,49 @@ export function TicketDetailPage() {
                               转派
                             </button>
                           )}
-                          {d.source_code === "ksm" &&
-                            (isSupervisor() ||
-                              (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
-                              <button
-                                type="button"
-                                disabled={returnKsm.isPending}
-                                title="退回 KSM 重新分派（不可逆）"
-                                onClick={() => {
-                                  const content = (
-                                    noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                                  ).trim();
-                                  if (!content) {
-                                    setReturnErr("处理说明为空，无法退回");
-                                    return;
-                                  }
-                                  if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
-                                    return;
-                                  }
-                                  returnKsm.mutate(content);
-                                }}
-                                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                              >
-                                {returnKsm.isPending ? "退回中…" : "退回 KSM"}
-                              </button>
-                            )}
-                          {d.source_code === "ksm" &&
-                            (isSupervisor() ||
-                              (d.handler_user_id != null && currentUserId() === d.handler_user_id)) && (
-                              <button
-                                type="button"
-                                disabled={supply.isPending || opDone}
-                                title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
-                                onClick={() => {
-                                  const content = (
-                                    noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                                  ).trim();
-                                  if (!content) {
-                                    setSupplyErr("处理说明为空，无法请求补料");
-                                    return;
-                                  }
-                                  supply.mutate(content);
-                                }}
-                                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                              >
-                                {supply.isPending ? "提交中…" : "补充资料"}
-                              </button>
-                            )}
+                          {(d.source_code === "ksm" || !d.source_code) && (
+                            <button
+                              type="button"
+                              disabled={returnKsm.isPending || opDone}
+                              title="退回 KSM 重新分派（不可逆）"
+                              onClick={() => {
+                                const content = (
+                                  noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                                ).trim();
+                                if (!content) {
+                                  setReturnErr("处理说明为空，无法退回");
+                                  return;
+                                }
+                                if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
+                                  return;
+                                }
+                                returnKsm.mutate(content);
+                              }}
+                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {returnKsm.isPending ? "退回中…" : "退回 KSM"}
+                            </button>
+                          )}
+                          {(d.source_code === "ksm" || !d.source_code) && (
+                            <button
+                              type="button"
+                              disabled={supply.isPending || opDone}
+                              title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                              onClick={() => {
+                                const content = (
+                                  noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                                ).trim();
+                                if (!content) {
+                                  setSupplyErr("处理说明为空，无法请求补料");
+                                  return;
+                                }
+                                supply.mutate(content);
+                              }}
+                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              {supply.isPending ? "提交中…" : "补充资料"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setAddSubOpen(true)}
@@ -828,11 +935,6 @@ export function TicketDetailPage() {
                         </div>
                       </div>
 
-                      {d.op_status === "reviewing" && (
-                        <div className="mb-1.5 text-[11px] text-hub-amber-deep bg-hub-amber-light border border-hub-amber-border rounded px-2 py-1">
-                          AI 草稿待审核，确认后正式发出
-                        </div>
-                      )}
                       {opStatus === "processing" && hub.data?.last_transfer_attempt && (
                         <div className="mb-1.5 text-[11px] text-hub-textMuted bg-transparent border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
                           <div className="font-semibold text-hub-textFaint mb-0.5">
@@ -858,32 +960,169 @@ export function TicketDetailPage() {
                             const val =
                               noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
                             return (
-                              <textarea
-                                readOnly={!editable}
-                                maxLength={2000}
-                                value={val}
-                                onChange={(e) =>
-                                  setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
-                                }
-                                placeholder={
-                                  editable
-                                    ? "填写当前节点处理说明（点页面「确认」入库，落库待后端）"
-                                    : opStatus === "closed"
-                                      ? "已关单，只读"
-                                      : "已答复完成，只读"
-                                }
-                                className={
-                                  "w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
-                                  (editable
-                                    ? "bg-transparent focus:border-hub-teal"
-                                    : "bg-transparent cursor-not-allowed opacity-60")
-                                }
-                              />
+                              <div className="relative w-full">
+                                <textarea
+                                  readOnly={!editable}
+                                  maxLength={2000}
+                                  value={val}
+                                  onChange={(e) =>
+                                    setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
+                                  }
+                                  onPaste={(e) => {
+                                    const items = e.clipboardData?.items;
+                                    const hasFiles =
+                                      items && Array.from(items).some((it) => it.kind === "file");
+                                    if (hasFiles) {
+                                      handleProcPaste(e);
+                                    }
+                                  }}
+                                  placeholder={
+                                    editable
+                                      ? "填写当前节点处理说明（支持输入说明，支持在下方添加或 Ctrl+V 粘贴附件）"
+                                      : opStatus === "closed"
+                                        ? "已关单，只读"
+                                        : "已答复完成，只读"
+                                  }
+                                  className={
+                                    "w-full min-h-[136px] pb-6 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
+                                    (editable
+                                      ? "bg-transparent focus:border-hub-teal"
+                                      : "bg-transparent cursor-not-allowed opacity-60")
+                                  }
+                                />
+                                <span className="absolute bottom-2 right-2.5 text-[11px] text-hub-textFaint font-mono pointer-events-none select-none">
+                                  {val.length}/2000
+                                </span>
+                              </div>
                             );
                           })()}
-                          <div className="mt-1 text-[10.5px] text-hub-textFaint">
-                            {d.cached_reply_version != null ? `回复 v${d.cached_reply_version} · ` : ""}
-                            最大 2000 字符 · 保存随页面「确认」按钮入库（逐节点说明落库待后端）
+
+                          {/* 4. 处理说明下方附件模块（支持本地选择上传与 Ctrl+V / ⌘+V 粘贴上传） */}
+                          <div
+                            onPaste={handleProcPaste}
+                            tabIndex={0}
+                            className="mt-3.5 pt-3 border-t border-hub-borderLight focus:outline-none"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-bold text-black tracking-wide">
+                                  处理附件
+                                </span>
+                                {procAttachments.length > 0 && (
+                                  <span className="text-[11px] text-hub-teal-deep font-semibold">
+                                    ({procAttachments.length})
+                                  </span>
+                                )}
+                                <span className="text-[11px] text-hub-textFaint">
+                                  （支持本地上传或 Ctrl+V / ⌘+V 粘贴截图/文件）
+                                </span>
+                              </div>
+                              <label className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] font-medium rounded-[6px] border border-hub-border hover:border-[#6085e7] text-slate-700 hover:text-[#6085e7] bg-white cursor-pointer transition-colors shadow-2xs">
+                                <svg
+                                  className="w-3.5 h-3.5 text-slate-500"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 4v16m8-8H4"
+                                  />
+                                </svg>
+                                <span>上传附件</span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  className="hidden"
+                                  disabled={opDone}
+                                  onChange={(e) => {
+                                    if (e.target.files) {
+                                      handleAddProcFiles(e.target.files);
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+
+                            {/* 附件列表或空状态提示 */}
+                            {procAttachments.length === 0 ? (
+                              <div
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (e.dataTransfer.files) handleAddProcFiles(e.dataTransfer.files);
+                                }}
+                                className="border border-dashed border-slate-300 hover:border-[#6085e7] rounded-[7px] p-3 text-center transition-colors bg-slate-50/50"
+                              >
+                                <p className="text-[11.5px] text-slate-500 m-0">
+                                  点击右上角「上传附件」或直接在此处按{" "}
+                                  <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                                    Ctrl+V
+                                  </kbd>
+                                  （Mac{" "}
+                                  <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                                    ⌘+V
+                                  </kbd>
+                                  ）粘贴截图与文件
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                {procAttachments.map((att) => {
+                                  const isImg = att.type.startsWith("image/");
+                                  const sizeStr =
+                                    att.size < 1024 * 1024
+                                      ? `${(att.size / 1024).toFixed(1)} KB`
+                                      : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
+                                    >
+                                      {isImg && att.url ? (
+                                        <img
+                                          src={att.url}
+                                          alt={att.name}
+                                          className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
+                                          onClick={() => setPreviewImgUrl(att.url!)}
+                                          title="点击预览大图"
+                                        />
+                                      ) : (
+                                        <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
+                                          FILE
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <div
+                                          className="text-[12px] font-medium text-slate-800 truncate"
+                                          title={att.name}
+                                        >
+                                          {att.name}
+                                        </div>
+                                        <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                                          <span>{sizeStr}</span>
+                                          <span>•</span>
+                                          <span>{att.uploadedAt}</span>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveProcAttachment(att.id)}
+                                        disabled={opDone}
+                                        title="删除此附件"
+                                        className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none disabled:opacity-40"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </>
                       ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
@@ -904,7 +1143,6 @@ export function TicketDetailPage() {
                       {supplyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{supplyErr}</div>}
                     </div>
                   </div>
-                )}
 
                 {/* 明确分类且为研发类（Bug 修复 / 需求）且已真正推送 Linear：研发跟进，无对客答复 */}
                 {classified && isDevType && d.predicted_type && pushedToLinear && (
@@ -928,39 +1166,6 @@ export function TicketDetailPage() {
                     内部任务已建立，无对客答复流程。
                   </div>
                 )}
-
-                {/* 2.6 子任务列表 */}
-                <div>
-                  {isCurrentNode ? (
-                    <SubTicketList
-                      childIds={d.children_ticket_ids ?? []}
-                      drafts={subDrafts}
-                      onDeleteDrafts={(indices) => {
-                        setSubDrafts((prev) => prev.filter((_, i) => !indices.includes(i)));
-                      }}
-                      onAdd={() => setAddSubOpen(true)}
-                      canEdit={isCurrentNode && isSupervisor()}
-                      self={{
-                        short_code: d.short_code,
-                        title: d.title,
-                        predicted_type: d.predicted_type,
-                        product_line_code: d.product_line_code,
-                        module: d.module,
-                        status: d.status,
-                        assigned_user_name: d.assigned_user_name,
-                        assigned_user_id: d.assigned_user_id,
-                        cached_reply_content: d.cached_reply_content,
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <div className="text-[12px] font-bold text-black tracking-wide mb-2">
-                        子任务列表
-                      </div>
-                      <EmptyNodeData />
-                    </>
-                  )}
-                </div>
               </div>
             </div>
           </Card>
@@ -1073,11 +1278,38 @@ export function TicketDetailPage() {
       )}
       {/* 反思诊断抽屉：Drawer 本身是 fixed 定位，渲染位置不影响页面布局 */}
       <ReflectDrawer ticketId={id} open={reflectOpen} onClose={() => setReflectOpen(false)} />
+
+      {/* 附件图片大图预览弹窗 */}
+      {previewImgUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setPreviewImgUrl(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-white rounded-lg p-2 shadow-2xl overflow-hidden flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewImgUrl(null)}
+              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center text-base z-10 cursor-pointer"
+              title="关闭预览"
+            >
+              ✕
+            </button>
+            <img
+              src={previewImgUrl}
+              alt="附件预览"
+              className="max-h-[85vh] max-w-full object-contain rounded"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ---- 可搜索下拉输入框（产品分类 / 问题模块快速筛选） ----
+// ---- 可搜索下拉输入框（产品分类 / 问题模块快速筛选，支持列表/弹窗顶层 Portal 展开） ----
 function SearchableSelect({
   value,
   onChange,
@@ -1088,6 +1320,8 @@ function SearchableSelect({
   width = 300,
   align = "left",
   loading = false,
+  compact = false,
+  usePortal = true,
 }: {
   value: string;
   onChange: (val: string) => void;
@@ -1095,25 +1329,81 @@ function SearchableSelect({
   placeholder?: string;
   disabled?: boolean;
   ariaLabel?: string;
-  width?: number;
+  width?: number | string;
   align?: "left" | "right";
   loading?: boolean;
+  compact?: boolean;
+  usePortal?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [kw, setKw] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const [dropPos, setDropPos] = useState<{
+    top: number;
+    left: number;
+    minWidth: number;
+    showAbove?: boolean;
+  } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const minWidth = Math.max(rect.width, compact ? 260 : 300);
+    const vh = window.innerHeight || 800;
+    const vw = window.innerWidth || 1200;
+    const spaceBelow = vh - rect.bottom;
+    const spaceAbove = rect.top;
+    const showAbove = spaceBelow < 300 && spaceAbove > spaceBelow;
+
+    let left = align === "right" ? rect.right - minWidth : rect.left;
+    const maxLeft = Math.max(10, vw - minWidth - 10);
+    if (left > maxLeft) left = maxLeft;
+    if (left < 10) left = 10;
+
+    setDropPos({
+      top: showAbove ? rect.top - 4 : rect.bottom + 4,
+      left,
+      minWidth,
+      showAbove,
+    });
+  }, [align, compact]);
 
   useEffect(() => {
+    if (!open) return;
+    updatePosition();
+
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inTrigger = containerRef.current?.contains(target);
+      const inDrop = dropRef.current?.contains(target);
+      if (!inTrigger && !inDrop) {
         setOpen(false);
       }
     }
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
+
+    const handleScrollOrResize = () => {
+      if (!btnRef.current) return;
+      const rect = btnRef.current.getBoundingClientRect();
+      const vh = window.innerHeight || 800;
+      const vw = window.innerWidth || 1200;
+      if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
+        setOpen(false);
+        return;
+      }
+      updatePosition();
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("resize", handleScrollOrResize);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+    };
+  }, [open, updatePosition]);
 
   const selectedOpt = options.find((o) => o.code === value);
   const displayLabel = selectedOpt ? selectedOpt.name : value || placeholder;
@@ -1126,20 +1416,114 @@ function SearchableSelect({
     );
   }, [options, kw]);
 
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!open) {
+      setKw("");
+      updatePosition();
+      setOpen(true);
+    } else {
+      setOpen(false);
+    }
+  };
+
+  const dropdownContent = open && (
+    <div
+      ref={dropRef}
+      style={
+        usePortal
+          ? {
+              position: "fixed",
+              top: dropPos?.top ?? 0,
+              left: dropPos?.left ?? 0,
+              minWidth: dropPos?.minWidth ?? (compact ? 260 : 300),
+              maxWidth: 480,
+              transform: dropPos?.showAbove ? "translateY(-100%)" : "none",
+              zIndex: 9999,
+            }
+          : undefined
+      }
+      className={`${
+        usePortal
+          ? ""
+          : `absolute ${
+              align === "right" ? "right-0" : "left-0"
+            } ${compact ? "top-[30px]" : "top-[36px]"} min-w-full z-50`
+      } w-max max-w-[480px] bg-white border border-hub-border rounded-[8px] shadow-xl p-2 text-[12px]`}
+    >
+      <div className="relative mb-2">
+        <input
+          type="text"
+          autoFocus
+          value={kw}
+          onChange={(e) => setKw(e.target.value)}
+          placeholder="输入关键字快速定位..."
+          className="w-full pl-7 pr-2.5 py-1.5 border border-hub-border rounded-[6px] bg-slate-50/70 outline-none focus:border-hub-teal focus:bg-white text-[12px] text-slate-800"
+        />
+        <svg
+          className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
+        </svg>
+      </div>
+      <div className="max-h-[280px] overflow-y-auto flex flex-col gap-1 pr-1">
+        <button
+          type="button"
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+          }}
+          className="text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 text-hub-textFaint cursor-pointer"
+        >
+          —（清空）
+        </button>
+        {filtered.map((opt) => (
+          <button
+            key={opt.code}
+            type="button"
+            onClick={() => {
+              onChange(opt.code);
+              setOpen(false);
+            }}
+            className={`text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 whitespace-normal break-words leading-relaxed cursor-pointer transition-colors ${
+              opt.code === value
+                ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
+                : "text-slate-700"
+            }`}
+            title={opt.name}
+          >
+            {opt.name}
+          </button>
+        ))}
+        {loading ? (
+          <div className="text-center py-4 text-hub-textFaint text-[11px]">加载中…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-4 text-hub-textFaint text-[11px]">无匹配选项</div>
+        ) : null}
+      </div>
+    </div>
+  );
+
   return (
     <div ref={containerRef} className="relative inline-block" style={{ width }}>
       <button
+        ref={btnRef}
         type="button"
         disabled={disabled}
-        onClick={() => {
-          if (!disabled) {
-            setOpen((prev) => !prev);
-            setKw("");
-          }
-        }}
+        onClick={handleToggle}
         aria-label={ariaLabel}
         title={displayLabel}
-        className="w-full text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal flex items-center justify-between gap-1 text-left disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer h-[32px] text-slate-800"
+        className={`w-full text-[12px] border border-hub-border rounded-[6px] px-2 py-0.5 bg-white outline-none focus:border-hub-teal flex items-center justify-between gap-1 text-left disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+          compact ? "h-[28px] text-[11.5px]" : "h-[32px] text-[12.5px]"
+        } text-slate-800`}
       >
         <span
           className={`truncate ${selectedOpt ? "text-slate-800" : "text-hub-textFaint"}`}
@@ -1156,72 +1540,7 @@ function SearchableSelect({
         </svg>
       </button>
 
-      {open && (
-        <div
-          className={`absolute ${
-            align === "right" ? "right-0" : "left-0"
-          } top-[36px] z-50 min-w-full w-max max-w-[480px] bg-white border border-hub-border rounded-[8px] shadow-xl p-2 text-[12px]`}
-        >
-          <div className="relative mb-2">
-            <input
-              type="text"
-              autoFocus
-              value={kw}
-              onChange={(e) => setKw(e.target.value)}
-              placeholder="输入关键字快速定位..."
-              className="w-full pl-7 pr-2.5 py-1.5 border border-hub-border rounded-[6px] bg-slate-50/70 outline-none focus:border-hub-teal focus:bg-white text-[12px] text-slate-800"
-            />
-            <svg
-              className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <div className="max-h-[280px] overflow-y-auto flex flex-col gap-1 pr-1">
-            <button
-              type="button"
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-              }}
-              className="text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 text-hub-textFaint cursor-pointer"
-            >
-              —（清空）
-            </button>
-            {filtered.map((opt) => (
-              <button
-                key={opt.code}
-                type="button"
-                onClick={() => {
-                  onChange(opt.code);
-                  setOpen(false);
-                }}
-                className={`text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 whitespace-normal break-words leading-relaxed cursor-pointer transition-colors ${
-                  opt.code === value
-                    ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
-                    : "text-slate-700"
-                }`}
-                title={opt.name}
-              >
-                {opt.name}
-              </button>
-            ))}
-            {loading ? (
-              <div className="text-center py-4 text-hub-textFaint text-[11px]">加载中…</div>
-            ) : filtered.length === 0 ? (
-              <div className="text-center py-4 text-hub-textFaint text-[11px]">无匹配选项</div>
-            ) : null}
-          </div>
-        </div>
-      )}
+      {dropdownContent ? (usePortal ? createPortal(dropdownContent, document.body) : dropdownContent) : null}
     </div>
   );
 }
@@ -1240,28 +1559,42 @@ function TicketAttributesEditor({
   hub: HubDetailData | null;
 }) {
   const qc = useQueryClient();
-  const graduated = hub != null;
-  // 初始值：已毕业取 hub，未毕业取 ticket
-  const initType = graduated
-    ? hub.type
-    : HUB_TYPES.includes((ticket.predicted_type ?? "") as (typeof HUB_TYPES)[number])
+  const graduated = ticket.hub_issue_id != null || hub != null;
+  // 初始值：已毕业优先取 hub，未毕业取 ticket
+  const initType = (hub?.type ??
+    (HUB_TYPES.includes((ticket.predicted_type ?? "") as (typeof HUB_TYPES)[number])
       ? (ticket.predicted_type as string)
-      : "Operation";
-  const initPlc = (graduated ? hub.product_line_code : ticket.product_line_code) ?? "";
-  const initModule = (graduated ? hub.module : ticket.module) ?? "";
+      : "Operation")) as string;
+  const initPlc = (hub ? hub.product_line_code : ticket.product_line_code) ?? "";
+  const initModule = (hub ? hub.module : ticket.module) ?? "";
 
   const [type, setType] = useState<string>(initType);
   const [plc, setPlc] = useState<string>(initPlc);
   const [module, setModule] = useState<string>(initModule);
-  const [rootCause, setRootCause] = useState<string>("");
+  const [userEdited, setUserEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // 当外部 hub 或 ticket 异步加载完成时，若用户未手动修改则同步最新属性
+  useEffect(() => {
+    if (!userEdited) {
+      setType(initType);
+      setPlc(initPlc);
+      setModule(initModule);
+    }
+  }, [initType, initPlc, initModule, userEdited]);
 
   const ticketClosed = ["closed", "done", "resolved", "rejected", "superseded"].includes(
     ticket.status,
   );
+  const opDone =
+    hub?.op_status === "answered" ||
+    hub?.op_status === "closed" ||
+    ticket.op_status === "answered" ||
+    ticket.op_status === "closed";
   const canEdit =
     !ticketClosed &&
+    !opDone &&
     (isSupervisor() ||
       (ticket.handler_user_id != null && currentUserId() === ticket.handler_user_id));
 
@@ -1269,7 +1602,6 @@ function TicketAttributesEditor({
     queryKey: ["admin", "product-lines"],
     queryFn: () => api.get("/api/admin/product-lines") as Promise<ProductLineOut[]>,
     staleTime: 60_000,
-    enabled: canEdit,
   });
   const modules = useQuery({
     queryKey: ["catalog-modules", plc],
@@ -1278,7 +1610,7 @@ function TicketAttributesEditor({
         CatalogModuleOut[]
       >,
     staleTime: 30_000,
-    enabled: canEdit && !!plc,
+    enabled: !!plc,
   });
 
   const activeLines = useMemo(
@@ -1286,21 +1618,21 @@ function TicketAttributesEditor({
     [productLines.data],
   );
   useEffect(() => {
-    if (plc || activeLines.length === 0) return;
+    if (!canEdit || plc || activeLines.length === 0) return;
     const fallback = activeLines.find((p) => p.name.includes("其他非发票云"));
     setPlc((fallback ?? activeLines[0]).code);
-  }, [plc, activeLines]);
+  }, [canEdit, plc, activeLines]);
 
   const moduleOptions = modules.data;
   useEffect(() => {
-    if (!plc || !moduleOptions || moduleOptions.length === 0) return;
+    if (!canEdit || !plc || !moduleOptions || moduleOptions.length === 0) return;
     if (!module) setModule(moduleOptions[0].code);
-  }, [plc, module, moduleOptions]);
+  }, [canEdit, plc, module, moduleOptions]);
 
   const productLineOptions = useMemo(() => {
     const list = activeLines.map((p) => ({ code: p.code, name: p.name }));
     if (plc && !list.some((p) => p.code === plc)) {
-      list.push({ code: plc, name: `${plc}（停用）` });
+      list.push({ code: plc, name: plc });
     }
     return list;
   }, [activeLines, plc]);
@@ -1318,7 +1650,7 @@ function TicketAttributesEditor({
     void qc.invalidateQueries({ queryKey: ["ticket-history", ticket.id] });
     void qc.invalidateQueries({ queryKey: ["tickets"] });
     void qc.invalidateQueries({ queryKey: ["hub-issues"] });
-    if (graduated) void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hub.id] });
+    if (graduated && hub) void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hub.id] });
     void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
   };
   const onErr = (e: unknown) => setError(hubErrMsg(e));
@@ -1347,7 +1679,9 @@ function TicketAttributesEditor({
       return api.post("/api/supervisor/confirm-classification", { hub_issue_id: hub!.id });
     },
     onSuccess: () => {
-      setNotice("已确认并推送研发");
+      if (type !== "Operation") {
+        setNotice("已确认并推送研发");
+      }
       refresh();
     },
     onError: onErr,
@@ -1363,7 +1697,9 @@ function TicketAttributesEditor({
         module: module || null,
       }),
     onSuccess: () => {
-      setNotice("已确认分类");
+      if (type !== "Operation") {
+        setNotice("已确认分类");
+      }
       refresh();
     },
     onError: onErr,
@@ -1408,204 +1744,154 @@ function TicketAttributesEditor({
     graduate.isPending ||
     reclassifyToDev.isPending ||
     repush.isPending;
-  const pendingReview = graduated && hub.status === "pending_review";
-  const pendingLinearReview = graduated && hub.status === "pending_linear_review";
+  const pendingReview = graduated && hub?.status === "pending_review";
+  const pendingLinearReview = graduated && hub?.status === "pending_linear_review";
   const isProcessingOp =
-    graduated && hub.type === "Operation" && hub.op_status === "processing";
+    graduated && hub?.type === "Operation" && hub?.op_status === "processing";
   const devUnpushed =
     graduated &&
-    (hub.type === "Bug_fix" || hub.type === "Demand") &&
-    !hub.linear_identifier &&
+    (hub?.type === "Bug_fix" || hub?.type === "Demand") &&
+    !hub?.linear_identifier &&
     !pendingReview &&
     !pendingLinearReview;
   const devTypeSelected = type === "Bug_fix" || type === "Demand";
-
-  if (!canEdit) {
-    return (
-      <div className="space-y-2">
-        <div className="text-[12px] font-bold text-black tracking-wide">工单标签</div>
-        <div className="px-[5px] flex flex-wrap items-center gap-[15px] text-[12.5px]">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">工单类型：</span>
-            <span className="text-slate-800 font-medium">{HUB_TYPE_LABELS[initType] ?? initType}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">产品分类：</span>
-            <span className="text-slate-800 font-medium">{initPlc || "—"}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="font-medium">问题模块：</span>
-            <span className="text-slate-800 font-medium">{initModule || "—"}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const confidencePercent =
+    ticket.predicted_module_confidence != null
+      ? Math.round(ticket.predicted_module_confidence * 100)
+      : null;
 
   return (
-    <div className="space-y-2.5">
-      <div className="text-[12px] font-bold text-black tracking-wide">工单标签</div>
-      <div className="px-[5px] space-y-2.5">
-        {/* 第一行：工单类型、产品分类、问题模块（3组左右平铺，录入框均为 300px） */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">工单类型</span>
-            <select
-              aria-label="工单类型"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              disabled={busy}
-              className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px] cursor-pointer text-slate-800"
-            >
-              {HUB_TYPES.map((t) => (
-                <option key={t} value={t} className="bg-white">
-                  {HUB_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">产品分类</span>
-            <SearchableSelect
-              ariaLabel="产品分类"
-              value={plc}
-              onChange={(val) => {
-                setPlc(val);
-                setModule("");
-              }}
-              options={productLineOptions}
-              disabled={busy}
-              width={300}
-              align="left"
-              loading={productLines.isLoading}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">问题模块</span>
-            <SearchableSelect
-              ariaLabel="问题模块"
-              value={module}
-              onChange={(val) => setModule(val)}
-              options={moduleOptionsList}
-              disabled={busy || !plc}
-              width={300}
-              align="right"
-              placeholder={!plc ? "请先选择产品分类" : "请选择"}
-              loading={modules.isLoading}
-            />
-          </div>
-        </div>
-
-        {/* AI 建议 */}
-        {ticket.predicted_module && (
-          <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-hub-textMuted bg-transparent border border-hub-border rounded-[7px] px-2.5 py-1.5">
-            <span className="font-semibold text-hub-teal-deep">AI 建议</span>
-            <span>
-              {ticket.predicted_product_line_code || "—"} / {ticket.predicted_module}
-              {ticket.predicted_module_confidence != null &&
-                `（置信度 ${Math.round(ticket.predicted_module_confidence * 100)}%）`}
-            </span>
-            {(ticket.predicted_product_line_code !== plc ||
-              ticket.predicted_module !== module) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPlc(ticket.predicted_product_line_code ?? "");
-                  setModule(ticket.predicted_module ?? "");
-                }}
-                disabled={busy}
-                className="px-2 py-0.5 text-[11px] font-semibold rounded bg-transparent text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40 cursor-pointer"
-              >
-                采纳
-              </button>
-            )}
-          </div>
+    <div className="space-y-3.5">
+      <div className="text-[12px] font-bold text-black tracking-wide flex items-center gap-1.5">
+        <span>工单标签</span>
+        {confidencePercent != null && (
+          <span
+            style={{ color: "rgb(171, 139, 86)" }}
+            className="text-[12px] font-normal"
+          >
+            AI 建议：置信度 {confidencePercent}%
+          </span>
         )}
+      </div>
+      <div className="px-[5px]">
+        {/* 4组横向均等分布：组1(工单类型+290px框)、组2(产品分类+290px框)、组3(问题模块+290px框)、组4(确认分类按钮紧随其后保持宽度不变) */}
+        <div className="overflow-x-auto pb-1">
+          <div className="w-full flex items-center justify-between gap-3 min-w-[1080px] flex-nowrap">
+            {/* 组 1：工单类型和工单类型录入框 */}
+            <div className="flex items-center gap-2 flex-none">
+              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">工单类型</span>
+              <select
+                aria-label="工单类型"
+                value={type}
+                onChange={(e) => {
+                  setType(e.target.value);
+                  setUserEdited(true);
+                }}
+                disabled={busy || !canEdit}
+                className="w-[290px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px] cursor-pointer text-slate-800 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {HUB_TYPES.map((t) => (
+                  <option key={t} value={t} className="bg-white">
+                    {HUB_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {/* 第二行：分析根因 + 确认 按钮（与上方左右对齐：工单类型和分析根因左对齐，问题模块录入框和【确认】按钮右对齐） */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 flex-1">
-            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">分析根因</span>
-            <input
-              type="text"
-              aria-label="分析根因"
-              value={rootCause}
-              onChange={(e) => setRootCause(e.target.value)}
-              placeholder="请输入分析根因"
-              disabled={busy}
-              className="w-full flex-1 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px]"
-            />
-          </div>
-          <div className="flex items-center gap-2 flex-none">
-            {graduated ? (
-              <>
+            {/* 组 2：产品分类和产品分类录入框 */}
+            <div className="flex items-center gap-2 flex-none">
+              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">产品分类</span>
+              <SearchableSelect
+                ariaLabel="产品分类"
+                value={plc}
+                onChange={(val) => {
+                  setPlc(val);
+                  setModule("");
+                  setUserEdited(true);
+                }}
+                options={productLineOptions}
+                disabled={busy || !canEdit}
+                width={290}
+                align="left"
+                loading={productLines.isLoading}
+              />
+            </div>
+
+            {/* 组 3：问题模块和录入框 */}
+            <div className="flex items-center gap-2 flex-none">
+              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">问题模块</span>
+              <SearchableSelect
+                ariaLabel="问题模块"
+                value={module}
+                onChange={(val) => {
+                  setModule(val);
+                  setUserEdited(true);
+                }}
+                options={moduleOptionsList}
+                disabled={busy || !canEdit || !plc}
+                width={290}
+                align="right"
+                placeholder={!plc ? "请先选择产品分类" : "请选择"}
+                loading={modules.isLoading}
+              />
+            </div>
+
+            {/* 组 4：确认分类按钮 */}
+            <div className="flex items-center gap-2 flex-none">
+              {/* 常显操作按钮：已毕业选研发类（Bug/需求）常显【转研发并推送】/【确认推送】，已毕业选应用类及未毕业单常显【确认分类】 */}
+              {graduated && devTypeSelected ? (
                 <button
                   type="button"
-                  onClick={() => save.mutate()}
-                  disabled={!dirty || busy}
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
+                  onClick={() => {
+                    if (pendingReview) {
+                      confirm.mutate();
+                    } else if (isProcessingOp && devTypeSelected) {
+                      reclassifyToDev.mutate();
+                    } else if (devUnpushed) {
+                      repush.mutate();
+                    } else {
+                      save.mutate();
+                    }
+                  }}
+                  disabled={busy || !canEdit}
+                  className="px-[19px] min-w-[86px] py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px] whitespace-nowrap"
                 >
-                  {save.isPending ? "确认中…" : "确认"}
+                  {reclassifyToDev.isPending || repush.isPending || confirm.isPending
+                    ? "推送中…"
+                    : pendingReview
+                      ? "确认推送"
+                      : "转研发并推送"}
                 </button>
-                {pendingReview && (
-                  <button
-                    type="button"
-                    onClick={() => confirm.mutate()}
-                    disabled={busy}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-teal-deep border border-hub-teal-border hover:bg-hub-teal-light disabled:opacity-40 cursor-pointer h-[32px]"
-                  >
-                    {confirm.isPending
-                      ? "确认中…"
-                      : type === "Bug_fix" || type === "Demand"
-                        ? "确认推送"
-                        : "确认分类"}
-                  </button>
-                )}
-                {isProcessingOp && devTypeSelected && (
-                  <button
-                    type="button"
-                    onClick={() => reclassifyToDev.mutate()}
-                    disabled={busy}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
-                  >
-                    {reclassifyToDev.isPending ? "转研发中…" : "转研发并推送"}
-                  </button>
-                )}
-                {devUnpushed && (
-                  <button
-                    type="button"
-                    onClick={() => repush.mutate()}
-                    disabled={busy}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
-                  >
-                    {repush.isPending ? "推送中…" : "转研发并推送"}
-                  </button>
-                )}
-                {pendingLinearReview && (
-                  <Link
-                    to="/workbench?tab=linear"
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light flex items-center h-[32px]"
-                  >
-                    未找到责任人，请到工作台选择责任人推送 →
-                  </Link>
-                )}
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => graduate.mutate()}
-                disabled={busy}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px]"
-              >
-                {graduate.isPending
-                  ? "确认中…"
-                  : type === "Operation"
-                    ? "确认"
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!graduated) {
+                      graduate.mutate();
+                    } else if (pendingReview) {
+                      confirm.mutate();
+                    } else {
+                      save.mutate();
+                    }
+                  }}
+                  disabled={busy || !canEdit}
+                  className="px-[19px] min-w-[86px] py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px] whitespace-nowrap"
+                >
+                  {save.isPending || confirm.isPending || graduate.isPending
+                    ? "保存中…"
                     : "确认分类"}
-              </button>
-            )}
+                </button>
+              )}
+
+              {graduated && pendingLinearReview && (
+                <Link
+                  to="/workbench?tab=linear"
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light flex items-center h-[32px] whitespace-nowrap"
+                >
+                  未找到责任人，请到工作台选择责任人推送 →
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1648,7 +1934,7 @@ function VerticalTimeline({
   onSelect: (idx: number) => void;
 }) {
   return (
-    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 480 }}>
+    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 520 }}>
       {events.map((ev, idx) => {
         const isCurrent = idx === 0 && !terminal;
         const isSel = idx === selectedIdx;
@@ -1698,7 +1984,7 @@ function VerticalTimeline({
             {/* 节点内容：纵向分布（节点名称、处理人、处理时间、处理状态） */}
             <div
               onClick={() => onSelect(idx)}
-              className={`ml-3.5 pb-6 min-w-0 flex-1 flex flex-col cursor-pointer group ${
+              className={`ml-3.5 pb-[30px] min-w-0 flex-1 flex flex-col cursor-pointer group ${
                 isSel ? "opacity-100" : "opacity-90 hover:opacity-100"
               }`}
             >
@@ -1751,26 +2037,34 @@ type KsmNodeT = NonNullable<
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["ksm_nodes"]
 >[number];
 
-function KsmProcessNodes({ nodes }: { nodes: KsmNodeT[] }) {
-  // 按时间倒序显示（最新的在最上面）
-  const reversedNodes = useMemo(() => [...nodes].reverse(), [nodes]);
+function KsmProcessNodes({ nodes, terminal }: { nodes: KsmNodeT[]; terminal: boolean }) {
+  // 按处理时间严格倒序显示（最新的在最上面，无时间排在首位）
+  const sortedNodes = useMemo(() => {
+    return [...nodes].sort((a, b) => {
+      const tA = a.handled_at || "";
+      const tB = b.handled_at || "";
+      if (!tA && !tB) return 0;
+      if (!tA) return -1;
+      if (!tB) return 1;
+      return tB.localeCompare(tA);
+    });
+  }, [nodes]);
+
   const [sel, setSel] = useState<number>(0);
 
-  if (reversedNodes.length === 0) {
+  if (sortedNodes.length === 0) {
     return <p className="text-[11px] text-hub-textFaint">暂无处理节点</p>;
   }
 
-  // 找到当前进行中的节点（倒序列表中首个未完成 !done 的节点）
-  const firstUndoneIdx = reversedNodes.findIndex((n) => !n.done);
-
   return (
-    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 480 }}>
-      {reversedNodes.map((n, idx) => {
-        const isCurrent = idx === firstUndoneIdx;
-        const isDone = n.done;
+    <ol className="overflow-y-auto pr-2 pl-1 m-0 list-none p-0 relative" style={{ maxHeight: 520 }}>
+      {sortedNodes.map((n, idx) => {
+        // 未终结工单最顶节点（idx === 0）为当前正在处理中节点；所有历史更早的节点（idx > 0）均已流转完成
+        const isCurrent = idx === 0 && !terminal;
+        const isDone = terminal || idx > 0;
         const isSel = idx === sel;
-        const isLast = idx === reversedNodes.length - 1;
-        const statusText = n.done ? "处理完成" : "处理中";
+        const isLast = idx === sortedNodes.length - 1;
+        const statusText = isCurrent ? "处理中" : "处理完成";
 
         return (
           <li key={idx} className="relative flex items-start">
@@ -1808,7 +2102,7 @@ function KsmProcessNodes({ nodes }: { nodes: KsmNodeT[] }) {
             {/* 节点内容：纵向分布（节点名称、处理人、处理时间、处理状态） */}
             <div
               onClick={() => setSel(isSel ? -1 : idx)}
-              className={`ml-3.5 pb-6 min-w-0 flex-1 flex flex-col cursor-pointer group ${
+              className={`ml-3.5 pb-[30px] min-w-0 flex-1 flex flex-col cursor-pointer group ${
                 isSel ? "opacity-100" : "opacity-90 hover:opacity-100"
               }`}
             >
@@ -1840,7 +2134,7 @@ function KsmProcessNodes({ nodes }: { nodes: KsmNodeT[] }) {
               <div className="mt-1">
                 <span
                   className={`inline-block px-1.5 py-0.5 rounded text-[10.5px] font-medium border ${
-                    n.done
+                    isDone
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                       : "bg-amber-50 text-amber-700 border-amber-200"
                   }`}
@@ -1904,14 +2198,141 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+// 子任务 600×400 处理说明录入弹窗（最多 2000 字符）
+function SubTaskNoteModal({
+  title,
+  initialContent,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  initialContent: string;
+  onConfirm: (content: string) => void;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState(initialContent);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 font-hub"
+      onClick={onClose}
+    >
+      <div
+        style={{ width: 600, height: 400 }}
+        className="bg-white rounded-xl border border-hub-border shadow-2xl flex flex-col overflow-hidden text-[13px] text-hub-text"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-hub-borderLight bg-slate-50/70 flex-none">
+          <div className="font-bold text-[14px] text-black">
+            录入处理说明（{title || "子任务"}）
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 text-[16px] cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-4 flex-1 flex flex-col min-h-0">
+          <textarea
+            autoFocus
+            maxLength={2000}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="请输入处理说明与解决方案（最多 2000 字符）..."
+            className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
+          />
+          <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
+            <span>确认后将同步更新解决方案并在主单处理说明中生成记录</span>
+            <span>{content.length} / 2000 字符</span>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-hub-borderLight bg-slate-50/70 flex items-center justify-end gap-2 flex-none">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onConfirm(content);
+              onClose();
+            }}
+            className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
+          >
+            确认
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 子任务行产品模块级联下拉（带搜索与联动）
+function SubTaskRowModuleSelect({
+  plc,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  plc?: string;
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+}) {
+  const modules = useQuery({
+    queryKey: ["catalog-modules", plc],
+    queryFn: () =>
+      api.get("/api/hub-issues/catalog/modules", { product_line_code: plc }) as Promise<
+        CatalogModuleOut[]
+      >,
+    staleTime: 30_000,
+    enabled: !!plc,
+  });
+
+  const options = useMemo(() => {
+    const list = (modules.data ?? []).map((m) => ({ code: m.code, name: m.name }));
+    if (value && !list.some((m) => m.code === value)) {
+      list.push({ code: value, name: value });
+    }
+    return list;
+  }, [modules.data, value]);
+
+  return (
+    <SearchableSelect
+      ariaLabel="子任务问题模块"
+      value={value}
+      onChange={onChange}
+      options={options}
+      placeholder={plc ? "选择模块" : "请先选产品"}
+      disabled={disabled || !plc}
+      width={140}
+      compact
+    />
+  );
+}
+
+const SUB_TASK_TYPES = [
+  { code: "Bug_fix", name: "Bug 修复" },
+  { code: "Demand", name: "需求" },
+  { code: "Operation", name: "应用类" },
+];
+
 // 子任务列表：逐个拉取子工单详情（children_ticket_ids）。
-// 任务编号/说明最左固定；增加产品分类、问题模块；说明支持气泡弹窗；支持多选与添加|删除链接。
+// 任务类型、产品分类、问题模块均可编辑，支持搜索筛选与级联；
+// 处理说明支持 600×400 弹窗录入，解决方案截取 10 字符，支持浮窗查看与双行同步主单；新增操作列确认分类。
 function SubTicketList({
   childIds,
   drafts,
   self,
   onDeleteDrafts,
   onAdd,
+  onToast,
+  onSyncNote,
   canEdit = true,
 }: {
   childIds: number[];
@@ -1929,6 +2350,8 @@ function SubTicketList({
   };
   onDeleteDrafts?: (indices: number[]) => void;
   onAdd?: () => void;
+  onToast?: (msg: string, type?: "success" | "warning") => void;
+  onSyncNote?: (taskTitle: string, taskSolution: string) => void;
   canEdit?: boolean;
 }) {
   const results = useQueries({
@@ -1939,17 +2362,54 @@ function SubTicketList({
     })),
   });
 
-  const [selectedKeys, setSelectedKeys] = useState<Set<string | number>>(new Set());
-  const [popoverText, setPopoverText] = useState<string | null>(null);
+  const productLines = useQuery({
+    queryKey: ["admin", "product-lines"],
+    queryFn: () => api.get("/api/admin/product-lines") as Promise<ProductLineOut[]>,
+    staleTime: 60_000,
+  });
+  const activeLines = useMemo(
+    () => (productLines.data ?? []).filter((p) => p.is_active !== false),
+    [productLines.data],
+  );
+  const productLineOptions = useMemo(
+    () => activeLines.map((p) => ({ code: p.code, name: p.name })),
+    [activeLines],
+  );
 
-  const empty = childIds.length === 0 && drafts.length === 0;
+  const [rowStates, setRowStates] = useState<
+    Record<
+      string | number,
+      {
+        type: string;
+        product_line_code: string;
+        module: string;
+        solution: string;
+        confirmed?: boolean;
+      }
+    >
+  >({});
+
+  const [selectedKeys, setSelectedKeys] = useState<Set<string | number>>(new Set());
+  const [popoverText, setPopoverText] = useState<{ title: string; content: string } | null>(null);
+  const [noteModal, setNoteModal] = useState<{
+    key: string | number;
+    title: string;
+    content: string;
+  } | null>(null);
+  const [confirmToast, setConfirmToast] = useState<string | null>(null);
+
+  const [selfHidden, setSelfHidden] = useState(false);
+  const showSelf = childIds.length === 0 && (!selfHidden || drafts.length === 0);
 
   const allRowKeys: (string | number)[] = useMemo(() => {
-    if (empty) return ["self"];
-    const keys: (string | number)[] = [...childIds];
+    const keys: (string | number)[] = [];
+    if (showSelf) {
+      keys.push("self");
+    }
+    keys.push(...childIds);
     drafts.forEach((_, i) => keys.push(`draft-${i}`));
     return keys;
-  }, [empty, childIds, drafts]);
+  }, [showSelf, childIds, drafts]);
 
   const allSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k));
 
@@ -1973,16 +2433,97 @@ function SubTicketList({
   const handleDelete = () => {
     if (selectedKeys.size === 0) return;
     const draftIndices: number[] = [];
+    let deleteSelf = false;
     selectedKeys.forEach((k) => {
-      if (typeof k === "string" && k.startsWith("draft-")) {
+      if (k === "self") {
+        deleteSelf = true;
+      } else if (typeof k === "string" && k.startsWith("draft-")) {
         const idx = parseInt(k.replace("draft-", ""), 10);
         if (!isNaN(idx)) draftIndices.push(idx);
       }
     });
+    if (deleteSelf && drafts.length > 0 && draftIndices.length < drafts.length) {
+      setSelfHidden(true);
+    }
     if (draftIndices.length > 0) {
       onDeleteDrafts?.(draftIndices);
     }
     setSelectedKeys(new Set());
+  };
+
+  const getRowState = (
+    key: string | number,
+    initial: {
+      type: string;
+      product_line_code: string;
+      module: string;
+      solution: string;
+    },
+  ) => {
+    const cur = rowStates[key];
+    return {
+      type: cur?.type ?? initial.type,
+      product_line_code: cur?.product_line_code ?? initial.product_line_code,
+      module: cur?.module ?? initial.module,
+      solution: cur?.solution ?? initial.solution,
+      confirmed: cur?.confirmed ?? false,
+    };
+  };
+
+  const updateRow = (
+    key: string | number,
+    patch: Partial<{
+      type: string;
+      product_line_code: string;
+      module: string;
+      solution: string;
+      confirmed: boolean;
+    }>,
+  ) => {
+    setRowStates((prev) => {
+      const cur = prev[key];
+      return {
+        ...prev,
+        [key]: {
+          type: patch.type ?? cur?.type ?? "Operation",
+          product_line_code: patch.product_line_code ?? cur?.product_line_code ?? "",
+          module: patch.module ?? cur?.module ?? "",
+          solution: patch.solution ?? cur?.solution ?? "",
+          confirmed: patch.confirmed ?? cur?.confirmed ?? false,
+        },
+      };
+    });
+  };
+
+  const handleConfirmRow = (
+    key: string | number,
+    rowTitle: string,
+    st: { type?: string; product_line_code?: string; module?: string },
+  ) => {
+    const missing: string[] = [];
+    if (!st.type?.trim()) missing.push("任务类型");
+    if (!st.product_line_code?.trim()) missing.push("产品分类");
+    if (!st.module?.trim()) missing.push("问题模块");
+
+    if (missing.length > 0) {
+      const msg = `请先补充${missing.join("、")}缺失字段后再确认`;
+      if (onToast) {
+        onToast(msg, "warning");
+      } else {
+        setConfirmToast(msg);
+        setTimeout(() => setConfirmToast(null), 3500);
+      }
+      return;
+    }
+
+    updateRow(key, { confirmed: true });
+    const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
+    if (onToast) {
+      onToast(successMsg, "success");
+    } else {
+      setConfirmToast(successMsg);
+      setTimeout(() => setConfirmToast(null), 3000);
+    }
   };
 
   return (
@@ -2012,6 +2553,13 @@ function SubTicketList({
           </div>
         )}
       </div>
+
+      {!onToast && confirmToast && (
+        <div className="text-[11.5px] text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-[6px] flex items-center gap-1.5">
+          <span>✓</span>
+          <span>{confirmToast}</span>
+        </div>
+      )}
 
       <div className="overflow-x-auto border border-hub-border rounded-[7px]">
         <table className="min-w-full text-[11.5px] border-collapse">
@@ -2064,62 +2612,168 @@ function SubTicketList({
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务解决方案</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
-            {/* 未拆分（无子单、无草稿）：回落显示当前工单本身一行 */}
-            {empty && (
-              <tr className="group border-t border-hub-borderLight hover:bg-slate-50">
-                <td
-                  className="px-2 py-1.5 text-center whitespace-nowrap bg-white group-hover:bg-slate-50"
-                  style={{ position: "sticky", left: 0, zIndex: 2 }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedKeys.has("self")}
-                    onChange={() => toggleRow("self")}
-                    className="rounded border-slate-300 cursor-pointer"
-                  />
-                </td>
-                <td
-                  className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
-                  style={{ position: "sticky", left: 40, zIndex: 2 }}
-                >
-                  <span className="font-mono text-hub-textMuted">{self.short_code}</span>
-                </td>
-                <td
-                  className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
-                  style={{ position: "sticky", left: 140, zIndex: 2 }}
-                  title="点击查看完整任务说明"
-                  onClick={() => self.title && setPopoverText(self.title)}
-                >
-                  {self.title ?? "—"}
-                </td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap">
-                  {self.predicted_type ? <PredictedTypeBadge type={self.predicted_type} /> : "—"}
-                </td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
-                  {self.product_line_code || "—"}
-                </td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
-                  {self.module || "—"}
-                </td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap">{ticketStatusLabel(self.status)}</td>
-                <td className="px-2.5 py-1.5 whitespace-nowrap">
-                  {self.assigned_user_name ??
-                    (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
-                </td>
-                <td className="px-2.5 py-1.5 max-w-[260px]">
-                  <span className="truncate block" title={self.cached_reply_content ?? ""}>
-                    {self.cached_reply_content ?? "—"}
-                  </span>
-                </td>
-              </tr>
-            )}
+            {/* 无独立子工单时保留展示系统默认生成的主任务行（支持点击「添加」新增更多子任务行而不被覆盖） */}
+            {showSelf && (() => {
+              const rowKey = "self";
+              const rowTitle = self.title ?? "当前工单任务";
+              const st = getRowState(rowKey, {
+                type: self.predicted_type ?? "",
+                product_line_code: self.product_line_code ?? "",
+                module: self.module ?? "",
+                solution: self.cached_reply_content ?? "",
+              });
+              const truncSolution = st.solution
+                ? st.solution.length > 10
+                  ? `${st.solution.slice(0, 10)}...`
+                  : st.solution
+                : "";
+
+              return (
+                <tr className="group border-t border-hub-borderLight hover:bg-slate-50">
+                  <td
+                    className="px-2 py-1.5 text-center whitespace-nowrap bg-white group-hover:bg-slate-50"
+                    style={{ position: "sticky", left: 0, zIndex: 2 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(rowKey)}
+                      onChange={() => toggleRow(rowKey)}
+                      className="rounded border-slate-300 cursor-pointer"
+                    />
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
+                    style={{ position: "sticky", left: 40, zIndex: 2 }}
+                  >
+                    <span className="font-mono text-hub-textMuted">{self.short_code}</span>
+                  </td>
+                  <td
+                    className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
+                    style={{ position: "sticky", left: 140, zIndex: 2 }}
+                    title="点击查看完整任务说明"
+                    onClick={() => self.title && setPopoverText({ title: "任务说明详情", content: self.title })}
+                  >
+                    {self.title ?? "—"}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <select
+                      value={st.type}
+                      onChange={(e) => updateRow(rowKey, { type: e.target.value })}
+                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                    >
+                      <option value="">选择类型</option>
+                      {SUB_TASK_TYPES.map((t) => (
+                        <option key={t.code} value={t.code}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SearchableSelect
+                      ariaLabel="子任务产品分类"
+                      value={st.product_line_code}
+                      onChange={(val) => updateRow(rowKey, { product_line_code: val, module: "" })}
+                      options={productLineOptions}
+                      placeholder="选择产品分类"
+                      width={140}
+                      compact
+                    />
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskRowModuleSelect
+                      plc={st.product_line_code}
+                      value={st.module}
+                      onChange={(val) => updateRow(rowKey, { module: val })}
+                    />
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">{st.confirmed ? "处理中" : ticketStatusLabel(self.status)}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {self.assigned_user_name ??
+                      (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
+                    {st.solution ? (
+                      <button
+                        type="button"
+                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
+                        title="点击浮窗查看完整解决方案"
+                      >
+                        {truncSolution}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: "",
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline cursor-pointer"
+                      >
+                        录入说明
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: st.solution,
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
+                      >
+                        修改说明
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="确认任务"
+                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
+                        disabled={st.confirmed}
+                        onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
+                        className={`font-medium ${
+                          st.confirmed
+                            ? "text-slate-400 cursor-not-allowed opacity-50"
+                            : "text-[#6085e7] hover:underline cursor-pointer"
+                        }`}
+                      >
+                        确认
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })()}
 
             {results.map((r, i) => {
               const c = r.data;
               const cid = childIds[i];
+              const rowKey = cid;
+              const rowTitle = c?.title ?? `子任务 #${cid}`;
+              const st = getRowState(rowKey, {
+                type: c?.predicted_type ?? "",
+                product_line_code: c?.product_line_code ?? "",
+                module: c?.module ?? "",
+                solution: c?.cached_reply_content ?? "",
+              });
+              const truncSolution = st.solution
+                ? st.solution.length > 10
+                  ? `${st.solution.slice(0, 10)}...`
+                  : st.solution
+                : "";
+
               return (
                 <tr key={cid} className="group border-t border-hub-borderLight hover:bg-slate-50">
                   <td
@@ -2128,8 +2782,8 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
-                      checked={selectedKeys.has(cid)}
-                      onChange={() => toggleRow(cid)}
+                      checked={selectedKeys.has(rowKey)}
+                      onChange={() => toggleRow(rowKey)}
                       className="rounded border-slate-300 cursor-pointer"
                     />
                   </td>
@@ -2148,28 +2802,103 @@ function SubTicketList({
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => c?.title && setPopoverText(c.title)}
+                    onClick={() => c?.title && setPopoverText({ title: "任务说明详情", content: c.title })}
                   >
                     {r.isLoading ? "加载中…" : (c?.title ?? "—")}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {c?.predicted_type ? <PredictedTypeBadge type={c.predicted_type} /> : "—"}
+                    <select
+                      value={st.type}
+                      onChange={(e) => updateRow(rowKey, { type: e.target.value })}
+                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                    >
+                      <option value="">选择类型</option>
+                      {SUB_TASK_TYPES.map((t) => (
+                        <option key={t.code} value={t.code}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
-                    {c?.product_line_code || "—"}
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SearchableSelect
+                      ariaLabel="子任务产品分类"
+                      value={st.product_line_code}
+                      onChange={(val) => updateRow(rowKey, { product_line_code: val, module: "" })}
+                      options={productLineOptions}
+                      placeholder="选择产品分类"
+                      width={140}
+                      compact
+                    />
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">
-                    {c?.module || "—"}
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskRowModuleSelect
+                      plc={st.product_line_code}
+                      value={st.module}
+                      onChange={(val) => updateRow(rowKey, { module: val })}
+                    />
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{c?.status ?? "—"}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">{st.confirmed ? "处理中" : (c?.status ?? "—")}</td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {c?.assigned_user_name ??
                       (c?.assigned_user_id ? `#${c.assigned_user_id}` : "—")}
                   </td>
-                  <td className="px-2.5 py-1.5 max-w-[260px]">
-                    <span className="truncate block" title={c?.cached_reply_content ?? ""}>
-                      {c?.cached_reply_content ?? "—"}
-                    </span>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
+                    {st.solution ? (
+                      <button
+                        type="button"
+                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
+                        title="点击浮窗查看完整解决方案"
+                      >
+                        {truncSolution}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: "",
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline cursor-pointer"
+                      >
+                        录入说明
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: st.solution,
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
+                      >
+                        修改说明
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="确认任务"
+                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
+                        disabled={st.confirmed}
+                        onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
+                        className={`font-medium ${
+                          st.confirmed
+                            ? "text-slate-400 cursor-not-allowed opacity-50"
+                            : "text-[#6085e7] hover:underline cursor-pointer"
+                        }`}
+                      >
+                        确认
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -2178,6 +2907,19 @@ function SubTicketList({
             {/* 本地草稿行 */}
             {drafts.map((dft, i) => {
               const draftKey = `draft-${i}`;
+              const rowTitle = dft.title || `新建子任务 #${i + 1}`;
+              const st = getRowState(draftKey, {
+                type: dft.type || "",
+                product_line_code: dft.product_line || "",
+                module: dft.module || "",
+                solution: "",
+              });
+              const truncSolution = st.solution
+                ? st.solution.length > 10
+                  ? `${st.solution.slice(0, 10)}...`
+                  : st.solution
+                : "";
+
               return (
                 <tr key={draftKey} className="group border-t border-hub-borderLight bg-amber-50/50 hover:bg-amber-50">
                   <td
@@ -2201,18 +2943,103 @@ function SubTicketList({
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-amber-50/50 group-hover:bg-amber-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => dft.title && setPopoverText(dft.title)}
+                    onClick={() => dft.title && setPopoverText({ title: "任务说明详情", content: dft.title })}
                   >
                     {dft.title}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    <PredictedTypeBadge type={dft.type} />
+                    <select
+                      value={st.type}
+                      onChange={(e) => updateRow(draftKey, { type: e.target.value })}
+                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                    >
+                      <option value="">选择类型</option>
+                      {SUB_TASK_TYPES.map((t) => (
+                        <option key={t.code} value={t.code}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">{dft.product_line || "—"}</td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">{dft.module || "—"}</td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-amber-deep font-semibold">待创建</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SearchableSelect
+                      ariaLabel="子任务产品分类"
+                      value={st.product_line_code}
+                      onChange={(val) => updateRow(draftKey, { product_line_code: val, module: "" })}
+                      options={productLineOptions}
+                      placeholder="选择产品分类"
+                      width={140}
+                      compact
+                    />
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskRowModuleSelect
+                      plc={st.product_line_code}
+                      value={st.module}
+                      onChange={(val) => updateRow(draftKey, { module: val })}
+                    />
+                  </td>
+                  <td className={`px-2.5 py-1.5 whitespace-nowrap font-semibold ${st.confirmed ? "text-hub-teal" : "text-hub-amber-deep"}`}>
+                    {st.confirmed ? "处理中" : "待创建"}
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
-                  <td className="px-2.5 py-1.5 text-hub-textFaint">—</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
+                    {st.solution ? (
+                      <button
+                        type="button"
+                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
+                        title="点击浮窗查看完整解决方案"
+                      >
+                        {truncSolution}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: draftKey,
+                            title: rowTitle,
+                            content: "",
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline cursor-pointer"
+                      >
+                        录入说明
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNoteModal({
+                            key: draftKey,
+                            title: rowTitle,
+                            content: st.solution,
+                          })
+                        }
+                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
+                      >
+                        修改说明
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="确认任务"
+                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
+                        disabled={st.confirmed}
+                        onClick={() => handleConfirmRow(draftKey, rowTitle, st)}
+                        className={`font-medium ${
+                          st.confirmed
+                            ? "text-slate-400 cursor-not-allowed opacity-50"
+                            : "text-[#6085e7] hover:underline cursor-pointer"
+                        }`}
+                      >
+                        确认
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -2220,7 +3047,7 @@ function SubTicketList({
         </table>
       </div>
 
-      {/* 任务说明气泡弹窗 */}
+      {/* 说明浮窗弹窗（任务说明与解决方案共用） */}
       {popoverText && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
@@ -2231,7 +3058,7 @@ function SubTicketList({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
-              <span className="font-bold text-black text-[14px]">任务说明详情</span>
+              <span className="font-bold text-black text-[14px]">{popoverText.title}</span>
               <button
                 type="button"
                 className="text-slate-400 hover:text-slate-700 text-[15px] cursor-pointer"
@@ -2241,10 +3068,23 @@ function SubTicketList({
               </button>
             </div>
             <div className="text-slate-700 whitespace-pre-wrap max-h-[360px] overflow-y-auto leading-relaxed">
-              {popoverText}
+              {popoverText.content}
             </div>
           </div>
         </div>
+      )}
+
+      {/* 600×400 处理说明录入弹窗 */}
+      {noteModal && (
+        <SubTaskNoteModal
+          title={noteModal.title}
+          initialContent={noteModal.content}
+          onClose={() => setNoteModal(null)}
+          onConfirm={(content) => {
+            updateRow(noteModal.key, { solution: content });
+            onSyncNote?.(noteModal.title, content);
+          }}
+        />
       )}
     </div>
   );

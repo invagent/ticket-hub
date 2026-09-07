@@ -361,4 +361,80 @@ describe("TicketsListPage", () => {
     fireEvent.click(cancelBtn);
     expect(screen.queryByText("批量移交操作面板")).toBeNull();
   });
+
+  it("表头字段点击漏斗支持模糊搜索与精确查询，并可重置", async () => {
+    const multiSamples = {
+      items: [
+        {
+          id: 1,
+          short_code: "TKT-001",
+          source_code: "ksm",
+          source_ticket_id: "KSM-001",
+          type: "Raw",
+          status: "received",
+          title: "发票打印报错500",
+          product_line_code: "cloud-fapiao",
+          module: "打印组件",
+          created_at: "2026-08-01T10:00:00Z",
+          received_at: "2026-08-01T10:00:00Z",
+        },
+        {
+          id: 2,
+          short_code: "TKT-002",
+          source_code: "zhichi",
+          source_ticket_id: "ZC-002",
+          type: "Raw",
+          status: "received",
+          title: "开票接口超时408",
+          product_line_code: "cloud-fapiao",
+          module: "开票管理",
+          created_at: "2026-08-01T11:00:00Z",
+          received_at: "2026-08-01T11:00:00Z",
+        },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 50,
+      has_more: false,
+    };
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(multiSamples)));
+    renderPage();
+
+    expect(await screen.findByText("TKT-001")).toBeInTheDocument();
+    expect(screen.getByText("TKT-002")).toBeInTheDocument();
+
+    // 点击标题列的漏斗
+    const filterTitleBtn = screen.getByRole("button", { name: "筛选 标题" });
+    fireEvent.click(filterTitleBtn);
+
+    // 弹出筛选框，展示「模糊搜索」和「精确查询」
+    expect(screen.getByText("筛选：标题")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "模糊搜索" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "精确查询" })).toBeInTheDocument();
+
+    // 1. 模糊搜索：输入「打印」
+    const input = screen.getByPlaceholderText("输入标题...");
+    fireEvent.change(input, { target: { value: "打印" } });
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+
+    // 筛选结果只保留 TKT-001，TKT-002 被过滤
+    expect(screen.getByText("TKT-001")).toBeInTheDocument();
+    expect(screen.queryByText("TKT-002")).not.toBeInTheDocument();
+
+    // 再次点击打开漏斗切换到精确查询
+    fireEvent.click(filterTitleBtn);
+    fireEvent.click(screen.getByRole("button", { name: "精确查询" }));
+    // 此时输入仍为「打印」，精确匹配找不到完全等于「打印」的工单
+    fireEvent.click(screen.getByRole("button", { name: "确定" }));
+    expect(screen.queryByText("TKT-001")).not.toBeInTheDocument();
+    expect(screen.queryByText("TKT-002")).not.toBeInTheDocument();
+
+    // 再次点击漏斗点击重置
+    fireEvent.click(filterTitleBtn);
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+
+    // 恢复展示两条工单
+    expect(screen.getByText("TKT-001")).toBeInTheDocument();
+    expect(screen.getByText("TKT-002")).toBeInTheDocument();
+  });
 });

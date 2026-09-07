@@ -474,15 +474,15 @@ describe("TicketDetailPage", () => {
     );
   }
 
-  it("未明确分类(hub_issue_id 为空)只显示分类改判，隐藏处理建议/说明/附件", async () => {
+  it("未明确分类(hub_issue_id 为空)显示分类改判、常显处理说明与附件，隐藏处理建议", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(320, null);
     renderPage(320);
     expect(await screen.findByRole("heading", { name: "TKT-320" })).toBeInTheDocument();
     expect(screen.getByText("确认分类")).toBeInTheDocument();
     expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
-    expect(screen.queryByText("处理说明")).not.toBeInTheDocument();
-    expect(screen.queryByText("处理附件 / 补充凭证")).not.toBeInTheDocument();
+    expect((await screen.findAllByText("处理说明")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("处理附件")).toBeInTheDocument();
     localStorage.clear();
   });
 
@@ -496,13 +496,13 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("明确分类的 Operation 显示处理建议 + 处理说明", async () => {
+  it("明确分类的 Operation 隐藏处理建议，显示处理说明", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(322);
     renderPage(322);
     expect(await screen.findByRole("heading", { name: "TKT-322" })).toBeInTheDocument();
-    expect(await screen.findByText("处理建议")).toBeInTheDocument();
-    expect(screen.getByText("处理说明")).toBeInTheDocument();
+    expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
+    expect((await screen.findAllByText("处理说明")).length).toBeGreaterThanOrEqual(1);
     localStorage.clear();
   });
 
@@ -705,7 +705,7 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("答复后(op_status=answered)处理说明只读、处理建议禁用、提交按钮禁用", async () => {
+  it("答复后(op_status=answered)处理说明只读、提交按钮禁用", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(341, { op_status: "answered", cached_reply_content: "已发出的答复" });
     server.use(
@@ -723,9 +723,8 @@ describe("TicketDetailPage", () => {
     await screen.findByRole("heading", { name: "TKT-341" });
     const ta = (await screen.findByPlaceholderText(/已答复完成，只读/)) as HTMLTextAreaElement;
     expect(ta.readOnly).toBe(true);
-    // 处理建议下拉禁用
-    const sel = (await screen.findByRole("combobox", { name: "处理建议" })) as HTMLSelectElement;
-    expect(sel.disabled).toBe(true);
+    // 处理建议下拉隐藏不展示
+    expect(screen.queryByRole("combobox", { name: "处理建议" })).not.toBeInTheDocument();
     // 提交答复按钮禁用
     expect(screen.getByRole("button", { name: "提交答复" })).toBeDisabled();
     expect(screen.getByText(/已答复完成，不可再编辑/)).toBeInTheDocument();
@@ -797,10 +796,8 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("点退回转单在时间轴插入本地占位节点", async () => {
+  it("处理中 Operation 隐藏处理建议并展示子任务列表与处理说明", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    // 本地占位节点是本系统时间轴（VerticalTimeline）能力，KSM 工单走 handleSteps 无此逻辑，
-    // 故用非 KSM 源测通用时间轴。
     stubOperationTicket(351, { source_code: "zhichi", source_ticket_id: "z-351" });
     server.use(
       http.get("*/api/hub-issues/88", () =>
@@ -815,13 +812,9 @@ describe("TicketDetailPage", () => {
     );
     renderPage(351);
     await screen.findByRole("heading", { name: "TKT-351" });
-    // 处理中 Operation 现在也渲染「工单标签」编辑器（多个 combobox），故用 aria-label 精确定位处理建议下拉
-    const sel = await screen.findByRole("combobox", { name: "处理建议" });
-    await userEvent.selectOptions(sel, "return");
-    await userEvent.click(screen.getByRole("button", { name: "退回转单" }));
-    // 时间轴出现本地占位节点
-    expect(await screen.findByText("退回转单（待后端）")).toBeInTheDocument();
-    expect(screen.getByText(/本地操作·待后端/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "处理建议" })).not.toBeInTheDocument();
+    expect(await screen.findByText("子任务列表")).toBeInTheDocument();
+    expect((await screen.findAllByText("处理说明")).length).toBeGreaterThanOrEqual(1);
     localStorage.clear();
   });
 
@@ -879,8 +872,8 @@ describe("TicketDetailPage", () => {
     );
     renderPage(353);
     await screen.findByRole("heading", { name: "TKT-353" });
-    // 已答复不渲染工单参数编辑器 → 无「工单类型」下拉、无转研发按钮
-    expect(screen.queryByRole("combobox", { name: "工单类型" })).not.toBeInTheDocument();
+    // 已答复工单标签展示但禁用编辑 → 工单类型下拉只读禁用、无转研发按钮
+    expect(screen.getByRole("combobox", { name: "工单类型" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "转研发并推送" })).not.toBeInTheDocument();
     localStorage.clear();
   });
