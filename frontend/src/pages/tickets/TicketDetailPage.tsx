@@ -1152,11 +1152,16 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                {/* 研发类已毕业但未推送 */}
-                {classified && isDevType && d.predicted_type && !pushedToLinear && (
-                  <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
-                    {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
-                    类工单尚未推送 Linear，见下方「工单标签」区操作。
+                {/* 研发类已毕业但未推送：提示 + 工单标签编辑区（转研发并推送按钮就在这里，
+                    此前只有 pendingReview/未毕业/运营类三种情况渲染 TicketAttributesEditor，
+                    「已分类研发类但未推 Linear」这个状态落在空隙里，提示文案指向的区域实际不存在） */}
+                {classified && isDevType && d.predicted_type && !pushedToLinear && hub.data && (
+                  <div className="space-y-2.5">
+                    <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
+                      {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
+                      类工单尚未推送 Linear，见下方「工单标签」区操作。
+                    </div>
+                    <TicketAttributesEditor ticket={d} hub={hub.data} />
                   </div>
                 )}
 
@@ -1567,10 +1572,12 @@ function TicketAttributesEditor({
       : "Operation")) as string;
   const initPlc = (hub ? hub.product_line_code : ticket.product_line_code) ?? "";
   const initModule = (hub ? hub.module : ticket.module) ?? "";
+  const initRootCause = (hub?.root_cause_analysis ?? "") as string;
 
   const [type, setType] = useState<string>(initType);
   const [plc, setPlc] = useState<string>(initPlc);
   const [module, setModule] = useState<string>(initModule);
+  const [rootCause, setRootCause] = useState<string>(initRootCause);
   const [userEdited, setUserEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1581,8 +1588,9 @@ function TicketAttributesEditor({
       setType(initType);
       setPlc(initPlc);
       setModule(initModule);
+      setRootCause(initRootCause);
     }
-  }, [initType, initPlc, initModule, userEdited]);
+  }, [initType, initPlc, initModule, initRootCause, userEdited]);
 
   const ticketClosed = ["closed", "done", "resolved", "rejected", "superseded"].includes(
     ticket.status,
@@ -1655,7 +1663,11 @@ function TicketAttributesEditor({
   };
   const onErr = (e: unknown) => setError(hubErrMsg(e));
 
-  const dirty = type !== initType || plc !== initPlc || module !== initModule;
+  const dirty =
+    type !== initType ||
+    plc !== initPlc ||
+    module !== initModule ||
+    rootCause !== initRootCause;
 
   // 已毕业：保存改 hub 参数（只改数据不联动）
   const save = useMutation({
@@ -1663,7 +1675,12 @@ function TicketAttributesEditor({
       patchByPath(
         "/api/hub-issues/{hub_issue_id}/attributes",
         { hub_issue_id: hub!.id },
-        { type, product_line_code: plc || null, module: module || null },
+        {
+          type,
+          product_line_code: plc || null,
+          module: module || null,
+          root_cause_analysis: rootCause || null,
+        },
       ),
     onSuccess: () => {
       setNotice("已保存工单标签");
@@ -1695,6 +1712,7 @@ function TicketAttributesEditor({
         type,
         product_line_code: plc || null,
         module: module || null,
+        root_cause_analysis: rootCause || null,
       }),
     onSuccess: () => {
       if (type !== "Operation") {

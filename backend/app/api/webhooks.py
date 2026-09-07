@@ -304,6 +304,15 @@ def _ksm_async_fetch_and_ingest(bill_id: str) -> None:
                 db.rollback()
                 logger.warning("ksm_async_ingest_validation_failed", bill_id=bill_id, error=str(e))
                 return
+            # 持久化本次成功拉取用的 notice（不设过期时间）：Redis 缓存 24h 会过期，
+            # 但 KSM 服务端凭证实际有效期比这更长（2026-09 实测 4 天前的旧 notice
+            # 依然能用）。落库后，Redis 过期时退回/重拉详情仍有得回落，不必人工
+            # 去 KSM 系统翻找。每次成功拉取都覆盖为最新一次，见 writeback/takeover
+            # 里的 _resolve_notice 消费方。
+            ticket_row = db.get(Ticket, result.ticket_id)
+            if ticket_row is not None:
+                ticket_row.ksm_notice_num = notice.notice_num
+                ticket_row.ksm_subscribe_num = notice.subscribe_num
             db.commit()
             ingested_ticket_id = result.ticket_id if not result.deduped else None
             logger.info(

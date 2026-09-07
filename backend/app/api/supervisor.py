@@ -602,6 +602,7 @@ class CreateHubIssueBody(BaseModel):
     # 确认分类时可覆盖产品线/模块（否则继承 ticket 原值）。
     product_line_code: str | None = Field(default=None, max_length=64)
     module: str | None = Field(default=None, max_length=128)
+    root_cause_analysis: str | None = Field(default=None, max_length=20000)
 
 
 class CreateHubIssueResponse(BaseModel):
@@ -638,6 +639,7 @@ def create_hub_issue_endpoint(
             type_override=body.type,
             product_line_code=body.product_line_code,
             module=body.module,
+            root_cause_analysis=body.root_cause_analysis,
             db=db,
         )
     except HubIssueCreateError as e:

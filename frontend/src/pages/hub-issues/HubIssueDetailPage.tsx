@@ -216,25 +216,29 @@ function cumulativeHoursDetail(data: HubIssueDetail): string {
  * 创建时间/关闭时间/关联工单，每行 3~4 字段平均分布铺满容器，字段名/值上下结构。
  */
 function TaskInfoCard({ data }: { data: HubIssueDetail }) {
-  // 处理人 id→name（hub 详情不返回名，join /api/admin/users）
+  // 处理人/责任人 id→name（hub 详情不返回名，join /api/admin/users）
   const users = useQuery({
     queryKey: ["admin", "users"],
     queryFn: () => api.get("/api/admin/users"),
     staleTime: 60_000,
-    enabled: data.assigned_user_id != null,
+    enabled: data.assigned_user_id != null || data.owner_user_id != null,
   });
-  const userName =
-    data.assigned_user_id != null
-      ? (((users.data ?? []) as { id: number; name: string }[]).find(
-          (u) => u.id === data.assigned_user_id,
-        )?.name ?? `用户 #${data.assigned_user_id}`)
+  const nameOf = (userId: number | null | undefined) =>
+    userId != null
+      ? (((users.data ?? []) as { id: number; name: string }[]).find((u) => u.id === userId)
+          ?.name ?? `用户 #${userId}`)
       : "—";
+  const userName = nameOf(data.assigned_user_id);
   const assignee =
     data.type === "Operation" && data.op_handler
       ? data.op_handler === "agent"
         ? "AI 处理"
         : data.op_handler
       : userName;
+  // 推 Linear 责任人（owner_user_id）：默认=处理人，推送后=推送时确定的模块负责人，
+  // 与「任务处理人」是两个可能不同的字段（见 models.py HubIssue.owner_user_id 注释）。
+  // 已成功推送 Linear（linear_identifier 非空）时才展示，避免未推送前误导。
+  const ownerName = nameOf(data.owner_user_id);
   return (
     <Card title="任务信息">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
@@ -247,6 +251,9 @@ function TaskInfoCard({ data }: { data: HubIssueDetail }) {
           {data.linear_status ? linearStatusToCN(data.linear_status) : "—"}
         </Field>
         <Field label="任务处理人">{assignee}</Field>
+        {(data.type === "Bug_fix" || data.type === "Demand") && data.linear_identifier && (
+          <Field label="推送责任人">{ownerName}</Field>
+        )}
         <Field label="任务创建时间">{fmtDateTime(data.first_seen_at)}</Field>
         <Field label="任务关闭时间">{fmtDateTime(data.closed_at)}</Field>
         <Field label="关联工单">

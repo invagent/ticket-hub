@@ -214,6 +214,33 @@ def test_new_ticket_full_takeover(world: Session) -> None:
     # ksm_accept_opercache_id/ksm_current_node_id（迁移 0038 的列留存未删）。
     assert t.ksm_accept_opercache_id is None
     assert t.ksm_current_node_id is None
+    # handle 后再拉一次落库快照，source_payload._subscribe_callback 更新为
+    # handle 之后的最新节点（NODE-NEW），不再停留在入库时的旧节点（NODE-OLD）——
+    # 否则 notice 过期后退回回落这份快照会算出错误目标（见 writeback 修复）。
+    assert t.source_payload is not None
+    snapshot = t.source_payload["_subscribe_callback"]
+    assert snapshot["node"]["id"] == "NODE-NEW"
+    assert client.detail_calls.count("BILL-1") == 2  # refresh(handle前) + 收尾持久化
+
+
+def test_no_redis_notice_falls_back_to_db_persisted_notice(world: Session) -> None:
+    """notice_store=None（Redis 未命中）但 ticket 有持久化的 ksm_notice_num/
+    ksm_subscribe_num（迁移 0044）→ 接管仍能拉到最新详情正常完成，不因 Redis
+    没有就整轮放弃 refresh/handle。"""
+    t = _ticket(world, ksm_notice_num="DB-N1", ksm_subscribe_num="DB-S1")
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail("1"),
+        is_new=True,
+        client=client,  # type: ignore[arg-type]
+        notice_store=None,
+        settings=_settings(),
+    )
+    assert len(client.handles) == 1
+    assert client.handles[0].node_id == "NODE-NEW"
+    assert t.ksm_takeover_status == "handled"
 
 
 def test_new_ticket_status2_also_full(world: Session) -> None:
@@ -351,3 +378,35 @@ def test_compensate_other_error_fails(world: Session) -> None:
     )
     assert t.ksm_takeover_status == "failed"
     assert "参数校验失败" in (t.ksm_takeover_error or "")
+
+
+# ---- 快照持久化（best-effort，不阻塞接管） ---------------------------------
+
+
+def test_snapshot_persist_best_effort_on_pull_failure(world: Session) -> None:
+    """handle 成功后收尾拉取快照失败（如 notice 被并发消费）→ 不影响接管结果，
+    只是快照没更新（留旧值），不抛异常。"""
+    t = _ticket(world)
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+
+    class _FailOnSecondCall(FakeKSMClient):
+        def get_order_detail(self, *, bill_id, notice_num, subscribe_num):  # type: ignore[no-untyped-def]
+            self.detail_calls.append(bill_id)
+            if len(self.detail_calls) >= 2:
+                raise KSMBusinessError(op="subscribeCallback", message="no data")
+            return _SUBSCRIBE_FRESH
+
+    client = _FailOnSecondCall(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail(),
+        is_new=True,
+        client=client,  # type: ignore[arg-type]
+        notice_store=FakeNotice(),
+        settings=_settings(),
+    )
+    assert t.ksm_takeover_status == "handled"  # 接管本身仍成功
+    # 快照拉取失败 → source_payload 保留原值（入库时的 _SUBSCRIBE），不报错不清空。
+    assert t.source_payload is not None
+    assert t.source_payload["_subscribe_callback"]["node"]["id"] == "NODE-OLD"

@@ -98,6 +98,25 @@ def _make_ksm_ticket(db: Session, hub: HubIssue, **overrides) -> Ticket:  # type
     return t
 
 
+def test_build_fields_handle_description_from_root_cause(world: Session) -> None:
+    """handleDescription 取 hub.root_cause_analysis（分析根因），description 仍是
+    canonical_body（原始工单正文）——两者不再重复，且互不影响。"""
+    hub = _make_hub(world, 6, root_cause_analysis="客户环境配置错误导致的误报")
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-6")
+    fields = build_webhook_fields(world, hub)
+    assert fields["handleDescription"] == "客户环境配置错误导致的误报"
+    assert fields["description"] == "详细复现步骤"
+
+
+def test_build_fields_handle_description_empty_when_root_cause_unset(world: Session) -> None:
+    """分析根因未填时 handleDescription 发空字符串，不回落 canonical_body。"""
+    hub = _make_hub(world, 7)
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-7")
+    fields = build_webhook_fields(world, hub)
+    assert fields["handleDescription"] == ""
+    assert fields["description"] == "详细复现步骤"
+
+
 def test_build_fields_full_mapping(world: Session) -> None:
     world.add(ProductLine(code="fpy", name="发票云产品线"))
     world.commit()

@@ -119,6 +119,7 @@ class TransferAttempt(BaseModel):
 
 class HubIssueDetail(HubIssueSummary):
     canonical_body: str | None
+    root_cause_analysis: str | None
     # Operation-only（其余 Operation 字段已在 Summary）
     reply_content: str | None
     reply_authored_by: str | None
@@ -618,6 +619,7 @@ class UpdateAttributesBody(BaseModel):
     type: str | None = Field(None, pattern="^(Operation|Bug_fix|Demand|Internal_task|Complaint)$")
     product_line_code: str | None = Field(None, max_length=64)
     module: str | None = Field(None, max_length=128)
+    root_cause_analysis: str | None = Field(None, max_length=20000)
 
 
 class UpdateAttributesResponse(BaseModel):
@@ -736,6 +738,9 @@ def update_hub_attributes(
     if body.module is not None and body.module != hub.module:
         changes.append(f"模块 {hub.module}→{body.module}")
         hub.module = body.module
+    if body.root_cause_analysis is not None and body.root_cause_analysis != hub.root_cause_analysis:
+        changes.append("根因分析已更新")
+        hub.root_cause_analysis = body.root_cause_analysis
 
     if body.product_line_code or body.module:
         upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)

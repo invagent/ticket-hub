@@ -269,6 +269,120 @@ def test_unauthorized_response_triggers_one_refresh() -> None:
 
 
 @respx.mock
+def test_http_403_triggers_one_refresh() -> None:
+    """真实场景（TKT-006280/R20260828-1894）：KSM 返回 HTTP 层 403（不是业务层
+    errorCode=401 的 200 JSON body），raise_for_status() 直接抛异常——之前
+    _is_unauthorized 只检查业务层 JSON，压根看不到这种情况，token 永远不会
+    强刷新。现在 httpx.HTTPStatusError 的 401/403 同样触发一次强刷新重试。"""
+    respx.post(f"{BASE}/ierp/api/getAppToken.do").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": {"app_token": "app1"}}),
+            httpx.Response(200, json={"data": {"app_token": "app2"}}),
+        ]
+    )
+    respx.post(f"{BASE}/ierp/api/login.do").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": {"access_token": "tok-old"}}),
+            httpx.Response(200, json={"data": {"access_token": "tok-new"}}),
+        ]
+    )
+    biz = respx.post(f"{BASE}/ierp/kapi/v2/kded/kded_wos/handleKsmOrder").mock(
+        side_effect=[
+            httpx.Response(403, text="Forbidden"),
+            httpx.Response(200, json={"status": True}),
+        ]
+    )
+
+    with _client() as c:
+        c.handle_order(
+            HandleOrderRequest(
+                bill_id="b",
+                account="a",
+                account_number="N",
+                account_name="bob",
+                node_id="node-1",
+            )
+        )
+
+    assert biz.call_count == 2
+    assert "access_token=tok-new" in str(biz.calls[1].request.url)
+
+
+@respx.mock
+def test_http_401_triggers_one_refresh() -> None:
+    """同 403，HTTP 层 401 同样触发强刷新重试。"""
+    respx.post(f"{BASE}/ierp/api/getAppToken.do").mock(
+        return_value=httpx.Response(200, json={"data": {"app_token": "app1"}})
+    )
+    respx.post(f"{BASE}/ierp/api/login.do").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": {"access_token": "tok-old"}}),
+            httpx.Response(200, json={"data": {"access_token": "tok-new"}}),
+        ]
+    )
+    biz = respx.post(f"{BASE}/ierp/kapi/v2/kded/kded_wos/lockKsmOrder").mock(
+        side_effect=[
+            httpx.Response(401, text="Unauthorized"),
+            httpx.Response(200, json={"status": True}),
+        ]
+    )
+
+    with _client() as c:
+        c.lock_order(
+            LockOrderRequest(bill_id="b", account="a", account_number="N", account_name="bob")
+        )
+
+    assert biz.call_count == 2
+    assert "access_token=tok-new" in str(biz.calls[1].request.url)
+
+
+@respx.mock
+def test_http_403_persists_after_refresh_raises_auth_error() -> None:
+    """强刷新后仍 403（真正的鉴权失败，非单纯 token 过期）→ 包成 KSMAuthError，
+    不让裸 httpx.HTTPStatusError 泄漏出适配层。"""
+    respx.post(f"{BASE}/ierp/api/getAppToken.do").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": {"app_token": "app1"}}),
+            httpx.Response(200, json={"data": {"app_token": "app2"}}),
+        ]
+    )
+    respx.post(f"{BASE}/ierp/api/login.do").mock(
+        side_effect=[
+            httpx.Response(200, json={"data": {"access_token": "tok-old"}}),
+            httpx.Response(200, json={"data": {"access_token": "tok-new"}}),
+        ]
+    )
+    respx.post(f"{BASE}/ierp/kapi/v2/kded/kded_wos/lockKsmOrder").mock(
+        return_value=httpx.Response(403, text="Forbidden")
+    )
+
+    with _client() as c, pytest.raises(KSMAuthError):
+        c.lock_order(
+            LockOrderRequest(bill_id="b", account="a", account_number="N", account_name="bob")
+        )
+
+
+@respx.mock
+def test_http_500_does_not_trigger_refresh_or_retry() -> None:
+    """非 401/403 的 HTTP 错误（如 500）直接原样抛出，不当成鉴权问题处理。"""
+    respx.post(f"{BASE}/ierp/api/getAppToken.do").mock(
+        return_value=httpx.Response(200, json={"data": {"app_token": "app1"}})
+    )
+    respx.post(f"{BASE}/ierp/api/login.do").mock(
+        return_value=httpx.Response(200, json={"data": {"access_token": "tok-old"}})
+    )
+    biz = respx.post(f"{BASE}/ierp/kapi/v2/kded/kded_wos/lockKsmOrder").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+
+    with _client() as c, pytest.raises(httpx.HTTPStatusError):
+        c.lock_order(
+            LockOrderRequest(bill_id="b", account="a", account_number="N", account_name="bob")
+        )
+    assert biz.call_count == 1  # 没有重试
+
+
+@respx.mock
 def test_get_order_detail_success() -> None:
     _stub_token(respx)
     respx.post(f"{BASE}/ierp/kapi/app/open/subscribeCallback").mock(

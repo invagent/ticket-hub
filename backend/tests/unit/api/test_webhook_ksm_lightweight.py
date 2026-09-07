@@ -156,6 +156,9 @@ def test_lightweight_ping_returns_code0_immediately(
     assert t.product_line_code == "cloud-erp-star"
     assert t.module == "财务模块"
     assert t.assigned_user_id == 1
+    # notice 同步落库（迁移 0044，不设过期时间）——Redis 24h TTL 过期后仍有得回落。
+    assert t.ksm_notice_num == "N-100"
+    assert t.ksm_subscribe_num == "S-100"
 
 
 @respx.mock

@@ -67,6 +67,7 @@ def ensure_hub_issue_for_ticket(
     type_override: str | None = None,
     product_line_code: str | None = None,
     module: str | None = None,
+    root_cause_analysis: str | None = None,
     db: Session,
 ) -> HubIssueResult:
     """Create a hub_issue from a ticket and link them. Commits on success.
@@ -122,6 +123,7 @@ def ensure_hub_issue_for_ticket(
         type=issue_type,
         title=(ticket.title or "").strip(),
         canonical_body=ticket.body,
+        root_cause_analysis=root_cause_analysis,
         product_line_code=eff_plc,
         module=eff_module,
         status="created",

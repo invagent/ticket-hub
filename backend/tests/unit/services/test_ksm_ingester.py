@@ -111,6 +111,64 @@ def test_first_ingest_creates_customer_and_routes(ingest_world: Session) -> None
     assert h.changed_by == "system:ingest"
 
 
+def test_ksm_source_fields_persisted_on_first_ingest(ingest_world: Session) -> None:
+    """入库落 source_status + ksm_reporter_*/ksm_linkman/ksm_contact_*/ksm_close_node_*
+    （从 payload 的 sourceStatus/reporterProductLine/reporterModule/linkman/
+    contactMobile/contactEmail/closeNodeId/closeNodeName/closeNodeStatus）。"""
+    res = KSMIngester(ingest_world).ingest(
+        _payload(
+            sourceStatus="1",
+            reporterProductLine="金蝶发票云",
+            reporterModule="综合收票管理",
+            linkman="张文强",
+            contactMobile="13213338193",
+            contactEmail="zhang@example.com",
+            closeNodeId="CR1",
+            closeNodeName="已给方案",
+            closeNodeStatus="1",
+        )
+    )
+    ingest_world.commit()
+
+    ticket = ingest_world.get(Ticket, res.ticket_id)
+    assert ticket is not None
+    assert ticket.source_status == "1"
+    assert ticket.ksm_reporter_product_line == "金蝶发票云"
+    assert ticket.ksm_reporter_module == "综合收票管理"
+    assert ticket.ksm_linkman == "张文强"
+    assert ticket.ksm_contact_mobile == "13213338193"
+    assert ticket.ksm_contact_email == "zhang@example.com"
+    assert ticket.ksm_close_node_id == "CR1"
+    assert ticket.ksm_close_node_name == "已给方案"
+    assert ticket.ksm_close_node_status == "1"
+
+
+def test_ksm_source_fields_synced_on_reingest_noop_path(ingest_world: Session) -> None:
+    """未毕业 hub（no-op 分支）重推同一 billId：状态类字段仍随最新 payload 刷新
+    （工单关闭时 closereason 才第一次出现，不能等到下一次「有动作」的分支才写）。"""
+    first = KSMIngester(ingest_world).ingest(_payload(sourceStatus="1"))
+    ingest_world.commit()
+
+    second = KSMIngester(ingest_world).ingest(
+        _payload(
+            sourceStatus="4",
+            closeNodeId="CR9",
+            closeNodeName="已关闭",
+            closeNodeStatus="1",
+        )
+    )
+    ingest_world.commit()
+
+    assert second.deduped is True
+    assert second.ticket_id == first.ticket_id
+    ticket = ingest_world.get(Ticket, first.ticket_id)
+    assert ticket is not None
+    assert ticket.source_status == "4"
+    assert ticket.ksm_close_node_id == "CR9"
+    assert ticket.ksm_close_node_name == "已关闭"
+    assert ticket.ksm_close_node_status == "1"
+
+
 def test_idempotent_replay_returns_dedup(ingest_world: Session) -> None:
     """Same billId twice → second call returns deduped=True, doesn't re-insert."""
     KSMIngester(ingest_world).ingest(_payload())

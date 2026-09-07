@@ -59,7 +59,7 @@ from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
 from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
-from app.services.ksm.notice_store import NoticeStoreLike
+from app.services.ksm.notice_store import NoticeStoreLike, resolve_notice
 
 if TYPE_CHECKING:
     from app.services.cascade.outbox_retry import OutboxRetryResult
@@ -110,11 +110,24 @@ def _s(v: Any) -> str:
 def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
     """退回目标节点的操作缓存 id（returnKsmOrder 的 opercacheID）。
 
-    2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」——把
-    handleSteps 按 handleDateTime 升序排，取倒数第二条（严格按时间序，不管节点
-    名是否相同）的 opercacheId。要求 detail 必须是**刚刚实时拉取**的（调用方
-    负责 refresh，本函数不兜底旧快照），否则"最新节点"判断本身就可能过期。
-    步数不足 2 条或缺字段 → 回落空串，调用方据此拒绝退回，不猜测。
+    2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」。要求
+    detail 必须是**刚刚实时拉取**的（调用方负责 refresh，本函数不兜底旧快照），
+    否则"最新节点"判断本身就可能过期。步数不足 2 条或缺字段 → 回落空串，调用
+    方据此拒绝退回，不猜测。
+
+    2026-09-07 修复：原实现按 handleDateTime 字符串排序取倒数第二条——但
+    handleDateTime 只精确到秒，同一秒内连续流转两个节点时（如"受理"后立即
+    自动转"协同处理"，或本函数之前算错导致的一次失败退回本身也会在
+    handleSteps 里多记一条自环记录）会撞车，且 KSM 返回数组本身的顺序不保证
+    等于真实发生顺序（实测 TKT-006851/R20260907-0988 复现：数组里"协同处理"
+    排在"受理"前面），纯时间/数组下标排序都无法可靠断档。
+
+    改用节点身份过滤：detail 顶层 `node.id` 是 KSM 给出的权威"当前节点"，
+    先排除 handleSteps 里 nodeId 与当前节点相同的记录（无论它们出现在数组
+    哪个位置——包括撞车的同秒记录、或之前误退回到自己留下的自环记录），
+    剩下的候选里按 handleDateTime 取最新一条，就是"上一个不同节点"，不再
+    依赖同秒记录的相对顺序。若拿不到当前节点 id 或过滤后无候选（退化场景），
+    回落旧的纯时间序取倒数第二条，不让这类边缘情况直接报错卡死。
     """
     steps = detail.get("handleSteps")
     if not isinstance(steps, list):
@@ -122,9 +135,17 @@ def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
     valid = [h for h in steps if isinstance(h, dict)]
     if len(valid) < 2:
         return ""
-    # handleDateTime 是 "YYYY-MM-DD HH:MM:SS" 字符串，字典序 == 时间序。
-    valid.sort(key=lambda h: _s(h.get("handleDateTime")))
-    return _s(valid[-2].get("opercacheId"))
+    indexed = list(enumerate(valid))
+    node = detail.get("node")
+    current_node_id = _s(node.get("id")) if isinstance(node, dict) else ""
+    if current_node_id:
+        candidates = [pair for pair in indexed if _s(pair[1].get("nodeId")) != current_node_id]
+        if candidates:
+            candidates.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
+            return _s(candidates[-1][1].get("opercacheId"))
+    # 回落：无法按节点身份区分时，退回旧的纯时间序取倒数第二条。
+    indexed.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
+    return _s(indexed[-2][1].get("opercacheId"))
 
 
 def _extract_ksm_fields(
@@ -264,7 +285,12 @@ class KSMWritebackSender:
 
         try:
             self._execute(
-                action, row, fields, identity, persisted_node_id=ticket.ksm_current_node_id
+                action,
+                row,
+                fields,
+                identity,
+                persisted_node_id=ticket.ksm_current_node_id,
+                ticket=ticket,
             )
         except KSMError as e:
             self._record_failure(row, report, str(e))
@@ -400,20 +426,23 @@ class KSMWritebackSender:
         identity: KsmIdentity,
         *,
         persisted_node_id: str | None = None,
+        ticket: Ticket | None = None,
     ) -> None:
         if action == "lock":
             self._lock(fields, identity)
             return
         # 退回：不先 lock（lock 是「接管」语义，与退回相悖，实测未 lock 直接 return 成功）。
         # 目标节点=「最新节点的上一个节点」，必须基于刚实时拉取的数据算，拉不到就
-        # 拒绝退回（绝不用旧快照猜，猜错等于把工单退到错误节点，KSM 还不一定报错）。
+        # 拒绝退回（绝不用旧快照猜，猜错等于把工单退到错误节点，KSM 还不一定报错）——
+        # 除非该工单已被我们接管（ksm_takeover_status=='handled'），此时 KSM 侧锁定
+        # 只能由我们操作，不会自己流转节点，库里最新快照可信，见 _refresh_for_return。
         if action == "return":
-            fresh = self._refresh_for_return(fields)
+            fresh = self._refresh_for_return(fields, ticket=ticket)
             self._return(fresh, identity, _s((row.payload or {}).get("deal_opinion")).strip())
             return
         # all remaining actions need a fresh node → lock then refresh
         self._lock(fields, identity)
-        fresh = self._refresh(fields)
+        fresh = self._refresh(fields, ticket=ticket)
         # notice 24h 过期时 _refresh 回落入库快照节点（比 takeover 节点旧），
         # KSM 报「已流转至其他节点」。refresh 回落的标志是 node_id 与入库快照相同。
         # ksm_current_node_id 是 takeover handle 后持久化的「协同处理」节点，比入库
@@ -525,15 +554,13 @@ class KSMWritebackSender:
             )
         )
 
-    def _refresh(self, fields: _KSMFields) -> _KSMFields:
+    def _refresh(self, fields: _KSMFields, *, ticket: Ticket | None = None) -> _KSMFields:
         """Best-effort: re-pull latest detail to refresh node id post-lock.
 
-        Falls back to the ingest-time ids when no notice is cached or the
-        pull fails (handle will then surface a KSM error if the node is stale
-        — never silent)."""
-        if self._notice_store is None:
-            return fields
-        notice = self._notice_store.get(fields.bill_id)
+        notice 优先取 Redis（更可能最新），未命中回落 ticket 持久化列（迁移
+        0044，不设过期时间——见 resolve_notice）。仍拉不到/拉取失败则回落
+        ingest-time ids（handle 会报 KSM 错误暴露节点过期，绝不静默）。"""
+        notice = resolve_notice(self._notice_store, fields.bill_id, ticket)
         if notice is None:
             logger.info("ksm_refresh_no_notice", bill_id=fields.bill_id)
             return fields
@@ -548,25 +575,49 @@ class KSMWritebackSender:
             return fields
         return _merge_refreshed(fields, detail)
 
-    def _refresh_for_return(self, fields: _KSMFields) -> _KSMFields:
-        """退回专用：强制实时拉取，拉不到就报错（绝不回落旧快照）。
+    def _refresh_for_return(
+        self, fields: _KSMFields, *, ticket: Ticket | None = None
+    ) -> _KSMFields:
+        """退回专用：优先强制实时拉取；notice 过期/拉取失败时，仅在工单已被我们
+        接管（ksm_takeover_status=='handled'）时回落库里最新快照，否则报错。
 
-        退回目标="最新节点的上一个节点"，这个判断本身就依赖"最新节点"是新鲜的
-        ——旧快照的"最新"可能早就不是最新了，回落等于用错误前提算出一个看似
-        合理但实际可能错的目标节点，且 KSM 不一定会报错拒绝。所以这里没有
-        _refresh() 那种"拉不到就退回旧值"的兜底：拉不到就抛错，让这一行退到
-        pending/failed，交人工核实，而不是悄悄退到错节点。
+        退回目标="最新节点的上一个节点"，这个判断本身就依赖"最新节点"是新鲜的。
+        对未接管的工单，KSM 侧可能还在自由流转，旧快照的"最新"可能早就不是
+        最新了，回落等于用错误前提算出一个看似合理但实际可能错的目标节点——
+        所以未接管时没有兜底：拉不到就抛错，交人工核实，不悄悄退到错节点。
+
+        但工单一旦被我们接管（lock 成功），KSM 侧该单锁定为只能由我们操作，
+        不会再自己流转节点——这种情况下库里 source_payload._subscribe_callback
+        存的最新快照（每次 ingest 重推都会同步刷新）就是可信的"最新"，可以
+        安全回落，不必因 notice 24h 过期就彻底卡死退回（2026-09 修复：接管后
+        的历史工单曾因此批量卡死，见 scripts/batch_return_ksm_by_notice.py）。
+
+        notice 优先取 Redis，未命中回落 ticket 持久化列（迁移 0044，不设过期
+        时间——见 resolve_notice；2026-09 实测 4 天前的旧 notice 依然可用）。
         """
-        if self._notice_store is None:
-            raise KSMError(f"退回需要实时数据但无 notice 缓存: bill_id={fields.bill_id}")
-        notice = self._notice_store.get(fields.bill_id)
-        if notice is None:
-            raise KSMError(f"退回需要实时数据但 notice 已过期/未缓存: bill_id={fields.bill_id}")
-        detail = self._client.get_order_detail(
-            bill_id=fields.bill_id,
-            notice_num=notice.notice_num,
-            subscribe_num=notice.subscribe_num,
-        )
+        try:
+            notice = resolve_notice(self._notice_store, fields.bill_id, ticket)
+            if notice is None:
+                raise KSMError(f"notice 已过期/未缓存: bill_id={fields.bill_id}")
+            detail = self._client.get_order_detail(
+                bill_id=fields.bill_id,
+                notice_num=notice.notice_num,
+                subscribe_num=notice.subscribe_num,
+            )
+        except KSMError as e:
+            fallback = self._return_target_from_snapshot(fields, ticket=ticket)
+            if fallback is None:
+                raise KSMError(
+                    f"退回需要实时数据但 notice 已过期/未缓存，且工单未接管无法回落快照"
+                    f"（源错误: {e}）: bill_id={fields.bill_id}"
+                ) from e
+            logger.info(
+                "ksm_return_target_from_snapshot",
+                bill_id=fields.bill_id,
+                reason=str(e),
+            )
+            return fallback
+
         node_id = ""
         node = detail.get("node")
         if isinstance(node, dict):
@@ -574,6 +625,26 @@ class KSMWritebackSender:
         opercache_id = _previous_node_opercache_id(detail)
         if not node_id or not opercache_id:
             raise KSMError(f"退回目标节点计算失败（节点数不足或缺字段）: bill_id={fields.bill_id}")
+        return replace(fields, node_id=node_id, opercache_id=opercache_id)
+
+    def _return_target_from_snapshot(
+        self, fields: _KSMFields, *, ticket: Ticket | None
+    ) -> _KSMFields | None:
+        """接管后的回落路径：用 ticket.source_payload._subscribe_callback 里存的
+        最新快照算退回目标节点。未接管（ksm_takeover_status != 'handled'）返回
+        None——那种情况下 KSM 侧可能仍在自由流转，快照不可信，交调用方拒绝。"""
+        if ticket is None or ticket.ksm_takeover_status != "handled":
+            return None
+        raw = (ticket.source_payload or {}).get("_subscribe_callback")
+        if not isinstance(raw, dict):
+            return None
+        node_id = ""
+        node = raw.get("node")
+        if isinstance(node, dict):
+            node_id = _s(node.get("id"))
+        opercache_id = _previous_node_opercache_id(raw)
+        if not node_id or not opercache_id:
+            return None
         return replace(fields, node_id=node_id, opercache_id=opercache_id)
 
     # ---- text builders -------------------------------------------------
