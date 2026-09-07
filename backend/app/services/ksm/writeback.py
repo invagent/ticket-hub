@@ -59,7 +59,7 @@ from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
 from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
-from app.services.ksm.notice_store import NoticeStoreLike
+from app.services.ksm.notice_store import NoticeStoreLike, resolve_notice
 
 if TYPE_CHECKING:
     from app.services.cascade.outbox_retry import OutboxRetryResult
@@ -421,7 +421,7 @@ class KSMWritebackSender:
             return
         # all remaining actions need a fresh node → lock then refresh
         self._lock(fields, identity)
-        fresh = self._refresh(fields)
+        fresh = self._refresh(fields, ticket=ticket)
         # notice 24h 过期时 _refresh 回落入库快照节点（比 takeover 节点旧），
         # KSM 报「已流转至其他节点」。refresh 回落的标志是 node_id 与入库快照相同。
         # ksm_current_node_id 是 takeover handle 后持久化的「协同处理」节点，比入库
@@ -533,15 +533,13 @@ class KSMWritebackSender:
             )
         )
 
-    def _refresh(self, fields: _KSMFields) -> _KSMFields:
+    def _refresh(self, fields: _KSMFields, *, ticket: Ticket | None = None) -> _KSMFields:
         """Best-effort: re-pull latest detail to refresh node id post-lock.
 
-        Falls back to the ingest-time ids when no notice is cached or the
-        pull fails (handle will then surface a KSM error if the node is stale
-        — never silent)."""
-        if self._notice_store is None:
-            return fields
-        notice = self._notice_store.get(fields.bill_id)
+        notice 优先取 Redis（更可能最新），未命中回落 ticket 持久化列（迁移
+        0044，不设过期时间——见 resolve_notice）。仍拉不到/拉取失败则回落
+        ingest-time ids（handle 会报 KSM 错误暴露节点过期，绝不静默）。"""
+        notice = resolve_notice(self._notice_store, fields.bill_id, ticket)
         if notice is None:
             logger.info("ksm_refresh_no_notice", bill_id=fields.bill_id)
             return fields
@@ -572,9 +570,12 @@ class KSMWritebackSender:
         存的最新快照（每次 ingest 重推都会同步刷新）就是可信的"最新"，可以
         安全回落，不必因 notice 24h 过期就彻底卡死退回（2026-09 修复：接管后
         的历史工单曾因此批量卡死，见 scripts/batch_return_ksm_by_notice.py）。
+
+        notice 优先取 Redis，未命中回落 ticket 持久化列（迁移 0044，不设过期
+        时间——见 resolve_notice；2026-09 实测 4 天前的旧 notice 依然可用）。
         """
         try:
-            notice = self._notice_store.get(fields.bill_id) if self._notice_store else None
+            notice = resolve_notice(self._notice_store, fields.bill_id, ticket)
             if notice is None:
                 raise KSMError(f"notice 已过期/未缓存: bill_id={fields.bill_id}")
             detail = self._client.get_order_detail(

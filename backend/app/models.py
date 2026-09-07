@@ -507,6 +507,15 @@ class Ticket(Base):
     ksm_close_node_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     ksm_close_node_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    # KSM notice 凭证持久化（迁移 0044）：每次收到 webhook 推送时把最新
+    # (noticeNum, subscribeNum) 同步落库，不设过期时间——之前只存 Redis（24h
+    # TTL），过期后即使 KSM 服务端该凭证仍有效也拿不到，导致退回/重拉详情
+    # 大批卡死（2026-09 实测：4 天前的旧 notice 依然能用，纯粹是本系统 Redis
+    # 缓存过期时间设得比 KSM 真实有效期更保守）。Redis 命中优先（更可能是
+    # 最新的），未命中时回落这两列，不再直接拒绝。
+    ksm_notice_num: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ksm_subscribe_num: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

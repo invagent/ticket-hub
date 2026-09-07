@@ -26,9 +26,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import redis
+
+if TYPE_CHECKING:
+    from app.models import Ticket
 
 
 @dataclass(slots=True, frozen=True)
@@ -79,3 +82,23 @@ class FakeNoticeStore:
 
     def get(self, bill_id: str) -> NoticeInfo | None:
         return self._data.get(bill_id)
+
+
+def resolve_notice(
+    notice_store: NoticeStoreLike | None, bill_id: str, ticket: Ticket | None
+) -> NoticeInfo | None:
+    """Redis 命中优先（更可能是最新的）；未命中回落 ticket 持久化列（迁移 0044）。
+
+    Redis NoticeStore 的 24h TTL 是本系统自设的保守策略，非 KSM 服务端真实
+    有效期（2026-09 实测：4 天前的旧 notice 依然能成功拉取详情）。ticket 上
+    的 ksm_notice_num/ksm_subscribe_num 每次成功拉取详情后都会更新（见
+    webhooks.py::_ksm_async_fetch_and_ingest），不设过期时间，Redis 过期后
+    仍有得回落，不必人工去 KSM 系统翻找 notice。
+    """
+    if notice_store is not None:
+        notice = notice_store.get(bill_id)
+        if notice is not None:
+            return notice
+    if ticket is not None and ticket.ksm_notice_num and ticket.ksm_subscribe_num:
+        return NoticeInfo(notice_num=ticket.ksm_notice_num, subscribe_num=ticket.ksm_subscribe_num)
+    return None

@@ -223,6 +223,26 @@ def test_new_ticket_full_takeover(world: Session) -> None:
     assert client.detail_calls.count("BILL-1") == 2  # refresh(handle前) + 收尾持久化
 
 
+def test_no_redis_notice_falls_back_to_db_persisted_notice(world: Session) -> None:
+    """notice_store=None（Redis 未命中）但 ticket 有持久化的 ksm_notice_num/
+    ksm_subscribe_num（迁移 0044）→ 接管仍能拉到最新详情正常完成，不因 Redis
+    没有就整轮放弃 refresh/handle。"""
+    t = _ticket(world, ksm_notice_num="DB-N1", ksm_subscribe_num="DB-S1")
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail("1"),
+        is_new=True,
+        client=client,  # type: ignore[arg-type]
+        notice_store=None,
+        settings=_settings(),
+    )
+    assert len(client.handles) == 1
+    assert client.handles[0].node_id == "NODE-NEW"
+    assert t.ksm_takeover_status == "handled"
+
+
 def test_new_ticket_status2_also_full(world: Session) -> None:
     """status=2 但仍是新工单 → 完整受理（是否 handle 看 is_new，不看 status）。"""
     t = _ticket(world)

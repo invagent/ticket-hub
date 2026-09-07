@@ -417,6 +417,45 @@ def test_return_no_notice_rejects(world: Session) -> None:
     assert not client.detail_calls  # 无 notice → 连拉都没拉
 
 
+def test_return_redis_miss_falls_back_to_db_persisted_notice(world: Session) -> None:
+    """Redis 未命中（notice_store=None）但 ticket 有持久化的 ksm_notice_num/
+    ksm_subscribe_num（迁移 0044）→ 用这份凭证实时拉取成功，不必回落快照，
+    也不必拒绝——DB 持久化列不设过期时间，是比 Redis 24h TTL 更可靠的兜底。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        ksm_notice_num="DB-NOTICE-1",
+        ksm_subscribe_num="ksm_feedback_change",
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    fresh = {
+        **_SUBSCRIBE,
+        "node": {"id": "NODE-NEW", "name": "协同处理"},
+        "handleSteps": [
+            {
+                "nodeId": "NODE-OLD",
+                "nodeName": "受理",
+                "opercacheId": "OPCACHE-ACCEPT",
+                "handleDateTime": "2026-08-27 18:00:00",
+            },
+            {
+                "nodeId": "NODE-NEW",
+                "nodeName": "协同处理",
+                "opercacheId": "OPCACHE-COOP",
+                "handleDateTime": "2026-08-28 13:00:00",
+            },
+        ],
+    }
+    client = FakeKSMClient(detail=fresh)
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 1
+    assert client.detail_calls == ["BILL-1"]  # 真拉取了，不是走快照回落
+    r = client.returns[0]
+    assert r.current_node_id == "NODE-NEW"
+    assert r.opercache_id == "OPCACHE-ACCEPT"
+
+
 def test_return_no_notice_but_handled_falls_back_to_db_snapshot(world: Session) -> None:
     """无 notice + 已接管（ksm_takeover_status='handled'）→ 用库里最新快照算目标
     节点，不再拒绝（接管后 KSM 侧锁定只能我们操作，快照可信）。"""

@@ -39,7 +39,7 @@ from app.core.logging import get_logger
 from app.db import make_session
 from app.models import Ticket
 from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
-from app.services.ksm.notice_store import NoticeStore, NoticeStoreLike
+from app.services.ksm.notice_store import NoticeStore, NoticeStoreLike, resolve_notice
 from app.services.ksm.writeback import (
     _ALREADY_LOCKED_HINTS,
     _extract_ksm_fields,
@@ -128,13 +128,15 @@ def takeover_ksm_ticket(
         return
 
     # ---- 2. 重拉详情刷新 node（lock 后节点已流转）----
-    fresh = _refresh(client, fields, notice_store)
+    fresh = _refresh(client, fields, notice_store, ticket=ticket)
 
     # ---- 3. 处理（handleKsmOrder, is_deal=False → 只受理不关单）----
     try:
         _handle(client, fresh, identity)
     except KSMError as e:
-        if not _handle_with_compensation(db, client, fresh, fields, identity, e, notice_store):
+        if not _handle_with_compensation(
+            db, client, fresh, fields, identity, e, notice_store, ticket=ticket
+        ):
             ticket.ksm_takeover_status = "failed"
             ticket.ksm_takeover_error = str(e)[:1000]
             logger.warning("ksm_takeover_handle_failed", bill_id=fields.bill_id, error=str(e))
@@ -158,7 +160,7 @@ def _persist_fresh_snapshot(
     fields: _KSMFields,
     notice_store: NoticeStoreLike | None,
 ) -> None:
-    detail = _pull_detail(client, fields, notice_store)
+    detail = _pull_detail(client, fields, notice_store, ticket=ticket)
     if detail is None:
         logger.info("ksm_takeover_snapshot_persist_skipped", bill_id=fields.bill_id)
         return
@@ -174,13 +176,15 @@ def _handle_with_compensation(
     identity: KsmIdentity,
     err: KSMError,
     notice_store: NoticeStoreLike | None,
+    *,
+    ticket: Ticket | None = None,
 ) -> bool:
     """handle 抛错后按 message 关键字补偿。返回 True=补偿后成功，False=不可补偿。"""
     msg = str(err)
     # a) 详情过期（node 已流转）→ 重拉后重试一次 handle（不重新 lock）
     if any(h in msg for h in _STALE_NODE_HINTS):
         logger.info("ksm_takeover_compensate_stale_node", bill_id=base.bill_id)
-        refreshed = _refresh(client, base, notice_store)
+        refreshed = _refresh(client, base, notice_store, ticket=ticket)
         try:
             _handle(client, refreshed, identity)
             return True
@@ -194,7 +198,7 @@ def _handle_with_compensation(
         logger.info("ksm_takeover_compensate_relock", bill_id=base.bill_id)
         try:
             _lock(client, base, identity)
-            refreshed = _refresh(client, base, notice_store)
+            refreshed = _refresh(client, base, notice_store, ticket=ticket)
             _handle(client, refreshed, identity)
             return True
         except KSMError as e3:
@@ -246,14 +250,18 @@ def _handle(client: KSMClient, fields: _KSMFields, identity: KsmIdentity) -> Non
 
 
 def _pull_detail(
-    client: KSMClient, fields: _KSMFields, notice_store: NoticeStoreLike | None
+    client: KSMClient,
+    fields: _KSMFields,
+    notice_store: NoticeStoreLike | None,
+    *,
+    ticket: Ticket | None = None,
 ) -> dict[str, Any] | None:
-    """尽力实时拉取最新详情（原始 dict）。无 notice/拉取失败 → None，调用方决定
-    如何降级，不在这里静默吞掉——供 _refresh（合并进 _KSMFields）和接管收尾
-    持久化最新快照（见 takeover_ksm_ticket 末尾）共用同一份拉取逻辑。"""
-    if notice_store is None:
-        return None
-    notice = notice_store.get(fields.bill_id)
+    """尽力实时拉取最新详情（原始 dict）。notice 优先取 Redis，未命中回落
+    ticket 持久化列（迁移 0044，不设过期时间——见 resolve_notice）。仍拉不到/
+    拉取失败 → None，调用方决定如何降级，不在这里静默吞掉——供 _refresh
+    （合并进 _KSMFields）和接管收尾持久化最新快照（见 takeover_ksm_ticket
+    末尾）共用同一份拉取逻辑。"""
+    notice = resolve_notice(notice_store, fields.bill_id, ticket)
     if notice is None:
         logger.info("ksm_takeover_refresh_no_notice", bill_id=fields.bill_id)
         return None
@@ -269,11 +277,15 @@ def _pull_detail(
 
 
 def _refresh(
-    client: KSMClient, fields: _KSMFields, notice_store: NoticeStoreLike | None
+    client: KSMClient,
+    fields: _KSMFields,
+    notice_store: NoticeStoreLike | None,
+    *,
+    ticket: Ticket | None = None,
 ) -> _KSMFields:
     """重拉详情刷新 node/product 等 id（lock 后节点流转）。拉不到回落原字段，
     让 handle 报 KSM 错误暴露 —— 绝不静默成功。"""
-    detail = _pull_detail(client, fields, notice_store)
+    detail = _pull_detail(client, fields, notice_store, ticket=ticket)
     if detail is None:
         return fields
     return _merge_refreshed(fields, detail)
@@ -309,7 +321,7 @@ def trigger_ksm_takeover_after_review(ticket_id: int) -> None:
 
         bill_id = ticket.source_ticket_id or ""
         notice_store = NoticeStore(redis_url=settings.redis_url)
-        notice = notice_store.get(bill_id)
+        notice = resolve_notice(notice_store, bill_id, ticket)
 
         client = KSMClient(KSMConfig.from_settings(settings))
         try:
