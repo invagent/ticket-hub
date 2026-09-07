@@ -82,6 +82,17 @@ def takeover_ksm_ticket(
         logger.info("ksm_takeover_disabled", bill_id=bill_id)
         return
 
+    # 已终态关闭（如退回成功）的工单绝不重新接管——退回/关单成功后
+    # ksm_takeover_status 会被清回 None（交还提单人语义，见 writeback.py），
+    # 若此时还有延迟的兜底重试（trigger_ksm_takeover_after_review，经
+    # supervisor 审核确认排的 BackgroundTask）姗姗来迟才执行到，仅凭
+    # ksm_takeover_status is None 会误判成"新工单"重新 lock+handle，把
+    # KSM 侧节点从退回目标又拽回协同处理，制造本地 closed 与 KSM 侧不一致
+    # （2026-09-04 TKT-006751 复现）。status 字段不受该重置影响，用它兜底。
+    if ticket.status == "closed":
+        logger.info("ksm_takeover_skip_closed", bill_id=bill_id, ticket_id=ticket.id)
+        return
+
     if ticket.ksm_takeover_status in _TAKEN_OVER_STATUSES:
         logger.info("ksm_takeover_already", bill_id=bill_id, status=ticket.ksm_takeover_status)
         return

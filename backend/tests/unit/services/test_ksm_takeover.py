@@ -169,6 +169,27 @@ def test_dry_run_assembles_only(world: Session) -> None:
     assert t.ksm_takeover_status is None
 
 
+def test_closed_ticket_skips(world: Session) -> None:
+    """已终态关闭（如退回成功）的工单绝不重新接管，即便 ksm_takeover_status
+    已被清回 None（退回成功后的交还提单人语义，见 writeback.py）——防止延迟的
+    审核确认兜底重试（trigger_ksm_takeover_after_review）姗姗来迟才执行，把
+    已关闭工单误判成新工单重新 lock+handle（2026-09-04 TKT-006751 复现）。"""
+    t = _ticket(world, status="closed", ksm_takeover_status=None)
+    client = FakeKSMClient()
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail(),
+        is_new=True,
+        client=client,  # type: ignore[arg-type]
+        notice_store=FakeNotice(),
+        settings=_settings(),
+    )
+    assert client.locks == []
+    assert client.handles == []
+    assert t.ksm_takeover_status is None
+
+
 def test_already_locked_skips(world: Session) -> None:
     t = _ticket(world, ksm_takeover_status="handled")
     client = FakeKSMClient()
