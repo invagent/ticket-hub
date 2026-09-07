@@ -10,14 +10,14 @@ function nav() {
   return within(screen.getByRole("navigation"));
 }
 
-function renderAs(role: string | null) {
+function renderAs(role: string | null, initialPath = "/") {
   if (role) localStorage.setItem("auth_user", JSON.stringify({ name: "u", role }));
   else localStorage.removeItem("auth_user");
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/"]}>
-        <TabsProvider initialPath="/" resolveTitle={() => "工作台"}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <TabsProvider initialPath={initialPath} resolveTitle={() => "工作台"}>
           <Layout />
         </TabsProvider>
       </MemoryRouter>
@@ -51,5 +51,28 @@ describe("Layout", () => {
     expect(n.getByText("工作台")).toBeInTheDocument();
     expect(n.queryByText("反思诊断")).not.toBeInTheDocument();
     expect(n.queryByText("系统基础配置")).not.toBeInTheDocument();
+  });
+
+  it("统计看板 子菜单默认收起，点击后展开综合看板/每日看板", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    renderAs("admin");
+    const n = nav();
+    expect(n.queryByText("综合看板")).not.toBeInTheDocument();
+    expect(n.queryByText("每日看板")).not.toBeInTheDocument();
+
+    await userEvent.click(n.getByText("统计看板"));
+    expect(n.getByText("综合看板")).toBeInTheDocument();
+    expect(n.getByText("每日看板")).toBeInTheDocument();
+
+    await userEvent.click(n.getByText("统计看板"));
+    expect(n.queryByText("综合看板")).not.toBeInTheDocument();
+    expect(n.queryByText("每日看板")).not.toBeInTheDocument();
+  });
+
+  it("直达 /analytics/daily 时子菜单自动展开", () => {
+    renderAs("admin", "/analytics/daily");
+    const n = nav();
+    expect(n.getByText("综合看板")).toBeInTheDocument();
+    expect(n.getByText("每日看板")).toBeInTheDocument();
   });
 });

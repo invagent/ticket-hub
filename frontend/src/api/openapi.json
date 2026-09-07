@@ -1120,6 +1120,118 @@
         "title": "CustomerSummary",
         "type": "object"
       },
+      "DailyByAssigneeOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "ksm_rejected": {
+            "title": "Ksm Rejected",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "returned_to_ksm": {
+            "title": "Returned To Ksm",
+            "type": "integer"
+          },
+          "supplemented": {
+            "title": "Supplemented",
+            "type": "integer"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "received",
+          "completed",
+          "returned_to_ksm",
+          "ksm_rejected",
+          "supplemented"
+        ],
+        "title": "DailyByAssigneeOut",
+        "type": "object"
+      },
+      "DailyDashboardOut": {
+        "properties": {
+          "by_assignee": {
+            "items": {
+              "$ref": "#/components/schemas/DailyByAssigneeOut"
+            },
+            "title": "By Assignee",
+            "type": "array"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "lifetime": {
+            "$ref": "#/components/schemas/LifetimeTotalsOut"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/DailyTotalsOut"
+          }
+        },
+        "required": [
+          "date",
+          "totals",
+          "by_assignee",
+          "lifetime"
+        ],
+        "title": "DailyDashboardOut",
+        "type": "object"
+      },
+      "DailyTotalsOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "ksm_rejected": {
+            "title": "Ksm Rejected",
+            "type": "integer"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "returned_to_ksm": {
+            "title": "Returned To Ksm",
+            "type": "integer"
+          },
+          "supplemented": {
+            "title": "Supplemented",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "received",
+          "completed",
+          "returned_to_ksm",
+          "ksm_rejected",
+          "supplemented"
+        ],
+        "title": "DailyTotalsOut",
+        "type": "object"
+      },
       "DashboardOut": {
         "properties": {
           "counts": {
@@ -4037,6 +4149,34 @@
           "done"
         ],
         "title": "KsmNode",
+        "type": "object"
+      },
+      "LifetimeTotalsOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "in_progress": {
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "returned_to_ksm_total": {
+            "title": "Returned To Ksm Total",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "in_progress",
+          "completed",
+          "returned_to_ksm_total"
+        ],
+        "title": "LifetimeTotalsOut",
         "type": "object"
       },
       "LinearSyncReportOut": {
@@ -12967,6 +13107,49 @@
         "summary": "Urge Endpoint",
         "tags": [
           "hub-issues"
+        ]
+      }
+    },
+    "/api/metrics/daily-dashboard": {
+      "get": {
+        "operationId": "daily_dashboard_api_metrics_daily_dashboard_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "title": "Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyDashboardOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Daily Dashboard",
+        "tags": [
+          "metrics"
         ]
       }
     },

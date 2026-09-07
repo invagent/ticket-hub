@@ -20,6 +20,7 @@ import { DispatchRulesPage } from "@/pages/admin/dispatch/DispatchRulesPage";
 import { ReflectWorkbenchPage } from "@/pages/reflect/ReflectWorkbenchPage";
 import { ReflectTrainingPage } from "@/pages/reflect-training/ReflectTrainingPage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
+import { DailyDashboardPage } from "@/pages/analytics/DailyDashboardPage";
 
 /**
  * require_admin 页面守卫：非管理员（含 supervisor）直接跳回 /admin/users。
@@ -37,6 +38,7 @@ export const authedRoutes = (
     <Route path="/reflect" element={<ReflectWorkbenchPage />} />
     <Route path="/reflect-training" element={<ReflectTrainingPage />} />
     <Route path="/analytics" element={<AnalyticsPage />} />
+    <Route path="/analytics/daily" element={<DailyDashboardPage />} />
     <Route path="/tickets" element={<TicketsListPage />} />
     <Route path="/tickets/:ticketId" element={<TicketDetailPage />} />
     <Route path="/hub-issues" element={<HubIssuesListPage />} />

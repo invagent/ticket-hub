@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.db import get_session
 from app.services.metrics.analytics import compute_ticket_analytics
+from app.services.metrics.daily import compute_daily_dashboard
 from app.services.metrics.dashboard import get_dashboard_metrics
 from app.services.metrics.workbench import compute_workbench_metrics
 
@@ -182,4 +183,51 @@ def ticket_analytics(
         handle_hours_hist=r.handle_hours_hist,
         available_months=r.available_months,
         by_dev_staff=r.by_dev_staff,
+    )
+
+
+class DailyTotalsOut(BaseModel):
+    received: int
+    completed: int
+    returned_to_ksm: int
+    ksm_rejected: int
+    supplemented: int
+
+
+class DailyByAssigneeOut(BaseModel):
+    user_id: int | None
+    name: str
+    received: int
+    completed: int
+    returned_to_ksm: int
+    ksm_rejected: int
+    supplemented: int
+
+
+class LifetimeTotalsOut(BaseModel):
+    total: int
+    in_progress: int
+    completed: int
+    returned_to_ksm_total: int
+
+
+class DailyDashboardOut(BaseModel):
+    date: str
+    totals: DailyTotalsOut
+    by_assignee: list[DailyByAssigneeOut]
+    lifetime: LifetimeTotalsOut
+
+
+@router.get("/daily-dashboard", response_model=DailyDashboardOut)
+def daily_dashboard(
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    _user: AuthedUser = Depends(require_supervisor),
+    db: Session = Depends(get_session),
+) -> DailyDashboardOut:
+    r = compute_daily_dashboard(db, date=date)
+    return DailyDashboardOut(
+        date=r.date,
+        totals=DailyTotalsOut(**asdict(r.totals)),
+        by_assignee=[DailyByAssigneeOut(**asdict(a)) for a in r.by_assignee],
+        lifetime=LifetimeTotalsOut(**asdict(r.lifetime)),
     )

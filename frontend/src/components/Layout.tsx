@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { NavLink, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useTabs, keyOf } from "@/tabs/TabsContext";
 import { resolveTitle } from "@/tabs/tabTitle";
@@ -101,13 +101,36 @@ function AdminIcon({ active }: { active: boolean }) {
   );
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      className={`transition-transform ${open ? "rotate-90" : ""}`}
+    >
+      <path
+        d="M3 1.5 7 5 3 8.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // roles 缺省 = 所有角色可见（ADR-0016 P5 权限双层：知识运营只多「反思诊断」，
 // 够不到「管理」；反思诊断对 member/assignee 隐藏——后端同口径 403）
+// children 存在时该项渲染为可展开父项（本身不是 NavLink，点击只展开/收起），
+// 综合看板/每日看板等具体页面全部落在 children 里（2026-09 每日看板新增）。
 const navItems: {
   to: string;
   label: string;
   icon: (p: { active: boolean }) => ReactNode;
   roles?: string[];
+  children?: { to: string; label: string }[];
 }[] = [
   { to: "/", label: "工作台", icon: GridIcon },
   { to: "/tickets", label: "全部工单列表", icon: TicketIcon },
@@ -124,7 +147,16 @@ const navItems: {
     icon: TrainingIcon,
     roles: ["knowledge_op", "supervisor", "admin"],
   },
-  { to: "/analytics", label: "统计看板", icon: ChartIcon, roles: ["supervisor", "admin"] },
+  {
+    to: "/analytics",
+    label: "统计看板",
+    icon: ChartIcon,
+    roles: ["supervisor", "admin"],
+    children: [
+      { to: "/analytics", label: "综合看板" },
+      { to: "/analytics/daily", label: "每日看板" },
+    ],
+  },
   { to: "/admin/users", label: "系统基础配置", icon: AdminIcon, roles: ["supervisor", "admin"] },
 ];
 
@@ -172,6 +204,32 @@ export function Layout() {
   const role: string = user?.role ?? "";
   const visibleNav = navItems.filter((item) => !item.roles || item.roles.includes(role));
 
+  // 展开的父项集合（by `to`）；当前路径落在某父项自身或其子项上时自动展开，
+  // 保证直达 URL（如 /analytics/daily）也能看到展开态，不需要手动点开。
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const item of navItems) {
+        if (!item.children) continue;
+        const onThisBranch =
+          item.to === curKey || item.children.some((c) => c.to === curKey);
+        if (onThisBranch) next.add(item.to);
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curKey]);
+
+  function toggleExpanded(to: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(to)) next.delete(to);
+      else next.add(to);
+      return next;
+    });
+  }
+
   return (
     <div className="min-h-screen flex">
       <nav className="w-[210px] flex-none bg-hub-sidebar flex flex-col sticky top-0 h-screen box-border font-hub">
@@ -182,27 +240,69 @@ export function Layout() {
           <div className="text-[14.5px] font-bold tracking-[.2px] text-white">ticket-hub</div>
         </div>
         <div className="flex flex-col gap-0.5 px-2.5">
-          {visibleNav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline font-semibold ${
-                  isActive
-                    ? "bg-hub-teal text-white"
-                    : "text-white/85 hover:bg-hub-sidebarHover hover:text-white"
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon active={isActive} />
-                  {item.label}
-                </>
-              )}
-            </NavLink>
-          ))}
+          {visibleNav.map((item) => {
+            if (!item.children) {
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline font-semibold ${
+                      isActive
+                        ? "bg-hub-teal text-white"
+                        : "text-white/85 hover:bg-hub-sidebarHover hover:text-white"
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <item.icon active={isActive} />
+                      {item.label}
+                    </>
+                  )}
+                </NavLink>
+              );
+            }
+            const isOpen = expanded.has(item.to);
+            const onBranch = item.children.some((c) => c.to === curKey);
+            return (
+              <div key={item.to}>
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(item.to)}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold cursor-pointer border-0 bg-transparent text-left ${
+                    onBranch
+                      ? "text-white"
+                      : "text-white/85 hover:bg-hub-sidebarHover hover:text-white"
+                  }`}
+                >
+                  <item.icon active={onBranch} />
+                  <span className="flex-1">{item.label}</span>
+                  <ChevronIcon open={isOpen} />
+                </button>
+                {isOpen && (
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    {item.children.map((child) => (
+                      <NavLink
+                        key={child.to}
+                        to={child.to}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2.5 pl-8 pr-2.5 py-1.5 rounded-lg text-[12px] no-underline font-medium ${
+                            isActive
+                              ? "bg-hub-teal text-white"
+                              : "text-white/70 hover:bg-hub-sidebarHover hover:text-white"
+                          }`
+                        }
+                      >
+                        {child.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="flex-1" />
         <div className="border-t border-white/10 px-3.5 py-3 flex items-center gap-2.5">

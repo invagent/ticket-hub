@@ -1186,6 +1186,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/daily-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Daily Dashboard */
+        get: operations["daily_dashboard_api_metrics_daily_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/dashboard": {
         parameters: {
             query?: never;
@@ -2829,6 +2846,45 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** DailyByAssigneeOut */
+        DailyByAssigneeOut: {
+            /** Completed */
+            completed: number;
+            /** Ksm Rejected */
+            ksm_rejected: number;
+            /** Name */
+            name: string;
+            /** Received */
+            received: number;
+            /** Returned To Ksm */
+            returned_to_ksm: number;
+            /** Supplemented */
+            supplemented: number;
+            /** User Id */
+            user_id: number | null;
+        };
+        /** DailyDashboardOut */
+        DailyDashboardOut: {
+            /** By Assignee */
+            by_assignee: components["schemas"]["DailyByAssigneeOut"][];
+            /** Date */
+            date: string;
+            lifetime: components["schemas"]["LifetimeTotalsOut"];
+            totals: components["schemas"]["DailyTotalsOut"];
+        };
+        /** DailyTotalsOut */
+        DailyTotalsOut: {
+            /** Completed */
+            completed: number;
+            /** Ksm Rejected */
+            ksm_rejected: number;
+            /** Received */
+            received: number;
+            /** Returned To Ksm */
+            returned_to_ksm: number;
+            /** Supplemented */
+            supplemented: number;
+        };
         /** DashboardOut */
         DashboardOut: {
             counts: components["schemas"]["CountsOut"];
@@ -3788,6 +3844,17 @@ export interface components {
             handler_name: string;
             /** Node Name */
             node_name: string;
+        };
+        /** LifetimeTotalsOut */
+        LifetimeTotalsOut: {
+            /** Completed */
+            completed: number;
+            /** In Progress */
+            in_progress: number;
+            /** Returned To Ksm Total */
+            returned_to_ksm_total: number;
+            /** Total */
+            total: number;
         };
         /** LinearSyncReportOut */
         LinearSyncReportOut: {
@@ -7732,6 +7799,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UrgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    daily_dashboard_api_metrics_daily_dashboard_get: {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyDashboardOut"];
                 };
             };
             /** @description Validation Error */
