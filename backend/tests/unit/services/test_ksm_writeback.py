@@ -387,6 +387,54 @@ def test_return_target_picks_node_before_latest_by_time(world: Session) -> None:
     assert client.returns[0].opercache_id == "OPCACHE-PREV"
 
 
+def test_return_target_same_second_tie_break_uses_node_identity(world: Session) -> None:
+    """同一秒内连续流转两个节点（handleDateTime 撞车）时，KSM 返回数组顺序不保证
+    等于真实发生顺序（实测 TKT-006851/R20260907-0988 复现：数组里当前节点排在
+    "受理"前面）。目标节点必须靠 detail.node.id 过滤掉与当前节点相同的记录来
+    定位，不能信任数组下标或字符串时间排序，否则会把当前节点自己误判成退回
+    目标（等于没退）。"""
+    hub = _hub(world)
+    t = _ticket(world, hub)
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    fresh = {
+        **_SUBSCRIBE,
+        "node": {"id": "NODE-COOP", "name": "协同处理"},
+        "handleSteps": [
+            {
+                "nodeId": None,
+                "nodeName": None,
+                "opercacheId": "OPCACHE-SUBMIT",
+                "handleDateTime": "2026-09-07 11:08:58",
+            },
+            {
+                # 数组顺序里排在"受理"前面，但真实发生顺序在"受理"之后——
+                # 与当前节点同 nodeId，必须被过滤掉，不能被误判成退回目标。
+                "nodeId": "NODE-COOP",
+                "nodeName": "协同处理",
+                "opercacheId": "OPCACHE-COOP",
+                "handleDateTime": "2026-09-07 11:09:13",
+            },
+            {
+                "nodeId": "NODE-COOP",
+                "nodeName": "协同处理",
+                "opercacheId": "OPCACHE-RETURN-SELF",
+                "handleDateTime": "2026-09-07 11:10:03",
+            },
+            {
+                "nodeId": "NODE-ACCEPT",
+                "nodeName": "受理",
+                "opercacheId": "OPCACHE-ACCEPT",
+                "handleDateTime": "2026-09-07 11:09:13",
+            },
+        ],
+    }
+    client = FakeKSMClient(detail=fresh)
+    store = FakeNoticeStore()
+    store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
+    drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
+    assert client.returns[0].opercache_id == "OPCACHE-ACCEPT"
+
+
 def test_return_no_notice_rejects(world: Session) -> None:
     """无 notice → 拒绝退回（不再回落旧快照猜目标），行 deferred 不发。"""
     hub = _hub(world)

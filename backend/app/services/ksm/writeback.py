@@ -110,11 +110,24 @@ def _s(v: Any) -> str:
 def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
     """退回目标节点的操作缓存 id（returnKsmOrder 的 opercacheID）。
 
-    2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」——把
-    handleSteps 按 handleDateTime 升序排，取倒数第二条（严格按时间序，不管节点
-    名是否相同）的 opercacheId。要求 detail 必须是**刚刚实时拉取**的（调用方
-    负责 refresh，本函数不兜底旧快照），否则"最新节点"判断本身就可能过期。
-    步数不足 2 条或缺字段 → 回落空串，调用方据此拒绝退回，不猜测。
+    2026-09 改判：不再固定退回「受理」节点，改为「最新节点的上一个节点」。要求
+    detail 必须是**刚刚实时拉取**的（调用方负责 refresh，本函数不兜底旧快照），
+    否则"最新节点"判断本身就可能过期。步数不足 2 条或缺字段 → 回落空串，调用
+    方据此拒绝退回，不猜测。
+
+    2026-09-07 修复：原实现按 handleDateTime 字符串排序取倒数第二条——但
+    handleDateTime 只精确到秒，同一秒内连续流转两个节点时（如"受理"后立即
+    自动转"协同处理"，或本函数之前算错导致的一次失败退回本身也会在
+    handleSteps 里多记一条自环记录）会撞车，且 KSM 返回数组本身的顺序不保证
+    等于真实发生顺序（实测 TKT-006851/R20260907-0988 复现：数组里"协同处理"
+    排在"受理"前面），纯时间/数组下标排序都无法可靠断档。
+
+    改用节点身份过滤：detail 顶层 `node.id` 是 KSM 给出的权威"当前节点"，
+    先排除 handleSteps 里 nodeId 与当前节点相同的记录（无论它们出现在数组
+    哪个位置——包括撞车的同秒记录、或之前误退回到自己留下的自环记录），
+    剩下的候选里按 handleDateTime 取最新一条，就是"上一个不同节点"，不再
+    依赖同秒记录的相对顺序。若拿不到当前节点 id 或过滤后无候选（退化场景），
+    回落旧的纯时间序取倒数第二条，不让这类边缘情况直接报错卡死。
     """
     steps = detail.get("handleSteps")
     if not isinstance(steps, list):
@@ -122,9 +135,17 @@ def _previous_node_opercache_id(detail: dict[str, Any]) -> str:
     valid = [h for h in steps if isinstance(h, dict)]
     if len(valid) < 2:
         return ""
-    # handleDateTime 是 "YYYY-MM-DD HH:MM:SS" 字符串，字典序 == 时间序。
-    valid.sort(key=lambda h: _s(h.get("handleDateTime")))
-    return _s(valid[-2].get("opercacheId"))
+    indexed = list(enumerate(valid))
+    node = detail.get("node")
+    current_node_id = _s(node.get("id")) if isinstance(node, dict) else ""
+    if current_node_id:
+        candidates = [pair for pair in indexed if _s(pair[1].get("nodeId")) != current_node_id]
+        if candidates:
+            candidates.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
+            return _s(candidates[-1][1].get("opercacheId"))
+    # 回落：无法按节点身份区分时，退回旧的纯时间序取倒数第二条。
+    indexed.sort(key=lambda pair: (_s(pair[1].get("handleDateTime")), pair[0]))
+    return _s(indexed[-2][1].get("opercacheId"))
 
 
 def _extract_ksm_fields(
