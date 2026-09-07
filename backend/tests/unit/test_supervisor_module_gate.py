@@ -65,13 +65,17 @@ def test_confirm_rejects_empty_module(app_client: TestClient, gate_world: Sessio
     assert "模块归类" in r.text
 
 
-def test_confirm_rejects_fallback_module(app_client: TestClient, gate_world: Session) -> None:
+def test_confirm_accepts_fallback_module(app_client: TestClient, gate_world: Session) -> None:
+    """2026-09 改判：兜底模块「其他非发票云问题」是目录里启用的真实合法模块，
+    处理人主动确认选它不再被拦截（HUB-001454 实测：处理人认为这条工单本就
+    该归到这个模块，却被当成「未归类」拦住）。只挡真正为空的情况。"""
     fallback = get_settings().module_fallback_module
     _hub(gate_world, 91, module=fallback)
-    r = app_client.post(
-        "/api/supervisor/confirm-classification", json={"hub_issue_id": 91}, headers=_bearer(2)
-    )
-    assert r.status_code == 422, r.text
+    with patch("app.api.supervisor.peek_module_owner", lambda *a, **k: None):
+        r = app_client.post(
+            "/api/supervisor/confirm-classification", json={"hub_issue_id": 91}, headers=_bearer(2)
+        )
+    assert r.status_code == 200, r.text
 
 
 def test_confirm_with_module_override_passes(app_client: TestClient, gate_world: Session) -> None:
@@ -113,6 +117,19 @@ def test_reclassify_rejects_empty_module(app_client: TestClient, gate_world: Ses
         headers=_bearer(2),
     )
     assert r.status_code == 422, r.text
+
+
+def test_reclassify_accepts_fallback_module(app_client: TestClient, gate_world: Session) -> None:
+    """reclassify 同 confirm-classification，兜底模块本身不再被拦截。"""
+    fallback = get_settings().module_fallback_module
+    _hub(gate_world, 96, module=fallback, type_="Operation")
+    with patch("app.services.ksm.takeover.trigger_ksm_takeover_after_review"):
+        r = app_client.post(
+            "/api/supervisor/reclassify",
+            json={"hub_issue_id": 96, "new_type": "Operation", "reason": "x"},
+            headers=_bearer(2),
+        )
+    assert r.status_code == 200, r.text
 
 
 def test_reclassify_with_module_present_triggers_takeover(

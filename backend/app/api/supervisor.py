@@ -2009,17 +2009,20 @@ def _schedule_ksm_takeover(
 
 
 def _require_module_assigned(hub: HubIssue) -> None:
-    """确认分类前模块归类不能为空（用户新规则）：module 为空或落在兜底模块时拒绝，
-    要求先补齐模块归类再确认。兜底模块（module_resolve 四级回退最后一档）视为
-    「未真正归类」，不算已确认。"""
-    from app.config import get_settings
+    """确认分类前模块归类不能为空（用户新规则）：module 为空时拒绝，要求先
+    补齐模块归类再确认。
 
-    settings = get_settings()
-    if not (hub.module or "").strip() or hub.module == settings.module_fallback_module:
+    2026-09 改判：不再额外拦截「兜底模块」本身——「其他非发票云问题」
+    （module_fallback_module，module_resolve 四级回退最后一档）在目录表
+    里是启用状态的真实合法模块，处理人审核时可以主动选它作为确认结果
+    （HUB-001454 实测：处理人认为这条工单本就该归到这个模块，却被当成
+    「未归类」拦住，反而无法选择这个分类）。AI 自动回退到兜底、和人工
+    主动确认选中兜底，两者结果值相同，本次不区分——只挡真正为空的情况。
+    """
+    if not (hub.module or "").strip():
         raise HTTPException(
             status_code=422,
-            detail=f"hub {hub.short_code} 模块归类为空或仍是兜底模块「{hub.module}」，"
-            "请先补齐模块归类再确认分类",
+            detail=f"hub {hub.short_code} 模块归类为空，请先补齐模块归类再确认分类",
         )
 
 
