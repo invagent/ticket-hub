@@ -417,6 +417,103 @@ def test_return_no_notice_rejects(world: Session) -> None:
     assert not client.detail_calls  # 无 notice → 连拉都没拉
 
 
+def test_return_no_notice_but_handled_falls_back_to_db_snapshot(world: Session) -> None:
+    """无 notice + 已接管（ksm_takeover_status='handled'）→ 用库里最新快照算目标
+    节点，不再拒绝（接管后 KSM 侧锁定只能我们操作，快照可信）。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        ksm_takeover_status="handled",
+        source_payload={
+            "billId": "BILL-1",
+            "_subscribe_callback": {
+                **_SUBSCRIBE,
+                "node": {"id": "NODE-NEW", "name": "协同处理"},
+                "handleSteps": [
+                    {
+                        "nodeId": "NODE-OLD",
+                        "nodeName": "受理",
+                        "opercacheId": "OPCACHE-ACCEPT",
+                        "handleDateTime": "2026-08-27 18:00:00",
+                    },
+                    {
+                        "nodeId": "NODE-NEW",
+                        "nodeName": "协同处理",
+                        "opercacheId": "OPCACHE-COOP",
+                        "handleDateTime": "2026-08-28 13:00:00",
+                    },
+                ],
+            },
+        },
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=None)  # get_order_detail 拉不到（notice 过期场景）
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 1
+    assert not client.detail_calls  # 无 notice → 连拉都没拉，直接走快照回落
+    r = client.returns[0]
+    assert r.current_node_id == "NODE-NEW"
+    assert r.opercache_id == "OPCACHE-ACCEPT"
+
+
+def test_return_no_notice_not_handled_still_rejects(world: Session) -> None:
+    """无 notice + 未接管（无 ksm_takeover_status）→ 仍拒绝退回，即便库里有快照
+    （未接管时 KSM 侧可能仍在自由流转，快照不可信）。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        source_payload={
+            "billId": "BILL-1",
+            "_subscribe_callback": {
+                **_SUBSCRIBE,
+                "node": {"id": "NODE-NEW", "name": "协同处理"},
+                "handleSteps": [
+                    {
+                        "nodeId": "NODE-OLD",
+                        "nodeName": "受理",
+                        "opercacheId": "OPCACHE-ACCEPT",
+                        "handleDateTime": "2026-08-27 18:00:00",
+                    },
+                    {
+                        "nodeId": "NODE-NEW",
+                        "nodeName": "协同处理",
+                        "opercacheId": "OPCACHE-COOP",
+                        "handleDateTime": "2026-08-28 13:00:00",
+                    },
+                ],
+            },
+        },
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=None)
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 0
+    assert report.deferred == 1
+    assert not client.returns
+
+
+def test_return_handled_but_snapshot_missing_steps_still_rejects(world: Session) -> None:
+    """已接管但库里快照 handleSteps 不足 2 条 → 算不出目标节点，仍拒绝（不猜）。"""
+    hub = _hub(world)
+    t = _ticket(
+        world,
+        hub,
+        ksm_takeover_status="handled",
+        source_payload={
+            "billId": "BILL-1",
+            "_subscribe_callback": {**_SUBSCRIBE, "handleSteps": []},
+        },
+    )
+    _outbox(world, t, hub, kind="return", payload={"deal_opinion": "退回"})
+    client = FakeKSMClient(detail=None)
+    report = drain_ksm_outbox(world, client=client, notice_store=None, settings=_settings())
+    assert report.sent == 0
+    assert report.deferred == 1
+    assert not client.returns
+
+
 def test_return_refresh_failure_rejects(world: Session) -> None:
     """notice 存在但实时拉取失败（KSM 报错）→ 拒绝退回，不用旧数据猜。"""
     hub = _hub(world)
