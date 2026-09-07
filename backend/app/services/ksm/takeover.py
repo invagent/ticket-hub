@@ -140,13 +140,30 @@ def takeover_ksm_ticket(
             logger.warning("ksm_takeover_handle_failed", bill_id=fields.bill_id, error=str(e))
             return
 
-    # 迁移 0038 加的 ticket.ksm_accept_opercache_id/ksm_current_node_id 曾在这里持久化
-    # 「受理节点 opercacheId + 当前节点」供退回 sender 用；2026-09 改判后退回目标改为
-    # 「实时拉取 + 取最新节点的上一个节点」，不再需要这份快照，停止写入
-    # （writeback._refresh_for_return 里的 return 分支不读它们；列留存，待后续迁移删）。
     ticket.ksm_takeover_status = "handled"
     ticket.ksm_takeover_error = None
     logger.info("ksm_takeover_handled", bill_id=fields.bill_id)
+    # handle 后节点再次流转（受理→协同处理），必须再拉一次落库快照，否则
+    # ticket.source_payload._subscribe_callback 永远停留在入库那一刻的旧节点——
+    # 这份快照是 writeback._refresh_for_return 在 notice 过期时的回落依据
+    # （工单接管后 KSM 侧锁定只能我们操作，快照不会再被别人改，但必须是
+    # handle 完成之后的最新值，不能是之前的）。best-effort，拉不到不影响接管。
+    _persist_fresh_snapshot(db, ticket, client, fields, notice_store)
+
+
+def _persist_fresh_snapshot(
+    db: Session,
+    ticket: Ticket,
+    client: KSMClient,
+    fields: _KSMFields,
+    notice_store: NoticeStoreLike | None,
+) -> None:
+    detail = _pull_detail(client, fields, notice_store)
+    if detail is None:
+        logger.info("ksm_takeover_snapshot_persist_skipped", bill_id=fields.bill_id)
+        return
+    ticket.source_payload = {**(ticket.source_payload or {}), "_subscribe_callback": detail}
+    logger.info("ksm_takeover_snapshot_persisted", bill_id=fields.bill_id)
 
 
 def _handle_with_compensation(
@@ -228,25 +245,36 @@ def _handle(client: KSMClient, fields: _KSMFields, identity: KsmIdentity) -> Non
     )
 
 
-def _refresh(
+def _pull_detail(
     client: KSMClient, fields: _KSMFields, notice_store: NoticeStoreLike | None
-) -> _KSMFields:
-    """重拉详情刷新 node/product 等 id（lock 后节点流转）。拉不到回落原字段，
-    让 handle 报 KSM 错误暴露 —— 绝不静默成功。"""
+) -> dict[str, Any] | None:
+    """尽力实时拉取最新详情（原始 dict）。无 notice/拉取失败 → None，调用方决定
+    如何降级，不在这里静默吞掉——供 _refresh（合并进 _KSMFields）和接管收尾
+    持久化最新快照（见 takeover_ksm_ticket 末尾）共用同一份拉取逻辑。"""
     if notice_store is None:
-        return fields
+        return None
     notice = notice_store.get(fields.bill_id)
     if notice is None:
         logger.info("ksm_takeover_refresh_no_notice", bill_id=fields.bill_id)
-        return fields
+        return None
     try:
-        detail = client.get_order_detail(
+        return client.get_order_detail(
             bill_id=fields.bill_id,
             notice_num=notice.notice_num,
             subscribe_num=notice.subscribe_num,
         )
     except KSMError as e:
         logger.warning("ksm_takeover_refresh_failed", bill_id=fields.bill_id, error=str(e))
+        return None
+
+
+def _refresh(
+    client: KSMClient, fields: _KSMFields, notice_store: NoticeStoreLike | None
+) -> _KSMFields:
+    """重拉详情刷新 node/product 等 id（lock 后节点流转）。拉不到回落原字段，
+    让 handle 报 KSM 错误暴露 —— 绝不静默成功。"""
+    detail = _pull_detail(client, fields, notice_store)
+    if detail is None:
         return fields
     return _merge_refreshed(fields, detail)
 
