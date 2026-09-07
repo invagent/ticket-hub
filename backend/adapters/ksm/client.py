@@ -129,8 +129,31 @@ class KSMClient:
     def _call_with_retry(
         self, op_name: str, request_fn: Callable[[str], dict[str, Any]]
     ) -> dict[str, Any]:
+        """Single force-refresh retry on either unauthorized shape KSM uses:
+        business-layer (`errorCode=401` in a 200 JSON body — the documented
+        contract) or transport-layer (`raise_for_status()` raising on a real
+        HTTP 401/403 — observed in production, e.g. TKT-006280/R20260828-1894:
+        a `403 Forbidden` on handleKsmOrder with an expired token that was
+        never force-refreshed because `_is_unauthorized` only ever saw the
+        exception, not a JSON body to inspect). Any other HTTP error status
+        propagates unchanged — only 401/403 are treated as "token expired".
+        """
         token = self._get_token()
-        result = request_fn(token)
+        try:
+            result = request_fn(token)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code not in (401, 403):
+                raise
+            logger.warning("ksm_http_unauthorized_retry", op=op_name, status=e.response.status_code)
+            token = self._get_token(force=True)
+            try:
+                return request_fn(token)
+            except httpx.HTTPStatusError as e2:
+                # 强刷新后仍 401/403：真正的鉴权失败（凭证/权限问题，非单纯 token
+                # 过期），包成 KSMAuthError 而不是让裸 httpx 异常泄漏出适配层。
+                raise KSMAuthError(
+                    f"{op_name} still {e2.response.status_code} after force-refresh"
+                ) from e2
         if _is_unauthorized(result):
             logger.warning("ksm_unauthorized_retry", op=op_name)
             token = self._get_token(force=True)
