@@ -102,6 +102,16 @@ export interface StageInput {
 export function computeProcessStage(input: StageInput): ProcessStage {
   const { predictedType, hubIssueId, hubStatus, opStatus, ticketStatus, ticketStatusLabel } = input;
 
+  // 1. 转单退回终态最高优先：工单或 Hub 只要进入转单退回/退回态，坚决显示「转单退回」（tone: closed）
+  if (
+    ticketStatus === "transferred_return" ||
+    opStatus === "transferred_return" ||
+    hubStatus === "transferred_return" ||
+    hubStatus === "returned"
+  ) {
+    return { label: "转单退回", tone: "closed" };
+  }
+
   // 未毕业/无 hub → 回落 ticket 底层态（中性）
   if (hubIssueId == null) {
     const label = ticketStatus ? (ticketStatusLabel?.(ticketStatus) ?? ticketStatus) : "—";

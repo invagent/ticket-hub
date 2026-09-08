@@ -41,7 +41,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from adapters.ksm import (
@@ -361,8 +361,7 @@ class KSMWritebackSender:
     def _close_ticket_returned(self, row: SyncOutbox, ticket: Ticket) -> None:
         """退回真发成功后：本地工单 → transferred_return（交还 KSM 重新分派，不再跟踪）。
 
-        工单转单退回 + 若所挂 Operation hub 已无其它未终态工单，则同步将 op_status 置为
-        transferred_return（转单退回）。不碰研发类 hub（研发走 Linear，退回是 Operation 场景）。
+        工单转单退回 + 若所挂 hub 已无其它未终态工单，则同步将 hub 状态置为 returned / transferred_return。
         已在终态的不重置（幂等）。不 commit。
         """
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
@@ -376,27 +375,48 @@ class KSMWritebackSender:
                 changed_by="system:ksm_writeback",
                 reason=f"退回 KSM 重新分派成功（outbox={row.id}, kind=return）",
             )
-        # 所挂 Operation hub：仅当无其它仍活跃的关联工单时，更新 op_status 为 transferred_return。
+
+        # 同步联动更新关联 Hub 及子任务状态
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
-        if hub is None or hub.type != "Operation":
-            return
-        active = (
-            self._db.query(Ticket.id)
-            .filter(
-                Ticket.hub_issue_id == hub.id,
-                Ticket.deleted_at.is_(None),
-                Ticket.status.notin_(list(_TICKET_TERMINAL_STATUSES)),
+        if hub is not None:
+            active = (
+                self._db.query(Ticket.id)
+                .filter(
+                    Ticket.hub_issue_id == hub.id,
+                    Ticket.deleted_at.is_(None),
+                    Ticket.status.notin_(list(_TICKET_TERMINAL_STATUSES)),
+                )
+                .first()
             )
-            .first()
+            if active is None and hub.status != "returned":
+                prev_hub_status = hub.status
+                hub.status = "returned"
+                StatusHistoryRepository(self._db).record(
+                    entity_type="hub_issue",
+                    entity_id=hub.id,
+                    from_status=prev_hub_status,
+                    to_status="returned",
+                    changed_by="system:ksm_writeback",
+                    reason=f"KSM 退回成功，工单已全部转单退回（outbox={row.id}）",
+                )
+                if hub.type == "Operation" and hub.op_status != OP_TRANSFERRED_RETURN:
+                    apply_op_status(
+                        self._db,
+                        hub,
+                        to_status=OP_TRANSFERRED_RETURN,
+                        handler=hub.op_handler or "agent",
+                        reason=f"KSM 退回成功，工单已全部转单退回（outbox={row.id}）",
+                    )
+
+        # 同步更新该工单下的草稿/待处理子任务
+        self._db.execute(
+            update(HubIssue)
+            .where(
+                (HubIssue.ticket_id == ticket.id) | (HubIssue.id == ticket.hub_issue_id),
+                HubIssue.status.notin_(("released", "answered", "closed")),
+            )
+            .values(status="returned")
         )
-        if active is None and hub.op_status != OP_TRANSFERRED_RETURN:
-            apply_op_status(
-                self._db,
-                hub,
-                to_status=OP_TRANSFERRED_RETURN,
-                handler=hub.op_handler or "agent",
-                reason=f"KSM 退回成功，工单已全部转单退回（outbox={row.id}）",
-            )
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:
         """Map an outbox row to: 'reply' | 'lock' | 'close' | 'supply' | 'return'
