@@ -17,24 +17,32 @@ from app.models import AgentDecision, HubIssue, Ticket
 from app.services.hub_issues.creator import _next_hub_short_code, ensure_hub_issue_for_ticket
 
 
-def backfill_mixed_tickets(db: Session, *, dry_run: bool = False) -> int:
-    # 查找所有类型为 Raw、未软删、且 hub_issue_id 为空的有效工单（排除投诉 Complaint）
+def backfill_mixed_tickets(db: Session, *, dry_run: bool = False, limit: int = 100) -> int:
+    # 查找所有因 split_ticket 决策卡在 hub_issue_id 为空的混合工单
+    subquery = (
+        select(AgentDecision.subject_id)
+        .where(
+            AgentDecision.subject_type == "ticket",
+            AgentDecision.decision_type == "split_ticket",
+            AgentDecision.reverted_at.is_(None),
+        )
+    )
     tickets = (
         db.execute(
             select(Ticket)
             .where(
-                Ticket.type == "Raw",
-                Ticket.deleted_at.is_(None),
+                Ticket.id.in_(subquery),
                 Ticket.hub_issue_id.is_(None),
-                Ticket.predicted_type != "Complaint",
+                Ticket.deleted_at.is_(None),
             )
-            .order_by(Ticket.id.asc())
+            .order_by(Ticket.id.desc())
+            .limit(limit)
         )
         .scalars()
         .all()
     )
 
-    print(f"找到 {len(tickets)} 条未毕业工单。")
+    print(f"找到 {len(tickets)} 条因 split_ticket 决策卡住的未毕业工单。")
     success_count = 0
 
     for t in tickets:
