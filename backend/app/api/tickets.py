@@ -35,7 +35,7 @@ from app.core.storage.minio_store import (
     guess_content_type,
 )
 from app.db import get_session
-from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, Ticket, User
+from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, SyncOutbox, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -80,6 +80,7 @@ class TicketSummary(BaseModel):
     predicted_type: str | None = None
     predicted_confidence: float | None = None  # AI 分类置信度；0=triage 失败兜底默认值，非真实判断
     hub_issue_id: int | None
+    hub_short_code: str | None = None  # 所挂 hub_issue 的短码（如 HUB-000805）
     op_status: str | None = (
         None  # 所挂 hub_issue 的 Operation 状态机（仅 Operation 有值，研发类为空）
     )
@@ -347,6 +348,7 @@ def list_tickets(
         hrows = db.execute(
             select(
                 HubIssue.id,
+                HubIssue.short_code,
                 HubIssue.op_status,
                 HubIssue.reject_count,
                 HubIssue.status,
@@ -356,6 +358,7 @@ def list_tickets(
                 HubIssue.type,
             ).where(HubIssue.id.in_(hub_ids))
         ).all()
+        hub_short_code_map = {r.id: r.short_code for r in hrows}
         hub_op_map = {r.id: r.op_status for r in hrows}
         hub_reject_map = {r.id: r.reject_count for r in hrows}
         hub_status_map = {r.id: r.status for r in hrows}
@@ -407,6 +410,7 @@ def list_tickets(
         if t.handler_user_id is not None:
             s.handler_user_name = user_name_map.get(t.handler_user_id)
         if t.hub_issue_id is not None:
+            s.hub_short_code = hub_short_code_map.get(t.hub_issue_id)
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
             s.hub_status = hub_status_map.get(t.hub_issue_id)
@@ -496,6 +500,7 @@ def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
     if ticket.hub_issue_id is not None:
         hub = db.get(HubIssue, ticket.hub_issue_id)
         if hub is not None:
+            detail.hub_short_code = hub.short_code
             detail.op_status = hub.op_status
             detail.hub_status = hub.status
             detail.linear_status = hub.linear_status
@@ -606,13 +611,23 @@ def return_ticket(
         )
     except ReturnSyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
-    # 尝试即时 drain 触发出站，成功则立即完成 KSM 退回与状态流转；若临时抖动则留给 beat 兜底
-    try:
-        from app.services.ksm.writeback import drain_ksm_outbox
+    # 同步触发出站，成功则立即完成 KSM 退回与状态流转；失败直接阻断报错
+    from app.services.ksm.writeback import drain_ksm_outbox
 
+    try:
         drain_ksm_outbox(db)
     except Exception as e:
         logger.warning("instant_drain_ksm_return_failed", ticket_id=ticket_id, error=str(e))
+        raise HTTPException(status_code=502, detail=f"KSM 外部退回失败：{e}") from e
+
+    # 校验实际出站结果：开启真实写回时，若外部失败则抛错阻断
+    row = db.get(SyncOutbox, result.outbox_id)
+    settings = get_settings()
+    if settings.ksm_writeback_enabled and not settings.ksm_writeback_dry_run:
+        if row is not None and row.status != "sent":
+            err_msg = row.last_error or "KSM 接口退回未成功"
+            raise HTTPException(status_code=400, detail=f"退回 KSM 失败：{err_msg}")
+
     logger.info(
         "ticket_return_requested",
         ticket_id=ticket_id,
@@ -1151,7 +1166,44 @@ def ticket_reply_endpoint(
     except ReplySyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
-    # 5. 人工答复推进 op_status → answered，并留痕
+    # 5. 同步触发外部出站回写
+    from app.services.ksm.writeback import drain_ksm_outbox
+    from app.services.zhichi.writeback import drain_zhichi_outbox
+
+    settings = get_settings()
+    try:
+        if ticket.source_code == "ksm":
+            drain_ksm_outbox(db)
+        elif ticket.source_code == "zhichi":
+            drain_zhichi_outbox(db)
+    except Exception as e:
+        logger.warning("instant_drain_reply_failed", ticket_id=ticket_id, error=str(e))
+        raise HTTPException(status_code=502, detail=f"外部系统答复回写失败：{e}") from e
+
+    # 校验实际出站结果：开启真实写回时，若外部失败则阻断报错
+    settings = get_settings()
+    if reply_result.outbox_ids:
+        for ob_id in reply_result.outbox_ids:
+            ob_row = db.get(SyncOutbox, ob_id)
+            if ob_row is not None:
+                if (
+                    ob_row.target_source_code == "ksm"
+                    and settings.ksm_writeback_enabled
+                    and not settings.ksm_writeback_dry_run
+                    and ob_row.status != "sent"
+                ):
+                    err_msg = ob_row.last_error or "KSM 答复外部回写失败"
+                    raise HTTPException(status_code=400, detail=f"提交答复失败：{err_msg}")
+                if (
+                    ob_row.target_source_code == "zhichi"
+                    and settings.zhichi_writeback_enabled
+                    and not settings.zhichi_writeback_dry_run
+                    and ob_row.status != "sent"
+                ):
+                    err_msg = ob_row.last_error or "智齿答复外部回写失败"
+                    raise HTTPException(status_code=400, detail=f"提交答复失败：{err_msg}")
+
+    # 6. 外部成功后，推进本地 op_status → answered，并留痕
     target_hub = db.get(HubIssue, target_hub.id)
     if target_hub is not None and target_hub.type == "Operation":
         apply_op_status(
@@ -1162,18 +1214,6 @@ def ticket_reply_endpoint(
         )
         set_hub_tickets_handler(db, target_hub, user.user_id)
         db.commit()
-
-    # 6. 尝试即时 drain 出站回写
-    try:
-        from app.services.ksm.writeback import drain_ksm_outbox
-        from app.services.zhichi.writeback import drain_zhichi_outbox
-
-        if ticket.source_code == "ksm":
-            drain_ksm_outbox(db)
-        elif ticket.source_code == "zhichi":
-            drain_zhichi_outbox(db)
-    except Exception as e:
-        logger.warning("instant_drain_reply_failed", ticket_id=ticket_id, error=str(e))
 
     return TicketReplyResponse(
         ticket_id=ticket.id,

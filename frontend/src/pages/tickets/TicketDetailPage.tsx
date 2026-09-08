@@ -480,6 +480,10 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
       void qc.invalidateQueries({ queryKey: ["tickets"] }); // 列表缓存作废，回列表自动刷新
       setTransferOpen(false);
+      showTopToast("工单转派成功", "success");
+    },
+    onError: (e) => {
+      showTopToast(hubErrMsg(e), "warning");
     },
   });
   // 运营正常跟进：向 KSM/智齿提交答复（走带有至少一个子任务已完成闸门校验和自动按条目拼接的新接口）
@@ -502,8 +506,13 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
       setConfirmNotice("提交答复成功");
+      showTopToast("答复提交成功，已送达客户", "success");
     },
-    onError: (e) => setReplyErr(hubErrMsg(e)),
+    onError: (e) => {
+      const msg = hubErrMsg(e);
+      setReplyErr(msg);
+      showTopToast(msg, "warning");
+    },
   });
   // 补充资料：把处理说明当前内容作为补料说明提交给 KSM（复用同一个框，不再单独
   // note 输入）。仅 KSM 来源可用；智齿无补料接口，靠人工线下答复。镜像
@@ -516,15 +525,20 @@ export function TicketDetailPage() {
         { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
         { note },
       ),
-    onSuccess: (r) => {
+    onSuccess: (r: any) => {
       setSupplyErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
-      setConfirmNotice(`已请求补料：${r.ticket_count} 条工单，${r.outbox_count} 条入队待回写 KSM`);
+      setConfirmNotice(`已请求补料：${r?.ticket_count ?? 1} 条工单`);
+      showTopToast("已成功向提单人请求补充资料", "success");
     },
-    onError: (e) => setSupplyErr(hubErrMsg(e)),
+    onError: (e) => {
+      const msg = hubErrMsg(e);
+      setSupplyErr(msg);
+      showTopToast(msg, "warning");
+    },
   });
   // 退回 KSM：把处理说明作为退回意见 deal_opinion 退回（仅 KSM 来源工单）
   const [returnErr, setReturnErr] = useState<string | null>(null);
@@ -539,8 +553,13 @@ export function TicketDetailPage() {
       void qc.invalidateQueries({ queryKey: ["tickets"] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
       setConfirmNotice("工单已退回 KSM 重新分派");
+      showTopToast("工单已成功退回 KSM 重新分派", "success");
     },
-    onError: (e) => setReturnErr(hubErrMsg(e)),
+    onError: (e) => {
+      const msg = hubErrMsg(e);
+      setReturnErr(msg);
+      showTopToast(msg, "warning");
+    },
   });
   // 手工重试最近一次失败的出站回写（reply/status/supply/release_note/
   // progress_note/return 任一 kind，处理人/主管点按钮同步执行立即看结果）
@@ -1213,14 +1232,17 @@ export function TicketDetailPage() {
                       canEdit={isCurrentNode && isSupervisor() && !opDone}
                       externalSolutions={externalTaskSolutions}
                       self={{
-                        short_code: d.short_code,
-                        title: d.title,
-                        predicted_type: d.predicted_type,
-                        product_line_code: d.product_line_code,
-                        module: d.module,
-                        status: d.status,
+                        short_code:
+                          hub.data?.short_code ??
+                          (d as any).hub_short_code ??
+                          (d.hub_issue_id ? `HUB-${String(d.hub_issue_id).padStart(6, "0")}` : d.short_code),
+                        title: hub.data?.title ?? d.title,
+                        predicted_type: hub.data?.type ?? d.predicted_type,
+                        product_line_code: hub.data?.product_line_code ?? d.product_line_code,
+                        module: hub.data?.module ?? d.module,
+                        status: hub.data?.status ?? d.status,
                         assigned_user_name: d.assigned_user_name,
-                        assigned_user_id: d.assigned_user_id,
+                        assigned_user_id: hub.data?.assigned_user_id ?? d.assigned_user_id,
                         cached_reply_content: d.cached_reply_content,
                       }}
                     />
@@ -2716,6 +2738,7 @@ function SubTicketList({
         setManualAssignModal({ hubId: vars.hubId, title: "" });
         if (onToast) onToast(res.message || "未找到责任人，请手动选择", "warning");
       } else {
+        updateRow(vars.hubId, { confirmed: true });
         void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
         void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
         void qc.invalidateQueries({ queryKey: ["hub-issues"] });
@@ -2980,12 +3003,19 @@ function SubTicketList({
       return;
     }
 
-    // 若是真实落库的子任务（数字 id），调用真实后端 confirm-subtask 接口
+    // 若是真实落库的子任务（数字 id），调用真实后端 confirm-subtask 接口，成功后更新状态
     if (typeof key === "number") {
       confirmSubtaskMutation.mutate({ hubId: key });
+    } else {
+      updateRow(key, { confirmed: true });
+      const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
+      if (onToast) {
+        onToast(successMsg, "success");
+      } else {
+        setConfirmToast(successMsg);
+        setTimeout(() => setConfirmToast(null), 3000);
+      }
     }
-
-    updateRow(key, { confirmed: true });
 
     // 收集所有已确认行并去重合并，同步到上方单据工单标签
     const confirmedRows: { type: string; product_line_code: string; module: string }[] = [];
@@ -3196,7 +3226,7 @@ function SubTicketList({
                     className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
                     style={{ position: "sticky", left: 40, zIndex: 2 }}
                   >
-                    <span className="font-mono text-hub-textMuted">{self.short_code}</span>
+                    <span className="font-mono text-[#6085e7]">{self.short_code}</span>
                   </td>
                   <td
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"

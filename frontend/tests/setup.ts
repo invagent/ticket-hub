@@ -77,6 +77,15 @@ export const defaultHandlers = [
   http.get("*/api/supervisor/tickets/:id/escalation-context", () =>
     HttpResponse.json(null),
   ),
+  http.post("*/api/hub-issues/:id/confirm-subtask", () =>
+    HttpResponse.json({
+      hub_issue_id: 1,
+      status: "answered",
+      solution: "AI 生成解决方案",
+      assigned_user_id: 1,
+      message: "任务已确认",
+    }),
+  ),
 ];
 
 // Boot MSW once per test run; reset handlers between tests so each test

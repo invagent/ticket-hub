@@ -17,9 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import AuthedUser, require_supervisor, require_user
+from app.config import get_settings
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import AgentDecision, HubIssue, Ticket, User
+from app.models import AgentDecision, HubIssue, SyncOutbox, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services import knowledge_feedback as kf
@@ -513,6 +514,24 @@ def request_supply_endpoint(
         result = request_supply(db, hub_issue_id, note=body.note, requested_by=f"user:{user.name}")
     except SupplySyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+
+    # 同步触发出站写回并校验执行结果
+    from app.services.ksm.writeback import drain_ksm_outbox
+
+    try:
+        drain_ksm_outbox(db)
+    except Exception as e:
+        logger.warning("instant_drain_supply_failed", hub_issue_id=hub_issue_id, error=str(e))
+        raise HTTPException(status_code=502, detail=f"KSM 外部补料请求失败：{e}") from e
+
+    settings = get_settings()
+    if settings.ksm_writeback_enabled and not settings.ksm_writeback_dry_run:
+        for ob_id in result.outbox_ids:
+            ob_row = db.get(SyncOutbox, ob_id)
+            if ob_row is not None and ob_row.target_source_code == "ksm" and ob_row.status != "sent":
+                err_msg = ob_row.last_error or "KSM 补料外部请求失败"
+                raise HTTPException(status_code=400, detail=f"请求补充资料失败：{err_msg}")
+
     logger.info(
         "hub_issue_supply_requested",
         hub_issue_id=hub_issue_id,
@@ -1145,18 +1164,24 @@ def confirm_subtask_endpoint(
     if hub.type == "Operation":
         # 尝试调用 AI 生成答复
         generated_answer = None
+        existing_solution = (hub.reply_content or "").strip()
         try:
             from app.services.agents.operation_answer import auto_answer_operation
 
-            # 运行自动答复
             success = auto_answer_operation(db, hub.id)
             if success:
                 db.refresh(hub)
                 generated_answer = hub.reply_content
         except Exception as e:
             logger.warning("subtask_ai_answer_failed", hub_issue_id=hub_issue_id, error=str(e))
+            if not existing_solution:
+                raise HTTPException(status_code=502, detail=f"AI 生成解决方案失败：{e}") from e
 
-        # 答复后直接变成已答复 (answered)
+        # 若原本没有说明且 AI 答复也未成功，则抛错阻断状态更新
+        if not existing_solution and not generated_answer:
+            raise HTTPException(status_code=502, detail="AI 生成解决方案失败，请稍后重试或手动录入说明")
+
+        # 答复生成成功后更新为已答复 (answered)
         hub.status = "answered"
         hub.op_status = OP_ANSWERED
         db.commit()
@@ -1213,9 +1238,13 @@ def confirm_subtask_endpoint(
 
             consume_module_owner(db, hub.product_line_code, hub.module)
 
-        push_hub_issue_to_linear(
+        push_res = push_hub_issue_to_linear(
             hub.id, db, assignee_override_user_id=assignee_id
         )
+
+        settings = get_settings()
+        if settings.linear_push_enabled and push_res is None:
+            raise HTTPException(status_code=502, detail="推送到 Linear 失败，请检查网络或 Linear 配置")
 
         hub.status = "processing"
         hub.assigned_user_id = assignee_id
