@@ -23,6 +23,9 @@ def upgrade() -> None:
         sa.Column("ticket_id", sa.Integer(), sa.ForeignKey("tickets.id"), nullable=True),
     )
     op.create_index("ix_hub_issues_ticket_id", "hub_issues", ["ticket_id"])
+    op.execute(
+        "UPDATE hub_issues SET ticket_id = tickets.id FROM tickets WHERE tickets.hub_issue_id = hub_issues.id AND hub_issues.ticket_id IS NULL"
+    )
     op.drop_constraint("ck_hub_issues_operation_fields", "hub_issues", type_="check")
     op.create_check_constraint(
         "ck_hub_issues_operation_fields",

@@ -978,6 +978,7 @@ def list_ticket_subtasks(
             select(HubIssue)
             .where(
                 HubIssue.ticket_id == ticket_id,
+                HubIssue.id != (ticket.hub_issue_id or -1),
                 HubIssue.deleted_at.is_(None),
             )
             .order_by(HubIssue.id.asc())

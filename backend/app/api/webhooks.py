@@ -22,11 +22,13 @@ cache that handles rapid re-pushes correctly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import hmac
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from adapters.ksm import KSMClient, KSMConfig, KSMError
@@ -35,7 +37,7 @@ from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.trace import get_trace_id
 from app.db import get_session, make_session
-from app.models import Ticket
+from app.models import HubIssue, Ticket
 from app.repositories.ticket import TicketRepository
 from app.services.agents.classify import classify_ticket
 from app.services.agents.escalation_classify import classify_escalation_ticket
@@ -122,16 +124,72 @@ def _resolve_module(ticket_id: int) -> None:
         db.close()
 
 
+def _populate_subtasks_from_triage(
+    ticket_id: int, sub_problems: Sequence[Any]
+) -> None:
+    """分诊识别出混合问题时，直接为工单创建对应的 Hub 子任务（废除旧 Child ticket 拆分）。"""
+    from app.services.hub_issues.creator import _next_hub_short_code
+
+    db = make_session()
+    try:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is None:
+            return
+
+        existing_count = (
+            db.execute(
+                select(func.count(HubIssue.id)).where(
+                    HubIssue.ticket_id == ticket.id,
+                    HubIssue.deleted_at.is_(None),
+                )
+            ).scalar()
+            or 0
+        )
+        if existing_count > 0:
+            return
+
+        assignee_id = ticket.handler_user_id or ticket.assigned_user_id
+        for sp in sub_problems:
+            st_type = getattr(sp, "type", "Operation")
+            if st_type not in ("Operation", "Bug_fix", "Demand", "Internal_task"):
+                st_type = "Operation"
+            st_title = str(getattr(sp, "title", "")).strip() or "子任务"
+            st_summary = str(getattr(sp, "summary", "")).strip() or ticket.body
+
+            st = HubIssue(
+                short_code=_next_hub_short_code(db),
+                ticket_id=ticket.id,
+                type=st_type,
+                title=st_title,
+                canonical_body=st_summary,
+                product_line_code=ticket.product_line_code,
+                module=ticket.module,
+                status="draft",
+                assigned_user_id=assignee_id,
+                occurrence_count=1,
+            )
+            db.add(st)
+        db.commit()
+        logger.info(
+            "subtasks_populated_from_triage",
+            ticket_id=ticket.id,
+            count=len(sub_problems),
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("subtasks_populate_failed", ticket_id=ticket_id)
+    finally:
+        db.close()
+
+
 def run_post_ingest_agents(ticket_id: int) -> None:
-    """入库后 LLM 链（ADR-0016 P2c 重排）：分诊 → 归类模块 → 先原子化 → 按类型分流.
+    """入库后 LLM 链（子任务架构升级）：分诊 → 归类模块 → 分流毕业主任务 → 自动落库子任务.
 
     vision_extract(截图OCR) → triage(classify+conflict 合一：定型+是否混合) →
-      module_resolve(AI 判产品线/模块，覆盖生效值为现有目录规范值；处理人已在
-      入库阶段分配好，不再重新路由) →
-      混合: 自动拆开关开且过门槛 → split 原子化 → 每子单按继承类型分流；
-            否则停摆进「待拆分」人工队列（split_ticket 审计已由 triage 写）。
-      非混合: 按 type 分流（Complaint 停 ticket 层；其余毕业 hub_issue）。
-    单一 BG task；各步失败自吞不阻塞。子单原子、永不再拆。
+      module_resolve(AI 判产品线/模块，覆盖生效值为现有目录规范值) →
+      按类型分流毕业（Complaint 停 ticket 层；其余毕业主 hub_issue）→
+      若判定包含多个子问题，直接自动落库为关联的 Hub 子任务。
+    单一 BG task；各步失败自吞不阻塞。
     """
     settings = get_settings()
     if settings.vision_enabled:
@@ -139,24 +197,17 @@ def run_post_ingest_agents(ticket_id: int) -> None:
 
     tri = run_ticket_triage(ticket_id)
     if tri is None:
-        # triage 找不到 ticket，或 LLM 彻底失败已写兜底分类（predicted_type=
-        # Operation, confidence=0，见 triage.py _FALLBACK_TYPE）——两种情况都
-        # 不继续模块归类/自动分流，工单在列表可见、需人工手动确认才会毕业。
         return
 
     # 产品模块归类（覆盖生效 plc/module，供人工审核）。在分流前——毕业 hub 要继承规范值。
     _resolve_module(ticket_id)
 
-    if tri.is_mixed:
-        if settings.split_auto_enabled and tri.confidence >= settings.split_auto_confidence:
-            split_res = execute_split_for_ticket(ticket_id, executed_by="agent:split_auto")
-            if split_res is not None:
-                for child_id in split_res.child_ticket_ids:
-                    _route_child(child_id)
-        # 未开自动拆 → 停摆等人工（split_ticket 提案已在队列）
-        return
-
+    # 分流毕业主 Hub 任务
     _route_by_type(ticket_id, tri.type, tri.confidence, bar=settings.hub_issue_auto_confidence)
+
+    # 混合单直接生成对应的 Hub 子任务（废弃原 Child 工单拆分机制）
+    if tri.is_mixed and tri.sub_problems:
+        _populate_subtasks_from_triage(ticket_id, tri.sub_problems)
 
 
 def run_escalation_agents(ticket_id: int) -> None:
