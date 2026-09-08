@@ -23,9 +23,11 @@ from app.services.agents.answer_accuracy import score_answer_accuracy
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
+    OP_CLOSED,
     OP_EXCEPTION,
     OP_PROCESSING,
     OP_REVIEWING,
+    OP_TRANSFERRED_RETURN,
     apply_op_status,
     resolve_op_handler,
 )
@@ -215,6 +217,10 @@ def auto_answer_operation(
     if hub.status == "pending_review":
         return False
 
+    # 若工单已关闭或已转单退回，绝不继续自动答复或转人工
+    if hub.op_status in (OP_CLOSED, OP_TRANSFERRED_RETURN):
+        return False
+
     # escalation(ai_cs) 来源不自动答复（走 reflect 反思队列）
     linked = (
         db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).first()
@@ -251,6 +257,18 @@ def auto_answer_operation(
         return False  # 已在 _replay_with_retry 内记日志
     finally:
         client.close()
+
+    # 防并发竞态（如 replay 耗时 1-2 分钟期间，处理人已点击退回 KSM 或关闭工单）：
+    # 若此时 hub 已进入终态（已关闭/已转单退回），丢弃本次 replay 结果，严禁将其重新打回 processing
+    db.refresh(hub)
+    if hub.op_status in (OP_CLOSED, OP_TRANSFERRED_RETURN):
+        logger.info(
+            "operation_auto_reply_aborted_hub_terminal",
+            hub_issue_id=hub.id,
+            op_status=hub.op_status,
+        )
+        return False
+
     answer = replay_result.answer
     cited_knowledge = replay_result.cited_knowledge
 
