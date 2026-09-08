@@ -81,29 +81,25 @@ def test_complaint_does_not_graduate(spy, monkeypatch: pytest.MonkeyPatch) -> No
     assert calls["graduate"] == []  # 投诉停 ticket 层
 
 
-def test_mixed_auto_off_stalls(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+def test_mixed_triage_graduates_main_and_populates_subtasks(
+    spy, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """新架构：混合单废除旧拆单拦截，统一毕业主任务并直接落库子任务。"""
     wh, calls = spy
-    _set_auto(monkeypatch, hub=True, split=False)  # split_auto 关
+    _set_auto(monkeypatch, hub=True, split=False)
     subs = [SubProblem("a", "s", "Bug_fix"), SubProblem("b", "s", "Operation")]
     monkeypatch.setattr(
         wh, "run_ticket_triage", lambda tid: _tri("Bug_fix", is_mixed=True, subs=subs)
+    )
+    populated = []
+    monkeypatch.setattr(
+        wh, "_populate_subtasks_from_triage", lambda tid, sp: populated.append((tid, sp))
     )
     wh.run_post_ingest_agents(7)
-    assert calls["split"] == []  # 停摆等人工
-    assert calls["graduate"] == []
-
-
-def test_mixed_auto_on_splits_and_routes_children(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
-    wh, calls = spy
-    _set_auto(monkeypatch, hub=True, split=True)
-    subs = [SubProblem("a", "s", "Bug_fix"), SubProblem("b", "s", "Operation")]
-    monkeypatch.setattr(
-        wh, "run_ticket_triage", lambda tid: _tri("Bug_fix", is_mixed=True, subs=subs)
-    )
-    wh.run_post_ingest_agents(8)
-    assert calls["split"] == [8]
-    assert calls["route_child"] == [81, 82]  # 每子单分流
-    assert calls["graduate"] == []  # 父单不直接毕业
+    assert calls["graduate"] == [7]
+    assert len(populated) == 1
+    assert populated[0][0] == 7
+    assert len(populated[0][1]) == 2
 
 
 def test_triage_none_no_routing(spy, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]

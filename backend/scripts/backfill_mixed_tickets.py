@@ -94,6 +94,7 @@ def backfill_mixed_tickets(db: Session, *, dry_run: bool = False, limit: int = 1
                         occurrence_count=1,
                     )
                     db.add(st)
+                    db.flush()
                 db.commit()
                 print(f"  -> 自动创建 {len(sub_issues)} 个子任务")
 

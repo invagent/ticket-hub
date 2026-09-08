@@ -57,12 +57,16 @@ class HubIssueResult:
 
 def _next_hub_short_code(db: Session) -> str:
     max_id: int = db.execute(select(func.max(HubIssue.id))).scalar() or 0
+    session_codes = {
+        obj.short_code for obj in db.new if isinstance(obj, HubIssue) and obj.short_code
+    }
     candidate_num = max_id + 1
     while True:
         code = f"HUB-{candidate_num:06d}"
-        exists = db.execute(select(HubIssue.id).where(HubIssue.short_code == code)).first()
-        if not exists:
-            return code
+        if code not in session_codes:
+            exists = db.execute(select(HubIssue.id).where(HubIssue.short_code == code)).first()
+            if not exists:
+                return code
         candidate_num += 1
 
 

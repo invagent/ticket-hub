@@ -22,8 +22,8 @@ cache that handles rapid re-pushes correctly.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import hmac
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -169,6 +169,7 @@ def _populate_subtasks_from_triage(
                 occurrence_count=1,
             )
             db.add(st)
+            db.flush()
         db.commit()
         logger.info(
             "subtasks_populated_from_triage",
