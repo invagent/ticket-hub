@@ -479,7 +479,7 @@ describe("TicketDetailPage", () => {
     stubTicket(320, null);
     renderPage(320);
     expect(await screen.findByRole("heading", { name: "TKT-320" })).toBeInTheDocument();
-    expect(screen.getByText("确认分类")).toBeInTheDocument();
+    expect(screen.queryByText("确认分类")).not.toBeInTheDocument();
     expect(screen.queryByText("处理建议")).not.toBeInTheDocument();
     expect((await screen.findAllByText("处理说明")).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("处理附件")).toBeInTheDocument();
@@ -533,7 +533,7 @@ describe("TicketDetailPage", () => {
     const btn = await screen.findByRole("button", { name: "提交答复" });
     await userEvent.click(btn);
     await waitFor(() => expect(replyBody).not.toBeNull());
-    expect((replyBody as { content: string }).content).toBe("AI 建议的答复内容");
+    expect((replyBody as { content: string }).content).toContain("AI 建议的答复内容");
     localStorage.clear();
   });
 
@@ -616,37 +616,17 @@ describe("TicketDetailPage", () => {
     );
   }
 
-  it("已毕业但 pending_review 的需求工单显示待确认分类三动作，不显示已推送 Linear", async () => {
+  it("工单标签录入框前端禁用、宽度为300px且【确认推送】/【确认分类】按钮已删除", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubPendingReviewTicket(330, 91, "Demand");
     renderPage(330);
     expect(await screen.findByRole("heading", { name: "TKT-330" })).toBeInTheDocument();
-    // 工单参数编辑 + 确认推送（改判/误报关闭已移除，改判并入类型下拉）
-    expect(await screen.findByRole("button", { name: "确认推送" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "改判" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "误报关闭" })).not.toBeInTheDocument();
-    // 类型下拉默认 = hub 类型（Demand→需求）
-    expect((screen.getByLabelText("工单类型") as HTMLSelectElement).value).toBe("Demand");
-    // 关键：不能因为 hub_issue_id 非空就当作已确认显示「已推送 Linear」
+    expect(screen.queryByRole("button", { name: "确认推送" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认分类" })).not.toBeInTheDocument();
+    const typeInput = screen.getByLabelText("工单类型");
+    expect(typeInput).toBeDisabled();
+    expect(typeInput.className).toContain("w-[300px]");
     expect(screen.queryByText(/已推送 Linear/)).not.toBeInTheDocument();
-    localStorage.clear();
-  });
-
-  it("待确认分类点「确认推送」调 confirm-classification", async () => {
-    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    let confirmBody: unknown = null;
-    stubPendingReviewTicket(331, 92, "Bug_fix");
-    server.use(
-      http.post("*/api/supervisor/confirm-classification", async ({ request }) => {
-        confirmBody = await request.json();
-        return HttpResponse.json({ hub_issue_id: 92, status: "created", type: "Bug_fix" });
-      }),
-    );
-    renderPage(331);
-    const btn = await screen.findByRole("button", { name: "确认推送" });
-    await userEvent.click(btn);
-    await waitFor(() => expect(confirmBody).not.toBeNull());
-    expect((confirmBody as { hub_issue_id: number }).hub_issue_id).toBe(92);
     localStorage.clear();
   });
 
@@ -828,7 +808,7 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  it("处理中 Operation 改选研发类 → 显示「转研发并推送」，点击调 reclassify", async () => {
+  it("工单标签录入框为禁用textbox且不显示转研发并推送/确认分类按钮", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(352);
     server.use(
@@ -843,48 +823,12 @@ describe("TicketDetailPage", () => {
       ),
       http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
     );
-    let reclassifyBody: unknown = null;
-    server.use(
-      // 转研发前会先 PATCH attributes 落产品线/模块（dirty 时）
-      http.patch("*/api/hub-issues/88/attributes", () =>
-        HttpResponse.json({ hub_issue_id: 88, type: "Demand" }),
-      ),
-      http.post("*/api/supervisor/reclassify", async ({ request }) => {
-        reclassifyBody = await request.json();
-        return HttpResponse.json({ hub_issue_id: 88, status: "created", type: "Demand" });
-      }),
-    );
     renderPage(352);
     await screen.findByRole("heading", { name: "TKT-352" });
-    // 处理中 Operation 渲染「工单参数」编辑器；改类型为需求 → 出现「转研发并推送」
-    const typeSelect = await screen.findByRole("combobox", { name: "工单类型" });
-    await userEvent.selectOptions(typeSelect, "Demand");
-    const btn = await screen.findByRole("button", { name: "转研发并推送" });
-    await userEvent.click(btn);
-    await screen.findByText("已转研发并推送 Linear");
-    expect(reclassifyBody).toMatchObject({ hub_issue_id: 88, new_type: "Demand" });
-    localStorage.clear();
-  });
-
-  it("已答复 Operation 不显示转研发入口（处理完成不转 Linear）", async () => {
-    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
-    stubOperationTicket(353, { op_status: "answered" });
-    server.use(
-      http.get("*/api/hub-issues/88", () =>
-        HttpResponse.json({
-          id: 88,
-          short_code: "HUB-88",
-          type: "Operation",
-          status: "created",
-          op_status: "answered",
-        }),
-      ),
-    );
-    renderPage(353);
-    await screen.findByRole("heading", { name: "TKT-353" });
-    // 已答复工单标签展示但禁用编辑 → 工单类型下拉只读禁用、无转研发按钮
-    expect(screen.getByRole("combobox", { name: "工单类型" })).toBeDisabled();
+    const typeInput = screen.getByLabelText("工单类型");
+    expect(typeInput).toBeDisabled();
     expect(screen.queryByRole("button", { name: "转研发并推送" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认分类" })).not.toBeInTheDocument();
     localStorage.clear();
   });
 });

@@ -101,6 +101,27 @@ function AdminIcon({ active }: { active: boolean }) {
   );
 }
 
+function BookIcon({ active }: { active: boolean }) {
+  const c = "currentColor";
+  void active;
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <path
+        d="M2.5 3C2.5 2.45 2.95 2 3.5 2H6.5C7.05 2 7.5 2.45 7.5 3V12.5C7.5 12.2 7.2 12 6.5 12H3.5C2.95 12 2.5 12.45 2.5 13V3Z"
+        stroke={c}
+        strokeWidth="1.3"
+      />
+      <path
+        d="M12.5 3C12.5 2.45 12.05 2 11.5 2H8.5C7.95 2 7.5 2.45 7.5 3V12.5C7.5 12.2 7.8 12 8.5 12H11.5C12.05 12 12.5 12.45 12.5 13V3Z"
+        stroke={c}
+        strokeWidth="1.3"
+      />
+      <line x1="4.5" y1="5" x2="5.5" y2="5" stroke={c} strokeWidth="1.2" strokeLinecap="round" />
+      <line x1="9.5" y1="5" x2="10.5" y2="5" stroke={c} strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -147,6 +168,7 @@ const navItems: {
     icon: TrainingIcon,
     roles: ["knowledge_op", "supervisor", "admin"],
   },
+  { to: "/knowledge-base", label: "知识库", icon: BookIcon },
   {
     to: "/analytics",
     label: "统计看板",
@@ -171,9 +193,10 @@ export function Layout() {
   // location 变（导航/页面内 Link/前进后退）→ 打开或激活对应 tab
   useEffect(() => {
     if (curKey === "/login") return;
-    openTab(curPath, resolveTitle(curPath));
+    const navTitle = (location.state as { tabTitle?: string } | null)?.tabTitle;
+    openTab(curPath, navTitle ?? resolveTitle(curPath));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curPath]);
+  }, [curPath, location.state]);
   // 活跃 tab 变（点标签）→ 地址栏跟随（仅当与当前 location 不同，防循环）
   const lastNav = useRef(curKey);
   useEffect(() => {
@@ -247,20 +270,32 @@ export function Layout() {
                   key={item.to}
                   to={item.to}
                   end={item.to === "/"}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline font-semibold ${
-                      isActive
+                  className={({ isActive }) => {
+                    const active =
+                      isActive ||
+                      (item.to === "/knowledge-base" &&
+                        (curKey === "/reflect-training/knowledge-base" ||
+                          curKey.startsWith("/knowledge-base")));
+                    return `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] no-underline font-semibold ${
+                      active
                         ? "bg-hub-teal text-white"
                         : "text-white/85 hover:bg-hub-sidebarHover hover:text-white"
-                    }`
-                  }
+                    }`;
+                  }}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <item.icon active={isActive} />
-                      {item.label}
-                    </>
-                  )}
+                  {({ isActive }) => {
+                    const active =
+                      isActive ||
+                      (item.to === "/knowledge-base" &&
+                        (curKey === "/reflect-training/knowledge-base" ||
+                          curKey.startsWith("/knowledge-base")));
+                    return (
+                      <>
+                        <item.icon active={active} />
+                        {item.label}
+                      </>
+                    );
+                  }}
                 </NavLink>
               );
             }
@@ -287,6 +322,7 @@ export function Layout() {
                       <NavLink
                         key={child.to}
                         to={child.to}
+                        end
                         className={({ isActive }) =>
                           `flex items-center gap-2.5 pl-8 pr-2.5 py-1.5 rounded-lg text-[12px] no-underline font-medium ${
                             isActive
@@ -329,7 +365,7 @@ export function Layout() {
         <TabBar />
         {/* keep-alive：所有已打开 tab 同时挂载，非活跃 hidden。每个 tab 用自己的
             location 冻结渲染，useParams/useSearchParams 读到的是该 tab 的参数。 */}
-        <div className="flex-1 min-h-0 overflow-auto bg-[#e3e7ee]">
+        <div className="flex-1 min-h-0 overflow-auto bg-[#e3e7ee] overscroll-y-none">
           {tabs.map((t) => (
             <div key={t.key} hidden={t.key !== activeKey} className="p-6 bg-[#e3e7ee]">
               <Routes location={t.path}>{authedRoutes}</Routes>

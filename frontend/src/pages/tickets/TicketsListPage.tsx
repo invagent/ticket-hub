@@ -1109,14 +1109,21 @@ export function TicketsListPage() {
         header: "工单号",
         accessorKey: "short_code",
         size: 105,
-        cell: ({ row }) => (
-          <Link
-            to={`/tickets/${row.original.id}`}
-            className="text-[#2b5ed1] hover:text-[#1d4ed8] hover:underline font-mono text-xs font-bold"
-          >
-            {row.original.short_code}
-          </Link>
-        ),
+        cell: ({ row }) => {
+          const sourceNum =
+            (row.original.source_ticket_number && row.original.source_ticket_number.trim()) ||
+            (row.original.source_ticket_id && row.original.source_ticket_id.trim());
+          const tabTitle = sourceNum || row.original.short_code;
+          return (
+            <Link
+              to={`/tickets/${row.original.id}`}
+              state={{ tabTitle }}
+              className="text-[#2b5ed1] hover:text-[#1d4ed8] hover:underline font-mono text-xs font-bold"
+            >
+              {row.original.short_code}
+            </Link>
+          );
+        },
       },
       {
         id: "source_ticket_id",

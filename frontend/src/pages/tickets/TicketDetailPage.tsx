@@ -8,8 +8,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, deleteByPath, getByPath, patchByPath, postByPath } from "@/api/client";
 import { currentRole, currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
@@ -19,6 +19,7 @@ import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
+import { KnowledgeBaseDrawer } from "@/pages/knowledge-base/KnowledgeBaseDrawer";
 import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
@@ -186,6 +187,130 @@ function extractAttachments(payload: unknown): AttachmentRef[] {
   return out.filter((a) => (seen.has(a.url) ? false : (seen.add(a.url), true)));
 }
 
+export interface TaskNoteItem {
+  code: string;
+  title: string;
+  solution: string;
+}
+
+export function formatTasksReplyNote(tasks: TaskNoteItem[]): string {
+  if (tasks.length === 0) return "";
+  const lines: string[] = [`工单包含问题数：${tasks.length}`];
+  tasks.forEach((t, idx) => {
+    const code = t.code || "---";
+    const title = t.title || "---";
+    const sol = t.solution && t.solution.trim() ? t.solution.trim() : "---";
+    lines.push(`问题${idx + 1}：${code}-${title}`);
+    lines.push(`解决方案：${sol}`);
+    if (idx < tasks.length - 1) {
+      lines.push(""); // 每个问题之间间隔1行
+    }
+  });
+  return lines.join("\n");
+}
+
+export function parseReplyNoteSolutions(
+  content: string,
+  tasks: { code: string; key: string | number }[],
+): Record<string | number, string> {
+  const result: Record<string | number, string> = {};
+  if (!content || !content.trim() || tasks.length === 0) return result;
+
+  const trimmed = content.trim();
+  const lines = trimmed.split("\n");
+  let currentTaskIdx = -1;
+  let collectingSolution = false;
+  let currentSolLines: string[] = [];
+
+  const flushCurrentSolution = () => {
+    if (currentTaskIdx >= 0 && currentTaskIdx < tasks.length) {
+      const fullSol = currentSolLines.join("\n").trim();
+      const taskKey = tasks[currentTaskIdx].key;
+      result[taskKey] = fullSol === "---" ? "" : fullSol;
+    }
+    currentSolLines = [];
+    collectingSolution = false;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const matchProblem = line.match(/^\s*【?问题(\d+)】?[:：]?(.*)$/);
+    if (matchProblem) {
+      flushCurrentSolution();
+      const pIdx = parseInt(matchProblem[1], 10) - 1;
+      currentTaskIdx = pIdx;
+      continue;
+    }
+
+    const matchSolution = line.match(/^\s*【?解决方案】?[:：]?(.*)$/);
+    if (matchSolution) {
+      collectingSolution = true;
+      currentSolLines = [matchSolution[1].trim()];
+      continue;
+    }
+
+    if (collectingSolution) {
+      currentSolLines.push(line);
+    }
+  }
+
+  flushCurrentSolution();
+
+  if (Object.keys(result).length === 0 && tasks.length === 1) {
+    result[tasks[0].key] = trimmed;
+  }
+
+  return result;
+}
+
+
+export function renderFormattedReplyNote(content: string) {
+  if (!content) {
+    return <span className="text-hub-textFaint">暂无处理说明</span>;
+  }
+  const lines = content.split("\n");
+  return (
+    <div className="space-y-1 text-[12.5px] leading-relaxed select-text font-sans">
+      {lines.map((line, idx) => {
+        if (!line.trim()) {
+          return <div key={idx} className="h-3.5" />;
+        }
+        const matchProblem = line.match(/^(\s*【?问题\d+】?[:：]?)(.*)$/);
+        if (matchProblem) {
+          return (
+            <div key={idx}>
+              <strong className="font-bold text-slate-900">{matchProblem[1]}</strong>
+              <span>{matchProblem[2]}</span>
+            </div>
+          );
+        }
+        const matchSolution = line.match(/^(\s*【?解决方案】?[:：]?)(.*)$/);
+        if (matchSolution) {
+          return (
+            <div key={idx}>
+              <strong className="font-bold text-slate-900">{matchSolution[1]}</strong>
+              <span>{matchSolution[2]}</span>
+            </div>
+          );
+        }
+        const matchTotal = line.match(/^(\s*工单包含问题数[:：]?\s*\d*)(.*)$/);
+        if (matchTotal) {
+          return (
+            <div key={idx} className="font-semibold text-slate-800">
+              {line}
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="text-slate-700">
+            {line}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TicketDetailPage() {
   const { ticketId } = useParams<{ ticketId: string }>();
   const id = Number(ticketId);
@@ -212,8 +337,11 @@ export function TicketDetailPage() {
     retry: false,
   });
 
-  // 回填 tab 标题为真实短码（TKT-005890）
-  useTabTitle(detail.data?.short_code);
+  // 回填 tab 标题为来源工单号值（若无来源工单号则回退为工单短码）
+  const sourceTicketNum =
+    (detail.data?.source_ticket_number && detail.data.source_ticket_number.trim()) ||
+    (detail.data?.source_ticket_id && detail.data.source_ticket_id.trim());
+  useTabTitle(sourceTicketNum || detail.data?.short_code);
 
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -254,6 +382,22 @@ export function TicketDetailPage() {
   }, []);
   const [transferOpen, setTransferOpen] = useState(false);
   const [addSubOpen, setAddSubOpen] = useState(false);
+  const [knowledgeDrawerOpen, setKnowledgeDrawerOpen] = useState(false);
+  const [transferDevAlert, setTransferDevAlert] = useState<string | null>(null);
+  const [syncedSubAttrs, setSyncedSubAttrs] = useState<{
+    type?: string;
+    productLine?: string;
+    module?: string;
+  } | null>(null);
+  const [noteViewMode, setNoteViewMode] = useState<"preview" | "edit">("preview");
+
+  useEffect(() => {
+    if (!transferDevAlert) return;
+    const timer = setTimeout(() => {
+      setTransferDevAlert(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [transferDevAlert]);
   // 添加子任务：本地草稿行（后端"查工单任务列表→无则建/有则关联"接口待补，草稿仅前端可见）
   const [subDrafts, setSubDrafts] = useState<{
     title: string;
@@ -491,92 +635,343 @@ export function TicketDetailPage() {
     (isSupervisor() ||
       (d?.handler_user_id != null && currentUserId() === d.handler_user_id));
 
+  // 子工单列表查询（与 SubTicketList 共享缓存）
+  const childResults = useQueries({
+    queries: (d?.children_ticket_ids ?? []).map((cid) => ({
+      queryKey: ["ticket-detail", cid],
+      queryFn: () => getByPath("/api/tickets/{ticket_id}", { ticket_id: cid }),
+      staleTime: 30_000,
+    })),
+  });
+
+  // 各子任务解决方案覆盖映射（提交答复时由处理说明解析会写）
+  const [externalTaskSolutions, setExternalTaskSolutions] = useState<
+    Record<string | number, string>
+  >({});
+
+  // 产研责任人：所有任务对应的产研人员并集，多个用英文逗号隔开，一行显示不换行
+  const devOwners = useMemo(() => {
+    const set = new Set<string>();
+    // 1. hub issue 默认研发负责人
+    if ((hub.data as any)?.default_assignee_name?.trim()) {
+      set.add(String((hub.data as any).default_assignee_name).trim());
+    }
+    // 2. 主工单若为研发类且有处理人/研发责任人
+    if (isDevType && d?.assigned_user_name?.trim()) {
+      set.add(d.assigned_user_name.trim());
+    }
+    if ((d as any)?.dev_assignee_name?.trim()) {
+      set.add(String((d as any).dev_assignee_name).trim());
+    }
+    if ((d as any)?.rd_owner_name?.trim()) {
+      set.add(String((d as any).rd_owner_name).trim());
+    }
+    // 3. 子任务列表中的研发人员
+    childResults.forEach((r) => {
+      const c = r.data;
+      if (!c) return;
+      const cIsDev = c.predicted_type === "Bug_fix" || c.predicted_type === "Demand";
+      if (cIsDev && c.assigned_user_name?.trim()) {
+        set.add(c.assigned_user_name.trim());
+      }
+      if ((c as any)?.dev_assignee_name?.trim()) {
+        set.add(String((c as any).dev_assignee_name).trim());
+      }
+      if ((c as any)?.rd_owner_name?.trim()) {
+        set.add(String((c as any).rd_owner_name).trim());
+      }
+    });
+    // 4. hub sub_issues
+    const subIssues = (hub.data as any)?.sub_issues;
+    if (Array.isArray(subIssues)) {
+      subIssues.forEach((si: any) => {
+        if (si?.assignee_name?.trim()) {
+          set.add(String(si.assignee_name).trim());
+        }
+      });
+    }
+    const arr = Array.from(set).filter(Boolean);
+    return arr.length > 0 ? arr.join(", ") : "—";
+  }, [hub.data, isDevType, d, childResults]);
+
   return (
-    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page px-6 pt-5 pb-10">
-      {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3">加载中…</p>}
-      {detail.error && <p className="text-xs text-hub-rose mt-3">{String(detail.error)}</p>}
+    <div className="font-hub text-hub-text text-[13px] -m-6 min-h-full bg-hub-page pb-10 overscroll-y-none">
+      {detail.isLoading && <p className="text-xs text-hub-textFaint mt-3 px-6 pt-4">加载中…</p>}
+      {detail.error && <p className="text-xs text-hub-rose mt-3 px-6 pt-4">{String(detail.error)}</p>}
 
       {d && (
-        <div className="space-y-3">
-          {/* 1. 标题区 + 操作按钮同一行、顶端对齐，白底矩形吸顶固定 */}
-          <div className="sticky top-0 z-30 bg-white border border-hub-border rounded-[10px] p-4 shadow-sm mb-3">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <header>
-                <div className="flex items-baseline gap-3 flex-wrap">
-                  <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
-                    {d.short_code}
-                  </h1>
-                  {(d.source_ticket_number ?? d.source_ticket_id) && (
-                    <span className="text-[12px] text-hub-textMuted font-mono">
-                      来源编号：{d.source_ticket_number ?? d.source_ticket_id}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
-                  <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
-                  {d.predicted_type && (
-                    <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
-                  )}
-                  <ProcessStatusBadge
-                    opStatus={opStatus}
-                    hubStatus={hub.data?.status}
-                    predictedType={d.predicted_type}
-                    hubIssueId={d.hub_issue_id}
-                    ticketStatus={d.status}
-                    ticketStatusLabel={ticketStatusLabel}
-                  />
-                  <RemainingTag hours={d.remaining_hours} />
-                  {showReflectBtn && (
+        <>
+          {/* 1. 标题区 + 操作按钮同一行、顶端对齐，白底矩形吸顶冻结固定（完全固定不动，彻底消除下拉下移效果） */}
+          <div className="sticky top-0 z-30 bg-hub-page px-6 pt-4 pb-2.5 shadow-xs transform-gpu">
+            <div className="bg-white border border-hub-border rounded-[10px] p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <header>
+                  <div className="flex items-baseline gap-3 flex-wrap">
+                    <h1 className="m-0 text-[19px] font-bold leading-tight font-mono">
+                      {d.short_code}
+                    </h1>
+                    {(d.source_ticket_number ?? d.source_ticket_id) && (
+                      <span className="text-[12px] text-hub-textMuted font-mono">
+                        来源编号：{d.source_ticket_number ?? d.source_ticket_id}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
+                    <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
+                    {d.predicted_type && (
+                      <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
+                    )}
+                    <ProcessStatusBadge
+                      opStatus={opStatus}
+                      hubStatus={hub.data?.status}
+                      predictedType={d.predicted_type}
+                      hubIssueId={d.hub_issue_id}
+                      ticketStatus={d.status}
+                      ticketStatusLabel={ticketStatusLabel}
+                    />
+                    <RemainingTag hours={d.remaining_hours} />
+                    {showReflectBtn && (
+                      <button
+                        type="button"
+                        onClick={() => setReflectOpen(true)}
+                        title="查看反思诊断详情（黄金三元组/病因判定/skill修订/发布）"
+                        className="px-2.5 py-1 text-[11.5px] font-semibold rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border hover:brightness-95"
+                      >
+                        🧠 反思
+                      </button>
+                    )}
+                  </div>
+                </header>
+                {/* 右上角操作按钮区 + 返回列表 */}
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {/* 1. 提交答复 */}
+                  <button
+                    type="button"
+                    disabled={reply.isPending || suggestion === "split" || opDone}
+                    onClick={() => {
+                      if (suggestion === "normal" || suggestion === "supplement" || suggestion === "escalate_dev") {
+                        const content = (
+                          noteDrafts[0] ??
+                          d.cached_reply_content ??
+                          draftReply ??
+                          ""
+                        ).trim();
+                        if (!content) {
+                          setReplyErr("处理说明为空，无法答复");
+                          return;
+                        }
+
+                        // 提交答复时：将更新的答复会写更新到对应的子任务解决方案处
+                        const tasksToSync: { code: string; key: string | number }[] = [];
+                        const childIds = d.children_ticket_ids ?? [];
+                        if (childIds.length === 0 && subDrafts.length === 0) {
+                          tasksToSync.push({ code: d.short_code, key: "self" });
+                        }
+                        childIds.forEach((cid, idx) => {
+                          tasksToSync.push({
+                            code: childResults[idx]?.data?.short_code ?? `#${cid}`,
+                            key: cid,
+                          });
+                        });
+                        subDrafts.forEach((_, idx) => {
+                          const code = `${d.short_code}-${(childIds.length || 1) + idx + 1}`;
+                          tasksToSync.push({ code, key: `draft-${idx}` });
+                        });
+
+                        const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
+                        if (Object.keys(parsedMap).length > 0) {
+                          setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
+                        }
+
+                        reply.mutate(content);
+                      } else if (suggestion === "return") {
+                        setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
+                        setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
+                      } else if (suggestion === "split") {
+                        setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
+                        setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
+                      }
+                    }}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                  >
+                    {suggestion === "return"
+                      ? "退回转单"
+                      : suggestion === "split"
+                        ? "拆分转单（待后端）"
+                        : reply.isPending
+                          ? "提交中…"
+                          : "提交答复"}
+                  </button>
+
+                  {/* 2. 转产研 */}
+                  <button
+                    type="button"
+                    disabled={opDone}
+                    title="处理说明转产研说明并提交产研"
+                    onClick={() => {
+                      const content = (
+                        noteDrafts[0] ??
+                        d.cached_reply_content ??
+                        draftReply ??
+                        ""
+                      ).trim();
+                      if (!content) {
+                        setTransferDevAlert("请在处理说明转产研说明，没有录入不能转产研");
+                        return;
+                      }
+                      showTopToast("已成功转产研，处理说明已同步", "success");
+                      setLocalActions((p) => [{ label: "转产研处理" }, ...p]);
+                    }}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                  >
+                    转产研
+                  </button>
+
+                  {/* 3. 转派 */}
+                  {isSupervisor() && (
                     <button
                       type="button"
-                      onClick={() => setReflectOpen(true)}
-                      title="查看反思诊断详情（黄金三元组/病因判定/skill修订/发布）"
-                      className="px-2.5 py-1 text-[11.5px] font-semibold rounded-full bg-hub-emerald-light text-hub-emerald-deep border border-hub-emerald-border hover:brightness-95"
+                      onClick={() => setTransferOpen(true)}
+                      disabled={opDone}
+                      title="转派处理人（提交答复前可转派）"
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
                     >
-                      🧠 反思
+                      转派
                     </button>
                   )}
-                </div>
-              </header>
-              {/* 返回列表 */}
-              <div className="flex items-center gap-2.5 flex-wrap justify-end">
-                <button
-                  type="button"
-                  onClick={handleBackToList}
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border"
-                >
-                  返回列表
-                </button>
-              </div>
-            </div>
-          </div>
-          {/* 页面顶部提示条（子任务确认/缺失校验等，与现有提示风格一致） */}
-          {topToast && (
-            <div className="px-1 mb-1.5">
-              <div
-                className={`text-[12px] px-3 py-1.5 rounded-[7px] border flex items-center justify-between gap-2 shadow-sm transition-all ${
-                  topToast.type === "warning"
-                    ? "text-amber-800 bg-amber-50 border-amber-300"
-                    : "text-emerald-700 bg-emerald-50 border-emerald-200"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-bold">{topToast.type === "warning" ? "⚠️" : "✓"}</span>
-                  <span className="font-medium">{topToast.message}</span>
-                </div>
-                <button
-                  type="button"
-                  aria-label="关闭提示"
-                  className="text-slate-400 hover:text-slate-600 font-bold ml-2 cursor-pointer leading-none text-xs"
-                  onClick={() => setTopToast(null)}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
 
+                  {/* 4. 退回 KSM */}
+                  {(d.source_code === "ksm" || !d.source_code) && (
+                    <button
+                      type="button"
+                      disabled={returnKsm.isPending || opDone}
+                      title="退回 KSM 重新分派（不可逆）"
+                      onClick={() => {
+                        const content = (
+                          noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                        ).trim();
+                        if (!content) {
+                          setReturnErr("处理说明为空，无法退回");
+                          return;
+                        }
+                        if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
+                          return;
+                        }
+                        returnKsm.mutate(content);
+                      }}
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                    >
+                      {returnKsm.isPending ? "退回中…" : "退回 KSM"}
+                    </button>
+                  )}
+
+                  {/* 5. 补充资料 */}
+                  {(d.source_code === "ksm" || !d.source_code) && (
+                    <button
+                      type="button"
+                      disabled={supply.isPending || opDone}
+                      title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                      onClick={() => {
+                        const content = (
+                          noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                        ).trim();
+                        if (!content) {
+                          setSupplyErr("处理说明为空，无法请求补料");
+                          return;
+                        }
+                        supply.mutate(content);
+                      }}
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                    >
+                      {supply.isPending ? "提交中…" : "补充资料"}
+                    </button>
+                  )}
+
+                  {/* 6. 拆单 */}
+                  <button
+                    type="button"
+                    onClick={() => setAddSubOpen(true)}
+                    disabled={opDone}
+                    title="拆分多单/新建子工单"
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                  >
+                    拆单
+                  </button>
+
+                  {/* 7. 完善知识库 */}
+                  <button
+                    type="button"
+                    onClick={() => setKnowledgeDrawerOpen(true)}
+                    disabled={opDone}
+                    title="录入并维护知识库"
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                  >
+                    完善知识库
+                  </button>
+
+                  {/* 诊断 */}
+                  {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
+                    <button
+                      type="button"
+                      onClick={() => setDiagnosisOpen(true)}
+                      title="AI 自动答复有问题？标记后送知识运营复核诊断"
+                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 cursor-pointer shadow-xs"
+                    >
+                      诊断
+                    </button>
+                  )}
+                  {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
+                    <span className="text-[10.5px] text-hub-textFaint">
+                      已标记诊断
+                    </span>
+                  )}
+
+                  {/* 返回列表 */}
+                  <button
+                    type="button"
+                    onClick={handleBackToList}
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-textSecondary border border-hub-border hover:border-hub-teal-border cursor-pointer shadow-xs"
+                  >
+                    返回列表
+                  </button>
+                </div>
+                {(replyErr || returnErr || supplyErr) && (
+                  <div className="w-full text-right text-[11px] text-hub-rose mt-1">
+                    {replyErr || returnErr || supplyErr}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* 页面顶部提示条（子任务确认/缺失校验等，与现有提示风格一致） */}
+            {topToast && (
+              <div className="px-1 mt-2">
+                <div
+                  className={`text-[12px] px-3 py-1.5 rounded-[7px] border flex items-center justify-between gap-2 shadow-sm transition-all ${
+                    topToast.type === "warning"
+                      ? "text-amber-800 bg-amber-50 border-amber-300"
+                      : "text-emerald-700 bg-emerald-50 border-emerald-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{topToast.type === "warning" ? "⚠️" : "✓"}</span>
+                    <span className="font-medium">{topToast.message}</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="关闭提示"
+                    className="text-slate-400 hover:text-slate-600 font-bold ml-2 cursor-pointer leading-none text-xs"
+                    onClick={() => setTopToast(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 下方内容滚动区 */}
+          <div className="px-6 space-y-3 mt-3">
           {confirmNotice && (
             <div className="px-1 text-[11px] text-hub-amber-deep">
               <span className="bg-hub-amber-light border border-hub-amber-border rounded px-2 py-0.5">
@@ -652,22 +1047,36 @@ export function TicketDetailPage() {
               p?.email ??
               p?.contact_email;
 
+            const handlerDisplay =
+              d.handler_user_name ??
+              d.assigned_user_name ??
+              (d.assigned_user_id ? `#${d.assigned_user_id}` : "—");
+
             return (
-              <Card title="客户信息">
+              <Card title="工单基础信息">
                 <div className="px-1 py-1">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
                     <Field label="提单公司">{d.reporter_company ?? "—"}</Field>
                     <Field label="联系人">{contactName ?? "—"}</Field>
                     <Field label="联系人手机">
                       <span className="font-mono">{contactMobile ?? "—"}</span>
                     </Field>
                     <Field label="联系人邮箱">{contactEmail ?? "—"}</Field>
+                    <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
+
                     <Field label="提单人">{d.reporter_name ?? "—"}</Field>
                     <Field label="提单人手机">
                       <span className="font-mono">{d.reporter_mobile ?? "—"}</span>
                     </Field>
-                    <Field label="归属租户">{d.reporter_tenant ?? "—"}</Field>
                     <Field label="服务等级">{d.service_level ?? "标准服务"}</Field>
+                    <Field label="处理人">
+                      <span>{handlerDisplay}</span>
+                    </Field>
+                    <Field label="产研责任人">
+                      <span className="truncate whitespace-nowrap block" title={devOwners}>
+                        {devOwners}
+                      </span>
+                    </Field>
                   </div>
                 </div>
               </Card>
@@ -756,7 +1165,7 @@ export function TicketDetailPage() {
               </div>
 
               {/* 5.2 右：节点处理详情 */}
-              <div className="min-w-0 space-y-6 lg:border-l lg:border-hub-borderLight lg:pl-5">
+              <div className="min-w-0 space-y-[29px] lg:border-l lg:border-hub-borderLight lg:pl-5">
                 <div className="flex items-center gap-2.5">
                   <div className="text-[12px] font-bold text-black tracking-wide">节点详情</div>
                   <ProcessStatusBadge
@@ -774,10 +1183,10 @@ export function TicketDetailPage() {
                   <p className="text-[11px] text-hub-textFaint">分类状态加载中…</p>
                 )}
 
-                {/* 节点信息下方的【工单标签】：常驻展示在节点详情下方，包含工单类型、产品分类、问题模块与操作按钮 */}
-                <TicketAttributesEditor ticket={d} hub={hub.data ?? null} />
+                {/* 小节 1：工单标签和下面的key+值 是一节 */}
+                <TicketAttributesEditor ticket={d} hub={hub.data ?? null} syncedAttrs={syncedSubAttrs} />
 
-                {/* 2.6 子任务列表（位置与处理说明互换，置于处理说明上方） */}
+                {/* 小节 2：子任务和子任务列表是一节 */}
                 <div>
                   {isCurrentNode ? (
                     <SubTicketList
@@ -789,6 +1198,7 @@ export function TicketDetailPage() {
                       }}
                       onAdd={() => setAddSubOpen(true)}
                       onToast={showTopToast}
+                      onSyncConfirmedAttributes={(attrs) => setSyncedSubAttrs(attrs)}
                       onSyncNote={(taskTitle, solution) => {
                         const formatted = `任务说明：${taskTitle || "无"}\n解决方案：${solution || "无"}`;
                         setNoteDrafts((prev) => {
@@ -797,7 +1207,11 @@ export function TicketDetailPage() {
                           return { ...prev, 0: nextVal };
                         });
                       }}
-                      canEdit={isCurrentNode && isSupervisor()}
+                      onSyncAllTasksNote={(formatted) => {
+                        setNoteDrafts((prev) => ({ ...prev, 0: formatted }));
+                      }}
+                      canEdit={isCurrentNode && isSupervisor() && !opDone}
+                      externalSolutions={externalTaskSolutions}
                       self={{
                         short_code: d.short_code,
                         title: d.title,
@@ -820,352 +1234,299 @@ export function TicketDetailPage() {
                   )}
                 </div>
 
-                {/* 节点详情：处理说明 + 处理附件常驻显示（取消分类与类型限制） */}
-                <div className="space-y-6">
-                    {/* 2.5 处理说明（操作按钮移到右侧，和处理说明标题同一行） */}
-                    <div>
-                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-bold text-black tracking-wide">
-                            处理说明
-                          </span>
-                          {(d.op_status === "reviewing" || opStatus === "reviewing") && (
-                            <span className="text-[11.5px] text-hub-amber-deep font-normal">
-                              AI 草稿待审核，确认后正式发出
-                            </span>
-                          )}
-                          {!isCurrentNode && (
-                            <span className="text-[11.5px] text-hub-textFaint">
-                              （历史节点）
-                            </span>
-                          )}
-                        </div>
-
-                        {/* 操作按钮移至标题行右侧，按【提交答复、转派、退回 KSM、补充资料、拆单、诊断】排布 */}
-                        <div className="flex items-center gap-2 flex-wrap justify-end">
-                          <button
-                            type="button"
-                            disabled={reply.isPending || suggestion === "split" || opDone}
-                            onClick={() => {
-                              if (suggestion === "normal" || suggestion === "supplement" || suggestion === "escalate_dev") {
-                                const content = (
-                                  noteDrafts[0] ??
-                                  d.cached_reply_content ??
-                                  draftReply ??
-                                  ""
-                                ).trim();
-                                if (!content) {
-                                  setReplyErr("处理说明为空，无法答复");
-                                  return;
-                                }
-                                reply.mutate(content);
-                              } else if (suggestion === "return") {
-                                setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
-                                setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
-                              } else if (suggestion === "split") {
-                                setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
-                                setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
-                              }
-                            }}
-                            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            {suggestion === "return"
-                              ? "退回转单"
-                              : suggestion === "split"
-                                ? "拆分转单（待后端）"
-                                : reply.isPending
-                                  ? "提交中…"
-                                  : "提交答复"}
-                          </button>
-                          {isSupervisor() && (
-                            <button
-                              type="button"
-                              onClick={() => setTransferOpen(true)}
-                              disabled={opDone}
-                              title="转派处理人（提交答复前可转派）"
-                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              转派
-                            </button>
-                          )}
-                          {(d.source_code === "ksm" || !d.source_code) && (
-                            <button
-                              type="button"
-                              disabled={returnKsm.isPending || opDone}
-                              title="退回 KSM 重新分派（不可逆）"
-                              onClick={() => {
-                                const content = (
-                                  noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                                ).trim();
-                                if (!content) {
-                                  setReturnErr("处理说明为空，无法退回");
-                                  return;
-                                }
-                                if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
-                                  return;
-                                }
-                                returnKsm.mutate(content);
-                              }}
-                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              {returnKsm.isPending ? "退回中…" : "退回 KSM"}
-                            </button>
-                          )}
-                          {(d.source_code === "ksm" || !d.source_code) && (
-                            <button
-                              type="button"
-                              disabled={supply.isPending || opDone}
-                              title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
-                              onClick={() => {
-                                const content = (
-                                  noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                                ).trim();
-                                if (!content) {
-                                  setSupplyErr("处理说明为空，无法请求补料");
-                                  return;
-                                }
-                                supply.mutate(content);
-                              }}
-                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              {supply.isPending ? "提交中…" : "补充资料"}
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setAddSubOpen(true)}
-                            disabled={opDone}
-                            title="拆分多单/新建子工单"
-                            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          >
-                            拆单
-                          </button>
-                          {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
-                            <button
-                              type="button"
-                              onClick={() => setDiagnosisOpen(true)}
-                              title="AI 自动答复有问题？标记后送知识运营复核诊断"
-                              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 cursor-pointer"
-                            >
-                              诊断
-                            </button>
-                          )}
-                          {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
-                            <span className="text-[10.5px] text-hub-textFaint">
-                              已标记诊断
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {opStatus === "processing" && hub.data?.last_transfer_attempt && (
-                        <div className="mb-1.5 text-[11px] text-hub-textMuted bg-transparent border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
-                          <div className="font-semibold text-hub-textFaint mb-0.5">
-                            🤖 AI 已尝试回答（未采纳，转人工处理）
-                          </div>
-                          <div>
-                            <span className="text-hub-textFaint">问：</span>
-                            {hub.data.last_transfer_attempt.question}
-                          </div>
-                          <div>
-                            <span className="text-hub-textFaint">答：</span>
-                            {hub.data.last_transfer_attempt.answer}
-                          </div>
-                        </div>
+                {/* 小节 3：处理说明 + 说明内容为一节 */}
+                <div>
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold text-black tracking-wide">
+                        处理说明
+                      </span>
+                      {(d.op_status === "reviewing" || opStatus === "reviewing") && (
+                        <span className="text-[11.5px] text-hub-amber-deep font-normal">
+                          AI 草稿待审核，确认后正式发出
+                        </span>
                       )}
-
-                      {isCurrentNode ? (
-                        <>
-                          {(() => {
-                            const editable = !opDone;
-                            const supplyNote =
-                              opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
-                            const val =
-                              noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
-                            return (
-                              <div className="relative w-full">
-                                <textarea
-                                  readOnly={!editable}
-                                  maxLength={2000}
-                                  value={val}
-                                  onChange={(e) =>
-                                    setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
-                                  }
-                                  onPaste={(e) => {
-                                    const items = e.clipboardData?.items;
-                                    const hasFiles =
-                                      items && Array.from(items).some((it) => it.kind === "file");
-                                    if (hasFiles) {
-                                      handleProcPaste(e);
-                                    }
-                                  }}
-                                  placeholder={
-                                    editable
-                                      ? "填写当前节点处理说明（支持输入说明，支持在下方添加或 Ctrl+V 粘贴附件）"
-                                      : opStatus === "closed"
-                                        ? "已关单，只读"
-                                        : "已答复完成，只读"
-                                  }
-                                  className={
-                                    "w-full min-h-[136px] pb-6 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
-                                    (editable
-                                      ? "bg-transparent focus:border-hub-teal"
-                                      : "bg-transparent cursor-not-allowed opacity-60")
-                                  }
-                                />
-                                <span className="absolute bottom-2 right-2.5 text-[11px] text-hub-textFaint font-mono pointer-events-none select-none">
-                                  {val.length}/2000
-                                </span>
-                              </div>
-                            );
-                          })()}
-
-                          {/* 4. 处理说明下方附件模块（支持本地选择上传与 Ctrl+V / ⌘+V 粘贴上传） */}
-                          <div
-                            onPaste={handleProcPaste}
-                            tabIndex={0}
-                            className="mt-3.5 pt-3 border-t border-hub-borderLight focus:outline-none"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[12px] font-bold text-black tracking-wide">
-                                  处理附件
-                                </span>
-                                {procAttachments.length > 0 && (
-                                  <span className="text-[11px] text-hub-teal-deep font-semibold">
-                                    ({procAttachments.length})
-                                  </span>
-                                )}
-                                <span className="text-[11px] text-hub-textFaint">
-                                  （支持本地上传或 Ctrl+V / ⌘+V 粘贴截图/文件）
-                                </span>
-                              </div>
-                              <label className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] font-medium rounded-[6px] border border-hub-border hover:border-[#6085e7] text-slate-700 hover:text-[#6085e7] bg-white cursor-pointer transition-colors shadow-2xs">
-                                <svg
-                                  className="w-3.5 h-3.5 text-slate-500"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M12 4v16m8-8H4"
-                                  />
-                                </svg>
-                                <span>上传附件</span>
-                                <input
-                                  type="file"
-                                  multiple
-                                  className="hidden"
-                                  disabled={opDone}
-                                  onChange={(e) => {
-                                    if (e.target.files) {
-                                      handleAddProcFiles(e.target.files);
-                                      e.target.value = "";
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-
-                            {/* 附件列表或空状态提示 */}
-                            {procAttachments.length === 0 ? (
-                              <div
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (e.dataTransfer.files) handleAddProcFiles(e.dataTransfer.files);
-                                }}
-                                className="border border-dashed border-slate-300 hover:border-[#6085e7] rounded-[7px] p-3 text-center transition-colors bg-slate-50/50"
-                              >
-                                <p className="text-[11.5px] text-slate-500 m-0">
-                                  点击右上角「上传附件」或直接在此处按{" "}
-                                  <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
-                                    Ctrl+V
-                                  </kbd>
-                                  （Mac{" "}
-                                  <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
-                                    ⌘+V
-                                  </kbd>
-                                  ）粘贴截图与文件
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                {procAttachments.map((att) => {
-                                  const isImg = att.type.startsWith("image/");
-                                  const sizeStr =
-                                    att.size < 1024 * 1024
-                                      ? `${(att.size / 1024).toFixed(1)} KB`
-                                      : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
-
-                                  return (
-                                    <div
-                                      key={att.id}
-                                      className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
-                                    >
-                                      {isImg && att.url ? (
-                                        <img
-                                          src={att.url}
-                                          alt={att.name}
-                                          className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
-                                          onClick={() => setPreviewImgUrl(att.url!)}
-                                          title="点击预览大图"
-                                        />
-                                      ) : (
-                                        <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
-                                          FILE
-                                        </div>
-                                      )}
-                                      <div className="min-w-0 flex-1">
-                                        <div
-                                          className="text-[12px] font-medium text-slate-800 truncate"
-                                          title={att.name}
-                                        >
-                                          {att.name}
-                                        </div>
-                                        <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                                          <span>{sizeStr}</span>
-                                          <span>•</span>
-                                          <span>{att.uploadedAt}</span>
-                                        </div>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveProcAttachment(att.id)}
-                                        disabled={opDone}
-                                        title="删除此附件"
-                                        className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none disabled:opacity-40"
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
-                        <div className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-transparent whitespace-pre-wrap break-words">
-                          {noteDrafts[nodeIdx]}
-                        </div>
-                      ) : (
-                        <EmptyNodeData />
+                      {!isCurrentNode && (
+                        <span className="text-[11.5px] text-hub-textFaint">
+                          （历史节点）
+                        </span>
                       )}
-
-                      {opDone && (
-                        <div className="mt-1 text-[10.5px] text-hub-textFaint text-right">
-                          已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
-                        </div>
-                      )}
-                      {replyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{replyErr}</div>}
-                      {returnErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{returnErr}</div>}
-                      {supplyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{supplyErr}</div>}
                     </div>
                   </div>
+
+                  {opStatus === "processing" && hub.data?.last_transfer_attempt && (
+                    <div className="mb-1.5 text-[11px] text-hub-textMuted bg-transparent border border-hub-border rounded px-2 py-1.5 whitespace-pre-wrap break-words">
+                      <div className="font-semibold text-hub-textFaint mb-0.5">
+                        🤖 AI 已尝试回答（未采纳，转人工处理）
+                      </div>
+                      <div>
+                        <span className="text-hub-textFaint">问：</span>
+                        {hub.data.last_transfer_attempt.question}
+                      </div>
+                      <div>
+                        <span className="text-hub-textFaint">答：</span>
+                        {hub.data.last_transfer_attempt.answer}
+                      </div>
+                    </div>
+                  )}
+
+                  {isCurrentNode ? (
+                    (() => {
+                      const editable = !opDone;
+                      const supplyNote =
+                        opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
+                      const val =
+                        noteDrafts[0] ?? (d.cached_reply_content || draftReply || supplyNote || "");
+                      return (
+                        <div className="relative w-full">
+                          {noteViewMode === "preview" && (
+                            <div
+                              onDoubleClick={() => editable && setNoteViewMode("edit")}
+                              title={editable ? "双击修改处理说明" : undefined}
+                              className={`w-full min-h-[136px] pb-6 text-[12.5px] border border-hub-border rounded-[7px] px-3 py-2.5 overflow-y-auto select-text ${
+                                editable
+                                  ? "bg-slate-50/40 cursor-text hover:border-hub-teal/80"
+                                  : "bg-transparent cursor-not-allowed opacity-75"
+                              }`}
+                            >
+                              {renderFormattedReplyNote(val)}
+                            </div>
+                          )}
+                          <textarea
+                            autoFocus={noteViewMode === "edit"}
+                            readOnly={!editable}
+                            maxLength={2000}
+                            value={val}
+                            onChange={(e) =>
+                              setNoteDrafts((prev) => ({ ...prev, 0: e.target.value }))
+                            }
+                            onBlur={() => setNoteViewMode("preview")}
+                            onPaste={(e) => {
+                              const items = e.clipboardData?.items;
+                              const hasFiles =
+                                items && Array.from(items).some((it) => it.kind === "file");
+                              if (hasFiles) {
+                                handleProcPaste(e);
+                              }
+                            }}
+                            placeholder={
+                              editable
+                                ? "填写当前节点处理说明（支持输入说明，支持在下方添加或 Ctrl+V 粘贴附件）"
+                                : opStatus === "closed"
+                                  ? "已关单，只读"
+                                  : "已答复完成，只读"
+                            }
+                            className={
+                              "w-full min-h-[136px] pb-6 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
+                              (editable
+                                ? "bg-transparent focus:border-hub-teal"
+                                : "bg-transparent cursor-not-allowed opacity-60") +
+                              (noteViewMode === "preview" ? " hidden" : "")
+                            }
+                          />
+                          <span className="absolute bottom-2 right-2.5 text-[11px] text-hub-textFaint font-mono pointer-events-none select-none">
+                            {val.length}/2000
+                          </span>
+                        </div>
+                      );
+                    })()
+                  ) : (noteDrafts[nodeIdx] ?? "").trim() ? (
+                    <div className="w-full min-h-[96px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 bg-transparent whitespace-pre-wrap break-words">
+                      {renderFormattedReplyNote(noteDrafts[nodeIdx] ?? "")}
+                    </div>
+                  ) : (
+                    <EmptyNodeData />
+                  )}
+
+                  {opDone && (
+                    <div className="mt-1 text-[10.5px] text-hub-textFaint text-right">
+                      已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
+                    </div>
+                  )}
+                  {replyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{replyErr}</div>}
+                  {returnErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{returnErr}</div>}
+                  {supplyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{supplyErr}</div>}
+                </div>
+
+                {/* 小节 4：处理附件 + 录入为一节 */}
+                <div onPaste={handleProcPaste} tabIndex={0} className="focus:outline-none">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold text-black tracking-wide">
+                        处理附件
+                      </span>
+                      {procAttachments.length > 0 && (
+                        <span className="text-[11px] text-hub-teal-deep font-semibold">
+                          ({procAttachments.length})
+                        </span>
+                      )}
+                      {isCurrentNode ? (
+                        <span className="text-[11px] text-hub-textFaint">
+                          （支持本地上传或 Ctrl+V / ⌘+V 粘贴截图/文件）
+                        </span>
+                      ) : (
+                        <span className="text-[11.5px] text-hub-textFaint">
+                          （历史节点）
+                        </span>
+                      )}
+                    </div>
+                    {isCurrentNode && (
+                      <label className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] font-medium rounded-[6px] border border-hub-border hover:border-[#6085e7] text-slate-700 hover:text-[#6085e7] bg-white cursor-pointer transition-colors shadow-2xs">
+                        <svg
+                          className="w-3.5 h-3.5 text-slate-500"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                        <span>上传附件</span>
+                        <input
+                          type="file"
+                          multiple
+                          className="hidden"
+                          disabled={opDone}
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              handleAddProcFiles(e.target.files);
+                              e.target.value = "";
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* 附件列表或空状态提示 */}
+                  {isCurrentNode ? (
+                    procAttachments.length === 0 ? (
+                      <div
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (e.dataTransfer.files) handleAddProcFiles(e.dataTransfer.files);
+                        }}
+                        className="border border-dashed border-slate-300 hover:border-[#6085e7] rounded-[7px] p-3 text-center transition-colors bg-slate-50/50"
+                      >
+                        <p className="text-[11.5px] text-slate-500 m-0">
+                          点击右上角「上传附件」或直接在此处按{" "}
+                          <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                            Ctrl+V
+                          </kbd>
+                          （Mac{" "}
+                          <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                            ⌘+V
+                          </kbd>
+                          ）粘贴截图与文件
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {procAttachments.map((att) => {
+                          const isImg = att.type.startsWith("image/");
+                          const sizeStr =
+                            att.size < 1024 * 1024
+                              ? `${(att.size / 1024).toFixed(1)} KB`
+                              : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+
+                          return (
+                            <div
+                              key={att.id}
+                              className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
+                            >
+                              {isImg && att.url ? (
+                                <img
+                                  src={att.url}
+                                  alt={att.name}
+                                  className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
+                                  onClick={() => setPreviewImgUrl(att.url!)}
+                                  title="点击预览大图"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
+                                  FILE
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className="text-[12px] font-medium text-slate-800 truncate"
+                                  title={att.name}
+                                >
+                                  {att.name}
+                                </div>
+                                <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                                  <span>{sizeStr}</span>
+                                  <span>•</span>
+                                  <span>{att.uploadedAt}</span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveProcAttachment(att.id)}
+                                disabled={opDone}
+                                title="删除此附件"
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none disabled:opacity-40"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
+                  ) : procAttachments.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {procAttachments.map((att) => {
+                        const isImg = att.type.startsWith("image/");
+                        const sizeStr =
+                          att.size < 1024 * 1024
+                            ? `${(att.size / 1024).toFixed(1)} KB`
+                            : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+
+                        return (
+                          <div
+                            key={att.id}
+                            className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
+                          >
+                            {isImg && att.url ? (
+                              <img
+                                src={att.url}
+                                alt={att.name}
+                                className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
+                                onClick={() => setPreviewImgUrl(att.url!)}
+                                title="点击预览大图"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
+                                FILE
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="text-[12px] font-medium text-slate-800 truncate"
+                                title={att.name}
+                              >
+                                {att.name}
+                              </div>
+                              <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                                <span>{sizeStr}</span>
+                                <span>•</span>
+                                <span>{att.uploadedAt}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyNodeData />
+                  )}
+                </div>
 
                 {/* 明确分类且为研发类（Bug 修复 / 需求）且已真正推送 Linear：研发跟进，无对客答复 */}
                 {classified && isDevType && d.predicted_type && pushedToLinear && (
@@ -1175,18 +1536,6 @@ export function TicketDetailPage() {
                   </div>
                 )}
 
-                {/* 研发类已毕业但未推送：提示 + 工单标签编辑区（转研发并推送按钮就在这里，
-                    此前只有 pendingReview/未毕业/运营类三种情况渲染 TicketAttributesEditor，
-                    「已分类研发类但未推 Linear」这个状态落在空隙里，提示文案指向的区域实际不存在） */}
-                {classified && isDevType && d.predicted_type && !pushedToLinear && hub.data && (
-                  <div className="space-y-2.5">
-                    <div className="border border-hub-amber-border bg-hub-amber-light rounded-[8px] px-3 py-2.5 text-[12px] text-hub-amber-deep">
-                      {HUB_TYPE_LABELS[d.predicted_type] ?? d.predicted_type}
-                      类工单尚未推送 Linear，见下方「工单标签」区操作。
-                    </div>
-                    <TicketAttributesEditor ticket={d} hub={hub.data} />
-                  </div>
-                )}
 
                 {/* 明确分类但非运营 / 非研发（内部任务等）：无对客答复流程 */}
                 {classified && !isOperation && !isDevType && (
@@ -1320,7 +1669,8 @@ export function TicketDetailPage() {
               onClose={() => setDiagnosisOpen(false)}
             />
           )}
-        </div>
+          </div>
+        </>
       )}
       {/* 反思诊断抽屉：Drawer 本身是 fixed 定位，渲染位置不影响页面布局 */}
       <ReflectDrawer ticketId={id} open={reflectOpen} onClose={() => setReflectOpen(false)} />
@@ -1351,6 +1701,62 @@ export function TicketDetailPage() {
           </div>
         </div>
       )}
+
+      {/* 居中灯箱提示：转产研前未录入处理说明（5秒自动关闭或手动关闭） */}
+      {transferDevAlert && (
+        <div className="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative animate-in fade-in zoom-in-95 font-hub">
+            <button
+              type="button"
+              onClick={() => setTransferDevAlert(null)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 text-base cursor-pointer p-1"
+              aria-label="关闭"
+            >
+              ✕
+            </button>
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-none font-bold text-base">
+                !
+              </div>
+              <div className="flex-1 pt-1">
+                <p className="text-[13px] text-slate-700 leading-relaxed font-medium m-0">
+                  {transferDevAlert}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setTransferDevAlert(null)}
+                className="px-4 py-1.5 text-[12px] font-semibold rounded bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
+              >
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 500px 完善知识库右侧滑出抽屉 */}
+      <KnowledgeBaseDrawer
+        open={knowledgeDrawerOpen}
+        onClose={() => setKnowledgeDrawerOpen(false)}
+        defaultProductLine={syncedSubAttrs?.productLine || d?.product_line_code || ""}
+        defaultModule={syncedSubAttrs?.module || d?.module || ""}
+        onAnswerAndSubmit={(content) => {
+          setNoteDrafts((prev) => {
+            const cur = (prev[0] ?? d?.cached_reply_content ?? draftReply ?? "").trim();
+            const nextVal = cur ? `${content}\n\n${cur}` : content;
+            return { ...prev, 0: nextVal };
+          });
+          showTopToast("已生成知识库并写入处理说明", "success");
+          setKnowledgeDrawerOpen(false);
+        }}
+        onSubmitSuccess={() => {
+          showTopToast("知识库已新增", "success");
+          setKnowledgeDrawerOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -1600,12 +2006,12 @@ type CatalogModuleOut = { code: string; name: string };
 function TicketAttributesEditor({
   ticket,
   hub,
+  syncedAttrs,
 }: {
   ticket: TicketDetailData;
   hub: HubDetailData | null;
+  syncedAttrs?: { type?: string; productLine?: string; module?: string } | null;
 }) {
-  const qc = useQueryClient();
-  const graduated = ticket.hub_issue_id != null || hub != null;
   // 初始值：已毕业优先取 hub，未毕业取 ticket
   const initType = (hub?.type ??
     (HUB_TYPES.includes((ticket.predicted_type ?? "") as (typeof HUB_TYPES)[number])
@@ -1613,46 +2019,7 @@ function TicketAttributesEditor({
       : "Operation")) as string;
   const initPlc = (hub ? hub.product_line_code : ticket.product_line_code) ?? "";
   const initModule = (hub ? hub.module : ticket.module) ?? "";
-  const initRootCause = (hub?.root_cause_analysis ?? "") as string;
 
-  const [type, setType] = useState<string>(initType);
-  const [plc, setPlc] = useState<string>(initPlc);
-  const [module, setModule] = useState<string>(initModule);
-  const [rootCause, setRootCause] = useState<string>(initRootCause);
-  const [userEdited, setUserEdited] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  // 当外部 hub 或 ticket 异步加载完成时，若用户未手动修改则同步最新属性
-  useEffect(() => {
-    if (!userEdited) {
-      setType(initType);
-      setPlc(initPlc);
-      setModule(initModule);
-      setRootCause(initRootCause);
-    }
-  }, [initType, initPlc, initModule, initRootCause, userEdited]);
-
-  const ticketClosed = [
-    "closed",
-    "done",
-    "resolved",
-    "rejected",
-    "superseded",
-    "transferred_return",
-  ].includes(ticket.status);
-  const opDone =
-    hub?.op_status === "answered" ||
-    hub?.op_status === "closed" ||
-    hub?.op_status === "transferred_return" ||
-    ticket.op_status === "answered" ||
-    ticket.op_status === "closed" ||
-    ticket.op_status === "transferred_return";
-  const canEdit =
-    !ticketClosed &&
-    !opDone &&
-    (isSupervisor() ||
-      (ticket.handler_user_id != null && currentUserId() === ticket.handler_user_id));
 
   const productLines = useQuery({
     queryKey: ["admin", "product-lines"],
@@ -1660,167 +2027,28 @@ function TicketAttributesEditor({
     staleTime: 60_000,
   });
   const modules = useQuery({
-    queryKey: ["catalog-modules", plc],
+    queryKey: ["catalog-modules", initPlc],
     queryFn: () =>
-      api.get("/api/hub-issues/catalog/modules", { product_line_code: plc }) as Promise<
+      api.get("/api/hub-issues/catalog/modules", { product_line_code: initPlc }) as Promise<
         CatalogModuleOut[]
       >,
     staleTime: 30_000,
-    enabled: !!plc,
+    enabled: !!initPlc,
   });
 
   const activeLines = useMemo(
     () => (productLines.data ?? []).filter((p) => p.is_active !== false),
     [productLines.data],
   );
-  useEffect(() => {
-    if (!canEdit || plc || activeLines.length === 0) return;
-    const fallback = activeLines.find((p) => p.name.includes("其他非发票云"));
-    setPlc((fallback ?? activeLines[0]).code);
-  }, [canEdit, plc, activeLines]);
 
-  const moduleOptions = modules.data;
-  useEffect(() => {
-    if (!canEdit || !plc || !moduleOptions || moduleOptions.length === 0) return;
-    if (!module) setModule(moduleOptions[0].code);
-  }, [canEdit, plc, module, moduleOptions]);
+  const initialTypeLabel = HUB_TYPE_LABELS[initType] ?? initType ?? "";
+  const initialPlcLabel = activeLines.find((p) => p.code === initPlc)?.name ?? initPlc ?? "";
+  const initialModuleLabel = (modules.data ?? []).find((m) => m.code === initModule)?.name ?? initModule ?? "";
 
-  const productLineOptions = useMemo(() => {
-    const list = activeLines.map((p) => ({ code: p.code, name: p.name }));
-    if (plc && !list.some((p) => p.code === plc)) {
-      list.push({ code: plc, name: plc });
-    }
-    return list;
-  }, [activeLines, plc]);
+  const displayType = syncedAttrs?.type || initialTypeLabel;
+  const displayPlc = syncedAttrs?.productLine || initialPlcLabel;
+  const displayModule = syncedAttrs?.module || initialModuleLabel;
 
-  const moduleOptionsList = useMemo(() => {
-    const list = (modules.data ?? []).map((m) => ({ code: m.code, name: m.name }));
-    if (module && !list.some((m) => m.code === module)) {
-      list.push({ code: module, name: module });
-    }
-    return list;
-  }, [modules.data, module]);
-
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ["ticket-detail", ticket.id] });
-    void qc.invalidateQueries({ queryKey: ["ticket-history", ticket.id] });
-    void qc.invalidateQueries({ queryKey: ["tickets"] });
-    void qc.invalidateQueries({ queryKey: ["hub-issues"] });
-    if (graduated && hub) void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hub.id] });
-    void qc.invalidateQueries({ queryKey: ["supervisor", "pending-classification"] });
-  };
-  const onErr = (e: unknown) => setError(hubErrMsg(e));
-
-  const dirty =
-    type !== initType ||
-    plc !== initPlc ||
-    module !== initModule ||
-    rootCause !== initRootCause;
-
-  // 已毕业：保存改 hub 参数（只改数据不联动）
-  const save = useMutation({
-    mutationFn: () =>
-      patchByPath(
-        "/api/hub-issues/{hub_issue_id}/attributes",
-        { hub_issue_id: hub!.id },
-        {
-          type,
-          product_line_code: plc || null,
-          module: module || null,
-          root_cause_analysis: rootCause || null,
-        },
-      ),
-    onSuccess: () => {
-      setNotice("已保存工单标签");
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  // 已毕业 pending_review：确认推送（脏则先保存再确认）
-  const confirm = useMutation({
-    mutationFn: async () => {
-      if (dirty) await save.mutateAsync();
-      return api.post("/api/supervisor/confirm-classification", { hub_issue_id: hub!.id });
-    },
-    onSuccess: () => {
-      if (type !== "Operation") {
-        setNotice("已确认并推送研发");
-      }
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  // 未毕业：确认分类一步毕业（带上改后的类型/产品分类/问题模块）
-  const graduate = useMutation({
-    mutationFn: () =>
-      api.post("/api/supervisor/create-hub-issue", {
-        ticket_id: ticket.id,
-        type,
-        product_line_code: plc || null,
-        module: module || null,
-        root_cause_analysis: rootCause || null,
-      }),
-    onSuccess: () => {
-      if (type !== "Operation") {
-        setNotice("已确认分类");
-      }
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  // 处理中的 Operation 转研发类并直推 Linear
-  const reclassifyToDev = useMutation({
-    mutationFn: async () => {
-      if (dirty) await save.mutateAsync();
-      return api.post("/api/supervisor/reclassify", {
-        hub_issue_id: hub!.id,
-        new_type: type,
-        reason: "运营处理中改判转研发",
-      });
-    },
-    onSuccess: () => {
-      setNotice("已转研发并推送 Linear");
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  // 研发类已毕业但未成功推送 → 重推 Linear
-  const repush = useMutation({
-    mutationFn: () => api.post("/api/supervisor/repush-linear", { hub_issue_id: hub!.id }),
-    onSuccess: (d: { pushed: boolean; linear_identifier: string | null; pending_reason: string | null }) => {
-      if (d.pushed) {
-        setError(null);
-        setNotice(`推送成功（${d.linear_identifier}）`);
-      } else {
-        setNotice(null);
-        setError(d.pending_reason ?? "推送失败，原因未知");
-      }
-      refresh();
-    },
-    onError: onErr,
-  });
-
-  const busy =
-    save.isPending ||
-    confirm.isPending ||
-    graduate.isPending ||
-    reclassifyToDev.isPending ||
-    repush.isPending;
-  const pendingReview = graduated && hub?.status === "pending_review";
-  const pendingLinearReview = graduated && hub?.status === "pending_linear_review";
-  const isProcessingOp =
-    graduated && hub?.type === "Operation" && hub?.op_status === "processing";
-  const devUnpushed =
-    graduated &&
-    (hub?.type === "Bug_fix" || hub?.type === "Demand") &&
-    !hub?.linear_identifier &&
-    !pendingReview &&
-    !pendingLinearReview;
-  const devTypeSelected = type === "Bug_fix" || type === "Demand";
   const confidencePercent =
     ticket.predicted_module_confidence != null
       ? Math.round(ticket.predicted_module_confidence * 100)
@@ -1840,134 +2068,57 @@ function TicketAttributesEditor({
         )}
       </div>
       <div className="px-[5px]">
-        {/* 4组横向均等分布：组1(工单类型+290px框)、组2(产品分类+290px框)、组3(问题模块+290px框)、组4(确认分类按钮紧随其后保持宽度不变) */}
-        <div className="overflow-x-auto pb-1">
-          <div className="w-full flex items-center justify-between gap-3 min-w-[1080px] flex-nowrap">
-            {/* 组 1：工单类型和工单类型录入框 */}
-            <div className="flex items-center gap-2 flex-none">
-              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">工单类型</span>
-              <select
-                aria-label="工单类型"
-                value={type}
-                onChange={(e) => {
-                  setType(e.target.value);
-                  setUserEdited(true);
-                }}
-                disabled={busy || !canEdit}
-                className="w-[290px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-transparent outline-none focus:border-hub-teal h-[32px] cursor-pointer text-slate-800 disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                {HUB_TYPES.map((t) => (
-                  <option key={t} value={t} className="bg-white">
-                    {HUB_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            </div>
+        {/* 3组横向等距分布：组1(工单类型+300px框)、组2(产品分类+300px框)、组3(问题模块+300px框)，右边和下方子任务列表右边对齐 */}
+        <div className="w-full flex items-center justify-between gap-4">
+          {/* 组 1：工单类型 */}
+          <div className="flex items-center gap-2 flex-none">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">
+              工单类型
+            </span>
+            <input
+              type="text"
+              readOnly
+              disabled
+              aria-label="工单类型"
+              value={displayType}
+              placeholder="暂无"
+              className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-slate-50 outline-none h-[32px] cursor-not-allowed text-slate-700 disabled:opacity-80"
+            />
+          </div>
 
-            {/* 组 2：产品分类和产品分类录入框 */}
-            <div className="flex items-center gap-2 flex-none">
-              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">产品分类</span>
-              <SearchableSelect
-                ariaLabel="产品分类"
-                value={plc}
-                onChange={(val) => {
-                  setPlc(val);
-                  setModule("");
-                  setUserEdited(true);
-                }}
-                options={productLineOptions}
-                disabled={busy || !canEdit}
-                width={290}
-                align="left"
-                loading={productLines.isLoading}
-              />
-            </div>
+          {/* 组 2：产品分类 */}
+          <div className="flex items-center gap-2 flex-none">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">
+              产品分类
+            </span>
+            <input
+              type="text"
+              readOnly
+              disabled
+              aria-label="产品分类"
+              value={displayPlc}
+              placeholder="暂无"
+              className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-slate-50 outline-none h-[32px] cursor-not-allowed text-slate-700 disabled:opacity-80"
+            />
+          </div>
 
-            {/* 组 3：问题模块和录入框 */}
-            <div className="flex items-center gap-2 flex-none">
-              <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">问题模块</span>
-              <SearchableSelect
-                ariaLabel="问题模块"
-                value={module}
-                onChange={(val) => {
-                  setModule(val);
-                  setUserEdited(true);
-                }}
-                options={moduleOptionsList}
-                disabled={busy || !canEdit || !plc}
-                width={290}
-                align="right"
-                placeholder={!plc ? "请先选择产品分类" : "请选择"}
-                loading={modules.isLoading}
-              />
-            </div>
-
-            {/* 组 4：确认分类按钮 */}
-            <div className="flex items-center gap-2 flex-none">
-              {/* 常显操作按钮：已毕业选研发类（Bug/需求）常显【转研发并推送】/【确认推送】，已毕业选应用类及未毕业单常显【确认分类】 */}
-              {graduated && devTypeSelected ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pendingReview) {
-                      confirm.mutate();
-                    } else if (isProcessingOp && devTypeSelected) {
-                      reclassifyToDev.mutate();
-                    } else if (devUnpushed) {
-                      repush.mutate();
-                    } else {
-                      save.mutate();
-                    }
-                  }}
-                  disabled={busy || !canEdit}
-                  className="px-[19px] min-w-[86px] py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px] whitespace-nowrap"
-                >
-                  {reclassifyToDev.isPending || repush.isPending || confirm.isPending
-                    ? "推送中…"
-                    : pendingReview
-                      ? "确认推送"
-                      : "转研发并推送"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!graduated) {
-                      graduate.mutate();
-                    } else if (pendingReview) {
-                      confirm.mutate();
-                    } else {
-                      save.mutate();
-                    }
-                  }}
-                  disabled={busy || !canEdit}
-                  className="px-[19px] min-w-[86px] py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer h-[32px] whitespace-nowrap"
-                >
-                  {save.isPending || confirm.isPending || graduate.isPending
-                    ? "保存中…"
-                    : "确认分类"}
-                </button>
-              )}
-
-              {graduated && pendingLinearReview && (
-                <Link
-                  to="/workbench?tab=linear"
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-hub-amber-deep border border-hub-amber-border hover:bg-hub-amber-light flex items-center h-[32px] whitespace-nowrap"
-                >
-                  未找到责任人，请到工作台选择责任人推送 →
-                </Link>
-              )}
-            </div>
+          {/* 组 3：问题模块 */}
+          <div className="flex items-center gap-2 flex-none">
+            <span style={{ color: "rgb(61, 60, 57)" }} className="text-[12px] font-medium whitespace-nowrap">
+              问题模块
+            </span>
+            <input
+              type="text"
+              readOnly
+              disabled
+              aria-label="问题模块"
+              value={displayModule}
+              placeholder="暂无"
+              className="w-[300px] text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-1 bg-slate-50 outline-none h-[32px] cursor-not-allowed text-slate-700 disabled:opacity-80"
+            />
           </div>
         </div>
       </div>
-      {!graduated && (
-        <div className="text-[10.5px] text-hub-textFaint px-[5px]">
-          确认分类后：Bug 修复 / 需求 直接推送 Linear；运营 由 AI 答复后人工确认发出。
-        </div>
-      )}
-      {notice && <div className="text-[11px] text-hub-green font-semibold px-[5px]">{notice}</div>}
-      {error && <div className="text-[11px] text-hub-rose px-[5px]">{error}</div>}
     </div>
   );
 }
@@ -2264,33 +2415,40 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// 子任务 600×400 处理说明录入弹窗（最多 2000 字符）
+// 子任务 600×400 处理说明与解决方案面板（支持查看、修改与保存同步）
 function SubTaskNoteModal({
   title,
   initialContent,
+  canEdit = true,
+  initialMode = "view",
   onConfirm,
   onClose,
 }: {
   title: string;
   initialContent: string;
+  canEdit?: boolean;
+  initialMode?: "view" | "edit";
   onConfirm: (content: string) => void;
   onClose: () => void;
 }) {
+  const [isEditing, setIsEditing] = useState(
+    initialMode === "edit" || !initialContent.trim(),
+  );
   const [content, setContent] = useState(initialContent);
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 font-hub"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 font-hub p-4"
       onClick={onClose}
     >
       <div
         style={{ width: 600, height: 400 }}
-        className="bg-white rounded-xl border border-hub-border shadow-2xl flex flex-col overflow-hidden text-[13px] text-hub-text"
+        className="max-w-[95vw] max-h-[90vh] bg-white rounded-xl border border-hub-border shadow-2xl flex flex-col overflow-hidden text-[13px] text-hub-text"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-hub-borderLight bg-slate-50/70 flex-none">
           <div className="font-bold text-[14px] text-black">
-            录入处理说明（{title || "子任务"}）
+            {isEditing ? "编辑任务解决方案" : "任务解决方案"}（{title || "子任务"}）
           </div>
           <button
             type="button"
@@ -2300,38 +2458,89 @@ function SubTaskNoteModal({
             ✕
           </button>
         </div>
-        <div className="p-4 flex-1 flex flex-col min-h-0">
-          <textarea
-            autoFocus
-            maxLength={2000}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="请输入处理说明与解决方案（最多 2000 字符）..."
-            className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
-          />
-          <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
-            <span>确认后将同步更新解决方案并在主单处理说明中生成记录</span>
-            <span>{content.length} / 2000 字符</span>
+
+        {isEditing ? (
+          <div className="p-4 flex-1 flex flex-col min-h-0">
+            <textarea
+              autoFocus
+              maxLength={2000}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="请输入处理说明与解决方案（最多 2000 字符）..."
+              className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
+            />
+            <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
+              <span>保存后将同步更新本任务解决方案并在主单处理说明中更新记录</span>
+              <span>{content.length} / 2000 字符</span>
+            </div>
           </div>
-        </div>
-        <div className="px-5 py-3 border-t border-hub-borderLight bg-slate-50/70 flex items-center justify-end gap-2 flex-none">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onConfirm(content);
-              onClose();
-            }}
-            className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
-          >
-            确认
-          </button>
+        ) : (
+          <div className="p-5 flex-1 flex flex-col min-h-0 overflow-y-auto">
+            {content.trim() ? (
+              <div className="flex-1 whitespace-pre-wrap leading-relaxed text-slate-800 bg-slate-50/60 p-3.5 rounded-[7px] border border-hub-borderLight text-[12.5px] overflow-y-auto">
+                {content}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-400 text-[12.5px]">
+                暂无解决方案说明，点击下方【修改】进行录入
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="px-5 py-3 border-t border-hub-borderLight bg-slate-50/70 flex items-center justify-between gap-2 flex-none">
+          <div className="text-[11px] text-hub-textFaint">
+            {!isEditing && canEdit && "点击【修改】可编辑解决方案说明"}
+          </div>
+          <div className="flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!initialContent.trim()) {
+                      onClose();
+                    } else {
+                      setContent(initialContent);
+                      setIsEditing(false);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onConfirm(content);
+                    onClose();
+                  }}
+                  className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
+                >
+                  保存
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
+                >
+                  关闭
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
+                  >
+                    修改
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -2396,10 +2605,13 @@ function SubTicketList({
   childIds: _childIds,
   drafts,
   self,
+  externalSolutions,
   onDeleteDrafts,
   onAdd,
   onToast,
   onSyncNote,
+  onSyncAllTasksNote,
+  onSyncConfirmedAttributes,
   canEdit = true,
 }: {
   ticketId?: number;
@@ -2416,10 +2628,17 @@ function SubTicketList({
     assigned_user_id: number | null | undefined;
     cached_reply_content: string | null | undefined;
   };
+  externalSolutions?: Record<string | number, string>;
   onDeleteDrafts?: (indices: number[]) => void;
   onAdd?: () => void;
   onToast?: (msg: string, type?: "success" | "warning") => void;
   onSyncNote?: (taskTitle: string, taskSolution: string) => void;
+  onSyncAllTasksNote?: (formattedNote: string) => void;
+  onSyncConfirmedAttributes?: (attrs: {
+    type: string;
+    productLine: string;
+    module: string;
+  }) => void;
   canEdit?: boolean;
 }) {
   const qc = useQueryClient();
@@ -2541,6 +2760,7 @@ function SubTicketList({
     key: string | number;
     title: string;
     content: string;
+    initialMode?: "view" | "edit";
   } | null>(null);
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
 
@@ -2609,14 +2829,36 @@ function SubTicketList({
     },
   ) => {
     const cur = rowStates[key];
+    const extSol = externalSolutions?.[key];
     return {
       type: cur?.type ?? initial.type,
       product_line_code: cur?.product_line_code ?? initial.product_line_code,
       module: cur?.module ?? initial.module,
-      solution: cur?.solution ?? initial.solution,
+      solution: extSol !== undefined ? extSol : (cur?.solution ?? initial.solution),
       confirmed: cur?.confirmed ?? false,
     };
   };
+
+  useEffect(() => {
+    if (!externalSolutions || Object.keys(externalSolutions).length === 0) return;
+    setRowStates((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      Object.entries(externalSolutions).forEach(([k, sol]) => {
+        if (next[k]?.solution !== sol) {
+          next[k] = {
+            type: next[k]?.type ?? "Operation",
+            product_line_code: next[k]?.product_line_code ?? "",
+            module: next[k]?.module ?? "",
+            solution: sol,
+            confirmed: next[k]?.confirmed ?? false,
+          };
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [externalSolutions]);
 
   const updateRow = (
     key: string | number,
@@ -2643,6 +2885,80 @@ function SubTicketList({
     });
   };
 
+  const getAllTasks = (overridePatch?: { key: string | number; solution: string }): TaskNoteItem[] => {
+    const tasks: TaskNoteItem[] = [];
+    if (showSelf) {
+      const st = getRowState("self", {
+        type: self.predicted_type ?? "",
+        product_line_code: self.product_line_code ?? "",
+        module: self.module ?? "",
+        solution: self.cached_reply_content ?? "",
+      });
+      const sol = overridePatch && overridePatch.key === "self" ? overridePatch.solution : st.solution;
+      tasks.push({
+        code: self.short_code,
+        title: self.title ?? "当前工单任务",
+        solution: sol,
+      });
+    }
+    subtasks.forEach((stk: any) => {
+      const sid = stk.id;
+      const st = getRowState(sid, {
+        type: stk.type ?? "",
+        product_line_code: stk.product_line_code ?? "",
+        module: stk.module ?? "",
+        solution: stk.solution ?? "",
+      });
+      const sol = overridePatch && overridePatch.key === sid ? overridePatch.solution : st.solution;
+      tasks.push({
+        code: stk.short_code ?? `#${sid}`,
+        title: stk.title ?? `子任务 #${sid}`,
+        solution: sol,
+      });
+    });
+    drafts.forEach((dft, i) => {
+      const draftKey = `draft-${i}`;
+      const st = getRowState(draftKey, {
+        type: dft.type || "",
+        product_line_code: dft.product_line || "",
+        module: dft.module || "",
+        solution: "",
+      });
+      const sol = overridePatch && overridePatch.key === draftKey ? overridePatch.solution : st.solution;
+      tasks.push({
+        code: `${self.short_code}-${subtasks.length + i + 1}`,
+        title: dft.title || `新建子任务 #${i + 1}`,
+        solution: sol,
+      });
+    });
+    return tasks;
+  };
+
+  const lastSyncedRef = useRef<string>("");
+
+  useEffect(() => {
+    // 任务解决方案有值后自动同步至处理说明
+    const tasks = getAllTasks();
+    const hasAnySolution = tasks.some((t) => t.solution && t.solution.trim());
+    if (hasAnySolution || subtasks.length > 0 || drafts.length > 0) {
+      if (tasks.length > 0) {
+        const formatted = formatTasksReplyNote(tasks);
+        if (formatted && formatted !== lastSyncedRef.current) {
+          lastSyncedRef.current = formatted;
+          onSyncAllTasksNote?.(formatted);
+        }
+      }
+    }
+  }, [
+    subtasks.length,
+    drafts.length,
+    subtasks.map((s: any) => `${s.short_code}:${s.solution}`).join(","),
+    self.short_code,
+    self.cached_reply_content,
+    Object.entries(rowStates).map(([k, v]) => `${k}:${v.solution}`).join(","),
+    externalSolutions ? Object.entries(externalSolutions).map(([k, v]) => `${k}:${v}`).join(",") : "",
+  ]);
+
   const handleConfirmRow = (
     key: string | number,
     rowTitle: string,
@@ -2667,8 +2983,86 @@ function SubTicketList({
     // 若是真实落库的子任务（数字 id），调用真实后端 confirm-subtask 接口
     if (typeof key === "number") {
       confirmSubtaskMutation.mutate({ hubId: key });
-    } else {
-      updateRow(key, { confirmed: true });
+    }
+
+    updateRow(key, { confirmed: true });
+
+    // 收集所有已确认行并去重合并，同步到上方单据工单标签
+    const confirmedRows: { type: string; product_line_code: string; module: string }[] = [];
+
+    if (showSelf) {
+      const isConf = key === "self" || rowStates["self"]?.confirmed;
+      if (isConf) {
+        const curSt = getRowState("self", {
+          type: self.predicted_type ?? "",
+          product_line_code: self.product_line_code ?? "",
+          module: self.module ?? "",
+          solution: self.cached_reply_content ?? "",
+        });
+        confirmedRows.push(key === "self" ? { ...curSt, ...st } : curSt);
+      }
+    }
+
+    subtasks.forEach((stk: any) => {
+      const sid = stk.id;
+      const isConf = key === sid || rowStates[sid]?.confirmed;
+      if (isConf) {
+        const curSt = getRowState(sid, {
+          type: stk.type ?? "",
+          product_line_code: stk.product_line_code ?? "",
+          module: stk.module ?? "",
+          solution: stk.solution ?? "",
+        });
+        confirmedRows.push(key === sid ? { ...curSt, ...st } : curSt);
+      }
+    });
+
+    drafts.forEach((dft, i) => {
+      const draftKey = `draft-${i}`;
+      const isConf = key === draftKey || rowStates[draftKey]?.confirmed;
+      if (isConf) {
+        const curSt = getRowState(draftKey, {
+          type: dft.type || "",
+          product_line_code: dft.product_line || "",
+          module: dft.module || "",
+          solution: "",
+        });
+        confirmedRows.push(key === draftKey ? { ...curSt, ...st } : curSt);
+      }
+    });
+
+    const types = Array.from(
+      new Set(
+        confirmedRows
+          .map((r) => (HUB_TYPE_LABELS[r.type] ?? r.type ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const plcs = Array.from(
+      new Set(
+        confirmedRows
+          .map((r) => {
+            const line = activeLines.find((l) => l.code === r.product_line_code);
+            return (line ? line.name : (r.product_line_code ?? "")).trim();
+          })
+          .filter(Boolean),
+      ),
+    );
+    const modules = Array.from(
+      new Set(
+        confirmedRows
+          .map((r) => (r.module ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    onSyncConfirmedAttributes?.({
+      type: types.join(","),
+      productLine: plcs.join(","),
+      module: modules.join(","),
+    });
+
+    if (typeof key !== "number") {
       const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
       if (onToast) {
         onToast(successMsg, "success");
@@ -2853,13 +3247,20 @@ function SubTicketList({
                     {st.solution ? (
                       <button
                         type="button"
-                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: st.solution,
+                            initialMode: "view",
+                          })
+                        }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击浮窗查看完整解决方案"
+                        title="点击查看任务解决方案说明"
                       >
                         {truncSolution}
                       </button>
-                    ) : (
+                    ) : canEdit ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -2867,29 +3268,19 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: "",
+                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
                       >
                         录入说明
                       </button>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: rowKey,
-                            title: rowTitle,
-                            content: st.solution,
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
-                      >
-                        修改说明
-                      </button>
                       <button
                         type="button"
                         aria-label="确认任务"
@@ -3011,13 +3402,20 @@ function SubTicketList({
                     {st.solution ? (
                       <button
                         type="button"
-                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        onClick={() =>
+                          setNoteModal({
+                            key: rowKey,
+                            title: rowTitle,
+                            content: st.solution,
+                            initialMode: "view",
+                          })
+                        }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击浮窗查看完整解决方案"
+                        title="点击查看任务解决方案说明"
                       >
                         {truncSolution}
                       </button>
-                    ) : (
+                    ) : canEdit ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -3025,29 +3423,19 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: "",
+                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
                       >
                         录入说明
                       </button>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: rowKey,
-                            title: rowTitle,
-                            content: st.solution,
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
-                      >
-                        修改说明
-                      </button>
                       <button
                         type="button"
                         aria-label="确认任务"
@@ -3151,13 +3539,20 @@ function SubTicketList({
                     {st.solution ? (
                       <button
                         type="button"
-                        onClick={() => setPopoverText({ title: "解决方案详情", content: st.solution })}
+                        onClick={() =>
+                          setNoteModal({
+                            key: draftKey,
+                            title: rowTitle,
+                            content: st.solution,
+                            initialMode: "view",
+                          })
+                        }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击浮窗查看完整解决方案"
+                        title="点击查看任务解决方案说明"
                       >
                         {truncSolution}
                       </button>
-                    ) : (
+                    ) : canEdit ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -3165,29 +3560,19 @@ function SubTicketList({
                             key: draftKey,
                             title: rowTitle,
                             content: "",
+                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
                       >
                         录入说明
                       </button>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: draftKey,
-                            title: rowTitle,
-                            content: st.solution,
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline font-medium cursor-pointer"
-                      >
-                        修改说明
-                      </button>
                       <button
                         type="button"
                         aria-label="确认任务"
@@ -3238,11 +3623,13 @@ function SubTicketList({
         </div>
       )}
 
-      {/* 600×400 处理说明录入弹窗 */}
+      {/* 600×400 任务解决方案查看与修改弹窗 */}
       {noteModal && (
         <SubTaskNoteModal
           title={noteModal.title}
           initialContent={noteModal.content}
+          initialMode={noteModal.initialMode}
+          canEdit={canEdit}
           onClose={() => setNoteModal(null)}
           onConfirm={(content) => {
             updateRow(noteModal.key, { solution: content });
@@ -3250,6 +3637,9 @@ function SubTicketList({
               updateSubtaskMutation.mutate({ hubId: noteModal.key, body: { solution: content } });
             }
             onSyncNote?.(noteModal.title, content);
+            const nextTasks = getAllTasks({ key: noteModal.key, solution: content });
+            onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
+            onToast?.("已更新任务解决方案并同步至工单处理说明", "success");
           }}
         />
       )}

@@ -91,8 +91,19 @@ export function TabsProvider({
       setState((prev) => {
         const existing = prev.tabs.find((t) => t.key === k);
         if (existing) {
-          // 已存在：更新 path（可能带新 search）+ 激活，不新开
-          const tabs = prev.tabs.map((t) => (t.key === k ? { ...t, path } : t));
+          // 已存在：更新 path（可能带新 search）+ 激活，若传入具体有效标题则同步更新 title，不新开
+          const tabs = prev.tabs.map((t) =>
+            t.key === k
+              ? {
+                  ...t,
+                  path,
+                  title:
+                    title && title !== "…" && !title.endsWith("…")
+                      ? title
+                      : t.title,
+                }
+              : t,
+          );
           return { tabs, activeKey: activate ? k : prev.activeKey };
         }
         let tabs = [

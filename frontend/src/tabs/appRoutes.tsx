@@ -19,6 +19,7 @@ import { HolidaysPage } from "@/pages/admin/holidays/HolidaysPage";
 import { DispatchRulesPage } from "@/pages/admin/dispatch/DispatchRulesPage";
 import { ReflectWorkbenchPage } from "@/pages/reflect/ReflectWorkbenchPage";
 import { ReflectTrainingPage } from "@/pages/reflect-training/ReflectTrainingPage";
+import { KnowledgeBasePage } from "@/pages/knowledge-base/KnowledgeBasePage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 import { DailyDashboardPage } from "@/pages/analytics/DailyDashboardPage";
 
@@ -37,6 +38,8 @@ export const authedRoutes = (
     <Route path="/supervisor" element={<Navigate to="/" replace />} />
     <Route path="/reflect" element={<ReflectWorkbenchPage />} />
     <Route path="/reflect-training" element={<ReflectTrainingPage />} />
+    <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
+    <Route path="/reflect-training/knowledge-base" element={<KnowledgeBasePage />} />
     <Route path="/analytics" element={<AnalyticsPage />} />
     <Route path="/analytics/daily" element={<DailyDashboardPage />} />
     <Route path="/tickets" element={<TicketsListPage />} />

@@ -75,4 +75,22 @@ describe("Layout", () => {
     expect(n.getByText("综合看板")).toBeInTheDocument();
     expect(n.getByText("每日看板")).toBeInTheDocument();
   });
+
+  it("知识库 菜单作为一级菜单展示在侧边栏 (admin)", () => {
+    renderAs("admin");
+    const n = nav();
+    expect(n.getByText("知识库")).toBeInTheDocument();
+  });
+
+  it("知识库 菜单作为一级菜单对普通处理人同样直接可见 (assignee)", () => {
+    renderAs("assignee");
+    const n = nav();
+    expect(n.getByText("知识库")).toBeInTheDocument();
+  });
+
+  it("反思诊断训练 菜单展示在侧边栏（主管与知识运营可见）", () => {
+    renderAs("admin");
+    const n = nav();
+    expect(n.getByText("反思诊断训练")).toBeInTheDocument();
+  });
 });
