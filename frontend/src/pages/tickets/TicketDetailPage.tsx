@@ -2768,10 +2768,10 @@ function SubTicketList({
     Record<
       string | number,
       {
-        type: string;
-        product_line_code: string;
-        module: string;
-        solution: string;
+        type?: string;
+        product_line_code?: string;
+        module?: string;
+        solution?: string;
         confirmed?: boolean;
       }
     >
@@ -2854,10 +2854,11 @@ function SubTicketList({
     const cur = rowStates[key];
     const extSol = externalSolutions?.[key];
     return {
-      type: cur?.type ?? initial.type,
-      product_line_code: cur?.product_line_code ?? initial.product_line_code,
-      module: cur?.module ?? initial.module,
-      solution: extSol !== undefined ? extSol : (cur?.solution ?? initial.solution),
+      type: cur?.type !== undefined ? cur.type : initial.type,
+      product_line_code:
+        cur?.product_line_code !== undefined ? cur.product_line_code : initial.product_line_code,
+      module: cur?.module !== undefined ? cur.module : initial.module,
+      solution: extSol !== undefined ? extSol : (cur?.solution !== undefined ? cur.solution : initial.solution),
       confirmed: cur?.confirmed ?? false,
     };
   };
@@ -2870,11 +2871,8 @@ function SubTicketList({
       Object.entries(externalSolutions).forEach(([k, sol]) => {
         if (next[k]?.solution !== sol) {
           next[k] = {
-            type: next[k]?.type ?? "Operation",
-            product_line_code: next[k]?.product_line_code ?? "",
-            module: next[k]?.module ?? "",
+            ...(next[k] ?? {}),
             solution: sol,
-            confirmed: next[k]?.confirmed ?? false,
           };
           changed = true;
         }
@@ -2894,15 +2892,12 @@ function SubTicketList({
     }>,
   ) => {
     setRowStates((prev) => {
-      const cur = prev[key];
+      const cur = prev[key] ?? {};
       return {
         ...prev,
         [key]: {
-          type: patch.type ?? cur?.type ?? "Operation",
-          product_line_code: patch.product_line_code ?? cur?.product_line_code ?? "",
-          module: patch.module ?? cur?.module ?? "",
-          solution: patch.solution ?? cur?.solution ?? "",
-          confirmed: patch.confirmed ?? cur?.confirmed ?? false,
+          ...cur,
+          ...patch,
         },
       };
     });

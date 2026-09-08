@@ -56,8 +56,14 @@ class HubIssueResult:
 
 
 def _next_hub_short_code(db: Session) -> str:
-    n: int | None = db.execute(select(func.count(HubIssue.id))).scalar()
-    return f"HUB-{(n or 0) + 1:06d}"
+    max_id: int = db.execute(select(func.max(HubIssue.id))).scalar() or 0
+    candidate_num = max_id + 1
+    while True:
+        code = f"HUB-{candidate_num:06d}"
+        exists = db.execute(select(HubIssue.id).where(HubIssue.short_code == code)).first()
+        if not exists:
+            return code
+        candidate_num += 1
 
 
 def ensure_hub_issue_for_ticket(
