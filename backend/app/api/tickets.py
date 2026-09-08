@@ -92,6 +92,10 @@ class TicketSummary(BaseModel):
     reporter_company: str | None = None  # 提单公司名称
     reporter_tax_no: str | None = None  # 提单公司税号（上游 payload 暂不带，多为空）
     reporter_tenant: str | None = None  # 归属租户（上游 payload 暂不带，多为空）
+    # 客户联系人信息（跨源统一人性化展示字段，包含姓名、手机、邮箱）
+    contact_name: str | None = None  # 客户联系人姓名
+    contact_mobile: str | None = None  # 客户联系人手机
+    contact_email: str | None = None  # 客户联系人邮箱
     service_level: str | None = "标准服务"  # 服务等级（空→标准服务，_to_summary 填默认）
     remaining_hours: float | None = None  # 剩余处理时间（h，负=已超时；无 received_at/时限时 None）
     updated_at: datetime | None = None  # 工单最后更新时间
@@ -172,6 +176,59 @@ class TicketListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+def _extract_contact_info(t: Ticket) -> tuple[str | None, str | None, str | None]:
+    """客户联系人信息（姓名、手机、邮箱）多级解析回落。
+
+    优先级：
+    1. tickets 表持久化列：ksm_linkman / ksm_contact_mobile / ksm_contact_email
+    2. KSM 存量历史工单 source_payload._subscribe_callback.customerInfo（迁移 0042 之前入库的单据）
+    3. 智齿 source_payload.extend_fields_list（联系人、联系手机、联系邮箱）
+    4. 各源统一载荷根层 contact_name / linkman / contact_mobile / mobile / contact_email / user_emails
+    """
+    name = t.ksm_linkman
+    mobile = t.ksm_contact_mobile
+    email = t.ksm_contact_email
+    p = t.source_payload or {}
+
+    # KSM 存量老单从 _subscribe_callback / customerInfo 补全
+    sub = p.get("_subscribe_callback")
+    cust = (sub.get("customerInfo") if isinstance(sub, dict) else None) or p.get("customerInfo")
+    if isinstance(cust, dict):
+        if not name:
+            name = cust.get("linkman")
+        if not mobile:
+            mobile = cust.get("mobile") or cust.get("phone")
+        if not email:
+            email = cust.get("email")
+
+    # 智齿 extend_fields_list 字段
+    ext_list = p.get("extend_fields_list") or []
+    if isinstance(ext_list, list):
+        for f in ext_list:
+            if isinstance(f, dict):
+                fn = f.get("field_name")
+                fv = f.get("field_value")
+                if not name and fn == "联系人":
+                    name = fv
+                if not mobile and fn in ("联系手机", "联系人手机", "手机"):
+                    mobile = fv
+                if not email and fn in ("联系邮箱", "邮箱"):
+                    email = fv
+
+    if not name:
+        name = p.get("linkman") or p.get("contact_name")
+    if not mobile:
+        mobile = p.get("contact_mobile") or p.get("mobile")
+    if not email:
+        email = p.get("contact_email") or p.get("user_emails") or p.get("email")
+
+    return (
+        str(name).strip() if name else None,
+        str(mobile).strip() if mobile else None,
+        str(email).strip() if email else None,
+    )
 
 
 def _source_ticket_number(t: Ticket) -> str | None:
@@ -372,8 +429,18 @@ def list_tickets(
         # 服务等级空 → 标准服务
         s.service_level = t.service_level or "标准服务"
         s.remaining_hours = _remaining_hours(t)
-        # KSM 源字段（仅 KSM 来源有值，其余来源为 None）——TicketSummary.model_validate
-        # 已经从 ORM 读到这些列了，此处无需再手动赋值，保留仅为避免忘记该口径。
+        # 联系人信息多级解析回落（姓名、手机、邮箱）
+        c_name, c_mobile, c_email = _extract_contact_info(t)
+        s.contact_name = c_name
+        s.contact_mobile = c_mobile
+        s.contact_email = c_email
+        if t.source_code == "ksm":
+            if not s.ksm_linkman:
+                s.ksm_linkman = c_name
+            if not s.ksm_contact_mobile:
+                s.ksm_contact_mobile = c_mobile
+            if not s.ksm_contact_email:
+                s.ksm_contact_email = c_email
         return s
 
     return TicketListResponse(
@@ -456,6 +523,18 @@ def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
         detail.reporter_name = rep.get("name") or rep.get("feedback_user") or rep.get("linkman")
         detail.reporter_mobile = rep.get("mobile")
         detail.reporter_email = rep.get("email")
+    # 客户联系人信息多级解析回落（姓名、手机、邮箱）
+    c_name, c_mobile, c_email = _extract_contact_info(ticket)
+    detail.contact_name = c_name
+    detail.contact_mobile = c_mobile
+    detail.contact_email = c_email
+    if ticket.source_code == "ksm":
+        if not detail.ksm_linkman:
+            detail.ksm_linkman = c_name
+        if not detail.ksm_contact_mobile:
+            detail.ksm_contact_mobile = c_mobile
+        if not detail.ksm_contact_email:
+            detail.ksm_contact_email = c_email
     # 附件（attachments 表）：智齿 file_str / KSM / ai_cs 同步下来的截图等。
     # download_url 走后端代理端点，前端不碰 MinIO 内网地址 / 需鉴权的原始 URL。
     atts = (
@@ -818,3 +897,247 @@ def get_ticket_history(
     # KSM 工单：解析源系统流转节点（handleSteps）供前端处理节点区块展示。
     ksm_nodes = parse_ksm_nodes(ticket.source_payload) if ticket.source_code == "ksm" else []
     return HistoryResponse(ticket_id=ticket_id, items=events, ksm_nodes=ksm_nodes)
+
+
+
+# ---------------------------------------------------------------------------
+# 子任务（Hub 子任务）CRUD 与出站回复
+# ---------------------------------------------------------------------------
+
+
+class SubTaskOut(BaseModel):
+    id: int
+    short_code: str
+    type: str
+    title: str
+    product_line_code: str | None
+    product_name: str | None = None
+    module: str | None
+    status: str
+    linear_status: str | None
+    assigned_user_id: int | None
+    assigned_user_name: str | None = None
+    solution: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class CreateSubTaskBody(BaseModel):
+    title: str = Field(..., min_length=1, max_length=512)
+    type: str = Field(..., pattern="^(Operation|Bug_fix|Demand|Internal_task)$")
+    product_line_code: str | None = None
+    module: str | None = None
+
+
+class TicketReplyBody(BaseModel):
+    # 处理说明内容；若传空或不传，则自动按已答复(answered)的子任务条目进行拼接
+    content: str | None = None
+
+
+class TicketReplyResponse(BaseModel):
+    ticket_id: int
+    outbox_ids: list[int]
+    reply_content: str
+
+
+@router.get("/{ticket_id}/subtasks", response_model=list[SubTaskOut])
+def list_ticket_subtasks(
+    ticket_id: int,
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> list[SubTaskOut]:
+    """查询工单关联的所有 Hub 子任务。"""
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    subs = (
+        db.execute(
+            select(HubIssue)
+            .where(
+                (HubIssue.ticket_id == ticket_id) | (HubIssue.id == ticket.hub_issue_id),
+                HubIssue.deleted_at.is_(None),
+            )
+            .order_by(HubIssue.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    user_ids = {s.assigned_user_id for s in subs if s.assigned_user_id is not None}
+    u_map: dict[int, str] = {}
+    if user_ids:
+        rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
+        u_map = {r.id: r.name for r in rows}
+
+    pl_codes = {s.product_line_code for s in subs if s.product_line_code}
+    pl_map: dict[str, str] = {}
+    if pl_codes:
+        prows = db.execute(
+            select(ProductLine.code, ProductLine.name).where(ProductLine.code.in_(pl_codes))
+        ).all()
+        pl_map = {r.code: r.name for r in prows}
+
+    out: list[SubTaskOut] = []
+    for s in subs:
+        st = SubTaskOut(
+            id=s.id,
+            short_code=s.short_code,
+            type=s.type,
+            title=s.title,
+            product_line_code=s.product_line_code,
+            product_name=pl_map.get(s.product_line_code) if s.product_line_code else None,
+            module=s.module,
+            status=s.status,
+            linear_status=s.linear_status,
+            assigned_user_id=s.assigned_user_id,
+            assigned_user_name=u_map.get(s.assigned_user_id) if s.assigned_user_id else None,
+            solution=s.reply_content,
+        )
+        out.append(st)
+    return out
+
+
+@router.post("/{ticket_id}/subtasks", response_model=SubTaskOut)
+def create_ticket_subtask(
+    ticket_id: int,
+    body: CreateSubTaskBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> SubTaskOut:
+    """为当前工单新增一个 Hub 子任务。"""
+    from app.services.hub_issues.creator import _next_hub_short_code
+    from app.services.ingest.catalog_upsert import upsert_catalog
+
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    plc = body.product_line_code or ticket.product_line_code
+    mod = body.module or ticket.module
+    if plc or mod:
+        upsert_catalog(db, product_line_code=plc, module=mod)
+
+    # 初始处理人与工单当前处理人相同
+    initial_assignee = ticket.handler_user_id or ticket.assigned_user_id
+
+    hub = HubIssue(
+        short_code=_next_hub_short_code(db),
+        ticket_id=ticket.id,
+        type=body.type,
+        title=body.title.strip(),
+        canonical_body=ticket.body,
+        product_line_code=plc,
+        module=mod,
+        status="draft",
+        assigned_user_id=initial_assignee,
+        occurrence_count=1,
+    )
+    db.add(hub)
+    db.commit()
+    db.refresh(hub)
+
+    u_name = None
+    if hub.assigned_user_id:
+        u = db.get(User, hub.assigned_user_id)
+        u_name = u.name if u else None
+
+    pl_name = None
+    if hub.product_line_code:
+        pl = db.execute(
+            select(ProductLine.name).where(ProductLine.code == hub.product_line_code)
+        ).scalar()
+        pl_name = pl
+
+    return SubTaskOut(
+        id=hub.id,
+        short_code=hub.short_code,
+        type=hub.type,
+        title=hub.title,
+        product_line_code=hub.product_line_code,
+        product_name=pl_name,
+        module=hub.module,
+        status=hub.status,
+        linear_status=hub.linear_status,
+        assigned_user_id=hub.assigned_user_id,
+        assigned_user_name=u_name,
+        solution=hub.reply_content,
+    )
+
+
+@router.post("/{ticket_id}/reply", response_model=TicketReplyResponse)
+def ticket_reply_endpoint(
+    ticket_id: int,
+    body: TicketReplyBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> TicketReplyResponse:
+    """向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。
+
+    提交内容支持按条目自动拼接已完成子任务的解决方案说明。
+    """
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    # 1. 查找所有子任务
+    sub_tasks = (
+        db.execute(
+            select(HubIssue).where(
+                (HubIssue.ticket_id == ticket_id) | (HubIssue.id == ticket.hub_issue_id),
+                HubIssue.deleted_at.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # 2. 闸门检查：只有当其中至少有一个子任务是已完成(answered)的状态，才允许提交回复
+    answered_subs = [s for s in sub_tasks if s.status == "answered"]
+    if not answered_subs:
+        raise HTTPException(
+            status_code=400,
+            detail="当前工单暂无已完成的子任务，至少需要一个子任务处理完成(已答复)后才允许提交回复",
+        )
+
+    # 3. 回复内容拼接
+    content = (body.content or "").strip()
+    if not content:
+        # 按条目自动拼接已答复子任务的解决方案
+        lines = []
+        for i, s in enumerate(answered_subs, 1):
+            sol = (s.reply_content or "").strip() or "已处理完成"
+            lines.append(f"{i}. 【{s.title}】：{sol}")
+        content = "\n".join(lines)
+
+    # 4. 找到一个主 hub 用于调用 author_reply（有 ticket.hub_issue_id 优先，否则取第一个子任务）
+    target_hub = (
+        db.get(HubIssue, ticket.hub_issue_id) if ticket.hub_issue_id else answered_subs[0]
+    )
+    if target_hub is None:
+        target_hub = answered_subs[0]
+
+    try:
+        reply_result = author_reply(
+            db, target_hub.id, content=content, authored_by=f"user:{user.name}"
+        )
+    except ReplySyncError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    # 尝试即时 drain 出站回写
+    try:
+        from app.services.ksm.writeback import drain_ksm_outbox
+        from app.services.zhichi.writeback import drain_zhichi_outbox
+
+        if ticket.source_code == "ksm":
+            drain_ksm_outbox(db)
+        elif ticket.source_code == "zhichi":
+            drain_zhichi_outbox(db)
+    except Exception as e:
+        logger.warning("instant_drain_reply_failed", ticket_id=ticket_id, error=str(e))
+
+    return TicketReplyResponse(
+        ticket_id=ticket.id,
+        outbox_ids=reply_result.outbox_ids,
+        reply_content=content,
+    )

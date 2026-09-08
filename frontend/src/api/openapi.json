@@ -828,6 +828,90 @@
         "title": "ConfirmLinearPushBody",
         "type": "object"
       },
+      "ConfirmSubTaskBody": {
+        "properties": {
+          "assignee_override_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Override User Id"
+          }
+        },
+        "title": "ConfirmSubTaskBody",
+        "type": "object"
+      },
+      "ConfirmSubTaskResponse": {
+        "properties": {
+          "assigned_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Id"
+          },
+          "assigned_user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Name"
+          },
+          "hub_issue_id": {
+            "title": "Hub Issue Id",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "need_manual_assignee": {
+            "default": false,
+            "title": "Need Manual Assignee",
+            "type": "boolean"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_issue_id",
+          "status"
+        ],
+        "title": "ConfirmSubTaskResponse",
+        "type": "object"
+      },
       "CountsOut": {
         "properties": {
           "customers_total": {
@@ -993,6 +1077,49 @@
           "created"
         ],
         "title": "CreateHubIssueResponse",
+        "type": "object"
+      },
+      "CreateSubTaskBody": {
+        "properties": {
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "pattern": "^(Operation|Bug_fix|Demand|Internal_task)$",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "type"
+        ],
+        "title": "CreateSubTaskBody",
         "type": "object"
       },
       "CustomerDedupOut": {
@@ -7100,6 +7227,120 @@
         "title": "SubIssueItem",
         "type": "object"
       },
+      "SubTaskOut": {
+        "properties": {
+          "assigned_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Id"
+          },
+          "assigned_user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned User Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "linear_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linear Status"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "short_code": {
+            "title": "Short Code",
+            "type": "string"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "short_code",
+          "type",
+          "title",
+          "product_line_code",
+          "module",
+          "status",
+          "linear_status",
+          "assigned_user_id"
+        ],
+        "title": "SubTaskOut",
+        "type": "object"
+      },
       "SupervisorIn": {
         "properties": {
           "deputy_supervisor_id": {
@@ -7401,6 +7642,39 @@
               }
             ],
             "title": "Children Ticket Ids"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
+          },
+          "contact_mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Mobile"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
           },
           "created_at": {
             "format": "date-time",
@@ -8095,6 +8369,49 @@
         "title": "TicketLookupResponse",
         "type": "object"
       },
+      "TicketReplyBody": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "title": "TicketReplyBody",
+        "type": "object"
+      },
+      "TicketReplyResponse": {
+        "properties": {
+          "outbox_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Outbox Ids",
+            "type": "array"
+          },
+          "reply_content": {
+            "title": "Reply Content",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "outbox_ids",
+          "reply_content"
+        ],
+        "title": "TicketReplyResponse",
+        "type": "object"
+      },
       "TicketSummary": {
         "properties": {
           "assigned_user_id": {
@@ -8123,6 +8440,39 @@
             "default": 1,
             "title": "Children Count",
             "type": "integer"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
+          },
+          "contact_mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Mobile"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
           },
           "created_at": {
             "format": "date-time",
@@ -8690,6 +9040,68 @@
           "updated_ticket_count"
         ],
         "title": "UpdateAttributesResponse",
+        "type": "object"
+      },
+      "UpdateSubTaskBody": {
+        "properties": {
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "pattern": "^(Operation|Bug_fix|Demand|Internal_task)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "UpdateSubTaskBody",
         "type": "object"
       },
       "UpsertBody": {
@@ -12795,6 +13207,59 @@
         ]
       }
     },
+    "/api/hub-issues/{hub_issue_id}/confirm-subtask": {
+      "post": {
+        "description": "确认子任务：\n\n- 应用类 (Operation): 触发 AI 生成答复，回填解决方案说明，状态变更为 answered(已答复)\n- 需求类 / Bug 类 (Demand / Bug_fix):\n  1. 必须已录入解决方案说明，否则拦截\n  2. 路由模块责任人，若查无责任人且未传 override 则提示需要人工选择责任人\n  3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定责任人",
+        "operationId": "confirm_subtask_endpoint_api_hub_issues__hub_issue_id__confirm_subtask_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmSubTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmSubTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Subtask Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
     "/api/hub-issues/{hub_issue_id}/feedback": {
       "post": {
         "description": "记录发版后客户回访结果（resolved 闭环 / stillbad 待升级）。",
@@ -13150,6 +13615,102 @@
           }
         },
         "summary": "Request Supply Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/{hub_issue_id}/subtask": {
+      "delete": {
+        "description": "删除子任务（草稿状态或未推 Linear 前可删除）。",
+        "operationId": "delete_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Subtask Endpoint Api Hub Issues  Hub Issue Id  Subtask Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Subtask Endpoint",
+        "tags": [
+          "hub-issues"
+        ]
+      },
+      "patch": {
+        "description": "行内更新子任务的标题、类型、产品线、模块或解决方案。",
+        "operationId": "update_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hub_issue_id",
+            "required": true,
+            "schema": {
+              "title": "Hub Issue Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSubTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmSubTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Subtask Endpoint",
         "tags": [
           "hub-issues"
         ]
@@ -15670,6 +16231,59 @@
         ]
       }
     },
+    "/api/tickets/{ticket_id}/reply": {
+      "post": {
+        "description": "向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。\n\n提交内容支持按条目自动拼接已完成子任务的解决方案说明。",
+        "operationId": "ticket_reply_endpoint_api_tickets__ticket_id__reply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketReplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketReplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ticket Reply Endpoint",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
     "/api/tickets/{ticket_id}/retry-outbox": {
       "post": {
         "description": "手工重试该工单最近一次失败的出站回写（不限 kind，覆盖 reply/status/\nsupply/release_note/progress_note/return）。处理人本人或主管/管理员可点，\n权限口径与 /return 一致（ticket.handler_user_id）。同步执行，立即返回\n成败——不是仅仅把 status 重置为 pending 甩给下一轮 2 分钟 beat。",
@@ -15761,6 +16375,104 @@
           }
         },
         "summary": "Return Ticket",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/tickets/{ticket_id}/subtasks": {
+      "get": {
+        "description": "查询工单关联的所有 Hub 子任务。",
+        "operationId": "list_ticket_subtasks_api_tickets__ticket_id__subtasks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SubTaskOut"
+                  },
+                  "title": "Response List Ticket Subtasks Api Tickets  Ticket Id  Subtasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ticket Subtasks",
+        "tags": [
+          "tickets"
+        ]
+      },
+      "post": {
+        "description": "为当前工单新增一个 Hub 子任务。",
+        "operationId": "create_ticket_subtask_api_tickets__ticket_id__subtasks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubTaskBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubTaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Ticket Subtask",
         "tags": [
           "tickets"
         ]

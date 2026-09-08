@@ -1022,3 +1022,223 @@ def feedback_endpoint(
     except dc.DevCollabError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return FeedbackResponse(hub_issue_id=r.hub_issue_id, feedback_status=r.feedback_status)
+
+
+
+# ---------------------------------------------------------------------------
+# 子任务（Hub 子任务）行内更新、删除与确认分流
+# ---------------------------------------------------------------------------
+
+
+class UpdateSubTaskBody(BaseModel):
+    title: str | None = None
+    type: str | None = Field(default=None, pattern="^(Operation|Bug_fix|Demand|Internal_task)$")
+    product_line_code: str | None = None
+    module: str | None = None
+    solution: str | None = None
+
+
+class ConfirmSubTaskBody(BaseModel):
+    # 若 Bug/Demand 模块未找到责任人，前端在收到 need_manual_assignee 提示后传入手选的责任人 uid
+    assignee_override_user_id: int | None = None
+
+
+class ConfirmSubTaskResponse(BaseModel):
+    hub_issue_id: int
+    status: str
+    solution: str | None = None
+    assigned_user_id: int | None = None
+    assigned_user_name: str | None = None
+    need_manual_assignee: bool = False
+    message: str | None = None
+
+
+@router.patch("/{hub_issue_id}/subtask", response_model=ConfirmSubTaskResponse)
+def update_subtask_endpoint(
+    hub_issue_id: int,
+    body: UpdateSubTaskBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> ConfirmSubTaskResponse:
+    """行内更新子任务的标题、类型、产品线、模块或解决方案。"""
+    _authorize_hub_handler(db, hub_issue_id, user)
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+
+    if body.title is not None:
+        hub.title = body.title.strip()
+    if body.type is not None:
+        hub.type = body.type
+    if body.product_line_code is not None:
+        hub.product_line_code = body.product_line_code
+    if body.module is not None:
+        hub.module = body.module
+    if body.solution is not None:
+        hub.reply_content = body.solution
+
+    if body.product_line_code or body.module:
+        upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)
+
+    db.commit()
+    db.refresh(hub)
+
+    u_name = None
+    if hub.assigned_user_id:
+        u = db.get(User, hub.assigned_user_id)
+        u_name = u.name if u else None
+
+    return ConfirmSubTaskResponse(
+        hub_issue_id=hub.id,
+        status=hub.status,
+        solution=hub.reply_content,
+        assigned_user_id=hub.assigned_user_id,
+        assigned_user_name=u_name,
+    )
+
+
+@router.delete("/{hub_issue_id}/subtask")
+def delete_subtask_endpoint(
+    hub_issue_id: int,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """删除子任务（草稿状态或未推 Linear 前可删除）。"""
+    _authorize_hub_handler(db, hub_issue_id, user)
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+
+    if hub.linear_uuid:
+        raise HTTPException(status_code=400, detail="已推送到 Linear 的子任务不可直接删除")
+
+    hub.deleted_at = datetime.now(UTC)
+    db.commit()
+    return {"ok": True, "hub_issue_id": hub_issue_id}
+
+
+@router.post("/{hub_issue_id}/confirm-subtask", response_model=ConfirmSubTaskResponse)
+def confirm_subtask_endpoint(
+    hub_issue_id: int,
+    body: ConfirmSubTaskBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> ConfirmSubTaskResponse:
+    """确认子任务：
+
+    - 应用类 (Operation): 触发 AI 生成答复，回填解决方案说明，状态变更为 answered(已答复)
+    - 需求类 / Bug 类 (Demand / Bug_fix):
+      1. 必须已录入解决方案说明，否则拦截
+      2. 路由模块责任人，若查无责任人且未传 override 则提示需要人工选择责任人
+      3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定责任人
+    """
+    _authorize_hub_handler(db, hub_issue_id, user)
+    hub = db.get(HubIssue, hub_issue_id)
+    if hub is None or hub.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="hub_issue not found")
+
+    # 1. 应用类 (Operation) 分支
+    if hub.type == "Operation":
+        # 尝试调用 AI 生成答复
+        generated_answer = None
+        try:
+            from app.services.agents.operation_answer import auto_answer_operation
+
+            # 运行自动答复
+            success = auto_answer_operation(db, hub.id)
+            if success:
+                db.refresh(hub)
+                generated_answer = hub.reply_content
+        except Exception as e:
+            logger.warning("subtask_ai_answer_failed", hub_issue_id=hub_issue_id, error=str(e))
+
+        # 答复后直接变成已答复 (answered)
+        hub.status = "answered"
+        hub.op_status = OP_ANSWERED
+        db.commit()
+        db.refresh(hub)
+
+        u_name = None
+        if hub.assigned_user_id:
+            u = db.get(User, hub.assigned_user_id)
+            u_name = u.name if u else None
+
+        return ConfirmSubTaskResponse(
+            hub_issue_id=hub.id,
+            status=hub.status,
+            solution=hub.reply_content,
+            assigned_user_id=hub.assigned_user_id,
+            assigned_user_name=u_name,
+            message="应用类任务已确认，AI 答复已生成并标记为已答复" if generated_answer else "应用类任务已确认（已答复）",
+        )
+
+    # 2. 需求类 / Bug 类 (Demand / Bug_fix) 分支
+    elif hub.type in ("Bug_fix", "Demand"):
+        # 校验：推送前需要录入解决方案说明
+        solution = (hub.reply_content or "").strip()
+        if not solution:
+            raise HTTPException(
+                status_code=400,
+                detail="需求类或 Bug 类任务在推送前必须先录入解决方案说明",
+            )
+
+        # 责任人路由匹配
+        assignee_id = body.assignee_override_user_id
+        if assignee_id is None:
+            owner = peek_module_owner(db, hub.product_line_code, hub.module)
+            if owner is not None:
+                assignee_id = owner.id
+
+        if assignee_id is None:
+            # 查无责任人，需要手工选择责任人进行推送
+            return ConfirmSubTaskResponse(
+                hub_issue_id=hub.id,
+                status=hub.status,
+                solution=hub.reply_content,
+                assigned_user_id=hub.assigned_user_id,
+                need_manual_assignee=True,
+                message="未找到该产品线模块的研发责任人，请手动选择责任人后再进行推送",
+            )
+
+        # 执行推送到 Linear
+        from app.services.hub_issues.linear_push import push_hub_issue_to_linear
+
+        # 消费/更新轮询游标（若是通过模块匹配到的）
+        if body.assignee_override_user_id is None:
+            from app.services.hub_issues.module_owner import consume_module_owner
+
+            consume_module_owner(db, hub.product_line_code, hub.module)
+
+        push_res = push_hub_issue_to_linear(
+            hub.id, db, assignee_override_user_id=assignee_id
+        )
+
+        hub.status = "processing"
+        hub.assigned_user_id = assignee_id
+        db.commit()
+        db.refresh(hub)
+
+        u = db.get(User, assignee_id)
+        u_name = u.name if u else None
+
+        return ConfirmSubTaskResponse(
+            hub_issue_id=hub.id,
+            status=hub.status,
+            solution=hub.reply_content,
+            assigned_user_id=hub.assigned_user_id,
+            assigned_user_name=u_name,
+            message="任务已推送到 Linear，状态变更为处理中",
+        )
+
+    else:
+        # Internal_task 或其他类型
+        hub.status = "processing"
+        db.commit()
+        db.refresh(hub)
+        return ConfirmSubTaskResponse(
+            hub_issue_id=hub.id,
+            status=hub.status,
+            solution=hub.reply_content,
+            assigned_user_id=hub.assigned_user_id,
+            message="任务已确认",
+        )

@@ -50,8 +50,43 @@ Object.defineProperty(globalThis, "ResizeObserver", {
   writable: true,
 });
 
+import { http, HttpResponse } from "msw";
+
+export const defaultHandlers = [
+  http.get("*/api/tickets/:id/subtasks", () => HttpResponse.json([])),
+  http.post("*/api/tickets/:id/subtasks", () =>
+    HttpResponse.json({
+      id: 999,
+      short_code: "HUB-000999",
+      type: "Operation",
+      title: "新子任务",
+      product_line_code: "cloud-erp",
+      module: "base",
+      status: "draft",
+      assigned_user_id: 1,
+      assigned_user_name: "张三",
+      solution: "",
+    }),
+  ),
+  http.get("*/api/admin/product-lines", () =>
+    HttpResponse.json([{ code: "cloud-erp", name: "云ERP", is_active: true }]),
+  ),
+  http.get("*/api/hub-issues/catalog/modules", () =>
+    HttpResponse.json(["m1", "m2", "base"]),
+  ),
+  http.get("*/api/supervisor/tickets/:id/escalation-context", () =>
+    HttpResponse.json(null),
+  ),
+];
+
 // Boot MSW once per test run; reset handlers between tests so each test
 // declares only the requests it cares about.
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => server.resetHandlers());
+beforeAll(() => {
+  server.use(...defaultHandlers);
+  server.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => {
+  server.resetHandlers();
+  server.use(...defaultHandlers);
+});
 afterAll(() => server.close());

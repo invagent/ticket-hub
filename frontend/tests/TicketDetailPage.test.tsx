@@ -520,6 +520,14 @@ describe("TicketDetailPage", () => {
           outbox_count: 1,
         });
       }),
+      http.post("*/api/tickets/323/reply", async ({ request }) => {
+        replyBody = await request.json();
+        return HttpResponse.json({
+          ticket_id: 323,
+          outbox_ids: [1],
+          reply_content: "AI 建议的答复内容",
+        });
+      }),
     );
     renderPage(323);
     const btn = await screen.findByRole("button", { name: "提交答复" });
@@ -585,7 +593,7 @@ describe("TicketDetailPage", () => {
           type: "Raw",
           status: "linked",
           title: "待确认分类工单",
-          module: null,
+          module: "m1",
           assigned_user_id: null,
           ...baseTicket,
           hub_issue_id: hubId,
@@ -601,6 +609,8 @@ describe("TicketDetailPage", () => {
           short_code: `HUB-${hubId}`,
           type: hubType,
           status: "pending_review",
+          product_line_code: "cloud-erp",
+          module: "m1",
         }),
       ),
     );

@@ -1012,6 +1012,32 @@ export interface paths {
         patch: operations["update_hub_attributes_api_hub_issues__hub_issue_id__attributes_patch"];
         trace?: never;
     };
+    "/api/hub-issues/{hub_issue_id}/confirm-subtask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Subtask Endpoint
+         * @description 确认子任务：
+         *
+         *     - 应用类 (Operation): 触发 AI 生成答复，回填解决方案说明，状态变更为 answered(已答复)
+         *     - 需求类 / Bug 类 (Demand / Bug_fix):
+         *       1. 必须已录入解决方案说明，否则拦截
+         *       2. 路由模块责任人，若查无责任人且未传 override 则提示需要人工选择责任人
+         *       3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定责任人
+         */
+        post: operations["confirm_subtask_endpoint_api_hub_issues__hub_issue_id__confirm_subtask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/{hub_issue_id}/feedback": {
         parameters: {
             query?: never;
@@ -1164,6 +1190,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/hub-issues/{hub_issue_id}/subtask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Subtask Endpoint
+         * @description 删除子任务（草稿状态或未推 Linear 前可删除）。
+         */
+        delete: operations["delete_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Subtask Endpoint
+         * @description 行内更新子任务的标题、类型、产品线、模块或解决方案。
+         */
+        patch: operations["update_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_patch"];
         trace?: never;
     };
     "/api/hub-issues/{hub_issue_id}/urge": {
@@ -2220,6 +2270,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ticket Reply Endpoint
+         * @description 向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。
+         *
+         *     提交内容支持按条目自动拼接已完成子任务的解决方案说明。
+         */
+        post: operations["ticket_reply_endpoint_api_tickets__ticket_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/retry-outbox": {
         parameters: {
             query?: never;
@@ -2260,6 +2332,30 @@ export interface paths {
          *     退回意见 deal_opinion 取详情页「处理说明」。仅 KSM 来源工单可退回。
          */
         post: operations["return_ticket_api_tickets__ticket_id__return_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/subtasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ticket Subtasks
+         * @description 查询工单关联的所有 Hub 子任务。
+         */
+        get: operations["list_ticket_subtasks_api_tickets__ticket_id__subtasks_get"];
+        put?: never;
+        /**
+         * Create Ticket Subtask
+         * @description 为当前工单新增一个 Hub 子任务。
+         */
+        post: operations["create_ticket_subtask_api_tickets__ticket_id__subtasks_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2751,6 +2847,31 @@ export interface components {
             /** Hub Issue Id */
             hub_issue_id: number;
         };
+        /** ConfirmSubTaskBody */
+        ConfirmSubTaskBody: {
+            /** Assignee Override User Id */
+            assignee_override_user_id?: number | null;
+        };
+        /** ConfirmSubTaskResponse */
+        ConfirmSubTaskResponse: {
+            /** Assigned User Id */
+            assigned_user_id?: number | null;
+            /** Assigned User Name */
+            assigned_user_name?: string | null;
+            /** Hub Issue Id */
+            hub_issue_id: number;
+            /** Message */
+            message?: string | null;
+            /**
+             * Need Manual Assignee
+             * @default false
+             */
+            need_manual_assignee: boolean;
+            /** Solution */
+            solution?: string | null;
+            /** Status */
+            status: string;
+        };
         /** CountsOut */
         CountsOut: {
             /** Customers Total */
@@ -2801,6 +2922,17 @@ export interface components {
             hub_issue_short_code: string;
             /** Ticket Id */
             ticket_id: number;
+            /** Type */
+            type: string;
+        };
+        /** CreateSubTaskBody */
+        CreateSubTaskBody: {
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** Title */
+            title: string;
             /** Type */
             type: string;
         };
@@ -4784,6 +4916,33 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** SubTaskOut */
+        SubTaskOut: {
+            /** Assigned User Id */
+            assigned_user_id: number | null;
+            /** Assigned User Name */
+            assigned_user_name?: string | null;
+            /** Id */
+            id: number;
+            /** Linear Status */
+            linear_status: string | null;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Product Name */
+            product_name?: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Solution */
+            solution?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+        };
         /** SupervisorIn */
         SupervisorIn: {
             /** Deputy Supervisor Id */
@@ -4884,6 +5043,12 @@ export interface components {
             children_count: number;
             /** Children Ticket Ids */
             children_ticket_ids: number[] | null;
+            /** Contact Email */
+            contact_email?: string | null;
+            /** Contact Mobile */
+            contact_mobile?: string | null;
+            /** Contact Name */
+            contact_name?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -5032,6 +5197,20 @@ export interface components {
             /** Items */
             items: components["schemas"]["TicketDetail"][];
         };
+        /** TicketReplyBody */
+        TicketReplyBody: {
+            /** Content */
+            content?: string | null;
+        };
+        /** TicketReplyResponse */
+        TicketReplyResponse: {
+            /** Outbox Ids */
+            outbox_ids: number[];
+            /** Reply Content */
+            reply_content: string;
+            /** Ticket Id */
+            ticket_id: number;
+        };
         /** TicketSummary */
         TicketSummary: {
             /** Assigned User Id */
@@ -5043,6 +5222,12 @@ export interface components {
              * @default 1
              */
             children_count: number;
+            /** Contact Email */
+            contact_email?: string | null;
+            /** Contact Mobile */
+            contact_mobile?: string | null;
+            /** Contact Name */
+            contact_name?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -5170,6 +5355,19 @@ export interface components {
             type: string;
             /** Updated Ticket Count */
             updated_ticket_count: number;
+        };
+        /** UpdateSubTaskBody */
+        UpdateSubTaskBody: {
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** Solution */
+            solution?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Type */
+            type?: string | null;
         };
         /** UpsertBody */
         UpsertBody: {
@@ -7556,6 +7754,41 @@ export interface operations {
             };
         };
     };
+    confirm_subtask_endpoint_api_hub_issues__hub_issue_id__confirm_subtask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmSubTaskBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmSubTaskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     feedback_endpoint_api_hub_issues__hub_issue_id__feedback_post: {
         parameters: {
             query?: never;
@@ -7784,6 +8017,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RequestSupplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_subtask_endpoint_api_hub_issues__hub_issue_id__subtask_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hub_issue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSubTaskBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmSubTaskResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9365,6 +9666,41 @@ export interface operations {
             };
         };
     };
+    ticket_reply_endpoint_api_tickets__ticket_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketReplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketReplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_outbox_endpoint_api_tickets__ticket_id__retry_outbox_post: {
         parameters: {
             query?: never;
@@ -9418,6 +9754,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReturnResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_ticket_subtasks_api_tickets__ticket_id__subtasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubTaskOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_ticket_subtask_api_tickets__ticket_id__subtasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSubTaskBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubTaskOut"];
                 };
             };
             /** @description Validation Error */

@@ -9,8 +9,8 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, getByPath, patchByPath, postByPath } from "@/api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, deleteByPath, getByPath, patchByPath, postByPath } from "@/api/client";
 import { currentRole, currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
@@ -19,7 +19,7 @@ import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
-import { ticketStatusLabel } from "./ticketStatus";
+import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -338,23 +338,26 @@ export function TicketDetailPage() {
       setTransferOpen(false);
     },
   });
-  // 运营正常跟进：把处理说明作为答复发出（纯文本，不带附件）
+  // 运营正常跟进：向 KSM/智齿提交答复（走带有至少一个子任务已完成闸门校验和自动按条目拼接的新接口）
   const [replyErr, setReplyErr] = useState<string | null>(null);
   const reply = useMutation({
     mutationFn: (content: string) =>
       postByPath(
-        "/api/hub-issues/{hub_issue_id}/reply",
-        { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
-        { content },
+        "/api/tickets/{ticket_id}/reply",
+        { ticket_id: id },
+        { content: content || null },
       ),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       setReplyErr(null);
+      if (res?.reply_content) {
+        setNoteDrafts((prev) => ({ ...prev, 0: res.reply_content }));
+      }
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
-      // 答复后 hub 的 op_status/status/reply_version 都变了——必须刷 hub 详情，
-      // 否则页面工单状态停留在旧值（用户反馈"状态没更新"）。
+      void qc.invalidateQueries({ queryKey: ["ticket-subtasks", id] });
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
       void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+      setConfirmNotice("提交答复成功");
     },
     onError: (e) => setReplyErr(hubErrMsg(e)),
   });
@@ -615,20 +618,38 @@ export function TicketDetailPage() {
             const p = (d as any).source_payload;
             const contactName =
               (d as any).contact_name ??
+              d.ksm_linkman ??
               (d as any).reporter?.contact_name ??
               p?.extend_fields_list?.find((f: any) => f.field_name === "联系人")?.field_value ??
+              p?._subscribe_callback?.customerInfo?.linkman ??
+              p?.customerInfo?.linkman ??
+              p?.linkman ??
               p?.contact_name;
 
             const contactMobile =
               (d as any).contact_mobile ??
+              d.ksm_contact_mobile ??
               (d as any).reporter?.contact_mobile ??
-              p?.extend_fields_list?.find((f: any) => f.field_name === "联系手机")?.field_value ??
+              p?.extend_fields_list?.find(
+                (f: any) =>
+                  f.field_name === "联系手机" || f.field_name === "联系人手机" || f.field_name === "手机",
+              )?.field_value ??
+              p?._subscribe_callback?.customerInfo?.mobile ??
+              p?.customerInfo?.mobile ??
+              p?.mobile ??
               p?.contact_mobile;
 
             const contactEmail =
               (d as any).contact_email ??
+              d.ksm_contact_email ??
               (d as any).reporter?.contact_email ??
+              p?.extend_fields_list?.find(
+                (f: any) => f.field_name === "联系邮箱" || f.field_name === "邮箱",
+              )?.field_value ??
+              p?._subscribe_callback?.customerInfo?.email ??
+              p?.customerInfo?.email ??
               p?.user_emails ??
+              p?.email ??
               p?.contact_email;
 
             return (
@@ -760,6 +781,7 @@ export function TicketDetailPage() {
                 <div>
                   {isCurrentNode ? (
                     <SubTicketList
+                      ticketId={d.id}
                       childIds={d.children_ticket_ids ?? []}
                       drafts={subDrafts}
                       onDeleteDrafts={(indices) => {
@@ -1260,11 +1282,29 @@ export function TicketDetailPage() {
             />
           )}
 
-          {/* 添加子任务弹窗：录入说明 + 类型 → 追加本地草稿行（落库待后端接口） */}
+          {/* 添加子任务弹窗：录入说明 + 类型 → 真正调用后端 API 创建 Hub 子任务，并在本地草稿即时回显 */}
           {addSubOpen && (
             <AddSubTaskModal
               onSubmit={(title, type) => {
                 setSubDrafts((prev) => [...prev, { title, type }]);
+                postByPath(
+                  "/api/tickets/{ticket_id}/subtasks",
+                  { ticket_id: id },
+                  {
+                    title,
+                    type,
+                    product_line_code: d.product_line_code ?? null,
+                    module: d.module ?? null,
+                  },
+                )
+                  .then(() => {
+                    void qc.invalidateQueries({ queryKey: ["ticket-subtasks", id] });
+                    void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
+                    showTopToast("子任务添加成功", "success");
+                  })
+                  .catch((err: any) => {
+                    showTopToast(hubErrMsg(err), "warning");
+                  });
                 setAddSubOpen(false);
               }}
               onClose={() => setAddSubOpen(false)}
@@ -2352,7 +2392,8 @@ const SUB_TASK_TYPES = [
 // 任务类型、产品分类、问题模块均可编辑，支持搜索筛选与级联；
 // 处理说明支持 600×400 弹窗录入，解决方案截取 10 字符，支持浮窗查看与双行同步主单；新增操作列确认分类。
 function SubTicketList({
-  childIds,
+  ticketId,
+  childIds: _childIds,
   drafts,
   self,
   onDeleteDrafts,
@@ -2361,6 +2402,7 @@ function SubTicketList({
   onSyncNote,
   canEdit = true,
 }: {
+  ticketId?: number;
   childIds: number[];
   drafts: { title: string; type: string; product_line?: string; module?: string }[];
   self: {
@@ -2380,12 +2422,90 @@ function SubTicketList({
   onSyncNote?: (taskTitle: string, taskSolution: string) => void;
   canEdit?: boolean;
 }) {
-  const results = useQueries({
-    queries: childIds.map((cid) => ({
-      queryKey: ["ticket-detail", cid],
-      queryFn: () => getByPath("/api/tickets/{ticket_id}", { ticket_id: cid }),
-      staleTime: 30_000,
-    })),
+  const qc = useQueryClient();
+
+  // 真实查询当前工单关联的全部 Hub 子任务
+  const subtasksQuery = useQuery({
+    queryKey: ["ticket-subtasks", ticketId],
+    queryFn: () =>
+      ticketId
+        ? getByPath("/api/tickets/{ticket_id}/subtasks", { ticket_id: ticketId })
+        : Promise.resolve([]),
+    enabled: !!ticketId,
+  });
+
+  const subtasks = subtasksQuery.data ?? [];
+
+  // 行内更新 mutation
+  const updateSubtaskMutation = useMutation({
+    mutationFn: ({
+      hubId,
+      body,
+    }: {
+      hubId: number;
+      body: {
+        title?: string;
+        type?: string;
+        product_line_code?: string;
+        module?: string;
+        solution?: string;
+      };
+    }) => patchByPath("/api/hub-issues/{hub_issue_id}/subtask", { hub_issue_id: hubId }, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+    },
+  });
+
+  // 删除子任务 mutation
+  const deleteSubtaskMutation = useMutation({
+    mutationFn: (hubId: number) =>
+      deleteByPath("/api/hub-issues/{hub_issue_id}/subtask", { hub_issue_id: hubId }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+      void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+      if (onToast) onToast("子任务已删除", "success");
+    },
+    onError: (e: any) => {
+      if (onToast) onToast(hubErrMsg(e), "warning");
+    },
+  });
+
+  // 手动指定责任人推送状态
+  const [manualAssignModal, setManualAssignModal] = useState<{
+    hubId: number;
+    title: string;
+  } | null>(null);
+
+  // 确认任务 mutation
+  const confirmSubtaskMutation = useMutation({
+    mutationFn: ({
+      hubId,
+      overrideUserId,
+    }: {
+      hubId: number;
+      overrideUserId?: number;
+    }) =>
+      postByPath(
+        "/api/hub-issues/{hub_issue_id}/confirm-subtask",
+        { hub_issue_id: hubId },
+        { assignee_override_user_id: overrideUserId ?? null },
+      ),
+    onSuccess: (res: any, vars) => {
+      if (res.need_manual_assignee) {
+        // 弹出人工指定责任人弹窗
+        setManualAssignModal({ hubId: vars.hubId, title: "" });
+        if (onToast) onToast(res.message || "未找到责任人，请手动选择", "warning");
+      } else {
+        void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+        void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+        void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+        if (onToast) onToast(res.message || "任务已确认", "success");
+      }
+    },
+    onError: (e: any) => {
+      if (onToast) onToast(hubErrMsg(e), "warning");
+    },
   });
 
   const productLines = useQuery({
@@ -2425,17 +2545,17 @@ function SubTicketList({
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
 
   const [selfHidden, setSelfHidden] = useState(false);
-  const showSelf = childIds.length === 0 && (!selfHidden || drafts.length === 0);
+  const showSelf = subtasks.length === 0 && (!selfHidden || drafts.length === 0);
 
   const allRowKeys: (string | number)[] = useMemo(() => {
     const keys: (string | number)[] = [];
     if (showSelf) {
       keys.push("self");
     }
-    keys.push(...childIds);
+    subtasks.forEach((s: any) => keys.push(s.id));
     drafts.forEach((_, i) => keys.push(`draft-${i}`));
     return keys;
-  }, [showSelf, childIds, drafts]);
+  }, [showSelf, subtasks, drafts]);
 
   const allSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k));
 
@@ -2463,6 +2583,8 @@ function SubTicketList({
     selectedKeys.forEach((k) => {
       if (k === "self") {
         deleteSelf = true;
+      } else if (typeof k === "number") {
+        deleteSubtaskMutation.mutate(k);
       } else if (typeof k === "string" && k.startsWith("draft-")) {
         const idx = parseInt(k.replace("draft-", ""), 10);
         if (!isNaN(idx)) draftIndices.push(idx);
@@ -2542,13 +2664,18 @@ function SubTicketList({
       return;
     }
 
-    updateRow(key, { confirmed: true });
-    const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
-    if (onToast) {
-      onToast(successMsg, "success");
+    // 若是真实落库的子任务（数字 id），调用真实后端 confirm-subtask 接口
+    if (typeof key === "number") {
+      confirmSubtaskMutation.mutate({ hubId: key });
     } else {
-      setConfirmToast(successMsg);
-      setTimeout(() => setConfirmToast(null), 3000);
+      updateRow(key, { confirmed: true });
+      const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
+      if (onToast) {
+        onToast(successMsg, "success");
+      } else {
+        setConfirmToast(successMsg);
+        setTimeout(() => setConfirmToast(null), 3000);
+      }
     }
   };
 
@@ -2783,16 +2910,15 @@ function SubTicketList({
               );
             })()}
 
-            {results.map((r, i) => {
-              const c = r.data;
-              const cid = childIds[i];
-              const rowKey = cid;
-              const rowTitle = c?.title ?? `子任务 #${cid}`;
+            {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取） */}
+            {subtasks.map((stk: any) => {
+              const rowKey = stk.id;
+              const rowTitle = stk.title ?? `子任务 #${stk.id}`;
               const st = getRowState(rowKey, {
-                type: c?.predicted_type ?? "",
-                product_line_code: c?.product_line_code ?? "",
-                module: c?.module ?? "",
-                solution: c?.cached_reply_content ?? "",
+                type: stk.type ?? "",
+                product_line_code: stk.product_line_code ?? "",
+                module: stk.module ?? "",
+                solution: stk.solution ?? "",
               });
               const truncSolution = st.solution
                 ? st.solution.length > 10
@@ -2801,7 +2927,7 @@ function SubTicketList({
                 : "";
 
               return (
-                <tr key={cid} className="group border-t border-hub-borderLight hover:bg-slate-50">
+                <tr key={stk.id} className="group border-t border-hub-borderLight hover:bg-slate-50">
                   <td
                     className="px-2 py-1.5 text-center whitespace-nowrap bg-white group-hover:bg-slate-50"
                     style={{ position: "sticky", left: 0, zIndex: 2 }}
@@ -2817,25 +2943,26 @@ function SubTicketList({
                     className="px-2.5 py-1.5 whitespace-nowrap bg-white group-hover:bg-slate-50"
                     style={{ position: "sticky", left: 40, zIndex: 2 }}
                   >
-                    <Link
-                      to={`/tickets/${cid}`}
-                      className="text-[#6085e7] hover:underline font-mono"
-                    >
-                      {c?.short_code ?? `#${cid}`}
-                    </Link>
+                    <span className="font-mono text-[#6085e7]">
+                      {stk.short_code ?? `#${stk.id}`}
+                    </span>
                   </td>
                   <td
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => c?.title && setPopoverText({ title: "任务说明详情", content: c.title })}
+                    onClick={() => stk.title && setPopoverText({ title: "任务说明详情", content: stk.title })}
                   >
-                    {r.isLoading ? "加载中…" : (c?.title ?? "—")}
+                    {stk.title ?? "—"}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
                       value={st.type}
-                      onChange={(e) => updateRow(rowKey, { type: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateRow(rowKey, { type: val });
+                        updateSubtaskMutation.mutate({ hubId: stk.id, body: { type: val } });
+                      }}
                       className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
                     >
                       <option value="">选择类型</option>
@@ -2850,7 +2977,13 @@ function SubTicketList({
                     <SearchableSelect
                       ariaLabel="子任务产品分类"
                       value={st.product_line_code}
-                      onChange={(val) => updateRow(rowKey, { product_line_code: val, module: "" })}
+                      onChange={(val) => {
+                        updateRow(rowKey, { product_line_code: val, module: "" });
+                        updateSubtaskMutation.mutate({
+                          hubId: stk.id,
+                          body: { product_line_code: val, module: "" },
+                        });
+                      }}
                       options={productLineOptions}
                       placeholder="选择产品分类"
                       width={140}
@@ -2861,13 +2994,18 @@ function SubTicketList({
                     <SubTaskRowModuleSelect
                       plc={st.product_line_code}
                       value={st.module}
-                      onChange={(val) => updateRow(rowKey, { module: val })}
+                      onChange={(val) => {
+                        updateRow(rowKey, { module: val });
+                        updateSubtaskMutation.mutate({ hubId: stk.id, body: { module: val } });
+                      }}
                     />
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{st.confirmed ? "处理中" : (c?.status ?? "—")}</td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {c?.assigned_user_name ??
-                      (c?.assigned_user_id ? `#${c.assigned_user_id}` : "—")}
+                    <StatusBadge status={stk.status} />
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {stk.assigned_user_name ??
+                      (stk.assigned_user_id ? `#${stk.assigned_user_id}` : "—")}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     {st.solution ? (
@@ -2913,11 +3051,11 @@ function SubTicketList({
                       <button
                         type="button"
                         aria-label="确认任务"
-                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
-                        disabled={st.confirmed}
+                        title={stk.status === "answered" || stk.status === "processing" ? "任务处理中或已答复" : "确认"}
+                        disabled={stk.status === "answered" || stk.status === "processing"}
                         onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
                         className={`font-medium ${
-                          st.confirmed
+                          stk.status === "answered" || stk.status === "processing"
                             ? "text-slate-400 cursor-not-allowed opacity-50"
                             : "text-[#6085e7] hover:underline cursor-pointer"
                         }`}
@@ -3108,9 +3246,48 @@ function SubTicketList({
           onClose={() => setNoteModal(null)}
           onConfirm={(content) => {
             updateRow(noteModal.key, { solution: content });
+            if (typeof noteModal.key === "number") {
+              updateSubtaskMutation.mutate({ hubId: noteModal.key, body: { solution: content } });
+            }
             onSyncNote?.(noteModal.title, content);
           }}
         />
+      )}
+
+      {/* 手工选择责任人并推送到 Linear 弹窗 */}
+      {manualAssignModal && (
+        <Modal onClose={() => setManualAssignModal(null)}>
+          <ModalHeader title="手动指定研发责任人推送" onClose={() => setManualAssignModal(null)} />
+          <div className="px-5 py-4 flex flex-col gap-3">
+            <p className="text-xs text-hub-textSecondary">
+              该模块未配置默认研发责任人，请从下方选择责任人以推送到 Linear：
+            </p>
+            <div>
+              <SearchableUserSelect
+                value={undefined}
+                onChange={(uid) => {
+                  if (uid) {
+                    confirmSubtaskMutation.mutate({
+                      hubId: manualAssignModal.hubId,
+                      overrideUserId: uid,
+                    });
+                    setManualAssignModal(null);
+                  }
+                }}
+                placeholder="请搜索并选择责任人"
+              />
+            </div>
+          </div>
+          <ModalFooter>
+            <button
+              type="button"
+              onClick={() => setManualAssignModal(null)}
+              className="text-[12.5px] font-semibold px-4 py-[7px] rounded-[7px] bg-white text-hub-textSecondary border border-hub-border"
+            >
+              取消
+            </button>
+          </ModalFooter>
+        </Modal>
       )}
     </div>
   );
