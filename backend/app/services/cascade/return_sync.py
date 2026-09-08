@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -53,6 +54,21 @@ def request_return(
     # 失败会让该行 deferred/failed 转人工，不在入队前假设成功。
     if ticket.ksm_takeover_status not in {"locked", "handled"}:
         raise ReturnSyncError("工单尚未受理，无法退回")
+    # 锁定防重复提交：同一工单已有一条 pending 的退回请求还没被 drain 消化时，
+    # 拒绝再入队第二条——drain 是定时批处理（beat 每 2min 一轮，遇到延迟/积压
+    # 可能几十分钟才真正执行），窗口内短时间连点几次会堆出多条 pending 行，
+    # 一次性连续执行时目标节点在两个节点间来回弹，偶数次刚好弹回起点等于没退
+    # （2026-09-07 TKT-006797/R20260904-0374 复现：4 次连续退回互相抵消，本地
+    # 记成功但 KSM 侧节点原地不动）。同一工单一次只允许有一条在途退回。
+    pending = db.execute(
+        select(SyncOutbox.id).where(
+            SyncOutbox.ticket_id == ticket.id,
+            SyncOutbox.kind == "return",
+            SyncOutbox.status == "pending",
+        )
+    ).first()
+    if pending is not None:
+        raise ReturnSyncError("已有一条退回请求正在处理中，请等待其完成后再操作")
 
     row = SyncOutbox(
         kind="return",

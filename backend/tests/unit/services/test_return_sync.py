@@ -99,3 +99,25 @@ def test_request_return_rejects_failed_takeover(world: Session) -> None:
     t = _ticket(world, ksm_takeover_status="failed")
     with pytest.raises(ReturnSyncError):
         request_return(world, t.id, deal_opinion="退回", requested_by="user:carol")
+
+
+def test_request_return_rejects_duplicate_pending(world: Session) -> None:
+    """同一工单已有一条 pending 退回请求未被 drain 消化 → 拒绝再入队第二条
+    （防止 drain 延迟窗口内连点几次，堆出多条 pending 一次性连续执行导致目标
+    节点来回弹，偶数次刚好抵消，见 TKT-006797/R20260904-0374）。"""
+    t = _ticket(world)
+    request_return(world, t.id, deal_opinion="第一次退回", requested_by="user:carol")
+    with pytest.raises(ReturnSyncError, match="正在处理中"):
+        request_return(world, t.id, deal_opinion="第二次退回", requested_by="user:carol")
+
+
+def test_request_return_allows_after_previous_sent(world: Session) -> None:
+    """前一条已经被 drain 消化（status 不再是 pending）→ 允许再入队新的一条。"""
+    t = _ticket(world)
+    first = request_return(world, t.id, deal_opinion="第一次退回", requested_by="user:carol")
+    row = world.get(SyncOutbox, first.outbox_id)
+    row.status = "sent"
+    world.commit()
+
+    second = request_return(world, t.id, deal_opinion="第二次退回", requested_by="user:carol")
+    assert second.outbox_id != first.outbox_id
