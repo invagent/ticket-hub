@@ -114,7 +114,7 @@ const OP_STATUS_OPTIONS: { value: string; label: string }[] = [
 const DEFAULT_OP_STATUSES = ["processing", "resubmitted", "reviewing"];
 
 // v8: 筛选栏固定顶部并提升对比度、增加超时状态列与筛选、右侧快捷统计标签
-const PREFS_KEY = "tickets_table_prefs_v20260903_v3";
+const PREFS_KEY = "tickets_table_prefs_v20260908_v4";
 type TablePrefs = { order?: ColumnOrderState; sizing?: ColumnSizingState };
 
 // 默认列顺序（工单列表优化）：
@@ -137,6 +137,7 @@ const DEFAULT_ORDER: string[] = [
   "assigned_user",
   "product_name",
   "source_module",
+  "ksm_reporter_product_line",
   "reject_count",
   "children_count",
   "dev_progress",
@@ -375,6 +376,7 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
     case "source_module":
       return (
         (ticket as any).source_module ??
+        (ticket as any).ksm_reporter_module ??
         p?._original_catalog?.module ??
         p?.module ??
         ""
@@ -418,6 +420,7 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
     case "contact_name":
       return (
         (ticket as any).contact_name ??
+        ticket.ksm_linkman ??
         (ticket as any).reporter?.contact_name ??
         p?.extend_fields_list?.find((f: any) => f.field_name === "联系人")?.field_value ??
         ""
@@ -425,6 +428,7 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
     case "contact_mobile":
       return (
         (ticket as any).contact_mobile ??
+        ticket.ksm_contact_mobile ??
         (ticket as any).reporter?.contact_mobile ??
         p?.extend_fields_list?.find((f: any) => f.field_name === "联系手机")?.field_value ??
         ""
@@ -432,6 +436,7 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
     case "contact_email":
       return (
         (ticket as any).contact_email ??
+        ticket.ksm_contact_email ??
         (ticket as any).reporter?.contact_email ??
         p?.user_emails ??
         ""
@@ -1309,6 +1314,7 @@ export function TicketsListPage() {
           const p = (row.original as any).source_payload;
           const mod =
             (row.original as any).source_module ??
+            row.original.ksm_reporter_module ??
             p?._original_catalog?.module ??
             p?.module;
           return (
@@ -1317,6 +1323,19 @@ export function TicketsListPage() {
             </span>
           );
         },
+      },
+      {
+        id: "ksm_reporter_product_line",
+        header: "提单产品线",
+        size: 130,
+        cell: ({ row }) => (
+          <span
+            className="text-[11.5px] text-hub-textSecondary truncate block"
+            title={row.original.ksm_reporter_product_line ?? ""}
+          >
+            {row.original.ksm_reporter_product_line ?? "—"}
+          </span>
+        ),
       },
       {
         id: "reject_count",
@@ -1499,6 +1518,7 @@ export function TicketsListPage() {
           const p = (row.original as any).source_payload;
           const c =
             (row.original as any).contact_name ??
+            row.original.ksm_linkman ??
             (row.original as any).reporter?.contact_name ??
             p?.extend_fields_list?.find((f: any) => f.field_name === "联系人")?.field_value;
           return (
@@ -1516,6 +1536,7 @@ export function TicketsListPage() {
           const p = (row.original as any).source_payload;
           const m =
             (row.original as any).contact_mobile ??
+            row.original.ksm_contact_mobile ??
             (row.original as any).reporter?.contact_mobile ??
             p?.extend_fields_list?.find((f: any) => f.field_name === "联系手机")?.field_value;
           return (
@@ -1533,6 +1554,7 @@ export function TicketsListPage() {
           const p = (row.original as any).source_payload;
           const e =
             (row.original as any).contact_email ??
+            row.original.ksm_contact_email ??
             (row.original as any).reporter?.contact_email ??
             p?.user_emails;
           return (

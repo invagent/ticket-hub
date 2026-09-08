@@ -5064,6 +5064,22 @@ export interface components {
             hub_status?: string | null;
             /** Id */
             id: number;
+            /** Ksm Close Node Id */
+            ksm_close_node_id?: string | null;
+            /** Ksm Close Node Name */
+            ksm_close_node_name?: string | null;
+            /** Ksm Close Node Status */
+            ksm_close_node_status?: string | null;
+            /** Ksm Contact Email */
+            ksm_contact_email?: string | null;
+            /** Ksm Contact Mobile */
+            ksm_contact_mobile?: string | null;
+            /** Ksm Linkman */
+            ksm_linkman?: string | null;
+            /** Ksm Reporter Module */
+            ksm_reporter_module?: string | null;
+            /** Ksm Reporter Product Line */
+            ksm_reporter_product_line?: string | null;
             /** Linear Status */
             linear_status?: string | null;
             /** Module */

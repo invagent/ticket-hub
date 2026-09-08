@@ -98,6 +98,17 @@ class TicketSummary(BaseModel):
     received_at: datetime | None
     customer_replied_at: datetime | None
     created_at: datetime
+    # KSM 源字段（仅 KSM 来源有值；随重推同步刷新，见 ksm_ingester._sync_ksm_fields）。
+    # 与 TicketDetail 的同名字段是同一批列，列表页展示需要一并暴露（此前漏加，字段
+    # 已落库但 TicketSummary 没声明，序列化时被丢弃，列表页恒为空——2026-09-08 修）。
+    ksm_reporter_product_line: str | None = None  # 提单产品线（KSM 原始 product.name）
+    ksm_reporter_module: str | None = None  # 提单模块（KSM 原始 module.name）
+    ksm_linkman: str | None = None  # 客户联系人（customerInfo.linkman，≠反馈人）
+    ksm_contact_mobile: str | None = None  # 联系人电话
+    ksm_contact_email: str | None = None  # 联系人邮箱
+    ksm_close_node_id: str | None = None  # 关单节点 id（closereason.id，仅关单工单有值）
+    ksm_close_node_name: str | None = None  # 关单节点说明（closereason.name）
+    ksm_close_node_status: str | None = None  # 关单节点状态（closereason.status）
 
     model_config = {"from_attributes": True}
 
@@ -141,15 +152,7 @@ class TicketDetail(TicketSummary):
     module_classified_at: datetime | None = None
     # 处理人标记「AI 自动答复有问题」送反思诊断的时间（NULL=未标记）
     diagnosis_flagged_at: datetime | None = None
-    # KSM 源字段（仅 KSM 来源有值；随重推同步刷新，见 ksm_ingester._sync_ksm_fields）
-    ksm_reporter_product_line: str | None = None  # 提单产品线（KSM 原始 product.name）
-    ksm_reporter_module: str | None = None  # 提单模块（KSM 原始 module.name）
-    ksm_linkman: str | None = None  # 客户联系人（customerInfo.linkman，≠反馈人）
-    ksm_contact_mobile: str | None = None  # 联系人电话
-    ksm_contact_email: str | None = None  # 联系人邮箱
-    ksm_close_node_id: str | None = None  # 关单节点 id（closereason.id，仅关单工单有值）
-    ksm_close_node_name: str | None = None  # 关单节点说明（closereason.name）
-    ksm_close_node_status: str | None = None  # 关单节点状态（closereason.status）
+    # KSM 源字段已提到 TicketSummary（列表页也要展示），此处继承无需重复声明。
     # enriched display fields (not on ORM, set manually in get_ticket)
     assigned_user_name: str | None = None
     customer_display_name: str | None = None
@@ -369,6 +372,8 @@ def list_tickets(
         # 服务等级空 → 标准服务
         s.service_level = t.service_level or "标准服务"
         s.remaining_hours = _remaining_hours(t)
+        # KSM 源字段（仅 KSM 来源有值，其余来源为 None）——TicketSummary.model_validate
+        # 已经从 ORM 读到这些列了，此处无需再手动赋值，保留仅为避免忘记该口径。
         return s
 
     return TicketListResponse(

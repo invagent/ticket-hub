@@ -8211,6 +8211,94 @@
             "title": "Id",
             "type": "integer"
           },
+          "ksm_close_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Close Node Id"
+          },
+          "ksm_close_node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Close Node Name"
+          },
+          "ksm_close_node_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Close Node Status"
+          },
+          "ksm_contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Contact Email"
+          },
+          "ksm_contact_mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Contact Mobile"
+          },
+          "ksm_linkman": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Linkman"
+          },
+          "ksm_reporter_module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Reporter Module"
+          },
+          "ksm_reporter_product_line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ksm Reporter Product Line"
+          },
           "linear_status": {
             "anyOf": [
               {
