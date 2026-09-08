@@ -30,10 +30,14 @@ from app.db import get_session, init_engine
 from app.models import HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 
-_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
+_TICKET_TERMINAL_STATUSES = frozenset(
+    {"done", "closed", "rejected", "superseded", "transferred_return"}
+)
 
 
-def main(*, from_user_id: int, to_user_id: int, start: datetime, end: datetime, dry_run: bool) -> None:
+def main(
+    *, from_user_id: int, to_user_id: int, start: datetime, end: datetime, dry_run: bool
+) -> None:
     init_engine()
     db = next(get_session())
     try:
@@ -45,8 +49,7 @@ def main(*, from_user_id: int, to_user_id: int, start: datetime, end: datetime, 
 
         ticket_ids = (
             db.execute(
-                select(Ticket.id)
-                .where(
+                select(Ticket.id).where(
                     Ticket.handler_user_id == from_user_id,
                     Ticket.deleted_at.is_(None),
                     Ticket.status.notin_(list(_TICKET_TERMINAL_STATUSES)),
@@ -100,14 +103,19 @@ def main(*, from_user_id: int, to_user_id: int, start: datetime, end: datetime, 
                     to_status=hub.op_status,
                     changed_by="system:reassign_handler_by_date",
                     reason=reason,
-                    metadata={"op_handler_user_id": to_user_id, "prev_op_handler_user_id": from_user_id},
+                    metadata={
+                        "op_handler_user_id": to_user_id,
+                        "prev_op_handler_user_id": from_user_id,
+                    },
                 )
                 hub.op_handler_user_id = to_user_id
                 hub.op_handler = to_name
 
             db.commit()
 
-        print(f"\n{'[dry-run] ' if dry_run else ''}共处理 {len(tickets)} 条 ticket，{len(hub_touched)} 个 hub。")
+        print(
+            f"\n{'[dry-run] ' if dry_run else ''}共处理 {len(tickets)} 条 ticket，{len(hub_touched)} 个 hub。"
+        )
     finally:
         db.close()
 

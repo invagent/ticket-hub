@@ -57,7 +57,7 @@ from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.models import HubIssue, SyncOutbox, Ticket
 from app.repositories.status_history import StatusHistoryRepository
-from app.services.hub_issues.op_status import OP_CLOSED, apply_op_status
+from app.services.hub_issues.op_status import OP_TRANSFERRED_RETURN, apply_op_status
 from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
 from app.services.ksm.notice_store import NoticeStoreLike, resolve_notice
 
@@ -70,7 +70,9 @@ _DEFAULT_RELEASED_NOTE = "您反馈的问题已处理完成，如仍有疑问欢
 
 # 关单类 action 真发成功后，本地 ticket→closed / hub→resolved（与智齿写回一致）。
 _CLOSING_ACTIONS = frozenset({"reply", "release_note", "close"})
-_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
+_TICKET_TERMINAL_STATUSES = frozenset(
+    {"done", "closed", "rejected", "superseded", "transferred_return"}
+)
 # lock errors that mean "already taken over" — benign, proceed to handle
 _ALREADY_LOCKED_HINTS = ("已被接管", "已接管", "已锁定", "重复接管")
 
@@ -357,24 +359,24 @@ class KSMWritebackSender:
         # 客户重推同一单驳回（ksm_ingester 会转回 processing）才自动关闭。
 
     def _close_ticket_returned(self, row: SyncOutbox, ticket: Ticket) -> None:
-        """退回真发成功后：本地工单 → closed（交还 KSM 重新分派，不再跟踪）。
+        """退回真发成功后：本地工单 → transferred_return（交还 KSM 重新分派，不再跟踪）。
 
-        工单关闭 + 若所挂 Operation hub 已无其它未终态工单，则同步关 op_status
-        （否则任务表「处理状态」一直停留在 processing）。不碰研发类 hub（研发走
-        Linear，退回是 Operation 场景）。已在终态的不重置（幂等）。不 commit。
+        工单转单退回 + 若所挂 Operation hub 已无其它未终态工单，则同步将 op_status 置为
+        transferred_return（转单退回）。不碰研发类 hub（研发走 Linear，退回是 Operation 场景）。
+        已在终态的不重置（幂等）。不 commit。
         """
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
-            ticket.status = "closed"
+            ticket.status = "transferred_return"
             StatusHistoryRepository(self._db).record(
                 entity_type="ticket",
                 entity_id=ticket.id,
                 from_status=prev,
-                to_status="closed",
+                to_status="transferred_return",
                 changed_by="system:ksm_writeback",
                 reason=f"退回 KSM 重新分派成功（outbox={row.id}, kind=return）",
             )
-        # 所挂 Operation hub：仅当无其它仍活跃的关联工单时，关闭 op_status。
+        # 所挂 Operation hub：仅当无其它仍活跃的关联工单时，更新 op_status 为 transferred_return。
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
         if hub is None or hub.type != "Operation":
             return
@@ -387,13 +389,13 @@ class KSMWritebackSender:
             )
             .first()
         )
-        if active is None and hub.op_status != OP_CLOSED:
+        if active is None and hub.op_status != OP_TRANSFERRED_RETURN:
             apply_op_status(
                 self._db,
                 hub,
-                to_status=OP_CLOSED,
+                to_status=OP_TRANSFERRED_RETURN,
                 handler=hub.op_handler or "agent",
-                reason=f"KSM 退回成功，工单已全部关闭（outbox={row.id}）",
+                reason=f"KSM 退回成功，工单已全部转单退回（outbox={row.id}）",
             )
 
     def _resolve_action(self, row: SyncOutbox) -> str | None:

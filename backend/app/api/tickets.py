@@ -395,7 +395,10 @@ def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
     # 行级可见性：非 admin/主管 只能看处理人=自己的工单（否则等同不存在）
-    if auth_user.role not in ("admin", "supervisor") and ticket.handler_user_id != auth_user.user_id:
+    if (
+        auth_user.role not in ("admin", "supervisor")
+        and ticket.handler_user_id != auth_user.user_id
+    ):
         raise HTTPException(status_code=404, detail="ticket not found")
     return build_ticket_detail(db, ticket)
 
@@ -457,9 +460,7 @@ def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
     # download_url 走后端代理端点，前端不碰 MinIO 内网地址 / 需鉴权的原始 URL。
     atts = (
         db.execute(
-            select(Attachment)
-            .where(Attachment.ticket_id == ticket_id)
-            .order_by(Attachment.id)
+            select(Attachment).where(Attachment.ticket_id == ticket_id).order_by(Attachment.id)
         )
         .scalars()
         .all()
@@ -519,6 +520,13 @@ def return_ticket(
         )
     except ReturnSyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
+    # 尝试即时 drain 触发出站，成功则立即完成 KSM 退回与状态流转；若临时抖动则留给 beat 兜底
+    try:
+        from app.services.ksm.writeback import drain_ksm_outbox
+
+        drain_ksm_outbox(db)
+    except Exception as e:
+        logger.warning("instant_drain_ksm_return_failed", ticket_id=ticket_id, error=str(e))
     logger.info(
         "ticket_return_requested",
         ticket_id=ticket_id,
@@ -570,7 +578,9 @@ def retry_outbox_endpoint(
 _ATTACHMENT_CACHE_CONTROL = "private, max-age=86400, immutable"
 
 
-def _attachment_response(data: bytes, media_type: str, *, att_id: int, size: str | None) -> Response:
+def _attachment_response(
+    data: bytes, media_type: str, *, att_id: int, size: str | None
+) -> Response:
     """统一构造附件响应：带 Cache-Control + ETag（重开不重复全量下载）。"""
     etag = f'"{att_id}-{size or "full"}-{len(data)}"'
     return Response(
@@ -760,7 +770,10 @@ def get_ticket_history(
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
     # 行级可见性：非 admin/主管 只能看处理人=自己的工单
-    if auth_user.role not in ("admin", "supervisor") and ticket.handler_user_id != auth_user.user_id:
+    if (
+        auth_user.role not in ("admin", "supervisor")
+        and ticket.handler_user_id != auth_user.user_id
+    ):
         raise HTTPException(status_code=404, detail="ticket not found")
 
     status_rows = StatusHistoryRepository(db).find_for_entity(

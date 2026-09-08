@@ -670,7 +670,7 @@ def _return_notice_store() -> FakeNoticeStore:
 
 
 def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> None:
-    """退回真发成功 → 本地工单关闭 + 清接管状态 + Operation hub 关 op_status。"""
+    """退回真发成功 → 本地工单置转单退回 + 清接管状态 + Operation hub op_status 转转单退回。"""
     hub = _hub(world)
     hub.op_status = "processing"
     hub.op_handler = "agent"
@@ -683,14 +683,14 @@ def test_return_success_closes_ticket_and_clears_takeover(world: Session) -> Non
     )
     assert report.sent == 1
     world.refresh(t)
-    assert t.status == "closed"
+    assert t.status == "transferred_return"
     assert t.ksm_takeover_status is None  # 清回未接管
     world.refresh(hub)
-    assert hub.op_status == "closed"  # 关联工单已全关 → Operation hub 关 op_status
+    assert hub.op_status == "transferred_return"  # 关联工单已全关 → Operation hub 转转单退回
 
 
 def test_return_does_not_close_op_status_when_other_ticket_active(world: Session) -> None:
-    """hub 下还有其它活跃工单时，退回只关当前工单，不关 hub 的 op_status。"""
+    """hub 下还有其它活跃工单时，退回只将当前工单置转单退回，不改 hub 的 op_status。"""
     hub = _hub(world)
     hub.op_status = "processing"
     hub.op_handler = "agent"
@@ -704,9 +704,9 @@ def test_return_does_not_close_op_status_when_other_ticket_active(world: Session
     )
     assert report.sent == 1
     world.refresh(t1)
-    assert t1.status == "closed"
+    assert t1.status == "transferred_return"
     world.refresh(hub)
-    assert hub.op_status == "processing"  # 还有活跃工单，不关 op_status
+    assert hub.op_status == "processing"  # 还有活跃工单，不改 op_status
 
 
 def test_return_dry_run_does_not_close_ticket(world: Session) -> None:
@@ -993,7 +993,7 @@ def test_reply_uses_persisted_node_when_notice_expired(world: Session) -> None:
         ksm_current_node_id="NODE-PERSISTED",
         ksm_takeover_status="handled",
     )
-    row = _outbox(world, t, hub, kind="reply", payload={"reply_content": "已处理"})
+    _outbox(world, t, hub, kind="reply", payload={"reply_content": "已处理"})
     # 不传 notice_store → _refresh 拿不到 notice → 回落旧 fields（node_id=NODE-OLD）
     # 但 NODE-OLD 是 source_payload 里的入库快照，此处 _SUBSCRIBE.node.id = NODE-OLD
     # 兜底逻辑只在 fresh.node_id 为空时触发，所以把 source_payload 里的 node 置空来模拟

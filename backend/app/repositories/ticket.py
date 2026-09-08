@@ -170,7 +170,9 @@ class TicketRepository:
             base = base.where(Ticket.actual_released_at <= closed_to)
             count_base = count_base.where(Ticket.actual_released_at <= closed_to)
         if reporter_company:
-            esc_comp = reporter_company.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            esc_comp = (
+                reporter_company.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
             base = base.where(Ticket.reporter_company.ilike(f"%{esc_comp}%"))
             count_base = count_base.where(Ticket.reporter_company.ilike(f"%{esc_comp}%"))
         # 处理人多选筛选（handler_user_id）
@@ -208,7 +210,7 @@ class TicketRepository:
             count_base = count_base.where(cond)
         if op_statuses:
             dev_types = ("Bug_fix", "Demand")
-            conds = [HubIssue.op_status.in_(op_statuses)]
+            conds: list[Any] = [HubIssue.op_status.in_(op_statuses)]
             if "processing" in op_statuses:
                 conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status != "released"))
             if "answered" in op_statuses:
@@ -296,7 +298,15 @@ class TicketRepository:
 
 # 运营态 op_status 档位（工单状态筛选）；研发态直接精确匹配实际 linear_status（数据驱动）。
 # 二者取代旧的进行中/已完成二分 + DEV_STAGE_MATCH 中文档位映射。
-OP_STATUS_VALUES = ["processing", "answered", "closed", "supplementing", "exception", "reviewing"]
+OP_STATUS_VALUES = [
+    "processing",
+    "answered",
+    "closed",
+    "supplementing",
+    "exception",
+    "reviewing",
+    "transferred_return",
+]
 
 # 任务类型(hub.type)筛选档位——4 出口类型（与前端 TYPE_LABEL 对齐）
 TYPE_VALUES = ["Operation", "Bug_fix", "Demand", "Internal_task"]

@@ -37,7 +37,8 @@ from adapters.ksm import HandleOrderRequest, KSMClient, KSMConfig, KSMError, Loc
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.db import make_session
-from app.models import Ticket
+from app.models import HubIssue, Ticket
+from app.services.hub_issues.op_status import OP_TRANSFERRED_RETURN
 from app.services.ksm.identity import KsmIdentity, resolve_ksm_identity
 from app.services.ksm.notice_store import NoticeStore, NoticeStoreLike, resolve_notice
 from app.services.ksm.writeback import (
@@ -82,15 +83,42 @@ def takeover_ksm_ticket(
         logger.info("ksm_takeover_disabled", bill_id=bill_id)
         return
 
-    # 已终态关闭（如退回成功）的工单绝不重新接管——退回/关单成功后
+    # 已终态关闭（如退回成功）或已转单退回的工单绝不重新接管——退回/关单成功后
     # ksm_takeover_status 会被清回 None（交还提单人语义，见 writeback.py），
     # 若此时还有延迟的兜底重试（trigger_ksm_takeover_after_review，经
     # supervisor 审核确认排的 BackgroundTask）姗姗来迟才执行到，仅凭
     # ksm_takeover_status is None 会误判成"新工单"重新 lock+handle，把
-    # KSM 侧节点从退回目标又拽回协同处理，制造本地 closed 与 KSM 侧不一致
-    # （2026-09-04 TKT-006751 复现）。status 字段不受该重置影响，用它兜底。
-    if ticket.status == "closed":
-        logger.info("ksm_takeover_skip_closed", bill_id=bill_id, ticket_id=ticket.id)
+    # KSM 侧节点从退回目标又拽回协同处理，制造本地与 KSM 侧不一致。
+    if ticket.status in ("closed", "transferred_return"):
+        logger.info(
+            "ksm_takeover_skip_terminal",
+            bill_id=bill_id,
+            ticket_id=ticket.id,
+            status=ticket.status,
+        )
+        return
+
+    # 若所挂 Operation hub 处于转单退回状态，坚决不重新接管
+    if ticket.hub_issue_id:
+        hub = db.get(HubIssue, ticket.hub_issue_id)
+        if hub is not None and hub.op_status == OP_TRANSFERRED_RETURN:
+            logger.info(
+                "ksm_takeover_skip_hub_transferred_return",
+                bill_id=bill_id,
+                ticket_id=ticket.id,
+                hub_id=hub.id,
+            )
+            return
+
+    # KSM 原始状态为「已退回」（status=6）时，绝不接管
+    ksm_status = str(detail.get("status") or ticket.source_status or "")
+    if ksm_status == "6":
+        logger.info(
+            "ksm_takeover_skip_returned_status",
+            bill_id=bill_id,
+            ticket_id=ticket.id,
+            ksm_status=ksm_status,
+        )
         return
 
     if ticket.ksm_takeover_status in _TAKEN_OVER_STATUSES:

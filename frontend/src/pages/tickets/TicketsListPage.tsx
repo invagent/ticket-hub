@@ -35,7 +35,7 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
   }
 }
 
-const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected"];
+const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected", "transferred_return"];
 
 // 标题灰置：已毕业 hub 的工单看 computeProcessStage 的综合判定（op_status 优先于
 // hub.status，避免"退回 KSM"等只改 ticket.status=closed 但 hub 仍在处理中的单被误灰，
@@ -105,6 +105,7 @@ const OP_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "supplementing", label: "补充资料" },
   { value: "unresolved_return", label: "未解决退回" },
   { value: "transferred", label: "转单" },
+  { value: "transferred_return", label: "转单退回" },
   { value: "pending_accept", label: "待受理" },
   { value: "answered", label: "处理完成" },
   { value: "closed", label: "处理关闭" },

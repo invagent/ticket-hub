@@ -1050,7 +1050,13 @@ class CloseComplaintResponse(BaseModel):
     status: str
 
 
-_TICKET_TERMINAL_STATUSES = ("done", "closed", "rejected", "superseded")
+_TICKET_TERMINAL_STATUSES = (
+    "done",
+    "closed",
+    "rejected",
+    "superseded",
+    "transferred_return",
+)
 
 
 @router.get("/complaint-tickets", response_model=ComplaintTicketsResponse)

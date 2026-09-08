@@ -63,3 +63,21 @@ def test_apply_handler_change_only(db_session: Session) -> None:
     assert changed is True
     db_session.refresh(hub)
     assert hub.op_handler == "主管"
+
+
+def test_apply_transferred_return(db_session: Session) -> None:
+    from app.services.hub_issues.op_status import OP_TRANSFERRED_RETURN
+
+    hub = _hub(db_session)
+    db_session.commit()
+    changed = apply_op_status(
+        db_session,
+        hub,
+        to_status=OP_TRANSFERRED_RETURN,
+        handler="主管",
+        reason="KSM 退回成功",
+    )
+    db_session.commit()
+    assert changed is True
+    db_session.refresh(hub)
+    assert hub.op_status == OP_TRANSFERRED_RETURN

@@ -21,6 +21,7 @@ export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg
   closed: { label: "已关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   superseded: { label: "被取代", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   rejected: { label: "已驳回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+  transferred_return: { label: "转单退回", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
 };
 
 /** ticket.status → 中文（未知值原样返回）。 */

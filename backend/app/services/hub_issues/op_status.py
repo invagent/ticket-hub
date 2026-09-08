@@ -25,9 +25,18 @@ OP_CLOSED = "closed"
 OP_SUPPLEMENTING = "supplementing"
 OP_REVIEWING = "reviewing"
 OP_EXCEPTION = "exception"
+OP_TRANSFERRED_RETURN = "transferred_return"
 
 _VALID = frozenset(
-    {OP_PROCESSING, OP_ANSWERED, OP_CLOSED, OP_SUPPLEMENTING, OP_REVIEWING, OP_EXCEPTION}
+    {
+        OP_PROCESSING,
+        OP_ANSWERED,
+        OP_CLOSED,
+        OP_SUPPLEMENTING,
+        OP_REVIEWING,
+        OP_EXCEPTION,
+        OP_TRANSFERRED_RETURN,
+    }
 )
 
 
@@ -88,9 +97,7 @@ def record_ticket_action(
     from app.models import Ticket
 
     tickets = (
-        db.query(Ticket)
-        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
-        .all()
+        db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).all()
     )
     repo = StatusHistoryRepository(db)
     for t in tickets:
@@ -115,9 +122,7 @@ def set_hub_tickets_handler(db: Session, hub: HubIssue, user_id: int) -> int:
     from app.models import Ticket
 
     tickets = (
-        db.query(Ticket)
-        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
-        .all()
+        db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).all()
     )
     for t in tickets:
         t.handler_user_id = user_id

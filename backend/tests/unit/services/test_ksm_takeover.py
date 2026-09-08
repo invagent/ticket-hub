@@ -281,6 +281,72 @@ def test_new_ticket_status2_also_full(world: Session) -> None:
     assert t.ksm_takeover_status == "handled"
 
 
+def test_transferred_return_ticket_skips_takeover(world: Session) -> None:
+    """工单为 transferred_return 状态时，绝不重新接管（防退回后被再次锁入协同处理）。"""
+    t = _ticket(world, status="transferred_return", ksm_takeover_status=None)
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail("2"),
+        is_new=False,
+        client=client,  # type: ignore[arg-type]
+        notice_store=FakeNotice(),
+        settings=_settings(),
+    )
+    assert client.locks == []
+    assert client.handles == []
+
+
+def test_transferred_return_hub_skips_takeover(world: Session) -> None:
+    """工单所挂 Operation hub 处于 transferred_return 时，绝不重新接管。"""
+    from app.models import HubIssue
+
+    hub = HubIssue(
+        short_code="HUB-000099",
+        type="Operation",
+        title="退回测试 Hub",
+        status="closed",
+        op_status="transferred_return",
+    )
+    world.add(hub)
+    world.flush()
+
+    t = _ticket(world, status="received", ksm_takeover_status=None)
+    t.hub_issue_id = hub.id
+    world.commit()
+
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail("2"),
+        is_new=False,
+        client=client,  # type: ignore[arg-type]
+        notice_store=FakeNotice(),
+        settings=_settings(),
+    )
+    assert client.locks == []
+    assert client.handles == []
+
+
+def test_ksm_detail_status_6_skips_takeover(world: Session) -> None:
+    """上游推送详情 status=6（KSM 已退回状态）时，绝不接管。"""
+    t = _ticket(world, status="received", ksm_takeover_status=None)
+    client = FakeKSMClient(detail=_SUBSCRIBE_FRESH)
+    takeover_ksm_ticket(
+        world,
+        t,
+        detail=_detail("6"),
+        is_new=False,
+        client=client,  # type: ignore[arg-type]
+        notice_store=FakeNotice(),
+        settings=_settings(),
+    )
+    assert client.locks == []
+    assert client.handles == []
+
+
 # ---- 已存在工单：只接管不处理 ----------------------------------------------
 
 

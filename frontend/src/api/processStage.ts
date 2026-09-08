@@ -72,6 +72,7 @@ const OP_STAGE: Record<string, ProcessStage> = {
   supplementing: { label: "补充资料", tone: "progress" },
   unresolved_return: { label: "未解决退回", tone: "exception" },
   transferred: { label: "转单", tone: "progress" },
+  transferred_return: { label: "转单退回", tone: "closed" },
   pending_accept: { label: "待受理", tone: "pending" },
   answered: { label: "处理完成", tone: "done" },
   closed: { label: "处理关闭", tone: "closed" },

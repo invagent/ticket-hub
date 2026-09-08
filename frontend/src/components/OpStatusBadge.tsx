@@ -12,6 +12,7 @@ export const OP_STATUS_LABEL: Record<string, { label: string; bg: string; fg: st
   supplementing: { label: "补充资料", bg: "#fbe9d4", fg: "#a05a10", bd: "#eec99a" },
   unresolved_return: { label: "未解决退回", bg: "#fef2f2", fg: "#b91c1c", bd: "#fecaca" },
   transferred: { label: "转单", bg: "#f5f3ff", fg: "#6d28d9", bd: "#ddd6fe" },
+  transferred_return: { label: "转单退回", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   pending_accept: { label: "待受理", bg: "#eff6ff", fg: "#1d4ed8", bd: "#bfdbfe" },
   answered: { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
   closed: { label: "处理关闭", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },

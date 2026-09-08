@@ -71,6 +71,14 @@ def test_reviewing_accepted_by_constraint(db_session) -> None:
     assert hub.op_status == "reviewing"
 
 
+def test_transferred_return_accepted_by_constraint(db_session: Session) -> None:
+    """迁移后 op_status='transferred_return' 应被 CheckConstraint 接受。"""
+    hub = _op_hub(short_code="HUB-TR-1", op_status="transferred_return", op_handler="agent")
+    db_session.add(hub)
+    db_session.flush()
+    assert hub.op_status == "transferred_return"
+
+
 def test_reply_is_draft_defaults_false(db_session) -> None:
     from app.models import HubIssue
 

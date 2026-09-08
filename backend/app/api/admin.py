@@ -88,10 +88,9 @@ def list_product_lines(db: Session = Depends(get_session)) -> list[ProductLineOu
     rows = db.execute(select(ProductLine).order_by(ProductLine.id)).scalars().all()
     # batch count modules per product line
     counts_q = db.execute(
-        select(Module.product_line_code, func.count(Module.id))
-        .group_by(Module.product_line_code)
+        select(Module.product_line_code, func.count(Module.id)).group_by(Module.product_line_code)
     ).all()
-    counts = {code: cnt for code, cnt in counts_q}
+    counts: dict[str, int] = dict(counts_q)  # type: ignore[arg-type]
 
     result = []
     for r in rows:
@@ -134,9 +133,7 @@ def add_product_line(
         db.commit()
     except IntegrityError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=409, detail=f"product_line already exists: {code}"
-        ) from e
+        raise HTTPException(status_code=409, detail=f"product_line already exists: {code}") from e
     db.refresh(pl)
     logger.info("admin_product_line_added", code=code, by=admin.user_id)
     return ProductLineOut(
@@ -170,9 +167,12 @@ def delete_product_line(
             detail=f"产品线「{pl.name}」下还有模块，请先删除所有模块",
         )
     # check tickets reference
-    ticket_count = db.execute(
-        select(func.count()).select_from(Ticket).where(Ticket.product_line_code == code)
-    ).scalar() or 0
+    ticket_count = (
+        db.execute(
+            select(func.count()).select_from(Ticket).where(Ticket.product_line_code == code)
+        ).scalar()
+        or 0
+    )
     if ticket_count > 0:
         raise HTTPException(
             status_code=409,
@@ -209,10 +209,13 @@ def patch_product_line(
         setattr(pl, field, value)
     db.commit()
     db.refresh(pl)
-    module_count = db.execute(
-        select(func.count(Module.id)).where(Module.product_line_code == code)
-    ).scalar() or 0
-    logger.info("admin_product_line_updated", code=code, by=admin.user_id, fields=list(patch.keys()))
+    module_count = (
+        db.execute(select(func.count(Module.id)).where(Module.product_line_code == code)).scalar()
+        or 0
+    )
+    logger.info(
+        "admin_product_line_updated", code=code, by=admin.user_id, fields=list(patch.keys())
+    )
     return ProductLineOut(
         id=pl.id,
         code=pl.code,

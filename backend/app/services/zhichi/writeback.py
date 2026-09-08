@@ -56,7 +56,9 @@ _DEFAULT_RELEASED_NOTE = "您反馈的问题已处理完成，如仍有疑问欢
 
 # 智齿回写成功且 ticket_status=3（已解决关单）后，本地工单/hub 推终态。
 # 已在终态的 ticket 不重置（幂等 + 不覆盖投诉 closed 等）。
-_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
+_TICKET_TERMINAL_STATUSES = frozenset(
+    {"done", "closed", "rejected", "superseded", "transferred_return"}
+)
 
 # 智齿侧工单已关闭——外部终态。回写注定失败且无意义，本地直接收尾（关单 + 记时间线），
 # 不再重试（标 skipped 不占 failed 待人工名额）。参照 KSM 的「已接管」良性错误容错思路。

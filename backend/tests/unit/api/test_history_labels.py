@@ -23,6 +23,7 @@ def test_humanize_status() -> None:
     assert humanize_status("received") == "已接收"
     assert humanize_status("split") == "已拆分"
     assert humanize_status("released") == "已发版"
+    assert humanize_status("transferred_return") == "转单退回"
     assert humanize_status(None) is None
     # 未知原样
     assert humanize_status("weird") == "weird"

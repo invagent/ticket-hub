@@ -34,7 +34,9 @@ logger = get_logger(__name__)
 # hub statuses that fan out to tickets (identical value on both sides)
 _TICKET_CASCADE_STATUSES = frozenset({"in_progress", "released"})
 
-_TICKET_TERMINAL_STATUSES = frozenset({"done", "closed", "rejected", "superseded"})
+_TICKET_TERMINAL_STATUSES = frozenset(
+    {"done", "closed", "rejected", "superseded", "transferred_return"}
+)
 
 
 @dataclass(slots=True)

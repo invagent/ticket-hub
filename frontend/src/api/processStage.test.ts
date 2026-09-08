@@ -81,6 +81,17 @@ describe("computeProcessStage", () => {
     expect(stage.label).toBe("处理关闭");
   });
 
+  it("Operation op_status=transferred_return → 转单退回（tone: closed）", () => {
+    const stage = computeProcessStage({
+      predictedType: "Operation",
+      hubIssueId: 1,
+      hubStatus: "closed",
+      opStatus: "transferred_return",
+    });
+    expect(stage.label).toBe("转单退回");
+    expect(stage.tone).toBe("closed");
+  });
+
   it("Operation 毕业时 op_status 已预置 processing，但闸门开时 hub.status 仍卡 pending_review → 显示闸门态而非处理中", () => {
     const stage = computeProcessStage({
       predictedType: "Operation",

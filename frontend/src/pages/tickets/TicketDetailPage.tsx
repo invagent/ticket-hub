@@ -452,9 +452,10 @@ export function TicketDetailPage() {
   const effectiveType = hub.data?.type ?? d?.predicted_type;
   const isDevType = effectiveType === "Bug_fix" || effectiveType === "Demand";
   const isOperation = effectiveType === "Operation";
-  // 答复完成(answered)或已关单(closed)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
+  // 答复完成(answered)或已关单(closed/transferred_return)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
-  const opDone = opStatus === "answered" || opStatus === "closed";
+  const opDone =
+    opStatus === "answered" || opStatus === "closed" || opStatus === "transferred_return";
   // 反思诊断抽屉：knowledge_op/supervisor/admin 全量可见；此外 reviewing 态
   // （AI 答复打分未过转人工审核）本工单处理人本人也能看——只诊断不改 skill
   // （ReflectDrawer 内部按角色再拆一层，RemedyColumn 仍 knowledge_op-only）。
@@ -1592,14 +1593,21 @@ function TicketAttributesEditor({
     }
   }, [initType, initPlc, initModule, initRootCause, userEdited]);
 
-  const ticketClosed = ["closed", "done", "resolved", "rejected", "superseded"].includes(
-    ticket.status,
-  );
+  const ticketClosed = [
+    "closed",
+    "done",
+    "resolved",
+    "rejected",
+    "superseded",
+    "transferred_return",
+  ].includes(ticket.status);
   const opDone =
     hub?.op_status === "answered" ||
     hub?.op_status === "closed" ||
+    hub?.op_status === "transferred_return" ||
     ticket.op_status === "answered" ||
-    ticket.op_status === "closed";
+    ticket.op_status === "closed" ||
+    ticket.op_status === "transferred_return";
   const canEdit =
     !ticketClosed &&
     !opDone &&
