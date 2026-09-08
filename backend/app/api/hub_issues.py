@@ -10,6 +10,7 @@ All authenticated users can read; replies require supervisor.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_supervisor, require_user
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import AgentDecision, HubIssue, Ticket
+from app.models import AgentDecision, HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import HubIssueRepository, TicketRepository
 from app.services import knowledge_feedback as kf
@@ -1209,7 +1210,7 @@ def confirm_subtask_endpoint(
 
             consume_module_owner(db, hub.product_line_code, hub.module)
 
-        push_res = push_hub_issue_to_linear(
+        push_hub_issue_to_linear(
             hub.id, db, assignee_override_user_id=assignee_id
         )
 

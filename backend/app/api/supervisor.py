@@ -54,6 +54,7 @@ from app.db import get_session
 from app.models import AgentDecision, HubIssue, StatusHistory, Ticket
 from app.repositories.notification_log import NotificationLogRepository
 from app.repositories.status_history import StatusHistoryRepository
+from app.repositories.ticket import TicketRepository
 from app.services import knowledge_feedback as kf
 from app.services.agents.classify import classify_ticket
 from app.services.agents.dedup_execute import (
@@ -417,9 +418,19 @@ def batch_supply_tickets(
 @router.post("/assign", response_model=AssignResponse)
 def assign_tickets(
     body: AssignBody,
-    user: AuthedUser = Depends(require_supervisor),
+    user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> AssignResponse:
+    # 权限下放：主管/管理员可转派任意工单；普通成员（member/assignee）仅可移交当前处理人为本人的工单
+    if user.role not in ("admin", "supervisor"):
+        tickets = TicketRepository(db).list_by_ids(body.ticket_ids)
+        unauthorized = [t for t in tickets if t.handler_user_id != user.user_id]
+        if unauthorized or len(tickets) < len(body.ticket_ids):
+            raise HTTPException(
+                status_code=403,
+                detail="需要主管/管理员权限，或当前工单的处理人才能移交",
+            )
+
     try:
         result = ManualAssignService(db).assign(
             AssignRequest(

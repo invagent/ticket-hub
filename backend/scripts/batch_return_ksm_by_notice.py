@@ -76,7 +76,7 @@ def main(*, dry_run: bool) -> None:
                 detail = client.get_order_detail(
                     bill_id=bill_id, notice_num=notice_num, subscribe_num=_SUBSCRIBE_NUM
                 )
-            except Exception as e:  # noqa: BLE001 — 汇总报告，单条失败不中止整批
+            except Exception as e:
                 print(f"[SKIP] {bill_number} ({bill_id}) 实时拉取失败: {e}")
                 continue
 
@@ -85,7 +85,7 @@ def main(*, dry_run: bool) -> None:
 
             ticket = db.query(Ticket).filter_by(source_ticket_id=bill_id).first()
             if ticket is None:
-                print(f"       -> 系统内无此 ticket，跳过退回")
+                print("       -> 系统内无此 ticket，跳过退回")
                 continue
             print(f"       -> {ticket.short_code} status={ticket.status} takeover={ticket.ksm_takeover_status}")
 

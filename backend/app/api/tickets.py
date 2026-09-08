@@ -45,7 +45,14 @@ from app.services.cascade.outbox_retry import (
     latest_failed_outbox_for_ticket,
     retry_outbox_row,
 )
+from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.return_sync import ReturnSyncError, request_return
+from app.services.hub_issues.op_status import (
+    OP_ANSWERED,
+    apply_op_status,
+    record_ticket_action,
+    set_hub_tickets_handler,
+)
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -1072,15 +1079,15 @@ def ticket_reply_endpoint(
     user: AuthedUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> TicketReplyResponse:
-    """向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。
-
-    提交内容支持按条目自动拼接已完成子任务的解决方案说明。
+    """向 KSM/智齿提交回复：
+    若存在独立子任务，要求至少有一个子任务已处理/答复；
+    支持自动按条目拼接已完成子任务的解决方案说明。
     """
     ticket = TicketRepository(db).get(ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
 
-    # 1. 查找所有子任务
+    # 1. 查找所有关联的 Hub 任务（包含自身绑定的 hub_issue 以及以此工单作为父工单的子 hub_issue）
     sub_tasks = (
         db.execute(
             select(HubIssue).where(
@@ -1092,30 +1099,50 @@ def ticket_reply_endpoint(
         .all()
     )
 
-    # 2. 闸门检查：只有当其中至少有一个子任务是已完成(answered)的状态，才允许提交回复
-    answered_subs = [s for s in sub_tasks if s.status == "answered"]
-    if not answered_subs:
+    child_subtasks = [
+        s for s in sub_tasks if s.ticket_id == ticket_id and s.id != ticket.hub_issue_id
+    ]
+
+    # 已答复或已完成/已产出方案的子任务
+    answered_subs = [
+        s
+        for s in sub_tasks
+        if s.status in ("answered", "processing", "released", "resolved")
+        or s.op_status in (OP_ANSWERED, "closed")
+        or bool((s.reply_content or "").strip())
+    ]
+
+    content = (body.content or "").strip()
+
+    # 2. 闸门检查：若存在独立子任务，且未手动输入回复内容，要求至少有一个子任务已完成
+    if child_subtasks and not answered_subs and not content:
         raise HTTPException(
             status_code=400,
-            detail="当前工单暂无已完成的子任务，至少需要一个子任务处理完成(已答复)后才允许提交回复",
+            detail="当前工单存在未完成的子任务，至少需要一个子任务处理完成(已答复)后才允许提交回复",
         )
 
-    # 3. 回复内容拼接
-    content = (body.content or "").strip()
+    # 3. 回复内容拼接（若未传 content，则自动拼接已完成子任务方案）
     if not content:
-        # 按条目自动拼接已答复子任务的解决方案
         lines = []
         for i, s in enumerate(answered_subs, 1):
             sol = (s.reply_content or "").strip() or "已处理完成"
             lines.append(f"{i}. 【{s.title}】：{sol}")
         content = "\n".join(lines)
 
-    # 4. 找到一个主 hub 用于调用 author_reply（有 ticket.hub_issue_id 优先，否则取第一个子任务）
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="回复内容不能为空，请先填写处理说明或确认子任务解决方案",
+        )
+
+    # 4. 找到目标主 hub 用于调用 author_reply（有 ticket.hub_issue_id 优先，否则取第一个子任务）
     target_hub = (
-        db.get(HubIssue, ticket.hub_issue_id) if ticket.hub_issue_id else answered_subs[0]
+        db.get(HubIssue, ticket.hub_issue_id)
+        if ticket.hub_issue_id
+        else (sub_tasks[0] if sub_tasks else None)
     )
     if target_hub is None:
-        target_hub = answered_subs[0]
+        raise HTTPException(status_code=400, detail="当前工单未关联任何有效的 Hub 任务")
 
     try:
         reply_result = author_reply(
@@ -1124,7 +1151,19 @@ def ticket_reply_endpoint(
     except ReplySyncError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
-    # 尝试即时 drain 出站回写
+    # 5. 人工答复推进 op_status → answered，并留痕
+    target_hub = db.get(HubIssue, target_hub.id)
+    if target_hub is not None and target_hub.type == "Operation":
+        apply_op_status(
+            db, target_hub, to_status=OP_ANSWERED, handler=f"user:{user.name}", reason="主管人工答复"
+        )
+        record_ticket_action(
+            db, target_hub, action="reply", changed_by=f"user:{user.name}", reason="主管答复客户"
+        )
+        set_hub_tickets_handler(db, target_hub, user.user_id)
+        db.commit()
+
+    # 6. 尝试即时 drain 出站回写
     try:
         from app.services.ksm.writeback import drain_ksm_outbox
         from app.services.zhichi.writeback import drain_zhichi_outbox

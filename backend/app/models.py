@@ -569,6 +569,9 @@ class HubIssue(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("tickets.id"), nullable=True, index=True
+    )
     short_code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)

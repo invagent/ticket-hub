@@ -18,7 +18,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models import Ticket
+from app.models import HubIssue, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.user import UserRepository
@@ -73,6 +73,8 @@ class ManualAssignService:
         found = {t.id: t for t in tickets}
         results: list[AssignItemResult] = []
 
+        is_admin_or_supervisor = operator is not None and operator.role in ("admin", "supervisor")
+
         for tid in req.ticket_ids:
             if tid not in found:
                 results.append(
@@ -86,12 +88,46 @@ class ManualAssignService:
                 continue
 
             ticket = found[tid]
+            # 普通 member 权限下放：只能移交自己是当前处理人的工单
+            if not is_admin_or_supervisor and ticket.handler_user_id != req.operator_user_id:
+                results.append(
+                    AssignItemResult(
+                        ticket_id=tid,
+                        short_code=ticket.short_code,
+                        success=False,
+                        prev_assigned_user_id=ticket.handler_user_id,
+                        message="无权转交非本人处理的工单",
+                    )
+                )
+                continue
+
             # 转交改写处理人（handler_user_id），不动责任人（assigned_user_id）
             prev = ticket.handler_user_id
             self._db.execute(
                 update(Ticket)
                 .where(Ticket.id == ticket.id)
                 .values(handler_user_id=req.assigned_user_id)
+            )
+
+            # 同步更新主 Hub 任务运营处理人
+            if ticket.hub_issue_id:
+                self._db.execute(
+                    update(HubIssue)
+                    .where(HubIssue.id == ticket.hub_issue_id)
+                    .values(
+                        op_handler_user_id=req.assigned_user_id,
+                        op_handler=f"user:{target.name}",
+                    )
+                )
+
+            # 同步更新归属该工单的草稿态子任务处理人
+            self._db.execute(
+                update(HubIssue)
+                .where(
+                    (HubIssue.ticket_id == ticket.id) | (HubIssue.id == ticket.hub_issue_id),
+                    HubIssue.status == "draft",
+                )
+                .values(assigned_user_id=req.assigned_user_id)
             )
             history_repo.record(
                 entity_type="ticket",

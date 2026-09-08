@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
 import { useUserOptions } from "@/components/selectors";
@@ -7,7 +7,7 @@ interface Props {
   ticketIds: number[];
   currentHandlersDisplay: string;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (count: number, targetName: string) => void;
 }
 
 interface UserOpt {
@@ -26,6 +26,7 @@ export function BatchTransferDialog({
 }: Props) {
   const qc = useQueryClient();
   const [targetUserId, setTargetUserId] = useState<number | undefined>();
+  const [searchKw, setSearchKw] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const usersQuery = useUserOptions();
@@ -33,15 +34,28 @@ export function BatchTransferDialog({
     (u) => Boolean(u.name),
   );
 
+  const filteredUsers = useMemo(() => {
+    const kw = searchKw.trim().toLowerCase();
+    if (!kw) return users;
+    return users.filter(
+      (u) =>
+        u.name.toLowerCase().includes(kw) ||
+        (u.employee_no && u.employee_no.toLowerCase().includes(kw)),
+    );
+  }, [users, searchKw]);
+
   const transferMutation = useMutation({
     mutationFn: (userId: number) =>
       api.post("/api/supervisor/assign", {
         ticket_ids: ticketIds,
         assigned_user_id: userId,
       }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["tickets"] });
-      onSuccess?.();
+      const targetUser = users.find((u) => u.id === targetUserId);
+      const targetName = targetUser?.name ?? "指定处理人";
+      const count = res?.assigned_count ?? ticketIds.length;
+      onSuccess?.(count, targetName);
       onClose();
     },
     onError: (err) => {
@@ -98,30 +112,39 @@ export function BatchTransferDialog({
             </span>
           </div>
 
-          {/* 移交人下拉录入框（长300px，高30px） */}
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600 font-medium whitespace-nowrap">
-              移交人：
-            </span>
-            <select
-              value={targetUserId ?? ""}
-              onChange={(e) => {
-                setTargetUserId(
-                  e.target.value === "" ? undefined : Number(e.target.value),
-                );
-                if (errorMsg) setErrorMsg(null);
-              }}
-              disabled={transferMutation.isPending || usersQuery.isLoading}
-              className="w-[300px] h-[30px] px-2.5 text-xs border border-slate-300 rounded-[6px] bg-white outline-none focus:border-[#6085e7] text-slate-800 cursor-pointer shadow-xs"
-            >
-              <option value="">请选择移交人</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                  {u.employee_no ? ` (${u.employee_no})` : ""}
-                </option>
-              ))}
-            </select>
+          {/* 移交人快速搜索与下拉录入框 */}
+          <div className="flex flex-col gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-600 font-medium whitespace-nowrap">
+                移交人：
+              </span>
+              <input
+                type="text"
+                placeholder="搜索姓名/工号…"
+                value={searchKw}
+                onChange={(e) => setSearchKw(e.target.value)}
+                className="w-[120px] h-[30px] px-2 text-xs border border-slate-300 rounded-[6px] outline-none focus:border-[#6085e7] bg-white shadow-xs"
+              />
+              <select
+                value={targetUserId ?? ""}
+                onChange={(e) => {
+                  setTargetUserId(
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                  );
+                  if (errorMsg) setErrorMsg(null);
+                }}
+                disabled={transferMutation.isPending || usersQuery.isLoading}
+                className="w-[172px] h-[30px] px-2 text-xs border border-slate-300 rounded-[6px] bg-white outline-none focus:border-[#6085e7] text-slate-800 cursor-pointer shadow-xs"
+              >
+                <option value="">请选择移交人</option>
+                {filteredUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                    {u.employee_no ? ` (${u.employee_no})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {errorMsg && (

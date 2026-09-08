@@ -766,10 +766,17 @@ export function TicketsListPage() {
   const [showReroute, setShowReroute] = useState(false);
   const [showSupply, setShowSupply] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [transferNotice, setTransferNotice] = useState<string | null>(null);
   const [bulkAssignTo, setBulkAssignTo] = useState<number | undefined>(undefined);
   const [showAssign, setShowAssign] = useState(false);
   const [jumpPageInput, setJumpPageInput] = useState("");
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!transferNotice) return;
+    const t = setTimeout(() => setTransferNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [transferNotice]);
 
   // 列偏好（顺序 + 宽度）持久化
   const initialPrefs = useMemo(loadPrefs, []);
@@ -1079,7 +1086,7 @@ export function TicketsListPage() {
   // ---- 列定义 --------------------------------------------------------------
   const columns = useMemo<ColumnDef<TicketSummary>[]>(() => {
     const cols: ColumnDef<TicketSummary>[] = [];
-    if (isSupervisor) {
+    if (Boolean(authUser)) {
       cols.push({
         id: "select",
         header: () => (
@@ -2059,7 +2066,7 @@ export function TicketsListPage() {
               <span>批量补充资料</span>
             </button>
           )}
-          {isSupervisor && (
+          {Boolean(authUser) && (
             <button
               type="button"
               onClick={() => {
@@ -2111,13 +2118,29 @@ export function TicketsListPage() {
           >
             <span>重置筛选条件</span>
           </button>
-          {isSupervisor && selectedIds.size > 0 && (
+          {selectedIds.size > 0 && (
             <span className="text-[11.5px] text-hub-textMuted whitespace-nowrap">
               已选 {selectedIds.size} 条
             </span>
           )}
         </div>
       </div>
+
+      {transferNotice && (
+        <div className="mb-2.5 px-3.5 py-2 text-[12px] rounded-[8px] bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold">✓</span>
+            <span className="font-medium">{transferNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTransferNotice(null)}
+            className="text-emerald-500 hover:text-emerald-700 text-sm leading-none cursor-pointer"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {tickets.isLoading && <p className="text-xs text-hub-textFaint">加载中…</p>}
       {tickets.error && <p className="text-xs text-hub-rose">{String(tickets.error)}</p>}
@@ -2310,36 +2333,50 @@ export function TicketsListPage() {
         </div>
       )}
 
-      {/* 浮动操作栏（主管多选 → 重新触发分配 / 批量指派） */}
-      {isSupervisor && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 px-6 py-3 bg-white border border-hub-border rounded-full shadow-lg text-sm font-hub">
+      {/* 浮动操作栏（多选 → 批量移交 / 主管重新触发分配 / 批量指派） */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-6 py-3 bg-white border border-hub-border rounded-full shadow-lg text-sm font-hub">
           <span>
             已选 <b>{selectedIds.size}</b> 条
           </span>
           <button
-            onClick={() => setShowReroute(true)}
-            className="px-4 py-1.5 rounded-full bg-hub-teal text-white text-xs font-semibold hover:brightness-95"
+            type="button"
+            onClick={() => setShowTransfer(true)}
+            className="px-4 py-1.5 rounded-full bg-[#6085e7] text-white text-xs font-semibold hover:bg-[#4f75dd] active:bg-[#3d60d4] shadow-xs cursor-pointer select-none transition-all"
           >
-            重新触发分配
+            批量移交
           </button>
-          <span className="inline-flex items-center gap-2">
-            <UserSelect
-              value={bulkAssignTo}
-              onChange={setBulkAssignTo}
-              placeholder="指派给…"
-              className="text-xs px-2.5 py-1.5 border border-hub-border rounded-full bg-hub-panel outline-none focus:border-hub-teal focus:bg-white min-w-[9rem]"
-            />
-            <button
-              onClick={() => bulkAssignTo != null && setShowAssign(true)}
-              disabled={bulkAssignTo == null}
-              className="px-4 py-1.5 rounded-full bg-hub-teal text-white text-xs font-semibold hover:brightness-95 disabled:opacity-40"
-            >
-              批量指派
-            </button>
-          </span>
+          {isSupervisor && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowReroute(true)}
+                className="px-4 py-1.5 rounded-full bg-hub-teal text-white text-xs font-semibold hover:brightness-95 cursor-pointer select-none"
+              >
+                重新触发分配
+              </button>
+              <span className="inline-flex items-center gap-2">
+                <UserSelect
+                  value={bulkAssignTo}
+                  onChange={setBulkAssignTo}
+                  placeholder="指派给…"
+                  className="text-xs px-2.5 py-1.5 border border-hub-border rounded-full bg-hub-panel outline-none focus:border-hub-teal focus:bg-white min-w-[9rem]"
+                />
+                <button
+                  type="button"
+                  onClick={() => bulkAssignTo != null && setShowAssign(true)}
+                  disabled={bulkAssignTo == null}
+                  className="px-4 py-1.5 rounded-full bg-hub-teal text-white text-xs font-semibold hover:brightness-95 disabled:opacity-40 cursor-pointer select-none"
+                >
+                  批量指派
+                </button>
+              </span>
+            </>
+          )}
           <button
+            type="button"
             onClick={() => setSelectedIds(new Set())}
-            className="text-hub-textMuted hover:text-hub-textSecondary text-xs"
+            className="text-hub-textMuted hover:text-hub-textSecondary text-xs cursor-pointer select-none"
           >
             取消
           </button>
@@ -2383,7 +2420,10 @@ export function TicketsListPage() {
           ticketIds={Array.from(selectedIds)}
           currentHandlersDisplay={currentHandlersDisplay}
           onClose={() => setShowTransfer(false)}
-          onSuccess={() => setSelectedIds(new Set())}
+          onSuccess={(count, targetName) => {
+            setSelectedIds(new Set());
+            setTransferNotice(`已成功将 ${count} 条工单移交给【${targetName}】`);
+          }}
         />
       )}
     </div>

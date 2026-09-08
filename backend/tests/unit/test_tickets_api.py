@@ -930,3 +930,76 @@ def test_download_unknown_attachment_404(app_client: TestClient, att_world: Sess
         ).status_code
         == 404
     )
+
+
+def test_ticket_reply_endpoint_success(app_client: TestClient, db_session: Session) -> None:
+    """向工单直接提交答复：校验通过并推进 op_status 为 answered。"""
+    hub = HubIssue(
+        id=701,
+        short_code="HUB-701",
+        type="Operation",
+        title="测试运营任务",
+        status="created",
+        op_status="processing",
+    )
+    t = Ticket(
+        id=701,
+        short_code="TKT-701",
+        title="测试工单",
+        type="Raw",
+        status="received",
+        source_code="ksm",
+        source_ticket_id="KSM-701",
+        hub_issue_id=701,
+    )
+    db_session.add_all([hub, t])
+    db_session.commit()
+
+    r = app_client.post(
+        "/api/tickets/701/reply",
+        json={"content": "这是处理答复方案说明"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["ticket_id"] == 701
+    assert data["reply_content"] == "这是处理答复方案说明"
+
+    # 验证 hub 状态已变更为 answered
+    db_session.refresh(hub)
+    assert hub.op_status == "answered"
+    assert hub.reply_content == "这是处理答复方案说明"
+
+
+def test_ticket_reply_endpoint_empty_content_400(
+    app_client: TestClient, db_session: Session
+) -> None:
+    """回复内容为空且无已完成子任务方案时拒绝 (400)。"""
+    hub = HubIssue(
+        id=702,
+        short_code="HUB-702",
+        type="Operation",
+        title="测试任务",
+        status="created",
+        op_status="processing",
+    )
+    t = Ticket(
+        id=702,
+        short_code="TKT-702",
+        title="测试工单",
+        type="Raw",
+        status="received",
+        source_code="ksm",
+        source_ticket_id="KSM-702",
+        hub_issue_id=702,
+    )
+    db_session.add_all([hub, t])
+    db_session.commit()
+
+    r = app_client.post(
+        "/api/tickets/702/reply",
+        json={"content": ""},
+        headers=_bearer(),
+    )
+    assert r.status_code == 400
+
