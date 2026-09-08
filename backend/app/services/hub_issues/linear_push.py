@@ -89,7 +89,9 @@ def _build_description(db: Session, hub: HubIssue) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
-def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
+def _push_via_webhook(
+    db: Session, hub: HubIssue, *, assignee_override_user_id: int | None = None
+) -> LinearPushResult | None:
     """转研发 webhook 分支。成功回写真实 Linear id/identifier（供展示/幂等/状态回同步）。
 
     2026-09-04 手工重推实测纠正：webhook 响应体其实带真实 Linear
@@ -98,16 +100,37 @@ def _push_via_webhook(db: Session, hub: HubIssue) -> LinearPushResult | None:
     linear_status_sync 也因 linear_uuid 恒 NULL 而无法回同步）。现在优先用
     webhook_push 解析出的真实值；对方响应格式有出入解析不到时，才回落占位符
     （不阻断推送，幂等仍靠 linear_identifier 非空）。
+
+    2026-09-08 修复两处与直连 Linear 分支（下方 push_hub_issue_to_linear 主体）
+    不一致的地方（TKT-006351 等 7 单复现——模块负责人未配置，本该在
+    pending_linear_review 卡人工确认，实际被静默推给了处理人）：
+      1. assignee_override_user_id 之前完全没被这个分支接收——工作台
+         confirm-linear-push 手选的人被直接丢弃，走这里又重新
+         consume_module_owner 选了一次（游标还被多推进一次）。
+      2. 查不到模块负责人也没手选人时，之前直接静默回落成
+         hub.assigned_user_id（入库处理人）继续推送——这条从
+         pending_linear_review 过来就是因为模块负责人不确定，处理人在
+         confirm-linear-push 若也没手选，应该继续卡人工，不能静默送出去。
+         直连 Linear 分支本来就有这层 _mark_pending 守卫，这里补齐对齐。
     """
-    owner = consume_module_owner(db, hub.product_line_code, hub.module)
-    assignee_name = ""
-    if owner is not None:
-        assignee_name = owner.name or ""
-        hub.owner_user_id = owner.id
-    elif hub.assigned_user_id is not None:
-        fallback = db.get(User, hub.assigned_user_id)
-        if fallback is not None:
-            assignee_name = fallback.name or ""
+    if assignee_override_user_id is not None:
+        owner = db.get(User, assignee_override_user_id)
+        if owner is not None:
+            hub.owner_user_id = owner.id
+    else:
+        owner = consume_module_owner(db, hub.product_line_code, hub.module)
+        if owner is not None:
+            hub.owner_user_id = owner.id
+
+    if owner is None:
+        _mark_pending(
+            db,
+            hub,
+            reason="转研发 webhook：模块负责人未配置且未手选责任人，推送暂停待人工确认",
+        )
+        return None
+
+    assignee_name = owner.name or ""
     try:
         push_result = push_hub_issue_to_webhook(db, hub, assignee_name=assignee_name)
     except (LinearAuthError, LinearBusinessError, LinearNetworkError) as e:
@@ -183,7 +206,9 @@ def push_hub_issue_to_linear(
         # ---- 出口分流 ----
         # 转研发默认走飞书 webhook；关闭时回落直连 Linear GraphQL（需 key+team+push_enabled）。
         if settings.linear_webhook_enabled:
-            return _push_via_webhook(db, hub)
+            return _push_via_webhook(
+                db, hub, assignee_override_user_id=assignee_override_user_id
+            )
 
         if not (
             settings.linear_push_enabled and settings.linear_api_key and settings.linear_team_id

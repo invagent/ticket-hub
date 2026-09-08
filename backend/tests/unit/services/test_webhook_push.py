@@ -269,6 +269,8 @@ def test_push_hub_issue_to_linear_routes_to_webhook(world: Session, monkeypatch)
     不含 data（旧假设/格式有出入）时回落占位符。"""
     from app.services.hub_issues import webhook_push
 
+    world.add(User(id=70, feishu_uid="ou_o70", name="研发负责人"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="研发负责人"))
     hub = _make_hub(world, 7)
     _make_ksm_ticket(world, hub, short_code="TKT-WH-7")
 
@@ -292,6 +294,8 @@ def test_push_hub_issue_to_linear_webhook_uses_real_identifier(world: Session, m
     时，必须回写真实值，不能再用占位符（旧 bug：真实 identifier 从未落库）。"""
     from app.services.hub_issues import webhook_push
 
+    world.add(User(id=71, feishu_uid="ou_o71", name="研发负责人"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="研发负责人"))
     hub = _make_hub(world, 71)
     _make_ksm_ticket(world, hub, short_code="TKT-WH-71")
 
@@ -358,6 +362,8 @@ def test_webhook_idempotent(world: Session, monkeypatch) -> None:  # type: ignor
 def test_webhook_failure_marks_pending(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from app.services.hub_issues import webhook_push
 
+    world.add(User(id=72, feishu_uid="ou_o72", name="研发负责人"))
+    world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="研发负责人"))
     hub = _make_hub(world, 9)
     _make_ksm_ticket(world, hub, short_code="TKT-WH-9")
     fake = _FakeWebhookClient(raises=LinearNetworkError("timeout"))
@@ -383,6 +389,53 @@ def test_webhook_skips_operation_type(world: Session, monkeypatch) -> None:  # t
     monkeypatch.setattr(webhook_push, "LinearWebhookClient", lambda cfg, **kw: fake)
     assert push_hub_issue_to_linear(hub.id, world) is None
     assert fake.sent == []
+
+
+def test_webhook_no_module_owner_marks_pending_not_silent_fallback(
+    world: Session, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """2026-09-08 修复：模块未配 dev_owners 且未手选责任人时，webhook 分支之前会
+    静默回落成 hub.assigned_user_id（入库处理人）继续推送——跟直连 Linear 分支的
+    _mark_pending 守卫不一致，导致这条本该卡 pending_linear_review 人工确认的单
+    被漏推（TKT-006351/HUB-000914 等 7 单复现）。现在必须卡 pending，不静默推送。"""
+    from app.services.hub_issues import webhook_push
+
+    hub = _make_hub(world, 73, assigned_user_id=73, product_line_code="fpy", module="无人负责模块")
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-73")
+    fake = _FakeWebhookClient()
+    monkeypatch.setattr(webhook_push, "LinearWebhookClient", lambda cfg, **kw: fake)
+
+    res = push_hub_issue_to_linear(hub.id, world)
+    assert res is None
+    assert fake.sent == []  # 绝不静默推送
+    world.refresh(hub)
+    assert hub.status == "pending"
+    assert hub.owner_user_id is None
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .one()
+    )
+    assert "模块负责人未配置" in (sh.reason or "")
+
+
+def test_webhook_honors_assignee_override(world: Session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """confirm-linear-push 工作台手选的责任人（assignee_override_user_id）必须
+    被 webhook 分支采用，而不是被丢弃重新 consume_module_owner。"""
+    from app.services.hub_issues import webhook_push
+
+    world.add(User(id=74, feishu_uid="ou_o74", name="手选责任人"))
+    # 模块本身没配 dev_owners——若 override 被忽略会掉进 pending 分支，断言会失败。
+    hub = _make_hub(world, 74, product_line_code="fpy", module="无人负责模块")
+    _make_ksm_ticket(world, hub, short_code="TKT-WH-74")
+    fake = _FakeWebhookClient()
+    monkeypatch.setattr(webhook_push, "LinearWebhookClient", lambda cfg, **kw: fake)
+
+    res = push_hub_issue_to_linear(hub.id, world, assignee_override_user_id=74)
+    assert res is not None
+    world.refresh(hub)
+    assert hub.owner_user_id == 74
+    assert fake.sent[0]["handleUser"] == "手选责任人"
 
 
 def test_webhook_no_public_base_empty_feishu_url(
