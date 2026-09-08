@@ -23,8 +23,20 @@ def upgrade() -> None:
         sa.Column("ticket_id", sa.Integer(), sa.ForeignKey("tickets.id"), nullable=True),
     )
     op.create_index("ix_hub_issues_ticket_id", "hub_issues", ["ticket_id"])
+    op.drop_constraint("ck_hub_issues_operation_fields", "hub_issues", type_="check")
+    op.create_check_constraint(
+        "ck_hub_issues_operation_fields",
+        "hub_issues",
+        "type='Operation' OR ticket_id IS NOT NULL OR (reply_content IS NULL AND reply_authored_by IS NULL)",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint("ck_hub_issues_operation_fields", "hub_issues", type_="check")
+    op.create_check_constraint(
+        "ck_hub_issues_operation_fields",
+        "hub_issues",
+        "type='Operation' OR (reply_content IS NULL AND reply_authored_by IS NULL)",
+    )
     op.drop_index("ix_hub_issues_ticket_id", table_name="hub_issues")
     op.drop_column("hub_issues", "ticket_id")

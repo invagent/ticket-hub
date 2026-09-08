@@ -95,7 +95,12 @@ def _parse_webhook_response(resp: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _primary_source_ticket(db: Session, hub: HubIssue) -> Ticket | None:
-    """主源工单：第一条关联的、有来源的工单（Child 无来源，靠 order_by id 取最早的有源单）。"""
+    """主源工单：第一条关联的、有来源的工单（若为子任务直接回溯 parent ticket_id）。"""
+    if hub.ticket_id is not None:
+        t = db.get(Ticket, hub.ticket_id)
+        if t is not None and t.deleted_at is None:
+            return t
+
     return (
         db.query(Ticket)
         .filter(

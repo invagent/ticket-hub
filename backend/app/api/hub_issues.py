@@ -401,14 +401,17 @@ def _authorize_hub_handler(
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None:
         return  # 交给端点内 404
-    if hub.op_handler_user_id == user.user_id:
+    if hub.assigned_user_id == user.user_id or hub.op_handler_user_id == user.user_id:
         return
     # hub 层没落运营处理人（历史单 / 未走分派的单），但处理人身份落在 ticket 层
     # （ticket.handler_user_id，工单详情页据此判可见性/持有）。授权口径与可见性
-    # 口径对齐：该用户是本 hub 任一关联工单的处理人即放行。
+    # 口径对齐：该用户是本 hub 任一关联工单（主工单或父工单）的处理人即放行。
     is_ticket_handler = (
         db.query(Ticket.id)
-        .filter(Ticket.hub_issue_id == hub_issue_id, Ticket.handler_user_id == user.user_id)
+        .filter(
+            (Ticket.hub_issue_id == hub_issue_id) | (Ticket.id == hub.ticket_id),
+            Ticket.handler_user_id == user.user_id,
+        )
         .first()
         is not None
     )

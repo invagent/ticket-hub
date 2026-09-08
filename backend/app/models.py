@@ -539,7 +539,7 @@ class HubIssue(Base):
             name="ck_hub_issues_priority",
         ),
         CheckConstraint(
-            "type='Operation' OR (reply_content IS NULL AND reply_authored_by IS NULL)",
+            "type='Operation' OR ticket_id IS NOT NULL OR (reply_content IS NULL AND reply_authored_by IS NULL)",
             name="ck_hub_issues_operation_fields",
         ),
         CheckConstraint(

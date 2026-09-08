@@ -79,7 +79,10 @@ def _build_description(db: Session, hub: HubIssue) -> str:
     parts = [hub.canonical_body or ""]
     sources = (
         db.query(Ticket)
-        .filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None))
+        .filter(
+            (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
+            Ticket.deleted_at.is_(None),
+        )
         .order_by(Ticket.id)
         .all()
     )
