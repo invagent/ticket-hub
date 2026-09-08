@@ -781,8 +781,9 @@ describe("TicketDetailPage", () => {
     );
     renderPage(360);
     await screen.findByRole("heading", { name: "TKT-360" });
-    // 顶部 + 处理区 + 子任务列表状态（研发类 released 统一口径；区别于运营"已答复"）
-    expect(await screen.findAllByText("已发版")).toHaveLength(3);
+    // 顶部标签 + 节点详情两处显示「已发版」；子任务列表按精简状态显示「已答复」
+    expect(await screen.findAllByText("已发版")).toHaveLength(2);
+    expect(await screen.findByText("已答复")).toBeInTheDocument();
     localStorage.clear();
   });
 

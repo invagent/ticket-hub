@@ -20,7 +20,7 @@ import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
 import { KnowledgeBaseDrawer } from "@/pages/knowledge-base/KnowledgeBaseDrawer";
-import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
+import { subtaskStatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -3263,7 +3263,22 @@ function SubTicketList({
                       onChange={(val) => updateRow(rowKey, { module: val })}
                     />
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{st.confirmed ? "处理中" : ticketStatusLabel(self.status)}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {(() => {
+                      const effStatus = st.confirmed
+                        ? (st.type === "Operation" ? "answered" : "processing")
+                        : (self.status || "draft");
+                      const b = subtaskStatusBadge(effStatus);
+                      return (
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                          style={{ background: b.bg, color: b.fg, borderColor: b.bd }}
+                        >
+                          {b.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {self.assigned_user_name ??
                       (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
@@ -3417,7 +3432,17 @@ function SubTicketList({
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    <StatusBadge status={stk.status} />
+                    {(() => {
+                      const b = subtaskStatusBadge(stk.status);
+                      return (
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                          style={{ background: b.bg, color: b.fg, borderColor: b.bd }}
+                        >
+                          {b.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {stk.assigned_user_name ??
@@ -3556,8 +3581,21 @@ function SubTicketList({
                       onChange={(val) => updateRow(draftKey, { module: val })}
                     />
                   </td>
-                  <td className={`px-2.5 py-1.5 whitespace-nowrap font-semibold ${st.confirmed ? "text-hub-teal" : "text-hub-amber-deep"}`}>
-                    {st.confirmed ? "处理中" : "待创建"}
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {(() => {
+                      const effStatus = st.confirmed
+                        ? (st.type === "Operation" ? "answered" : "processing")
+                        : "draft";
+                      const b = subtaskStatusBadge(effStatus);
+                      return (
+                        <span
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                          style={{ background: b.bg, color: b.fg, borderColor: b.bd }}
+                        >
+                          {b.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
