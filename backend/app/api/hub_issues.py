@@ -1135,7 +1135,15 @@ def update_subtask_endpoint(
     if body.product_line_code or body.module:
         upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)
 
-    # 同步更新关联 Ticket 的分类快照
+    # 若任务类型为研发类（Bug_fix / Demand），自动根据产品线与问题模块匹配研发责任人
+    if hub.type in ("Bug_fix", "Demand") and (
+        body.product_line_code is not None or body.module is not None or body.type is not None
+    ):
+        owner = peek_module_owner(db, hub.product_line_code, hub.module)
+        if owner is not None:
+            hub.assigned_user_id = owner.id
+
+    # 同步更新关联 Ticket 的分类快照与责任人
     ticket = (
         db.query(Ticket)
         .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
@@ -1150,6 +1158,8 @@ def update_subtask_endpoint(
             ticket.product_line_code = body.product_line_code
         if body.module is not None:
             ticket.module = body.module
+        if ticket.hub_issue_id == hub.id and hub.assigned_user_id is not None:
+            ticket.assigned_user_id = hub.assigned_user_id
 
     db.commit()
     db.refresh(hub)

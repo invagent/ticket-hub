@@ -2677,9 +2677,24 @@ function SubTicketList({
         solution?: string;
       };
     }) => patchByPath("/api/hub-issues/{hub_issue_id}/subtask", { hub_issue_id: hubId }, body),
-    onSuccess: () => {
+    onSuccess: (res: any, vars) => {
+      if (res && res.assigned_user_id !== undefined) {
+        updateRow(vars.hubId, {
+          assigned_user_id: res.assigned_user_id,
+          assigned_user_name: res.assigned_user_name,
+        });
+        if (vars.hubId === self.hub_id) {
+          updateRow("self", {
+            assigned_user_id: res.assigned_user_id,
+            assigned_user_name: res.assigned_user_name,
+          });
+        }
+      }
       void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
       void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+      if (self.hub_id) {
+        void qc.invalidateQueries({ queryKey: ["hub-issue-detail", self.hub_id] });
+      }
     },
   });
 
@@ -2758,6 +2773,8 @@ function SubTicketList({
         module?: string;
         solution?: string;
         confirmed?: boolean;
+        assigned_user_id?: number | null;
+        assigned_user_name?: string | null;
       }
     >
   >({});
@@ -2833,6 +2850,8 @@ function SubTicketList({
       product_line_code: string;
       module: string;
       solution: string;
+      assigned_user_id?: number | null;
+      assigned_user_name?: string | null;
     },
   ) => {
     const cur = rowStates[key];
@@ -2844,6 +2863,8 @@ function SubTicketList({
       module: cur?.module !== undefined ? cur.module : initial.module,
       solution: extSol !== undefined ? extSol : (cur?.solution !== undefined ? cur.solution : initial.solution),
       confirmed: cur?.confirmed ?? false,
+      assigned_user_id: cur?.assigned_user_id !== undefined ? cur.assigned_user_id : initial.assigned_user_id,
+      assigned_user_name: cur?.assigned_user_name !== undefined ? cur.assigned_user_name : initial.assigned_user_name,
     };
   };
 
@@ -2873,6 +2894,8 @@ function SubTicketList({
       module: string;
       solution: string;
       confirmed: boolean;
+      assigned_user_id?: number | null;
+      assigned_user_name?: string | null;
     }>,
   ) => {
     setRowStates((prev) => {
@@ -3284,7 +3307,8 @@ function SubTicketList({
                     })()}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {self.assigned_user_name ??
+                    {st.assigned_user_name ??
+                      self.assigned_user_name ??
                       (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
@@ -3447,7 +3471,8 @@ function SubTicketList({
                     })()}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {stk.assigned_user_name ??
+                    {st.assigned_user_name ??
+                      stk.assigned_user_name ??
                       (stk.assigned_user_id ? `#${stk.assigned_user_id}` : "—")}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
