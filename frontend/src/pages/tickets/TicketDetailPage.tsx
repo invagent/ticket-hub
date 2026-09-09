@@ -192,13 +192,29 @@ export interface TaskNoteItem {
   solution: string;
 }
 
+/** 递归剥离模板外层前缀，还原真实纯净解决方案文本，坚决杜绝多次嵌套拼接 */
+export function extractPureSolution(text: string | null | undefined): string {
+  if (!text) return "";
+  let cur = text.trim();
+  while (cur.includes("解决方案：") || cur.includes("解决方案:") || cur.startsWith("工单包含问题数：") || cur.startsWith("工单包含问题数:")) {
+    const match = cur.match(/解决方案[：:]\s*([\s\S]*)$/);
+    if (match && match[1] !== undefined) {
+      cur = match[1].trim();
+    } else {
+      break;
+    }
+  }
+  return cur;
+}
+
 export function formatTasksReplyNote(tasks: TaskNoteItem[]): string {
   if (tasks.length === 0) return "";
   const lines: string[] = [`工单包含问题数：${tasks.length}`];
   tasks.forEach((t, idx) => {
     const code = t.code || "---";
     const title = t.title || "---";
-    const sol = t.solution && t.solution.trim() ? t.solution.trim() : "---";
+    const pureSol = extractPureSolution(t.solution);
+    const sol = pureSol && pureSol.trim() ? pureSol.trim() : "---";
     lines.push(`问题${idx + 1}：${code}-${title}`);
     lines.push(`解决方案：${sol}`);
     if (idx < tasks.length - 1) {
@@ -225,7 +241,7 @@ export function parseReplyNoteSolutions(
     if (currentTaskIdx >= 0 && currentTaskIdx < tasks.length) {
       const fullSol = currentSolLines.join("\n").trim();
       const taskKey = tasks[currentTaskIdx].key;
-      result[taskKey] = fullSol === "---" ? "" : fullSol;
+      result[taskKey] = fullSol === "---" ? "" : extractPureSolution(fullSol);
     }
     currentSolLines = [];
     collectingSolution = false;
@@ -256,7 +272,7 @@ export function parseReplyNoteSolutions(
   flushCurrentSolution();
 
   if (Object.keys(result).length === 0 && tasks.length === 1) {
-    result[tasks[0].key] = trimmed;
+    result[tasks[0].key] = extractPureSolution(trimmed);
   }
 
   return result;
@@ -1261,7 +1277,9 @@ export function TicketDetailPage() {
                         status: hub.data?.status ?? d.status,
                         assigned_user_name: d.assigned_user_name,
                         assigned_user_id: hub.data?.assigned_user_id ?? d.assigned_user_id,
-                        cached_reply_content: hub.data?.reply_content ?? d.cached_reply_content,
+                        cached_reply_content: extractPureSolution(
+                          hub.data?.reply_content ?? d.cached_reply_content,
+                        ),
                       }}
                     />
                   ) : (
@@ -2932,13 +2950,13 @@ function SubTicketList({
         type: self.predicted_type ?? "",
         product_line_code: self.product_line_code ?? "",
         module: self.module ?? "",
-        solution: self.cached_reply_content ?? "",
+        solution: extractPureSolution(self.cached_reply_content),
       });
       const sol = overridePatch && overridePatch.key === "self" ? overridePatch.solution : st.solution;
       tasks.push({
         code: self.short_code,
         title: self.title ?? "当前工单任务",
-        solution: sol,
+        solution: extractPureSolution(sol),
       });
     }
     subtasks.forEach((stk: any) => {
@@ -2947,13 +2965,13 @@ function SubTicketList({
         type: stk.type ?? "",
         product_line_code: stk.product_line_code ?? "",
         module: stk.module ?? "",
-        solution: stk.solution ?? "",
+        solution: extractPureSolution(stk.solution),
       });
       const sol = overridePatch && overridePatch.key === sid ? overridePatch.solution : st.solution;
       tasks.push({
         code: stk.short_code ?? `#${sid}`,
         title: stk.title ?? `子任务 #${sid}`,
-        solution: sol,
+        solution: extractPureSolution(sol),
       });
     });
     drafts.forEach((dft, i) => {
