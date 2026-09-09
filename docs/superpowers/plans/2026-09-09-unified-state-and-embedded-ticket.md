@@ -2,6 +2,17 @@
 
 > 设计决策见 `docs/adr/0017-unified-stage-single-owner-embedded-ticket.md`。本文件是任务拆解与验收口径。分支 `feat/unified-state-and-embedded-ticket`，基线：origin/main `13ac3e9`（迁移 head 0046），backend 单测 1444 passed。
 
+> **实施现状（2026-09-09，分支 `feat/unified-state-and-embedded-ticket`，4 个 commit）**
+>
+> | Phase | 状态 | 备注 |
+> |---|---|---|
+> | 1 统一主状态（映射层） | ✅ 全部落地 | 迁移 0047；监听器覆盖 27 处裸写；对账脚本 `backend/scripts/reconcile_stage.py`；前端消费 stage |
+> | 1b 收口 27 处 `hub.status =` 到 `apply_hub_status` | ⬜ 未做 | 方案 B 第一步，映射层已保证口径一致，可分批做 |
+> | 2 责任人收敛 | ✅ 2.1 / 2.2 / 2.3 落地 | 迁移 0048；deprecated 列**仍在表里**（停写、只读回落），删列待一个发布周期后 |
+> | 3 产品内提单门户 | ✅ 3.1 ~ 3.5 落地 | 迁移 0049；H5 在 `frontend/portal.html`；本机 node_modules 缺 react-table/xlsx 且 npm 走不通网络，`vite build` 未在本机验证 |
+>
+> 验证：backend `pytest tests/unit` 1508 passed；frontend vitest 134 passed（5 个 collect 失败为 main 既有）；`make lint`/`type-check` 的既有告警（I001、xlsx 类型）未新增。
+
 **Goal:** ① ticket 上一个 `stage` 字段看全后续处理；② 责任人收敛为「工单一人 + 研发一人（模块绑死）」；③ 产品内提单门户（租户鉴权 + CRU + 统计 + H5）。
 
 **Tech Stack:** FastAPI + SQLAlchemy 2.x（before_flush 事件）+ Alembic；React 18 + Vite 多入口；pytest（SQLite in-memory）+ vitest。
@@ -17,7 +28,7 @@
 
 ## Phase 1 · 统一主状态（映射层）
 
-### Task 1.1 派生函数（纯函数，先测后写）
+### Task 1.1 派生函数（纯函数，先测后写） ✅
 
 - New: `backend/app/services/state/__init__.py`、`stage.py`
 - 常量：`TICKET_STAGES` / `HUB_STAGES` / `LINEAR_STAGES`（frozenset，断言包含关系）、`STAGE_ZH`、`STAGE_TONE`
@@ -34,7 +45,7 @@
   9. 兜底：`hub.status` 漏进的 `answered`/`processing` 原样归入对应 stage
 - Test: `tests/unit/services/state/test_stage_derive.py` 表驱动覆盖以上 9 条 + 格包含断言
 
-### Task 1.2 迁移 0047 + 模型列
+### Task 1.2 迁移 0047 + 模型列 ✅
 
 - `tickets.stage` String(32) nullable + `ix_tickets_stage`；`tickets.stage_changed_at`
 - `hub_issues.stage` + `ix_hub_issues_stage`；`hub_issues.stage_changed_at`
@@ -42,7 +53,7 @@
 - 存量回填：迁移内 Python 分批（1000/批）调用 `derive_*`（env.py 已 import app.models，可 import 派生函数）
 - Test: `test_models_stage.py` 断言列存在、`Base.metadata.create_all` 通过
 
-### Task 1.3 before_flush 监听器
+### Task 1.3 before_flush 监听器 ✅
 
 - New: `backend/app/services/state/listeners.py`，在 `app/models.py` 末尾 `import app.services.state.listeners  # noqa` 注册到 `Session` 类级事件（覆盖所有 sessionmaker，含测试）
 - 触发条件：session.new/dirty 里的 Ticket 或 HubIssue，且 watched 属性 `has_changes()`（Ticket: status/predicted_type/hub_issue_id/type；HubIssue: status/op_status/linear_status/type）
@@ -50,12 +61,12 @@
 - stage 变化 → `stage_changed_at=now` + `StatusHistory(entity_type='ticket_stage', changed_by=session.info.get('stage_actor','system:stage_sync'), reason='<驱动字段>: <from>→<to>')`
 - Test: `test_stage_listener.py`：a) 新建 ticket flush 后 stage=received；b) hub.op_status 变 answered → ticket.stage=answered 且写一条 ticket_stage 历史；c) 无变化的 flush 不写历史（幂等）；d) `session.info['stage_actor']` 生效
 
-### Task 1.4 对账脚本
+### Task 1.4 对账脚本 ✅
 
 - New: `scripts/state/reconcile_stage.py [--fix] [--limit N]`：全表比对，输出 `drift: ticket#id stored=X derived=Y`；`--fix` 写回并记 `system:stage_reconcile`
 - Test: 纯函数 `find_drift(rows)` 单测
 
-### Task 1.5 API 暴露
+### Task 1.5 API 暴露 ✅
 
 - `TicketSummary`/`TicketDetail`：`stage: str | None`、`stage_label: str | None`、`stage_changed_at`
 - `HubIssueSummary`：同上三字段
@@ -65,7 +76,7 @@
 - `make gen-types`
 - Test: 扩 `test_tickets_api.py`（列表有 stage、stage 筛选生效）、`test_ticket_history_api.py`（stage 事件出现）
 
-### Task 1.6 前端消费 stage
+### Task 1.6 前端消费 stage ✅
 
 - `processStage.ts`：新增 `STAGE_LABEL/STAGE_TONE` 表 + `stageToProcessStage(stage)`；`computeProcessStage(input)` 当 `input.stage` 存在时直接查表，旧逻辑保留为回落
 - `TicketsListPage`/`TicketDetailPage`/`HubIssuesListPage`/`HubIssueDetailPage` 传 `stage`
@@ -77,7 +88,7 @@
 
 ## Phase 2 · 责任人收敛
 
-### Task 2.1 模块单一研发责任人
+### Task 2.1 模块单一研发责任人 ✅
 
 - 迁移 0048：`modules.dev_owner_user_id` INT FK users nullable + index；Python 回填：`dev_owners` 第一个姓名精确匹配 `users.name`（active）→ 写 id，匹配不到留空并打印清单
 - `module_owner.py`：新增 `resolve_module_owner(db, plc, module) -> User | None` 只读 `dev_owner_user_id`；`peek_module_owner`/`consume_module_owner` 改为它的别名（consume 不再推进游标），保留符号让 6 个调用点零改动
@@ -85,7 +96,7 @@
 - 前端目录管理页：研发责任人改为用户下拉单选（复用人员列表接口）
 - Test: `test_module_owner.py` 改写；`test_admin_catalog.py` 加字段
 
-### Task 2.2 停写 deprecated 字段
+### Task 2.2 停写 deprecated 字段 ✅
 
 - 5 个 ingester：只写 `handler_user_id`，删除 `ticket.assigned_user_id = dr.user_id`
 - `creator.py`：Operation 分派结果只写 `set_hub_tickets_handler`，不再写 `op_handler_user_id`；研发类分派写 `owner_user_id`（不写 hub.assigned_user_id）
@@ -94,7 +105,7 @@
 - `TicketSummary.assigned_user_*`：保留字段，值改为「已毕业研发类 → hub.owner_user_id；否则 None」，注释标 deprecated；新增 `owner_user_id/owner_user_name`
 - Test: 对应单测更新；`test_dispatch_integration.py` 断言 assigned 不再被写
 
-### Task 2.3 AI actor 规范
+### Task 2.3 AI actor 规范 ✅
 
 - 检查 `status_history.changed_by` 写入点，Agent 侧统一 `agent:<name>`（现有 `agent:hub_issue_auto`/`agent:dispatch`/`agent:linear_push` 已合规；`op:agent` → 保留 `op:` 前缀但 handler 固定 `agent`）
 - `history_labels._ACTOR_SLUG_ZH` 补齐新前缀中文
@@ -105,21 +116,21 @@
 
 ## Phase 3 · 产品内提单门户
 
-### Task 3.1 模型与迁移 0049
+### Task 3.1 模型与迁移 0049 ✅
 
 - `tenants`：id / code(unique) / name / hmac_secret(String 128) / is_active / created_at / updated_at
 - `tenant_users`：id / tenant_id FK / external_uid / name / mobile / email / customer_identity_id FK nullable / last_seen_at / created_at；`uq(tenant_id, external_uid)`
 - sources 种子 `('embedded','产品内提单',true)`（`ON CONFLICT DO NOTHING`）
 - config：`portal_jwt_ttl_seconds=7200`、`portal_sign_skew_seconds=300`、`portal_enabled=True`
 
-### Task 3.2 鉴权
+### Task 3.2 鉴权 ✅
 
 - New: `app/api/deps/portal_auth.py`：`PortalUser(tenant_id, tenant_user_id, external_uid)`；`require_portal_user` 校验 `aud=='portal'`；员工 JWT 无 aud → 401
 - `POST /api/portal/auth/token`：body `{tenant_code, external_uid, name?, mobile?, email?, ts, sign}`；`sign = HMAC_SHA256(secret, f"{tenant_code}.{external_uid}.{ts}")` hex；`|now-ts| ≤ skew`；`hmac.compare_digest`；upsert `tenant_users` + IdentityResolver 落 `customer_identities`；返回 `{token, expires_in}`
 - Admin：`/api/admin/tenants` GET/POST/PATCH + `POST /{id}/rotate-secret`（require_admin；secret 仅在创建/轮换响应中返回一次）
 - Test: 签名正确/过期/错误、aud 隔离、admin 权限
 
-### Task 3.3 门户工单接口（CRU）
+### Task 3.3 门户工单接口（CRU） ✅
 
 - New: `app/services/ingest/portal_ingester.py`（镜像 zammad_ingester：identity → upsert_catalog → Ticket(source='embedded', source_ticket_id=f"{tenant_code}:{uuid4}") → dispatch_handler 只写 handler → status_history）
 - New: `app/api/portal.py`，prefix `/api/portal`：
@@ -133,7 +144,7 @@
 - 行级隔离：所有查询 `Ticket.reporter->>'tenant_user_id' == me`？→ 改为落列：`tickets.tenant_user_id` INT FK nullable（迁移 0049 一并加），查询走索引
 - Test: `tests/unit/api/test_portal_api.py` 覆盖 CRU、跨用户 404、D 不存在(405)、supplement 触发 op_status 回 processing
 
-### Task 3.4 H5 门户前端
+### Task 3.4 H5 门户前端 ✅
 
 - `frontend/portal.html` + `src/portal/main.tsx`（HashRouter，独立 QueryClient，不用 tabs）
 - 页面：`TokenGate`（读 `#token=` 或 `?token=` 落 `localStorage.portal_token`）→ `MyTicketsPage`（stage chip 分组 + 搜索）→ `TicketDetailPage`（竖向 stage 时间轴 + 答复 + 补充资料表单）→ `NewTicketPage`
@@ -141,7 +152,7 @@
 - `src/portal/api.ts` 独立 fetch 封装（`Authorization: Bearer <portal_token>`，401 → 提示重新进入）
 - Test: `src/portal/stage.test.ts`（stage 分组）+ 1 个渲染测试
 
-### Task 3.5 内部侧可见性
+### Task 3.5 内部侧可见性 ✅
 
 - 工单列表来源筛选加「产品内提单」；`history_labels` 来源中文
 - 管理页新增「租户接入」tab（admin-only，`RequireAdmin`）：列表 / 新建 / 轮换密钥（密钥只显示一次）

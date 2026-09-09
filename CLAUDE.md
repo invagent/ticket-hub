@@ -106,7 +106,7 @@ cd backend && .venv/bin/alembic upgrade head   # 应用数据库迁移
 
 关键点：
 - **派单前移到入库阶段**（早于 triage/module_resolve），所以派单规则的「适配产品线/模块」两个维度已停用，只按来源+SLA 匹配。
-- **责任人 vs 处理人是两个字段**：`assigned_user_id`（入库责任人，Router 算的）≠ `handler_user_id`（派单引擎写的实际处理人）。派单**只写 handler，绝不覆盖 assigned**。
+- **责任人字段（ADR-0017 D3，2026-09-09 起）**：工单环节唯一处理人 = `Ticket.handler_user_id`；研发环节唯一责任人 = `HubIssue.owner_user_id`（来源 `modules.dev_owner_user_id` 单人绑死，不再轮询）。`Ticket.assigned_user_id` / `HubIssue.assigned_user_id` / `HubIssue.op_handler_user_id` / `modules.dev_owners`+cursor **已 deprecated：停写、只读回落**，别再往这几列写；删列待一个发布周期后。
 - Operation 自动答复**不在 ingest 热路径**上（replay 慢约 138s/单会阻塞 worker），改由 Celery beat 每 2min drain，兼作补偿重试。
 - `ai_cs` 来源走 `run_escalation_agents`（黄金三元组二次分类）；`feishu_ai` 来源请求形状与之完全相同但走标准 `run_post_ingest_agents`，三元组仅存档不参与分类。
 
@@ -315,7 +315,7 @@ VITE_PUBLIC_BASE=/ticket-hub-v2/ VITE_API_BASE=/ticket-hub-v2 npm run build
 
 ## 阶段进度
 
-D0✅ D1✅ D2✅ D3✅ D4✅（Linear 回同步 / cascade / KSM 回写 / Vision / escalation / Phase0 全家桶）。当前分支：`main`，迁移 head = **0044**。
+D0✅ D1✅ D2✅ D3✅ D4✅（Linear 回同步 / cascade / KSM 回写 / Vision / escalation / Phase0 全家桶）。main 迁移 head = **0046**；分支 `feat/unified-state-and-embedded-ticket`（ADR-0017，未合）head = **0049**。
 
 **2026-07-13 ~ 08-14 大批量演进（约 464 提交，另一位协作者主导）**：智齿双向打通 / 运营派单引擎 / Operation 自动答复 + op_status 状态机 / 模块归类 / 答复准确率闸门 / 三道人工闸门 / 附件流水线 + MinIO / KSM 接管与退回 / 统计看板 + 每日看板 / 前端多标签架构。**这批功能的权威设计意图见 `docs/superpowers/plans/`（按日期命名，一功能一份）**，本文件只记要点。
 
@@ -492,6 +492,35 @@ D0✅ D1✅ D2✅ D3✅ D4✅（Linear 回同步 / cascade / KSM 回写 / Vision
 - 重试仍失败不重复写 history（pending 幂等）；`linear_uuid` 始终留 NULL 可重推
 - **修复路径**：人加入 Linear 工作区 → `POST /api/admin/users/sync-from-linear` 补映射 → 重推成功自动 `pending→created`（留审计「pending 解除」）
 - 生产实测：分配给某内部用户（Linear 查无此人）→ 正确置 pending 不产生垃圾 issue ✅
+
+---
+
+# ADR-0017 统一主状态 · 单一责任人 · 产品内提单（2026-09-09，分支 `feat/unified-state-and-embedded-ticket`）
+
+> 设计 `docs/adr/0017-unified-stage-single-owner-embedded-ticket.md`；任务与现状 `docs/superpowers/plans/2026-09-09-unified-state-and-embedded-ticket.md`。三阶段代码全部落地（迁移 0047/0048/0049），**未合 main、未部署 SIT**。
+
+## 统一主状态 `stage`（`services/state/`）
+
+- `tickets.stage` / `hub_issues.stage` 是**派生量**：`derive_ticket_stage(ticket, hub)` / `derive_hub_stage(hub)` 从旧 4 字段（ticket.status / hub.status / op_status / linear_status）确定性折出；三层格 `TICKET_STAGES ⊇ HUB_STAGES ⊇ LINEAR_STAGES`（18 / 15 / 4 个值），中文与色调唯一定义在 `stage.py` 的 `STAGE_ZH/STAGE_TONE`，前端 `processStage.ts` 的 `STAGE_LABEL` 与之同源。
+- **谁在写**：`listeners.py` 挂在 SQLAlchemy `Session` 类级 `before_flush`，任何 session 里 Ticket/HubIssue 的 watched 字段变脏就重算，hub 变化传播到全部挂载 ticket；stage 变迁写 `status_history(entity_type='ticket_stage'|'hub_stage')`，actor 取 `db.info["stage_actor"]`（默认 `system:stage_sync`）。**业务代码不要手写 `stage`**；27 处 `hub.status =` 裸写零改动即被覆盖（方案 A）。方案 B（收口到 `apply_hub_status`、旧字段降级）未做。
+- 对账：`backend/scripts/reconcile_stage.py [--fix]`（裸 SQL / 迁移前存量漂移在这里暴露）。
+- API：`TicketSummary/TicketDetail/HubIssueSummary` 带 `stage/stage_label/stage_changed_at`；`GET /api/tickets` 加 `stage/stages` 筛选；`/history` 多一类 `kind="stage"` 事件。前端 `computeProcessStage` 有 `stage` 就查表，旧 4 字段规则只作回落。
+- 坑：监听器里查关联 ticket 必须在 `session.no_autoflush` 下；新建对象不写 stage 历史（首个 stage 靠 `stage_changed_at`）；测试里统计 `StatusHistory` 行数要按 `entity_type` 过滤。
+
+## 单一责任人（见「架构要点 → 关键点」的责任人字段条）
+
+- `modules.dev_owner_user_id`（迁移 0048 按 `dev_owners` 首名回填，匹配不到的在迁移日志里列出需目录页手选）；`module_owner.resolve_module_owner` 唯一入口，`peek/consume` 是别名、游标不再推进。
+- 责任人解析链固定：确认推送手选 > 模块绑定人 > `hub.owner_user_id`（已定）> 无（webhook 分支停 `pending`；直连分支默认 team 无 assignee）。
+- 授权 `_authorize_hub_handler` / `_handler_scope` 认 `owner_user_id` + 关联 ticket 的 `handler_user_id`（legacy `op_handler_user_id` 仅历史单）；`manual_assign` 转交会把 legacy 镜像清 NULL，防前任处理人残留权限。
+- `TicketSummary.assigned_user_*` 保留但 deprecated：值回落所挂 hub 的研发责任人；新增 `owner_user_id/owner_user_name`。「仅未分配」= `handler_user_id IS NULL`。
+
+## 产品内提单门户（source `embedded`）
+
+- 表：`tenants`（HMAC 密钥，仅创建/轮换回显一次）、`tenant_users`（→ `customer_identities`，source_user_id=`{tenant_code}:{external_uid}`）、`tickets.tenant_user_id`（行级隔离）。
+- 鉴权两层：租户服务端 `sign = HMAC_SHA256(secret, f"{tenant_code}.{external_uid}.{ts}")` → `POST /api/portal/auth/token` 换门户 JWT（`aud=portal`，2h）；员工 JWT 与门户 JWT 靠 jose 的 aud 校验**天然互斥**。`portal_enabled=False` → `/api/portal/*` 全 404。
+- 接口 `app/api/portal.py`：提单人 **C/R/U 无 D**；PATCH 只在 `received/pending_classify/supplementing`；`supplement` 追加正文并在 `op_status=supplementing` 时 `apply_op_status(processing)` 回炉；`/stats` 按 stage 计数。入库走 `services/ingest/portal_ingester.py` → `run_post_ingest_agents` 完整 AI 链，**不新增 Agent 环节**。
+- 管理：`/api/admin/tenants`（require_admin）+ 前端「产品内提单接入」tab（`RequireAdmin`）。
+- H5：独立 Vite 入口 `frontend/portal.html` → `src/portal/`（HashRouter；token 从 `?token=` 或 `#token=` 落 `localStorage.portal_token`）。不进多标签框架。`vite build` 产出 `portal.html`，nginx 无需额外路由。
 
 ---
 
