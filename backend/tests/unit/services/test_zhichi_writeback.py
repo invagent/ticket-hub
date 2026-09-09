@@ -106,14 +106,14 @@ def test_drain_reply_calls_save(db_session: Session) -> None:
 
 
 def test_drain_reply_closes_local_status(db_session: Session) -> None:
-    """关单回写（status=3）真发成功后：ticket→closed、hub→resolved。"""
+    """关单回写（status=3）真发成功后：ticket→answered、hub→answered。"""
     t, hub, _ob = _seed(db_session)
     db_session.commit()
     report = drain_zhichi_outbox(db_session, client=_FakeClient(), settings=_Settings())
     assert report.sent == 1
     db_session.refresh(t)
     db_session.refresh(hub)
-    assert t.status == "closed"
+    assert t.status == "answered"
     assert hub.status == "answered"
 
 

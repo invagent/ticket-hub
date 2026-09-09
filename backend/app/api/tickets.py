@@ -1262,7 +1262,7 @@ def ticket_reply_endpoint(
                     raise HTTPException(status_code=400, detail=f"提交答复失败：{err_msg}")
 
     # 6. 外部成功后，推进本地工单与任务状态 → answered，并留痕
-    if ticket.status != "closed":
+    if ticket.status != "answered" and ticket.status != "closed":
         prev_ticket_status = ticket.status
         ticket.status = "answered"
         if not ticket.actual_replied_at:

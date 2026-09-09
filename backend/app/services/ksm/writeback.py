@@ -339,20 +339,25 @@ class KSMWritebackSender:
         logger.info("ksm_writeback_sent", outbox_id=row.id, action=action, bill_id=fields.bill_id)
 
     def _close_local(self, row: SyncOutbox, ticket: Ticket) -> None:
-        """关单真发成功后：ticket→closed、hub→resolved，记 status_history。
+        """关单真发成功后：ticket→answered (reply) 或 closed (close/release)、hub→answered，记 status_history。
         已在终态的不重置（幂等 + 保护投诉 closed 等）。不 commit（随外层）。"""
         history = StatusHistoryRepository(self._db)
         changed_by = "system:ksm_writeback"
+        target_ticket_status = "answered" if row.kind == "reply" else "closed"
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
-            ticket.status = "closed"
+            ticket.status = target_ticket_status
+            if target_ticket_status == "answered" and not ticket.actual_replied_at:
+                ticket.actual_replied_at = datetime.now(UTC)
             history.record(
                 entity_type="ticket",
                 entity_id=ticket.id,
                 from_status=prev,
-                to_status="closed",
+                to_status=target_ticket_status,
                 changed_by=changed_by,
-                reason=f"KSM 答复关单回写成功（outbox={row.id}, kind={row.kind}）",
+                reason=f"KSM 答复回写成功（outbox={row.id}, kind={row.kind}）"
+                if target_ticket_status == "answered"
+                else f"KSM 关单回写成功（outbox={row.id}, kind={row.kind}）",
             )
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
         if hub is not None and hub.status != "answered":
@@ -364,7 +369,7 @@ class KSMWritebackSender:
                 from_status=hub_prev,
                 to_status="answered",
                 changed_by=changed_by,
-                reason=f"Operation 答复关单回写成功（outbox={row.id}）",
+                reason=f"Operation 答复回写成功（outbox={row.id}）",
             )
         # op_status 业务层不在此处推进到 closed（此前的实现在这里直接把
         # answered→closed，等于「答复回写 KSM 成功」= 关单，导致 T+7 beat

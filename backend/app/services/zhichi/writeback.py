@@ -178,16 +178,21 @@ class ZhichiWritebackSender:
         history = StatusHistoryRepository(self._db)
         changed_by = "system:zhichi_writeback"
         suffix = f"（{reason_suffix}）" if reason_suffix else ""
+        target_ticket_status = "closed" if reason_suffix or row.kind != "reply" else "answered"
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
-            ticket.status = "closed"
+            ticket.status = target_ticket_status
+            if target_ticket_status == "answered" and not ticket.actual_replied_at:
+                ticket.actual_replied_at = datetime.now(UTC)
             history.record(
                 entity_type="ticket",
                 entity_id=ticket.id,
                 from_status=prev,
-                to_status="closed",
+                to_status=target_ticket_status,
                 changed_by=changed_by,
-                reason=f"智齿答复关单回写成功（outbox={row.id}, kind={row.kind}）{suffix}",
+                reason=f"智齿答复回写成功（outbox={row.id}, kind={row.kind}）{suffix}"
+                if target_ticket_status == "answered"
+                else f"智齿关单回写成功（outbox={row.id}, kind={row.kind}）{suffix}",
             )
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
         if hub is not None and hub.status != "answered":

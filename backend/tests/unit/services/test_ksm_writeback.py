@@ -218,10 +218,10 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
     assert h.linkman == "王五" and h.customer_email == "w@x.com"
     world.refresh(row)
     assert row.status == "sent" and row.sent_at is not None and row.attempts == 1
-    # 关单回写成功 → 本地 ticket→closed、hub→answered
+    # 关单回写成功 → 本地 ticket→answered、hub→answered
     world.refresh(t)
     world.refresh(hub)
-    assert t.status == "closed"
+    assert t.status == "answered"
     assert hub.status == "answered"
 
 
