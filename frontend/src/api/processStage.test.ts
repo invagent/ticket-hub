@@ -33,12 +33,12 @@ describe("computeProcessStage", () => {
     expect(computeProcessStage({ ...dev, hubStatus: "closed" }).tone).toBe("closed");
   });
 
-  it("缺陷2修复：研发已发版显示「已发版」，运营已答复显示「处理完成」（不撞词）", () => {
+  it("缺陷2修复：研发已发版显示「已发版」，运营已答复显示「已答复」（不撞词）", () => {
     expect(computeProcessStage({ ...dev, hubStatus: "released" }).label).toBe("已发版");
     expect(
       computeProcessStage({ predictedType: "Operation", hubIssueId: 1, opStatus: "answered" })
         .label,
-    ).toBe("处理完成");
+    ).toBe("已答复");
   });
 
   it("pending 系列各自文案", () => {
@@ -67,18 +67,18 @@ describe("computeProcessStage", () => {
       hubStatus: "resolved",
       opStatus: "answered",
     });
-    expect(stage.label).toBe("处理完成");
+    expect(stage.label).toBe("已答复");
     expect(stage.tone).toBe("done");
   });
 
-  it("Operation op_status=closed（T+7 已到）+ hub.status=resolved → 处理关闭", () => {
+  it("Operation op_status=closed（T+7 已到）+ hub.status=resolved → 已关闭", () => {
     const stage = computeProcessStage({
       predictedType: "Operation",
       hubIssueId: 1,
       hubStatus: "resolved",
       opStatus: "closed",
     });
-    expect(stage.label).toBe("处理关闭");
+    expect(stage.label).toBe("已关闭");
   });
 
   it("Operation op_status=transferred_return → 转单退回（tone: closed）", () => {

@@ -4,6 +4,13 @@
  */
 
 export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
+  processing: { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
+  reviewing: { label: "待审核", bg: "#eef1fb", fg: "#4b4fb3", bd: "#d4d8f2" },
+  supplementing: { label: "补充资料", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
+  answered: { label: "已答复", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
+  closed: { label: "已关闭", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
+  exception: { label: "处理异常", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+  transferred_return: { label: "转单退回", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   received: { label: "已接收", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   linked: { label: "已关联", bg: "#f2edf8", fg: "#7a5ba6", bd: "#ddd0ec" },
   waiting_assign: { label: "待分配", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
@@ -18,17 +25,13 @@ export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg
   resolved: { label: "已解决", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
   split: { label: "已拆分", bg: "#f2edf8", fg: "#7a5ba6", bd: "#ddd0ec" },
   done: { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  closed: { label: "已关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   superseded: { label: "被取代", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   rejected: { label: "已驳回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
-  transferred_return: { label: "转单退回", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   created: { label: "已创建", bg: "#f3f0e9", fg: "#8b8577", bd: "#e8e3d9" },
   pending_review: { label: "待确认分类", bg: "#eef1fb", fg: "#4b4fb3", bd: "#d4d8f2" },
   pending_linear_review: { label: "待确认推送", bg: "#eef1fb", fg: "#4b4fb3", bd: "#d4d8f2" },
   pending: { label: "待人工处理", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
   draft: { label: "待确认", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
-  processing: { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
-  answered: { label: "已答复", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
   returned: { label: "已退回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
 };
 

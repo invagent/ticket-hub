@@ -119,12 +119,12 @@ class KSMIngester:
                 )
                 if existing.status == "closed":
                     prev = existing.status
-                    existing.status = "received"
+                    existing.status = "processing"
                     self._history.record(
                         entity_type="ticket",
                         entity_id=existing.id,
                         from_status=prev,
-                        to_status="received",
+                        to_status="processing",
                         changed_by="system:ksm_ingest",
                         reason=f"客户驳回（第{hub.reject_count}次），重新打开工单",
                     )
@@ -158,7 +158,7 @@ class KSMIngester:
             source_ticket_id=bill_id,
             source_ticket_number=payload.get("billNumber"),
             type="Raw",
-            status="received",
+            status="processing",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(
@@ -220,7 +220,7 @@ class KSMIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by="system:ingest",
             reason=f"ksm webhook: {bill_id}",
             metadata={

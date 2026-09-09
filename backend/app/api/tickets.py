@@ -633,10 +633,14 @@ def return_ticket(
     # 校验实际出站结果：开启真实写回时，若外部失败则抛错阻断
     row = db.get(SyncOutbox, result.outbox_id)
     settings = get_settings()
-    if settings.ksm_writeback_enabled and not settings.ksm_writeback_dry_run:
-        if row is not None and row.status != "sent":
-            err_msg = row.last_error or "KSM 接口退回未成功"
-            raise HTTPException(status_code=400, detail=f"退回 KSM 失败：{err_msg}")
+    if (
+        settings.ksm_writeback_enabled
+        and not settings.ksm_writeback_dry_run
+        and row is not None
+        and row.status != "sent"
+    ):
+        err_msg = row.last_error or "KSM 接口退回未成功"
+        raise HTTPException(status_code=400, detail=f"退回 KSM 失败：{err_msg}")
 
     logger.info(
         "ticket_return_requested",
@@ -1241,16 +1245,33 @@ def ticket_reply_endpoint(
                     err_msg = ob_row.last_error or "智齿答复外部回写失败"
                     raise HTTPException(status_code=400, detail=f"提交答复失败：{err_msg}")
 
-    # 6. 外部成功后，推进本地 op_status → answered，并留痕
-    target_hub = db.get(HubIssue, target_hub.id)
-    if target_hub is not None and target_hub.type == "Operation":
-        apply_op_status(
-            db,
-            target_hub,
-            to_status=OP_ANSWERED,
-            handler=f"user:{user.name}",
-            reason="主管人工答复",
+    # 6. 外部成功后，推进本地工单与任务状态 → answered，并留痕
+    if ticket.status != "closed":
+        prev_ticket_status = ticket.status
+        ticket.status = "answered"
+        if not ticket.actual_replied_at:
+            ticket.actual_replied_at = datetime.now(UTC)
+        StatusHistoryRepository(db).record(
+            entity_type="ticket",
+            entity_id=ticket.id,
+            from_status=prev_ticket_status,
+            to_status="answered",
+            changed_by=f"user:{user.name}",
+            reason="主管答复客户",
         )
+
+    target_hub = db.get(HubIssue, target_hub.id)
+    if target_hub is not None:
+        if target_hub.status != "resolved":
+            target_hub.status = "answered"
+        if target_hub.type == "Operation":
+            apply_op_status(
+                db,
+                target_hub,
+                to_status=OP_ANSWERED,
+                handler=f"user:{user.name}",
+                reason="主管人工答复",
+            )
         record_ticket_action(
             db, target_hub, action="reply", changed_by=f"user:{user.name}", reason="主管答复客户"
         )

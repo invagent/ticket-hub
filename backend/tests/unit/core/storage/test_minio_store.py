@@ -125,11 +125,20 @@ def test_guess_content_type_by_ext(filename, kind, expected):
 
 def test_guess_content_type_magic_fallback():
     # 无扩展名信息，靠字节 magic
-    assert guess_content_type(filename=None, source_url=None, kind="image", data=b"\xff\xd8\xff\xe0") == "image/jpeg"
-    assert guess_content_type(filename=None, source_url=None, kind="other", data=b"%PDF-1.7") == "application/pdf"
+    assert (
+        guess_content_type(filename=None, source_url=None, kind="image", data=b"\xff\xd8\xff\xe0")
+        == "image/jpeg"
+    )
+    assert (
+        guess_content_type(filename=None, source_url=None, kind="other", data=b"%PDF-1.7")
+        == "application/pdf"
+    )
     # 全无 → kind 兜底
     assert guess_content_type(filename=None, source_url=None, kind="image") == "image/png"
-    assert guess_content_type(filename=None, source_url=None, kind="other") == "application/octet-stream"
+    assert (
+        guess_content_type(filename=None, source_url=None, kind="other")
+        == "application/octet-stream"
+    )
 
 
 @patch("app.core.storage.minio_store.Minio")

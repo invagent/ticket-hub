@@ -9,9 +9,7 @@ from app.services.hub_issues.op_status import set_hub_tickets_handler
 
 
 def test_set_hub_tickets_handler(db_session: Session) -> None:
-    hub = HubIssue(
-        id=600, short_code="HUB-000600", type="Operation", title="t", status="created"
-    )
+    hub = HubIssue(id=600, short_code="HUB-000600", type="Operation", title="t", status="created")
     db_session.add(hub)
     db_session.flush()
     db_session.add(

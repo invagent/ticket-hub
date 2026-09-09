@@ -61,7 +61,7 @@ class ModuleIn(BaseModel):
 
 
 class ModulePatch(BaseModel):
-    status: str | None = None          # "enabled" | "disabled"
+    status: str | None = None  # "enabled" | "disabled"
     product_owner: str | None = None
     dev_owners: str | None = None
     updated_by: str | None = None
@@ -108,20 +108,22 @@ def list_modules(
     result = []
     for r in rows:
         pl = pl_map.get(r.product_line_code)
-        result.append(ModuleOut(
-            id=r.id,
-            product_line_code=r.product_line_code,
-            product_line_name=pl.name if pl else None,
-            product_line_category=pl.category if pl else None,
-            name=r.name,
-            is_active=r.is_active,
-            status=getattr(r, "status", "enabled") or "enabled",
-            product_owner=getattr(r, "product_owner", None),
-            dev_owners=getattr(r, "dev_owners", None),
-            updated_by=getattr(r, "updated_by", None),
-            created_at=r.created_at,
-            updated_at=getattr(r, "updated_at", None),
-        ))
+        result.append(
+            ModuleOut(
+                id=r.id,
+                product_line_code=r.product_line_code,
+                product_line_name=pl.name if pl else None,
+                product_line_category=pl.category if pl else None,
+                name=r.name,
+                is_active=r.is_active,
+                status=getattr(r, "status", "enabled") or "enabled",
+                product_owner=getattr(r, "product_owner", None),
+                dev_owners=getattr(r, "dev_owners", None),
+                updated_by=getattr(r, "updated_by", None),
+                created_at=r.created_at,
+                updated_at=getattr(r, "updated_at", None),
+            )
+        )
     return result
 
 

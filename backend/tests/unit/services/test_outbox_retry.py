@@ -176,7 +176,14 @@ def _ksm_ticket(db: Session, hub: HubIssue, **ov: object) -> Ticket:
 
 
 def _failed_outbox(
-    db: Session, ticket: Ticket, hub: HubIssue, *, kind: str, target: str, payload: dict, attempts: int = 5
+    db: Session,
+    ticket: Ticket,
+    hub: HubIssue,
+    *,
+    kind: str,
+    target: str,
+    payload: dict,
+    attempts: int = 5,
 ) -> SyncOutbox:  # type: ignore[type-arg]
     row = SyncOutbox(
         kind=kind,
@@ -197,7 +204,10 @@ def _failed_outbox(
 
 def _zhichi_ticket_and_hub(db: Session, **ov: object) -> tuple[Ticket, HubIssue]:
     hub = HubIssue(
-        short_code="HUB-RETRY-Z1", type="Operation", title="标题", status="created",
+        short_code="HUB-RETRY-Z1",
+        type="Operation",
+        title="标题",
+        status="created",
         reply_content="hub级答复",
     )
     db.add(hub)
@@ -235,7 +245,9 @@ def test_latest_failed_outbox_for_ticket_returns_newest(world: Session) -> None:
     hub = _ksm_hub(world)
     t = _ksm_ticket(world, hub)
     _failed_outbox(world, t, hub, kind="reply", target="ksm", payload={"reply_content": "旧"})
-    newest = _failed_outbox(world, t, hub, kind="return", target="ksm", payload={"deal_opinion": "新"})
+    newest = _failed_outbox(
+        world, t, hub, kind="return", target="ksm", payload={"deal_opinion": "新"}
+    )
     found = latest_failed_outbox_for_ticket(world, t.id)
     assert found is not None and found.id == newest.id
 
@@ -334,7 +346,11 @@ def test_retry_ksm_row_still_fails(world: Session) -> None:
     store.put("BILL-1", NoticeInfo(notice_num="N1", subscribe_num="ksm_feedback_change"))
 
     result = retry_outbox_row(
-        world, row.id, ksm_client=client, notice_store=store, settings=_ksm_settings(ksm_writeback_max_attempts=5)
+        world,
+        row.id,
+        ksm_client=client,
+        notice_store=store,
+        settings=_ksm_settings(ksm_writeback_max_attempts=5),
     )
 
     assert result.sent is False
@@ -372,7 +388,10 @@ def test_retry_zhichi_row_still_fails(world: Session) -> None:
     client.reply_error = ZhichiBusinessError(op="reply", ret_code="999999", ret_msg="系统繁忙")
 
     result = retry_outbox_row(
-        world, row.id, zhichi_client=client, settings=_ZhichiSettings(zhichi_writeback_max_attempts=5)
+        world,
+        row.id,
+        zhichi_client=client,
+        settings=_ZhichiSettings(zhichi_writeback_max_attempts=5),
     )
 
     assert result.sent is False

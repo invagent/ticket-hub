@@ -119,10 +119,17 @@ def test_create_unclassified_returns_409(app_client: TestClient, hub_world: Sess
     assert "no valid type" in resp.json()["detail"]
 
 
-def test_create_with_product_line_and_module_override(app_client: TestClient, hub_world: Session) -> None:
+def test_create_with_product_line_and_module_override(
+    app_client: TestClient, hub_world: Session
+) -> None:
     resp = app_client.post(
         "/api/supervisor/create-hub-issue",
-        json={"ticket_id": 300, "type": "Bug_fix", "product_line_code": "cloud-fapiao", "module": "开票管理"},
+        json={
+            "ticket_id": 300,
+            "type": "Bug_fix",
+            "product_line_code": "cloud-fapiao",
+            "module": "开票管理",
+        },
         headers=_bearer(2),
     )
     assert resp.status_code == 200, resp.text

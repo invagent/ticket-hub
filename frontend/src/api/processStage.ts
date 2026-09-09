@@ -68,14 +68,14 @@ export const STAGE_TONE_STYLE: Record<StageTone, { bg: string; fg: string; bd: s
 const OP_STAGE: Record<string, ProcessStage> = {
   processing: { label: "处理中", tone: "progress" },
   resubmitted: { label: "补充重提", tone: "progress" },
-  reviewing: { label: "待审核", tone: "progress" },
+  reviewing: { label: "待审核", tone: "pending" },
   supplementing: { label: "补充资料", tone: "progress" },
   unresolved_return: { label: "未解决退回", tone: "exception" },
   transferred: { label: "转单", tone: "progress" },
   transferred_return: { label: "转单退回", tone: "closed" },
   pending_accept: { label: "待受理", tone: "pending" },
-  answered: { label: "处理完成", tone: "done" },
-  closed: { label: "处理关闭", tone: "closed" },
+  answered: { label: "已答复", tone: "done" },
+  closed: { label: "已关闭", tone: "closed" },
   exception: { label: "处理异常", tone: "exception" },
 };
 
@@ -111,6 +111,13 @@ export function computeProcessStage(input: StageInput): ProcessStage {
   ) {
     return { label: "转单退回", tone: "closed" };
   }
+
+  // 2. Ticket 明确业务主状态优先（SSOT 单一事实源）
+  if (ticketStatus === "closed" || ticketStatus === "done") return { label: "已关闭", tone: "closed" };
+  if (ticketStatus === "answered") return { label: "已答复", tone: "done" };
+  if (ticketStatus === "reviewing") return { label: "待审核", tone: "pending" };
+  if (ticketStatus === "supplementing") return { label: "补充资料", tone: "progress" };
+  if (ticketStatus === "exception") return { label: "处理异常", tone: "exception" };
 
   // 未毕业/无 hub → 回落 ticket 底层态（中性）
   if (hubIssueId == null) {

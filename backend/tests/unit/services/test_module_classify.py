@@ -242,9 +242,7 @@ def test_resolve_exact_module_reverse_lookup_line(catalog: Session, monkeypatch)
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "app.services.agents.module_resolve.classify_module", lambda db, **kw: None
-    )
+    monkeypatch.setattr("app.services.agents.module_resolve.classify_module", lambda db, **kw: None)
     t = _ticket(catalog, product_line_code=None, module="收票模块")
     res = resolve_module(catalog, t)
     assert res.source == "source_exact"
@@ -258,9 +256,7 @@ def test_resolve_line_locked_fallback_module(catalog: Session, monkeypatch) -> N
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "app.services.agents.module_resolve.classify_module", lambda db, **kw: None
-    )
+    monkeypatch.setattr("app.services.agents.module_resolve.classify_module", lambda db, **kw: None)
     # module=产品线名"其他非发票云问题" → line_hint=PROLINE6067；该线下模块="其他非发票云问题"
     t = _ticket(catalog, product_line_code=None, module="其他非发票云问题")
     res = resolve_module(catalog, t)

@@ -15,12 +15,11 @@ import { currentRole, currentUserId, isSupervisor } from "@/api/auth";
 import { HUB_TYPES, HUB_TYPE_LABELS } from "@/api/hubTypes";
 import type { paths } from "@/api/types";
 import { Modal, ModalHeader, ModalFooter, hubErrMsg } from "@/components/hubActions";
-import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
 import { KnowledgeBaseDrawer } from "@/pages/knowledge-base/KnowledgeBaseDrawer";
-import { subtaskStatusBadge, ticketStatusLabel } from "./ticketStatus";
+import { StatusBadge, subtaskStatusBadge } from "./ticketStatus";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -627,11 +626,13 @@ export function TicketDetailPage() {
     d?.status === "superseded" ||
     d?.status === "rejected";
   const opDone =
+    isTicketTerminal ||
+    d?.status === "answered" ||
+    d?.op_status === "answered" ||
     opStatus === "answered" ||
     opStatus === "closed" ||
     opStatus === "transferred_return" ||
-    hub.data?.status === "returned" ||
-    isTicketTerminal;
+    hub.data?.status === "returned";
   // 反思诊断抽屉：knowledge_op/supervisor/admin 全量可见；此外 reviewing 态
   // （AI 答复打分未过转人工审核）本工单处理人本人也能看——只诊断不改 skill
   // （ReflectDrawer 内部按角色再拆一层，RemedyColumn 仍 knowledge_op-only）。
@@ -751,13 +752,13 @@ export function TicketDetailPage() {
                     {d.predicted_type && (
                       <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
                     )}
-                    <ProcessStatusBadge
-                      opStatus={opStatus}
-                      hubStatus={hub.data?.status}
-                      predictedType={d.predicted_type}
-                      hubIssueId={d.hub_issue_id}
-                      ticketStatus={d.status}
-                      ticketStatusLabel={ticketStatusLabel}
+                    <StatusBadge
+                      status={
+                        hub.data?.status === "released" &&
+                        (d.predicted_type === "Bug_fix" || d.predicted_type === "Demand")
+                          ? "released"
+                          : d.status
+                      }
                     />
                     <RemainingTag hours={d.remaining_hours} />
                     {showReflectBtn && (
@@ -1197,13 +1198,13 @@ export function TicketDetailPage() {
               <div className="min-w-0 space-y-[29px] lg:border-l lg:border-hub-borderLight lg:pl-5">
                 <div className="flex items-center gap-2.5">
                   <div className="text-[12px] font-bold text-black tracking-wide">节点详情</div>
-                  <ProcessStatusBadge
-                    opStatus={d.op_status}
-                    hubStatus={hub.data?.status}
-                    predictedType={d.predicted_type}
-                    hubIssueId={d.hub_issue_id}
-                    ticketStatus={d.status}
-                    ticketStatusLabel={ticketStatusLabel}
+                  <StatusBadge
+                    status={
+                      hub.data?.status === "released" &&
+                      (d.predicted_type === "Bug_fix" || d.predicted_type === "Demand")
+                        ? "released"
+                        : d.status
+                    }
                   />
                 </div>
 

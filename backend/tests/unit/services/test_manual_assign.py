@@ -212,16 +212,19 @@ def test_assign_member_permissions(db_session: Session) -> None:
 
     # Alice 移交自己的工单 -> 成功
     res1 = ManualAssignService(db_session).assign(
-        AssignRequest(ticket_ids=[t_mine.id], assigned_user_id=target.id, operator_user_id=member_alice.id)
+        AssignRequest(
+            ticket_ids=[t_mine.id], assigned_user_id=target.id, operator_user_id=member_alice.id
+        )
     )
     assert res1.assigned_count == 1
     assert res1.results[0].success is True
 
     # Alice 试图移交 Bob 的工单 -> 权限拦截失败
     res2 = ManualAssignService(db_session).assign(
-        AssignRequest(ticket_ids=[t_other.id], assigned_user_id=target.id, operator_user_id=member_alice.id)
+        AssignRequest(
+            ticket_ids=[t_other.id], assigned_user_id=target.id, operator_user_id=member_alice.id
+        )
     )
     assert res2.assigned_count == 0
     assert res2.results[0].success is False
     assert "无权转交" in res2.results[0].message
-

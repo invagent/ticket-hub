@@ -1116,8 +1116,9 @@ def update_subtask_endpoint(
             hub.op_handler = None
             hub.op_status_changed_at = None
             hub.op_handler_user_id = None
+            hub.status = "draft"
         elif body.type == "Operation" and old_type != "Operation":
-            hub.status = "created"
+            hub.status = "draft"
             apply_op_status(
                 db,
                 hub,

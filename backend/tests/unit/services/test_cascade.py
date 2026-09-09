@@ -205,7 +205,7 @@ def test_released_cascades_tickets_and_outbox(world: Session) -> None:
     world.refresh(hub)
     world.refresh(t1)
     assert hub.status == "released" and hub.actual_released_at is not None
-    assert t1.status == "released" and t1.actual_released_at is not None
+    assert t1.status == "answered" and t1.actual_released_at is not None
 
     # 双方都有 history
     assert (
@@ -216,7 +216,7 @@ def test_released_cascades_tickets_and_outbox(world: Session) -> None:
     )
     sh = (
         world.query(StatusHistory)
-        .filter_by(entity_type="ticket", entity_id=t1.id, to_status="released")
+        .filter_by(entity_type="ticket", entity_id=t1.id, to_status="answered")
         .one()
     )
     assert "cascade from" in (sh.reason or "")

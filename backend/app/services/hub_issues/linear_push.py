@@ -209,9 +209,7 @@ def push_hub_issue_to_linear(
         # ---- 出口分流 ----
         # 转研发默认走飞书 webhook；关闭时回落直连 Linear GraphQL（需 key+team+push_enabled）。
         if settings.linear_webhook_enabled:
-            return _push_via_webhook(
-                db, hub, assignee_override_user_id=assignee_override_user_id
-            )
+            return _push_via_webhook(db, hub, assignee_override_user_id=assignee_override_user_id)
 
         if not (
             settings.linear_push_enabled and settings.linear_api_key and settings.linear_team_id

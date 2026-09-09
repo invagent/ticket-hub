@@ -98,7 +98,7 @@ class FeishuAiIngester:
             source_code=_SOURCE,
             source_ticket_id=p.session_id,
             type="Raw",
-            status="received",
+            status="processing",
             source_payload={"ai_cs": ai_cs_ctx},
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(self._db, p.product_line_code),
@@ -142,7 +142,7 @@ class FeishuAiIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by="system:ingest",
             reason=f"feishu_ai ingest: {p.session_id}",
             metadata={

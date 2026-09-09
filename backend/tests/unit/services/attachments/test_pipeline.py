@@ -195,9 +195,7 @@ def test_no_vision_key_stores_but_skips_ocr(db_session, monkeypatch):
     t = _mk_ticket(db_session)
     a = _mk_att(db_session, t.id)
     ksm, store, _vision = _mocks()
-    rep = drain_pending_attachments(
-        db_session, ksm_client=ksm, store=store, vision_client=None
-    )
+    rep = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=None)
     db_session.refresh(a)
     db_session.refresh(t)
     # 下载 + 存 MinIO 都发生了
@@ -216,7 +214,9 @@ def test_non_image_stores_but_skips_ocr(db_session, monkeypatch):
     """方案 A：非图片（zip/log 等）也下载存 MinIO，但跳过 OCR，落终态 skipped。"""
     _set_pipeline(monkeypatch, enabled=True, dry_run=False)
     t = _mk_ticket(db_session)
-    a = _mk_att(db_session, t.id, kind="other", source_url="http://k/server.log", filename="server.log")
+    a = _mk_att(
+        db_session, t.id, kind="other", source_url="http://k/server.log", filename="server.log"
+    )
     ksm, store, vision = _mocks(img=b"LOGDATA")
     rep = drain_pending_attachments(db_session, ksm_client=ksm, store=store, vision_client=vision)
     db_session.refresh(a)

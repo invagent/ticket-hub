@@ -133,9 +133,7 @@ def test_split_dev_owner_names_separator_compat(db_session: Session) -> None:
     _seed_module(db_session, mod="逗号分隔", dev_owners="汪意,魏文浩")
     _seed_module(db_session, mod="中文逗号分隔", dev_owners="汪意，魏文浩")
     db_session.commit()
-    picks_comma = [
-        consume_module_owner(db_session, "发票云", "逗号分隔").id for _ in range(2)
-    ]
+    picks_comma = [consume_module_owner(db_session, "发票云", "逗号分隔").id for _ in range(2)]
     picks_zh_comma = [
         consume_module_owner(db_session, "发票云", "中文逗号分隔").id for _ in range(2)
     ]

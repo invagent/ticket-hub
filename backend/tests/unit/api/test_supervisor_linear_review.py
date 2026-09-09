@@ -224,9 +224,7 @@ def test_confirm_linear_push_rejects_non_pending(
     assert r.status_code == 409
 
 
-def test_confirm_linear_push_by_own_handler(
-    app_client: TestClient, review_world: Session
-) -> None:
+def test_confirm_linear_push_by_own_handler(app_client: TestClient, review_world: Session) -> None:
     """处理人本人可确认推送；非处理人的 member 仍 403。"""
     # 非处理人 member → 403
     r = app_client.post(

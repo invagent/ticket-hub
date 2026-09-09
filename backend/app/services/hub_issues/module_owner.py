@@ -56,11 +56,7 @@ def _lookup_module_and_names(
 
 
 def _resolve_user_by_name(db: Session, name: str) -> User | None:
-    u = (
-        db.execute(select(User).where(User.name == name).order_by(User.id))
-        .scalars()
-        .first()
-    )
+    u = db.execute(select(User).where(User.name == name).order_by(User.id)).scalars().first()
     if u is None or u.deleted_at is not None or not u.is_active:
         return None
     return u
@@ -87,9 +83,7 @@ def consume_module_owner(
     游标始终前进，即使这一位对应的 User 当前不可用（inactive/已删）——该轮询位
     「应该」被消费，只是这次刚好人不可用，不做二次查找跳过，保持轮询顺序稳定。
     """
-    mod_row, names = _lookup_module_and_names(
-        db, product_line_code, module, for_update=True
-    )
+    mod_row, names = _lookup_module_and_names(db, product_line_code, module, for_update=True)
     if mod_row is None or not names:
         return None
     idx = mod_row.dev_owner_rotation_cursor % len(names)

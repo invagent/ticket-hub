@@ -41,7 +41,7 @@ from app.models import HubIssue, Ticket
 from app.repositories.ticket import TicketRepository
 from app.services.agents.classify import classify_ticket
 from app.services.agents.escalation_classify import classify_escalation_ticket
-from app.services.agents.split import execute_split_for_ticket
+from app.services.agents.split import execute_split_for_ticket as execute_split_for_ticket
 from app.services.agents.triage import run_ticket_triage
 from app.services.agents.vision_extract import extract_ticket_attachments
 from app.services.hub_issues.creator import create_hub_issue_for_ticket_auto
@@ -124,9 +124,7 @@ def _resolve_module(ticket_id: int) -> None:
         db.close()
 
 
-def _populate_subtasks_from_triage(
-    ticket_id: int, sub_problems: Sequence[Any]
-) -> None:
+def _populate_subtasks_from_triage(ticket_id: int, sub_problems: Sequence[Any]) -> None:
     """分诊识别出混合问题时，直接为工单创建对应的 Hub 子任务（废除旧 Child ticket 拆分）。"""
     from app.services.hub_issues.creator import _next_hub_short_code
 

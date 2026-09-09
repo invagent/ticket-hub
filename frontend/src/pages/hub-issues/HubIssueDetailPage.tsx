@@ -126,17 +126,18 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 const HUB_STATUS_ZH: Record<string, string> = {
-  created: "已创建",
+  draft: "待确认",
+  processing: "进行中",
+  answered: "已答复",
+  returned: "已退回",
+  created: "待确认",
   pending_review: "待确认分类",
   pending_linear_review: "待确认推送",
   pending: "待人工处理",
-  in_progress: "处理中",
-  released: "已发版",
-  answered: "已答复",
-  resolved: "已解决",
+  in_progress: "进行中",
+  released: "已答复",
+  resolved: "已答复",
   closed: "已关闭",
-  returned: "转单退回",
-  processing: "处理中",
 };
 
 const PRIORITY_ZH: Record<string, string> = {

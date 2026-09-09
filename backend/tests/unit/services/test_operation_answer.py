@@ -747,6 +747,34 @@ def test_route_answer_illegal_branch_falls_back_transfer() -> None:
     assert r.branch == "transfer"
 
 
+def test_auto_answer_aborts_if_hub_already_answered(db_session: Session) -> None:
+    """防并发时序竞态：若在 replay 执行期间人工已答复，auto_answer 必须中止，严禁覆盖为 processing。"""
+    hub, _t = _seed_op_hub(db_session)
+    hub.op_status = "answered"
+    hub.status = "resolved"
+    hub.reply_content = "人工已提交的正式答复"
+    hub.reply_is_draft = False
+    db_session.commit()
+
+    fake = _FakeClient(answer="AI 生成的答复")
+    with (
+        patch("app.services.agents.operation_answer.build_client", return_value=fake),
+        patch(
+            "app.services.agents.operation_answer._route_answer",
+            return_value=AnswerRoute(branch="C", supply_note="请提供截图"),
+        ),
+    ):
+        ok = auto_answer_operation(db_session, hub.id, settings=_S())
+
+    assert ok is False
+    db_session.refresh(hub)
+    # 状态与人工答复内容必须完好保留，严禁被并发打回 processing
+    assert hub.op_status == "answered"
+    assert hub.status == "resolved"
+    assert hub.reply_content == "人工已提交的正式答复"
+    assert hub.reply_is_draft is False
+
+
 # ---- replay 即时重试（网络/超时抖动兜底）----
 
 from adapters.ai_cs import AiCsBusinessError, AiCsNetworkError  # noqa: E402

@@ -32,7 +32,7 @@ from app.repositories.status_history import StatusHistoryRepository
 logger = get_logger(__name__)
 
 # hub statuses that fan out to tickets (identical value on both sides)
-_TICKET_CASCADE_STATUSES = frozenset({"in_progress", "released"})
+_TICKET_CASCADE_STATUSES = frozenset({"in_progress", "processing", "released", "answered"})
 
 _TICKET_TERMINAL_STATUSES = frozenset(
     {"done", "closed", "rejected", "superseded", "transferred_return"}
@@ -69,7 +69,7 @@ def apply_hub_status(
     prev = hub.status
     hub.status = to_status
     hub.status_changed_at = now  # 停留时长展示（研发协同列表）
-    if to_status == "released" and hub.actual_released_at is None:
+    if to_status in ("released", "answered") and hub.actual_released_at is None:
         hub.actual_released_at = now
     history.record(
         entity_type="hub_issue",
@@ -84,21 +84,29 @@ def apply_hub_status(
     if to_status not in _TICKET_CASCADE_STATUSES:
         return result
 
+    ticket_target_status = (
+        "answered"
+        if to_status in ("released", "answered")
+        else "processing"
+        if to_status in ("in_progress", "processing")
+        else to_status
+    )
+
     tickets = (
         db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).all()
     )
     for t in tickets:
-        if t.status == to_status or t.status in _TICKET_TERMINAL_STATUSES:
+        if t.status == ticket_target_status or t.status in _TICKET_TERMINAL_STATUSES:
             continue
         t_prev = t.status
-        t.status = to_status
-        if to_status == "released" and t.actual_released_at is None:
+        t.status = ticket_target_status
+        if ticket_target_status == "answered" and t.actual_released_at is None:
             t.actual_released_at = now
         history.record(
             entity_type="ticket",
             entity_id=t.id,
             from_status=t_prev,
-            to_status=to_status,
+            to_status=ticket_target_status,
             changed_by=changed_by,
             reason=f"cascade from {hub.short_code}" + (f": {reason}" if reason else ""),
         )

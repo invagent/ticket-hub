@@ -218,7 +218,7 @@ def execute_split(
             internal_split_id=f"{parent.short_code}-C{i}",
             type="Child",
             parent_ticket_id=parent.id,
-            status="received",
+            status="processing",
             # inherited context (same customer, same product surface)
             customer_identity_id=parent.customer_identity_id,
             product_line_code=parent.product_line_code,
@@ -258,7 +258,7 @@ def execute_split(
             entity_type="ticket",
             entity_id=child.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by=executed_by,
             reason=f"split from {parent.short_code} (decision #{decision.id})",
             metadata={
@@ -385,11 +385,11 @@ def revert_split(
     ]
 
     # Progress guard: routing-assignment at creation is NOT progress;
-    # any status transition past 'received' is.
-    busy = [c.id for c in children if c.status != "received"]
+    # any status transition past 'processing' is.
+    busy = [c.id for c in children if c.status != "processing"]
     if busy:
         raise SplitError(
-            f"children {busy} already in progress (status != received) — revert refused, "
+            f"children {busy} already in progress (status != processing) — revert refused, "
             "handle manually"
         )
 
@@ -407,7 +407,7 @@ def revert_split(
             metadata={"parent_ticket_id": parent.id},
         )
 
-    prev_status = str(materialized.get("parent_prev_status") or "received")
+    prev_status = str(materialized.get("parent_prev_status") or "processing")
     parent.type = "Raw"
     parent.status = prev_status
     parent.children_ticket_ids = None

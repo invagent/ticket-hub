@@ -69,6 +69,32 @@ def apply_op_status(
         reason=reason,
         metadata={"op_handler": handler},
     )
+
+    # 影子双写：将状态同步应用至关联工单的 Ticket.status（终态工单除外）
+    from app.models import Ticket
+
+    terminal_ticket_statuses = {"closed", "transferred_return"}
+    tickets = (
+        db.query(Ticket)
+        .filter(
+            (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
+            Ticket.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for t in tickets:
+        if t.status != to_status and t.status not in terminal_ticket_statuses:
+            t_prev = t.status
+            t.status = to_status
+            StatusHistoryRepository(db).record(
+                entity_type="ticket",
+                entity_id=t.id,
+                from_status=t_prev,
+                to_status=to_status,
+                changed_by=f"op:{handler}",
+                reason=reason,
+            )
+
     logger.info(
         "op_status_changed",
         hub_issue_id=hub.id,

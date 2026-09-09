@@ -106,7 +106,7 @@ class ZammadIngester:
             source_code="zammad",
             source_ticket_id=source_ticket_id,
             type="Raw",
-            status="received",
+            status="processing",
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(self._db, zt.product_line_code),
@@ -137,7 +137,7 @@ class ZammadIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by="system:ingest",
             reason=f"zammad webhook: {zt.id} (#{zt.number})",
             metadata={

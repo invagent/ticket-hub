@@ -96,11 +96,13 @@ def request_supply(
         db.add(row)
         db.flush()
         outbox_ids.append(row.id)
+        prev_st = t.status
+        t.status = "supplementing"
         history.record(
             entity_type="ticket",
             entity_id=t.id,
-            from_status=t.status,
-            to_status=t.status,
+            from_status=prev_st,
+            to_status="supplementing",
             changed_by=requested_by,
             reason=f"补料请求 from {hub.short_code}: {note[:120]}",
         )
@@ -185,11 +187,13 @@ def batch_request_supply(
             },
         )
         db.add(row)
+        prev_st = ticket.status
+        ticket.status = "supplementing"
         history.record(
             entity_type="ticket",
             entity_id=ticket.id,
-            from_status=ticket.status,
-            to_status=ticket.status,
+            from_status=prev_st,
+            to_status="supplementing",
             changed_by=requested_by,
             reason=f"批量补料请求: {note[:120]}",
         )

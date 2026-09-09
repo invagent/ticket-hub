@@ -69,9 +69,7 @@ def test_record_ticket_action_writes_row_per_linked_ticket(db_session: Session) 
 def test_record_ticket_action_skips_deleted_tickets(db_session: Session) -> None:
     from datetime import UTC, datetime
 
-    hub = HubIssue(
-        id=201, short_code="HUB-000201", type="Operation", title="t", status="created"
-    )
+    hub = HubIssue(id=201, short_code="HUB-000201", type="Operation", title="t", status="created")
     db_session.add(hub)
     db_session.flush()
     db_session.add(

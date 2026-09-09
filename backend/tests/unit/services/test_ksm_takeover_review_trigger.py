@@ -125,7 +125,14 @@ def test_disabled_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -> None
 def test_non_ksm_source_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     t = _ticket(world, source_code="zhichi", short_code="TKT-RV-2", source_ticket_id="X-2")
     calls: list[_TakeoverCall] = []
-    _patch_common(monkeypatch, world=world, notice=None, client=_FakeClient(), settings=_settings(), calls=calls)
+    _patch_common(
+        monkeypatch,
+        world=world,
+        notice=None,
+        client=_FakeClient(),
+        settings=_settings(),
+        calls=calls,
+    )
     mod.trigger_ksm_takeover_after_review(t.id)
     assert calls == []
 
@@ -133,7 +140,14 @@ def test_non_ksm_source_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -
 def test_already_handled_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     t = _ticket(world, ksm_takeover_status="handled")
     calls: list[_TakeoverCall] = []
-    _patch_common(monkeypatch, world=world, notice=None, client=_FakeClient(), settings=_settings(), calls=calls)
+    _patch_common(
+        monkeypatch,
+        world=world,
+        notice=None,
+        client=_FakeClient(),
+        settings=_settings(),
+        calls=calls,
+    )
     mod.trigger_ksm_takeover_after_review(t.id)
     assert calls == []
 
@@ -166,7 +180,9 @@ def test_notice_expired_falls_back_to_snapshot(
     t = _ticket(world, source_payload={"billId": "BILL-RV-1", "_subscribe_callback": snapshot})
     client = _FakeClient()
     calls: list[_TakeoverCall] = []
-    _patch_common(monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls)
+    _patch_common(
+        monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls
+    )
     mod.trigger_ksm_takeover_after_review(t.id)
     assert len(calls) == 1
     assert calls[0].detail == snapshot
@@ -177,7 +193,9 @@ def test_no_notice_no_snapshot_skips(world: Session, monkeypatch: pytest.MonkeyP
     t = _ticket(world, source_payload={"billId": "BILL-RV-1"})  # 无 _subscribe_callback
     client = _FakeClient()
     calls: list[_TakeoverCall] = []
-    _patch_common(monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls)
+    _patch_common(
+        monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls
+    )
     mod.trigger_ksm_takeover_after_review(t.id)
     assert calls == []
     assert client.closed is True  # client 仍要关闭
@@ -214,6 +232,8 @@ def test_already_locked_skips(world: Session, monkeypatch: pytest.MonkeyPatch) -
     t = _ticket(world, ksm_takeover_status="locked")
     client = _FakeClient()
     calls: list[_TakeoverCall] = []
-    _patch_common(monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls)
+    _patch_common(
+        monkeypatch, world=world, notice=None, client=client, settings=_settings(), calls=calls
+    )
     mod.trigger_ksm_takeover_after_review(t.id)
     assert calls == []

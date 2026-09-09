@@ -340,14 +340,14 @@ class KSMWritebackSender:
                 reason=f"KSM 答复关单回写成功（outbox={row.id}, kind={row.kind}）",
             )
         hub = self._db.get(HubIssue, row.hub_issue_id) if row.hub_issue_id else None
-        if hub is not None and hub.status != "resolved":
+        if hub is not None and hub.status != "answered":
             hub_prev = hub.status
-            hub.status = "resolved"
+            hub.status = "answered"
             history.record(
                 entity_type="hub_issue",
                 entity_id=hub.id,
                 from_status=hub_prev,
-                to_status="resolved",
+                to_status="answered",
                 changed_by=changed_by,
                 reason=f"Operation 答复关单回写成功（outbox={row.id}）",
             )

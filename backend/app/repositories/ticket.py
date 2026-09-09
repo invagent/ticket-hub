@@ -217,13 +217,11 @@ class TicketRepository:
                 conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"))
             hub_cond = or_(*conds) if len(conds) > 1 else conds[0]
             hub_sub = select(HubIssue.id).where(hub_cond)
-            base = base.where(Ticket.hub_issue_id.in_(hub_sub))
-            count_base = count_base.where(Ticket.hub_issue_id.in_(hub_sub))
+            ticket_cond = or_(Ticket.status.in_(op_statuses), Ticket.hub_issue_id.in_(hub_sub))
+            base = base.where(ticket_cond)
+            count_base = count_base.where(ticket_cond)
         elif op_status:
-            # 处理状态筛选（op_status 在所挂 hub_issue 上，仅 Operation 有值）。
-            # 与列表展示口径一致：研发类（Bug_fix/Demand）无 op_status，其「处理状态」
-            # 由 hub.status 派生——released=处理完成(answered)，其余已毕业=处理中(processing)。
-            # 故筛 processing/answered 时把对应研发类 hub 一并纳入，保证筛选与展示一致。
+            # 处理状态筛选：优先匹配 Ticket.status，同时兼容按所挂 hub_issue 的 op_status 过滤
             hub_cond = HubIssue.op_status == op_status
             dev_types = ("Bug_fix", "Demand")
             if op_status == "processing":
@@ -237,8 +235,9 @@ class TicketRepository:
                     and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"),
                 )
             hub_sub = select(HubIssue.id).where(hub_cond)
-            base = base.where(Ticket.hub_issue_id.in_(hub_sub))
-            count_base = count_base.where(Ticket.hub_issue_id.in_(hub_sub))
+            ticket_cond = or_(Ticket.status == op_status, Ticket.hub_issue_id.in_(hub_sub))
+            base = base.where(ticket_cond)
+            count_base = count_base.where(ticket_cond)
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (
@@ -272,6 +271,10 @@ class TicketRepository:
         """
         cutoff = (now or datetime.now(UTC)) - threshold
         active_statuses = (
+            "processing",
+            "reviewing",
+            "supplementing",
+            "exception",
             "received",
             "linked",
             "waiting_reply",

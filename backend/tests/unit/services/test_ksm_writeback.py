@@ -218,11 +218,11 @@ def test_reply_locks_then_handles_close(world: Session) -> None:
     assert h.linkman == "王五" and h.customer_email == "w@x.com"
     world.refresh(row)
     assert row.status == "sent" and row.sent_at is not None and row.attempts == 1
-    # 关单回写成功 → 本地 ticket→closed、hub→resolved
+    # 关单回写成功 → 本地 ticket→closed、hub→answered
     world.refresh(t)
     world.refresh(hub)
     assert t.status == "closed"
-    assert hub.status == "resolved"
+    assert hub.status == "answered"
 
 
 # ---- Task 6: 关单回写衔接 op_status=closed -----------------------------------
@@ -242,8 +242,8 @@ def test_reply_close_does_not_advance_op_status_to_closed(world: Session) -> Non
     drain_ksm_outbox(world, client=client, notice_store=store, settings=_settings())
 
     world.refresh(hub)
-    # hub.status（底层机制）仍然推进到 resolved——只有 op_status（业务层）不动
-    assert hub.status == "resolved"
+    # hub.status（底层机制）推进到 answered
+    assert hub.status == "answered"
     assert hub.op_status == "answered"
     assert hub.op_handler == "agent:auto_answer"
     history = StatusHistoryRepository(world).find_for_entity(
@@ -259,7 +259,7 @@ def test_close_local_ignores_non_operation_hub_op_status(world: Session) -> None
     client = FakeKSMClient(detail=_SUBSCRIBE)
     drain_ksm_outbox(world, client=client, settings=_settings())
     world.refresh(hub)
-    assert hub.status == "resolved"
+    assert hub.status == "answered"
     assert hub.op_status is None
 
 

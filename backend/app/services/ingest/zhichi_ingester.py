@@ -281,7 +281,7 @@ class ZhichiIngester:
             source_code="zhichi",
             source_ticket_id=ticketid,
             type="Raw",
-            status="received",
+            status="processing",
             source_payload=payload.get("_envelope") or payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(
@@ -343,7 +343,7 @@ class ZhichiIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by="system:ingest",
             reason=f"zhichi webhook: {ticketid}",
             metadata={

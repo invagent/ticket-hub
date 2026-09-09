@@ -78,9 +78,7 @@ def test_assign_endpoint_success(app_client: TestClient, assign_world: Session) 
     assert ticket.handler_user_id == 3
 
 
-def test_assign_endpoint_member_allowed(
-    app_client: TestClient, assign_world: Session
-) -> None:
+def test_assign_endpoint_member_allowed(app_client: TestClient, assign_world: Session) -> None:
     """member 角色可作为处理人（转交目标不再限角色）。"""
     resp = app_client.post(
         "/api/supervisor/assign",
@@ -121,4 +119,3 @@ def test_assign_endpoint_member_can_transfer_own_ticket(
     assert body["assigned_count"] == 1
     assign_world.expire_all()
     assert assign_world.get(Ticket, 102).handler_user_id == 3
-

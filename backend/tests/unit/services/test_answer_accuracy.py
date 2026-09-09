@@ -31,23 +31,17 @@ def test_score_parses_accuracy_and_reason() -> None:
 
 
 def test_score_llm_error_defaults_zero() -> None:
-    r = score_answer_accuracy(
-        "x", "y", [], router=_FakeRouter("", raise_err=True)
-    )
+    r = score_answer_accuracy("x", "y", [], router=_FakeRouter("", raise_err=True))
     assert r.accuracy == 0
 
 
 def test_score_invalid_json_defaults_zero() -> None:
-    r = score_answer_accuracy(
-        "x", "y", [], router=_FakeRouter("not json")
-    )
+    r = score_answer_accuracy("x", "y", [], router=_FakeRouter("not json"))
     assert r.accuracy == 0
 
 
 def test_score_out_of_range_clamped() -> None:
-    r = score_answer_accuracy(
-        "x", "y", [], router=_FakeRouter('{"accuracy": 150, "reason": "r"}')
-    )
+    r = score_answer_accuracy("x", "y", [], router=_FakeRouter('{"accuracy": 150, "reason": "r"}'))
     assert 0 <= r.accuracy <= 100
 
 

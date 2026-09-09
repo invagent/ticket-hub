@@ -55,8 +55,9 @@ logger = get_logger(__name__)
 
 # state_type → hub_issue.status (only unambiguous transitions; see docstring)
 _CASCADE_MAP = {
-    "started": "in_progress",
-    "completed": "released",
+    "started": "processing",
+    "completed": "answered",
+    "canceled": "returned",
 }
 
 _SCAN_LIMIT = 200  # most-recently-updated first; plenty at current volume

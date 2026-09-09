@@ -18,14 +18,13 @@ import {
 } from "@tanstack/react-table";
 import { api, type TicketSummary } from "@/api/client";
 import { MultiUserSelect, UserSelect } from "@/components/selectors";
-import { ProcessStatusBadge } from "@/components/OpStatusBadge";
 import { RerouteResultDialog } from "./RerouteResultDialog";
 import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { BatchTransferDialog } from "./BatchTransferDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
 import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
-import { computeProcessStage, devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
+import { devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
   try {
@@ -37,24 +36,11 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
 
 const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected", "transferred_return"];
 
-// 标题灰置：已毕业 hub 的工单看 computeProcessStage 的综合判定（op_status 优先于
-// hub.status，避免"退回 KSM"等只改 ticket.status=closed 但 hub 仍在处理中的单被误灰，
-// 如 TKT-006619/TKT-006625：Operation 处理中却因客户端退回 KSM 重新分派导致
-// ticket.status=closed，op_status 仍是 processing，不该灰）；未毕业的单没有 hub 状态
-// 可参考，回落 ticket 底层终态判断。
 function isTicketClosed(t: TicketSummary): boolean {
-  if (t.hub_issue_id == null) {
-    return CLOSED_STATUSES.includes(t.status);
+  if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
+    return false;
   }
-  const stage = computeProcessStage({
-    predictedType: t.predicted_type,
-    hubIssueId: t.hub_issue_id,
-    hubStatus: t.hub_status,
-    opStatus: t.op_status,
-    ticketStatus: t.status,
-    ticketStatusLabel,
-  });
-  return stage.tone === "closed";
+  return CLOSED_STATUSES.includes(t.status);
 }
 
 
@@ -100,19 +86,15 @@ const SOURCE_OPTIONS: { value: string; label: string }[] = [
 
 const OP_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "processing", label: "处理中" },
-  { value: "resubmitted", label: "补充重提" },
   { value: "reviewing", label: "待审核" },
   { value: "supplementing", label: "补充资料" },
-  { value: "unresolved_return", label: "未解决退回" },
-  { value: "transferred", label: "转单" },
-  { value: "transferred_return", label: "转单退回" },
-  { value: "pending_accept", label: "待受理" },
-  { value: "answered", label: "处理完成" },
-  { value: "closed", label: "处理关闭" },
+  { value: "answered", label: "已答复" },
+  { value: "closed", label: "已关闭" },
   { value: "exception", label: "处理异常" },
+  { value: "transferred_return", label: "转单退回" },
 ];
 
-const DEFAULT_OP_STATUSES = ["processing", "resubmitted", "reviewing"];
+const DEFAULT_OP_STATUSES = ["processing", "reviewing", "supplementing"];
 
 // v8: 筛选栏固定顶部并提升对比度、增加超时状态列与筛选、右侧快捷统计标签
 const PREFS_KEY = "tickets_table_prefs_v20260908_v4";
@@ -357,16 +339,9 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
       if (ticket.predicted_type === "Bug_fix") return "Bug 修复";
       if (ticket.predicted_type === "Operation") return "应用类";
       return ticket.predicted_type;
-    case "op_status": {
-      const stage = computeProcessStage({
-        predictedType: ticket.predicted_type,
-        hubIssueId: ticket.hub_issue_id,
-        hubStatus: ticket.hub_status,
-        opStatus: ticket.op_status,
-        ticketStatus: ticket.status,
-        ticketStatusLabel,
-      });
-      return stage.label ?? "";
+    case "op_status":
+    case "status": {
+      return ticketStatusLabel(ticket.status);
     }
     case "handler_user":
       return ticket.handler_user_name ?? (ticket.handler_user_id ? String(ticket.handler_user_id) : "");
@@ -1253,23 +1228,17 @@ export function TicketsListPage() {
       {
         id: "op_status",
         header: "处理状态",
-        accessorKey: "op_status",
+        accessorKey: "status",
         size: 95,
         cell: ({ row }) => {
           const t = row.original;
-          if (!t.op_status && !(t.hub_issue_id != null && (t.predicted_type === "Bug_fix" || t.predicted_type === "Demand"))) {
-            return <span className="text-hub-textFaint text-[10.5px]">—</span>;
+          if (t.hub_status === "released" && (t.predicted_type === "Bug_fix" || t.predicted_type === "Demand")) {
+            return <StatusBadge status="released" />;
           }
-          return (
-            <ProcessStatusBadge
-              opStatus={t.op_status}
-              hubStatus={t.hub_status}
-              predictedType={t.predicted_type}
-              hubIssueId={t.hub_issue_id}
-              ticketStatus={t.status}
-              ticketStatusLabel={ticketStatusLabel}
-            />
-          );
+          if (t.hub_status === "in_progress" && (t.predicted_type === "Bug_fix" || t.predicted_type === "Demand")) {
+            return <StatusBadge status="processing" />;
+          }
+          return <StatusBadge status={t.status} />;
         },
       },
       {

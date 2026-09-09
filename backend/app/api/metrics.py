@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -158,12 +158,12 @@ class KpiOut(BaseModel):
 
 class TicketAnalyticsOut(BaseModel):
     kpi: KpiOut
-    by_module: list[dict]
-    by_assignee: list[dict]
-    trend: list[dict]
-    handle_hours_hist: list[dict]
+    by_module: list[dict[str, Any]]
+    by_assignee: list[dict[str, Any]]
+    trend: list[dict[str, Any]]
+    handle_hours_hist: list[dict[str, Any]]
     available_months: list[str]
-    by_dev_staff: list[dict]
+    by_dev_staff: list[dict[str, Any]]
 
 
 @router.get("/ticket-analytics", response_model=TicketAnalyticsOut)

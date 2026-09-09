@@ -137,9 +137,7 @@ def test_push_uses_module_owner_over_assigned(world: Session) -> None:
     world.add(ProductLine(code="fpy", name="fpy"))
     world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="模块负责人"))
     world.commit()
-    hub = _make_hub(
-        world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块"
-    )
+    hub = _make_hub(world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块")
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].assignee_id == "lin-u-31"  # 模块负责人，而非 lin-u-30

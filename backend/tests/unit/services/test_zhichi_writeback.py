@@ -114,7 +114,7 @@ def test_drain_reply_closes_local_status(db_session: Session) -> None:
     db_session.refresh(t)
     db_session.refresh(hub)
     assert t.status == "closed"
-    assert hub.status == "resolved"
+    assert hub.status == "answered"
 
 
 def test_drain_supply_does_not_close(db_session: Session) -> None:
@@ -325,7 +325,7 @@ def test_drain_ticket_closed_marks_skipped_and_closes_local(db_session: Session)
     db_session.refresh(ob)
     # 本地收尾到位
     assert t.status == "closed"
-    assert hub.status == "resolved"
+    assert hub.status == "answered"
     # outbox skipped + 只 attempts+1（不耗尽重试）
     assert ob.status == "skipped"
     assert ob.attempts == 1

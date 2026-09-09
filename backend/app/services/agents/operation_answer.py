@@ -189,6 +189,15 @@ def _replay_with_retry(
     raise last_err
 
 
+def _is_hub_already_settled(hub: HubIssue) -> bool:
+    """检查 Hub 是否已完成答复、已关单或已转单退回，防并发覆盖。"""
+    if hub.op_status in (OP_ANSWERED, OP_CLOSED, OP_TRANSFERRED_RETURN):
+        return True
+    if hub.status in ("answered", "resolved", "closed"):
+        return True
+    return bool(hub.reply_content and not hub.reply_is_draft)
+
+
 def auto_answer_operation(
     db: Session,
     hub_issue_id: int,
@@ -217,8 +226,8 @@ def auto_answer_operation(
     if hub.status == "pending_review":
         return False
 
-    # 若工单已关闭或已转单退回，绝不继续自动答复或转人工
-    if hub.op_status in (OP_CLOSED, OP_TRANSFERRED_RETURN):
+    # 若工单已处于已答复或终态，绝不继续自动答复或转人工
+    if _is_hub_already_settled(hub):
         return False
 
     # escalation(ai_cs) 来源不自动答复（走 reflect 反思队列）
@@ -263,14 +272,15 @@ def auto_answer_operation(
     finally:
         client.close()
 
-    # 防并发竞态（如 replay 耗时 1-2 分钟期间，处理人已点击退回 KSM 或关闭工单）：
-    # 若此时 hub 已进入终态（已关闭/已转单退回），丢弃本次 replay 结果，严禁将其重新打回 processing
+    # 防并发竞态（如 replay 耗时 1-5 分钟期间，处理人已在界面人工提交答复、退回 KSM 或关闭工单）：
+    # 若此时 hub 已进入终态或已被人工答复，丢弃本次 replay 结果，严禁将其重新打回 processing
     db.refresh(hub)
-    if hub.op_status in (OP_CLOSED, OP_TRANSFERRED_RETURN):
+    if _is_hub_already_settled(hub):
         logger.info(
-            "operation_auto_reply_aborted_hub_terminal",
+            "operation_auto_reply_aborted_hub_settled",
             hub_issue_id=hub.id,
             op_status=hub.op_status,
+            hub_status=hub.status,
         )
         return False
 
@@ -282,6 +292,10 @@ def auto_answer_operation(
 
     def _transfer(reason: str) -> bool:
         """降级留主管：op_status→processing/主管 + 记 transfer 审计。返回 False。"""
+        db.refresh(hub)
+        if _is_hub_already_settled(hub):
+            logger.info("operation_auto_reply_transfer_skipped_settled", hub_issue_id=hub.id)
+            return False
         apply_op_status(
             db,
             hub,
@@ -398,6 +412,10 @@ def auto_answer_operation(
         note = (route.supply_note or "").strip()
         if not note:
             return _transfer("需补料但 supply_note 为空，降级留主管")
+        db.refresh(hub)
+        if _is_hub_already_settled(hub):
+            logger.info("operation_auto_supply_skipped_settled", hub_issue_id=hub.id)
+            return False
         _save_draft_reply(db, hub, content=note)
         apply_op_status(
             db,
@@ -459,7 +477,7 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
             # 确认分类/闸门①关的 Operation hub 落 status='created'——用它区分
             # 两种 processing/agent 组合，防止 drain 抢在主管确认分类之前
             # 就把 gate①-parked 的 hub 自动答复出去。
-            HubIssue.status == "created",
+            HubIssue.status.in_(["created", "draft", "processing"]),
             HubIssue.op_status == OP_PROCESSING,
             HubIssue.op_handler == "agent",
         )

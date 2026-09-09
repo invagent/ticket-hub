@@ -123,7 +123,7 @@ def test_execute_materializes_children(world: Session) -> None:
         assert c.title in ("红字确认单开票步骤咨询", "苍穹开票状态不同步")
         # re-route: module 命中 alice
         assert c.assigned_user_id == 1
-        assert c.status == "received"
+        assert c.status == "processing"
 
     # 审计: decision.proposal 记录 materialized 块
     world.refresh(decision)

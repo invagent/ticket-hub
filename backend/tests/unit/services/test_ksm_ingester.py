@@ -87,7 +87,7 @@ def test_first_ingest_creates_customer_and_routes(ingest_world: Session) -> None
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
     assert ticket.assigned_user_id == 1
-    assert ticket.status == "received"
+    assert ticket.status == "processing"
     assert ticket.type == "Raw"
     assert ticket.source_code == "ksm"
     assert ticket.source_ticket_id == "ksm-bill-001"
@@ -107,7 +107,7 @@ def test_first_ingest_creates_customer_and_routes(ingest_world: Session) -> None
     assert h.entity_type == "ticket"
     assert h.entity_id == ticket.id
     assert h.from_status is None
-    assert h.to_status == "received"
+    assert h.to_status == "processing"
     assert h.changed_by == "system:ingest"
 
 
@@ -473,7 +473,7 @@ def test_ingest_reject_on_answered(db_session, monkeypatch) -> None:  # type: ig
     assert hub.op_handler == "主管"  # resolve_op_handler 未配预分配运营 → 兜底 "主管"
 
     db_session.refresh(existing)
-    assert existing.status == "received"
+    assert existing.status == "processing"
 
 
 def test_ingest_reject_on_answered_ticket_already_open(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -494,7 +494,7 @@ def test_ingest_reject_on_answered_ticket_already_open(db_session, monkeypatch) 
     db_session.commit()
 
     db_session.refresh(existing)
-    assert existing.status == "received"
+    assert existing.status == "processing"
 
 
 def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -64,12 +64,12 @@ def test_started_cascades_to_in_progress(db_session: Session) -> None:
     )  # type: ignore[arg-type]
     assert rep.status_changed == 1
     db_session.refresh(hub)
-    assert hub.status == "in_progress"
+    assert hub.status == "processing"
     assert hub.linear_status == "In Progress"
     assert hub.linear_status_synced_at is not None
     sh = (
         db_session.query(StatusHistory)
-        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="in_progress")
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="processing")
         .one()
     )
     assert "CNPRD-1" in (sh.reason or "")
@@ -79,22 +79,22 @@ def test_completed_cascades_to_released_with_timestamp(db_session: Session) -> N
     hub = _hub(db_session, 2, status="in_progress")
     sync_linear_statuses(db_session, client=_FakeLinearClient([_state(2, "Done", "completed")]))  # type: ignore[arg-type]
     db_session.refresh(hub)
-    assert hub.status == "released"
+    assert hub.status == "answered"
     assert hub.actual_released_at is not None
     assert hub.linear_status == "Done"
 
 
 def test_canceled_records_display_only(db_session: Session) -> None:
-    """canceled 只镜像 linear_status，不动 hub 状态 — 留主管判断。"""
+    """canceled 同步将 hub 状态置为 returned。"""
     hub = _hub(db_session, 3, status="in_progress")
     rep = sync_linear_statuses(
         db_session, client=_FakeLinearClient([_state(3, "Canceled", "canceled")])
     )  # type: ignore[arg-type]
-    assert rep.status_changed == 0
+    assert rep.status_changed == 1
     assert rep.linear_status_refreshed == 1
     db_session.refresh(hub)
-    assert hub.status == "in_progress"  # 未变
-    assert hub.linear_status == "Canceled"  # 但可见
+    assert hub.status == "returned"
+    assert hub.linear_status == "Canceled"
 
 
 def test_backlog_records_display_only(db_session: Session) -> None:
@@ -123,7 +123,7 @@ def test_reopen_released_back_to_in_progress(db_session: Session) -> None:
         db_session, client=_FakeLinearClient([_state(6, "In Progress", "started")])
     )  # type: ignore[arg-type]
     db_session.refresh(hub)
-    assert hub.status == "in_progress"
+    assert hub.status == "processing"
 
 
 def test_missing_in_linear_untouched(db_session: Session) -> None:
@@ -172,9 +172,9 @@ def test_completed_cascades_to_linked_tickets(db_session: Session) -> None:
 
     sync_linear_statuses(db_session, client=_FakeLinearClient([_state(11, "Done", "completed")]))  # type: ignore[arg-type]
     db_session.refresh(t)
-    assert t.status == "released"
+    assert t.status == "answered"
     outbox = db_session.query(SyncOutbox).filter_by(kind="status", ticket_id=t.id).one()
-    assert outbox.payload["to_status"] == "released"
+    assert outbox.payload["to_status"] == "answered"
     assert outbox.status == "pending"
 
 

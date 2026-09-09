@@ -161,7 +161,7 @@ class EscalationIngester:
             source_code=_SOURCE,
             source_ticket_id=p.session_id,
             type="Raw",
-            status="received",
+            status="processing",
             # escalation context lives under ['ai_cs'] for escalation_classify
             # + the knowledge-feedback reflect UI
             source_payload={"ai_cs": ai_cs_ctx},
@@ -207,7 +207,7 @@ class EscalationIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="received",
+            to_status="processing",
             changed_by="system:ingest",
             reason=f"ai_cs escalation: {p.session_id}",
             metadata={
