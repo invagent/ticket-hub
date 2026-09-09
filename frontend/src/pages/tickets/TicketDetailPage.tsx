@@ -2733,6 +2733,7 @@ function SubTicketList({
     }: {
       hubId: number;
       overrideUserId?: number;
+      rowKey?: string | number;
     }) =>
       postByPath(
         "/api/hub-issues/{hub_issue_id}/confirm-subtask",
@@ -2746,6 +2747,12 @@ function SubTicketList({
         if (onToast) onToast(res.message || "未找到责任人，请手动选择", "warning");
       } else {
         updateRow(vars.hubId, { confirmed: true });
+        if (vars.rowKey != null) {
+          updateRow(vars.rowKey, { confirmed: true });
+        }
+        if (vars.hubId === self.hub_id) {
+          updateRow("self", { confirmed: true });
+        }
         void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
         void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
         void qc.invalidateQueries({ queryKey: ["hub-issues"] });
@@ -3016,7 +3023,7 @@ function SubTicketList({
     // 若有对应的 Hub 任务（数字 id 或 self.hub_id），调用真实后端 confirm-subtask 接口，成功后更新状态
     const targetHubId = typeof key === "number" ? key : self.hub_id;
     if (targetHubId) {
-      confirmSubtaskMutation.mutate({ hubId: targetHubId });
+      confirmSubtaskMutation.mutate({ hubId: targetHubId, rowKey: key });
     } else {
       updateRow(key, { confirmed: true });
       const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
@@ -3301,7 +3308,7 @@ function SubTicketList({
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
                       const effStatus = st.confirmed
-                        ? (st.type === "Operation" ? "answered" : "processing")
+                        ? "processing"
                         : (self.status || "draft");
                       const b = subtaskStatusBadge(effStatus);
                       return (

@@ -77,6 +77,10 @@ _TICKET_TERMINAL_STATUSES = frozenset(
 _ALREADY_LOCKED_HINTS = ("已被接管", "已接管", "已锁定", "重复接管")
 
 
+class KsmAlreadyCompletedError(Exception):
+    """KSM 工单在外部已结案完成处理（status=4）。"""
+
+
 @dataclass(slots=True)
 class DrainReport:
     scanned: int = 0
@@ -293,6 +297,17 @@ class KSMWritebackSender:
                 persisted_node_id=ticket.ksm_current_node_id,
                 ticket=ticket,
             )
+        except KsmAlreadyCompletedError as e:
+            if action in _CLOSING_ACTIONS:
+                logger.info(
+                    "ksm_writeback_already_completed_closing_local",
+                    bill_id=fields.bill_id,
+                    action=action,
+                    outbox_id=row.id,
+                )
+            else:
+                self._record_failure(row, report, str(e))
+                return
         except KSMError as e:
             self._record_failure(row, report, str(e))
             return
@@ -500,27 +515,34 @@ class KSMWritebackSender:
             if any(h in str(e) for h in _ALREADY_LOCKED_HINTS):
                 logger.info("ksm_already_locked", bill_id=fields.bill_id)
                 return
+            if "已处理完成" in str(e):
+                raise KsmAlreadyCompletedError(str(e)) from e
             raise
 
     def _handle_close(self, fields: _KSMFields, identity: KsmIdentity, reply: str) -> None:
-        self._client.handle_order(
-            HandleOrderRequest(
-                account=identity.account,
-                account_name=identity.account_name,
-                account_number=identity.account_number,
-                bill_id=fields.bill_id,
-                linkman=fields.linkman,
-                customer_email=fields.email,
-                customer_mobile=fields.mobile,
-                product_id=fields.product_id,
-                version_id=fields.version_id,
-                module_id=fields.module_id,
-                back_type=fields.back_type,
-                node_id=fields.node_id,
-                deal_opinion=reply,
-                is_deal=True,
+        try:
+            self._client.handle_order(
+                HandleOrderRequest(
+                    account=identity.account,
+                    account_name=identity.account_name,
+                    account_number=identity.account_number,
+                    bill_id=fields.bill_id,
+                    linkman=fields.linkman,
+                    customer_email=fields.email,
+                    customer_mobile=fields.mobile,
+                    product_id=fields.product_id,
+                    version_id=fields.version_id,
+                    module_id=fields.module_id,
+                    back_type=fields.back_type,
+                    node_id=fields.node_id,
+                    deal_opinion=reply,
+                    is_deal=True,
+                )
             )
-        )
+        except KSMError as e:
+            if "已处理完成" in str(e):
+                raise KsmAlreadyCompletedError(str(e)) from e
+            raise
 
     def _handle_progress(self, fields: _KSMFields, identity: KsmIdentity, note: str) -> None:
         """回复不关单（is_deal=False）——owner-split x/n 进度通知。"""

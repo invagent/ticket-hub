@@ -152,13 +152,15 @@ class KSMIngester:
 
         # 4. Create ticket (type=Raw, status=received)
         short_code = self._tickets.next_short_code()
+        is_already_closed = str(payload.get("sourceStatus") or "") == "4"
+        initial_status = "closed" if is_already_closed else "processing"
         ticket = Ticket(
             short_code=short_code,
             source_code="ksm",
             source_ticket_id=bill_id,
             source_ticket_number=payload.get("billNumber"),
             type="Raw",
-            status="processing",
+            status=initial_status,
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(
@@ -220,9 +222,10 @@ class KSMIngester:
             entity_type="ticket",
             entity_id=ticket.id,
             from_status=None,
-            to_status="processing",
+            to_status=initial_status,
             changed_by="system:ingest",
-            reason=f"ksm webhook: {bill_id}",
+            reason=f"ksm webhook: {bill_id}"
+            + (" (KSM已处理完成关单)" if is_already_closed else ""),
             metadata={
                 "source": "ksm",
                 "routing_decision": dispatch_decision,

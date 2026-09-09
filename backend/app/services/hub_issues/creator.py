@@ -136,8 +136,10 @@ def ensure_hub_issue_for_ticket(
         root_cause_analysis=root_cause_analysis,
         product_line_code=eff_plc,
         module=eff_module,
-        status="created",
-        op_status=OP_PROCESSING if issue_type == "Operation" else None,
+        status="resolved" if ticket.status == "closed" else "created",
+        op_status="closed"
+        if (issue_type == "Operation" and ticket.status == "closed")
+        else (OP_PROCESSING if issue_type == "Operation" else None),
         op_handler="agent" if issue_type == "Operation" else None,
         op_status_changed_at=datetime.now(UTC) if issue_type == "Operation" else None,
         assigned_user_id=ticket.assigned_user_id,

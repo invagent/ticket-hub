@@ -297,8 +297,8 @@ def _run_ksm_takeover(
         if ticket.status in ("closed", "transferred_return"):
             logger.info("ksm_takeover_skip_terminal", ticket_id=ticket_id, status=ticket.status)
             return
-        if str(detail.get("status") or ticket.source_status or "") == "6":
-            logger.info("ksm_takeover_skip_status_6", ticket_id=ticket_id)
+        if str(detail.get("status") or ticket.source_status or "") in ("4", "6"):
+            logger.info("ksm_takeover_skip_status_4_or_6", ticket_id=ticket_id)
             return
         takeover_ksm_ticket(
             db,
