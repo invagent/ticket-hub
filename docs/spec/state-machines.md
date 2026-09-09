@@ -13,6 +13,21 @@
 一条工单同时活在三层，每层一套状态字段；ADR-0017 的 `stage` 是把三层折成一个的派生量。
 
 ```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> received: 5 个 ingester 构造
+  received --> received: KSM 重复推送回炉
+  received --> split: split.py parent 翻转（已死）
+  received --> in_progress: status_cascade 级联
+  received --> released: status_cascade 级联
+  in_progress --> released: status_cascade 级联
+  received --> closed: 关闭投诉 / KSM 关单 / 智齿关单
+  in_progress --> closed: 同上
+  released --> closed: 同上
+  received --> transferred_return: 退回 KSM 成功
+  closed --> [*]
+  transferred_return --> [*]
+```mermaid
 flowchart LR
   subgraph L1["工单层 tickets"]
     T["ticket.status<br/>received / split / in_progress<br/>released / closed / transferred_return"]
@@ -128,20 +143,20 @@ stateDiagram-v2
 
 **实际写入点全集**（只有这 6 处）：
 
-| 目标值 | 写入点 | 触发 |
-|---|---|---|
-| `received` | 5 个 ingester 构造 + `ksm_ingester.ingest`（重复推送分支） | 入库 / KSM 重复推送回炉 |
-| `split` | `agents/split.execute_split_for_ticket` | Parent 翻转（旧 Child 拆分机制，已被 Hub 子任务取代） |
-| `in_progress` `released` | `cascade/status_cascade.apply_hub_status` | **唯一**入口，白名单 `_TICKET_CASCADE_STATUSES` 级联 |
-| `closed` | `supervisor.close_complaint_endpoint`、`ksm/writeback._close_local`、`zhichi/writeback._close_local` | 关闭投诉 / KSM 关单 / 智齿关单 |
-| `transferred_return` | `ksm/writeback._close_ticket_returned` | 退回 KSM 成功 |
+| 目标值                      | 写入点                                                                                                | 触发                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `received`               | 5 个 ingester 构造 + `ksm_ingester.ingest`（重复推送分支）                                                    | 入库 / KSM 重复推送回炉                            |
+| `split`                  | `agents/split.execute_split_for_ticket`                                                            | Parent 翻转（旧 Child 拆分机制，已被 Hub 子任务取代）       |
+| `in_progress` `released` | `cascade/status_cascade.apply_hub_status`                                                          | **唯一**入口，白名单 `_TICKET_CASCADE_STATUSES` 级联 |
+| `closed`                 | `supervisor.close_complaint_endpoint`、`ksm/writeback._close_local`、`zhichi/writeback._close_local` | 关闭投诉 / KSM 关单 / 智齿关单                       |
+| `transferred_return`     | `ksm/writeback._close_ticket_returned`                                                             | 退回 KSM 成功                                  |
 
 **死值 / 只读值**：
 
-| 值 | 状况 | 影响 |
-|---|---|---|
-| `linked` `waiting_reply` `replied` | ❌ **零写入点** | 操作手册 §5「状态含义速查」描述的 `received → linked → waiting_reply → in_progress → replied → done` 流程**不存在**，手册这一段是错的 |
-| `done` `rejected` `superseded` | 只被**读**（`_TICKET_TERMINAL_STATUSES`、`metrics/workbench`、`ksm/writeback` 终态白名单） | 可能有历史数据；新代码不产生 |
+| 值                                  | 状况                                                                             | 影响                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `linked` `waiting_reply` `replied` | ❌ **零写入点**                                                                     | 操作手册 §5「状态含义速查」描述的 `received → linked → waiting_reply → in_progress → replied → done` 流程**不存在**，手册这一段是错的 |
+| `done` `rejected` `superseded`     | 只被**读**（`_TICKET_TERMINAL_STATUSES`、`metrics/workbench`、`ksm/writeback` 终态白名单） | 可能有历史数据；新代码不产生                                                                                           |
 
 > **收口建议（B1）**：`ticket.status` 实际只有 6 个活值，可直接收敛为 `received / split / in_progress / released / closed / transferred_return`，死值下一次迁移清理。
 
@@ -159,19 +174,19 @@ stateDiagram-v2
 
   created --> pending_review: 闸门① 开
   created --> pending_linear_review: 闸门③ 开
-  created --> pending: 分派无人或推送失败
+  created --> pending: 分派无人 / 推送失败
 
-  pending_review --> created: 确认为 Operation 或 Internal_task
-  pending_review --> pending_linear_review: 确认为研发类且闸门③ 开
+  pending_review --> created: 确认分类（Operation / Internal_task）
+  pending_review --> pending_linear_review: 确认分类（研发类 + 闸门③开）
   pending_linear_review --> created: 确认推送
   pending --> created: 重推成功
 
-  created --> in_progress: Linear started
-  in_progress --> released: Linear completed
+  created --> in_progress: Linear started（apply_hub_status）
+  in_progress --> released: Linear completed（apply_hub_status）
   released --> in_progress: reopen
 
-  created --> resolved: 源系统答复关单
-  in_progress --> resolved: 源系统答复关单
+  created --> resolved: KSM / 智齿 答复关单
+  in_progress --> resolved: 同上
   created --> closed: 关闭投诉
   created --> returned: KSM 退回
 
@@ -216,20 +231,20 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   direction LR
-  [*] --> processing: 毕业时预置 handler=agent
+  [*] --> processing: 毕业时预置（handler=agent）
 
   processing --> answered: agent 答复成功
   processing --> answered: 主管人工答复
-  processing --> reviewing: 准确率不达标转审
+  processing --> reviewing: 准确率不达标
   processing --> supplementing: 请求补料
   processing --> exception: 自动答复异常
   processing --> transferred_return: 退回成功
 
   reviewing --> answered: 人工审核通过
-  reviewing --> processing: 驳回并刷新 changed_at
+  reviewing --> processing: 驳回（刷新 changed_at）
 
-  supplementing --> processing: 客户补料
-  supplementing --> processing: 提单人门户补料
+  supplementing --> processing: 客户补料（KSM / 智齿）
+  supplementing --> processing: 提单人补料（门户）
 
   answered --> closed: T+7 超时自动关闭
   answered --> processing: 客户驳回
@@ -560,3 +575,47 @@ sequenceDiagram
 **为什么 B3 排在 B4 前**：先把写入点收敛到一个函数，再在那个函数里加校验；反过来会让 27 处裸写各自撞校验。
 
 **样板参考**：`op_status` 已经是「唯一入口 + 13 调用点」的形态（§4），`hub.status` 照它做即可。
+
+---
+
+## 15. 与 ADR-0016 原始设计的偏离盘点
+
+ADR-0016（2026-07-05 采纳）之后到 ADR-0017（2026-09-09）之间，**两个月零 ADR**，期间发生三次架构级转向，只留在 commit message 和 plan 文档里。这是"看代码觉得面目全非"的根因——不是代码腐化，是**决策记录断档**。
+
+### A 类 · 有意的产品转向（有真实驱动，不该回滚）
+
+| # | ADR-0016 原设计 | 现状 | 转向时间 / 提交 | 驱动原因 |
+|---|---|---|---|---|
+| A1 | **split 前置原子化**：混合单拆成 N 个 Child ticket，每个原子单各自 `classify → 毕业 hub → hub_dedup` | 混合单毕业**一个主 Hub**，triage 的 `sub_problems` 灌成 N 个 `status='draft'` 的 **Hub 子任务** | 2026-09-08 `fa71123` `f5248d3` | Child 拆分会把 1 个来源工单变成 N 个独立工单，对客户是 N 条回复 N 次关单，而 KSM/智齿侧只有一个 billId——**破坏「一单对一单」的对外契约**。Hub 子任务在内部并行跟踪，对外仍是一单。 |
+| A2 | **AI 干活人管例外**：达阈值自动毕业、自动分流、自动推 Linear | **三道人工闸门**（分类确认 / 答复确认 / 推研发确认），SIT 默认全开，"人在中枢" | 2026-08 多次 | AI 准确率不足以无人值守地把答复发给真实客户；`_is_answer_sendable` 硬 floor + 准确率闸门是踩过坑后加的。闸门是**可关开关**，不是不可逆改动。 |
+| A3 | **Bug_fix/Demand 推 Linear** | 默认推**飞书 webhook**（`linear_webhook_enabled=True`），直连 Linear 降为备选 | 2026-08-21 `49d84ba` | 对方系统要求由飞书侧统一建单。 |
+| A4 | （未涉及）Router 按 `assignment_scopes_*` 路由 | **派单引擎**在入库阶段选处理人，Router 退居手动重推/拆单重路由 | 2026-08 | 运营需要按来源+SLA 做配额分派。副作用：派单规则的产品线/模块两维度失效（派单早于模块判定）。 |
+
+**A 类共同点**：都是被真实运营/对接约束逼出来的，且 ADR-0016 的**目标**大多仍然达成（A1 里"dedup 只见原子单"依然成立，只是原子化的载体从 ticket 换成 hub 子任务）。**回滚 = 重踩这些坑。**
+
+### B 类 · 失控的实现债（该修，不该重写）
+
+| # | 问题 | 位置 | 危害 |
+|---|---|---|---|
+| B1 | **两套原子化机制并存** ⚠️ 最高危 | 主链已不调用 `execute_split_for_ticket`（`webhooks.py` 只 import 未调用）；但主管手动拆单 4 个端点（`split-proposals` / `execute-split` / `dismiss-split` / `revert-split`）**仍在服役**，`ck_tickets_type` 仍允许 `Child` | 同一个混合单，走自动路径产生 Hub draft 子任务，走人工路径产生 Child ticket。两种产物的后续流程、对外回写、编号规则都不同 |
+| B2 | `hub.status` 混入 `op_status` 的值 | `hub_issues.confirm_subtask_endpoint` 三处写 `answered` / `processing` | 与 op_status 双写同一语义；靠 `stage.py` 的 `_HUB_STATUS_DIRECT` 打补丁兜住 |
+| B3 | `ticket.status` 三个死值 | `linked` / `waiting_reply` / `replied` 零写入点 | 操作手册 §5 描述的状态流程整段是错的 |
+| B4 | 27 处 `hub.status =` 裸写绕过单一入口 | 见 §3 | 级联/审计各写各的；`apply_hub_status` 名义上是唯一入口，实际只覆盖 1/28 |
+| B5 | `draft` 状态无约束无文档 | 子任务专用 | 靠 `hub_issues.status` 是无 CHECK 的 String 蒙混过关 |
+| B6 | 责任人 6 字段冗余 | — | ✅ ADR-0017 D3 已收敛 |
+
+### 结论：不重写，补记录 + 还债
+
+**「从原分支重新改起」会同时丢掉 A 类的正确转向和 464+ 提交里的生产修复**（KSM `lock→重拉→handle` 时序、notice 持久化、退回目标节点实时计算、附件流水线…），这些是踩坑换来的，重写必然重踩。
+
+纠正动作按成本排序：
+
+| 步骤 | 动作 | 工作量 | 产出 |
+|---|---|---|---|
+| 1 | **补 ADR-0018 追认 A 类四次转向**，显式标注 supersedes ADR-0016 的 §2.1 / §2.2 / §3 | 半天 | 决策记录接上，ADR-0016 不再是"被违反的设计"而是"被取代的设计" |
+| 2 | **B1 二选一定夺**：删掉手动 split 4 端点 + `agents/split.py` + Child 分支，或明确保留为历史工单维护通道 | 1 天 | 消除双机制分叉 |
+| 3 | **B2/B3/B5 清理**：越界值改回 `apply_op_status`、删三个死值、`draft` 写进文档 | 1 天 | 代码与文档一致 |
+| 4 | **B4 收口**（见 §14 路线图 B3/B4） | 2–3 天 | `apply_hub_status` 名副其实 |
+| 5 | **建 ADR 纪律**：改主链 / 状态机 / 对外契约必须先写 ADR，CLAUDE.md 里加一条 | 持续 | 防止再次断档 |
+
+第 1 步最关键且最便宜——**偏离感主要来自文档缺失而非代码错误**。
