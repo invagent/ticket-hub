@@ -16,6 +16,7 @@ export function AdminTabs() {
           { to: "/admin/skills", label: "Skill 配置" },
           { to: "/admin/holidays", label: "节假日" },
           { to: "/admin/dispatch", label: "派单规则配置" },
+          { to: "/admin/tenants", label: "产品内提单接入" },
         ]
       : []),
   ];

@@ -4,7 +4,7 @@
 // with Tailwind's built-in palettes still used by not-yet-reskinned pages
 // (ticket/hub-issue detail, customers, login, admin catalog/skills).
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./portal.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {

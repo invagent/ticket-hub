@@ -15,6 +15,7 @@ from app.api import (
     admin_scopes,
     admin_settings,
     admin_skills,
+    admin_tenants,
     admin_users,
     ai_cs_query,
     auth,
@@ -22,6 +23,7 @@ from app.api import (
     health,
     hub_issues,
     metrics,
+    portal,
     supervisor,
     tickets,
     webhooks,
@@ -74,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_skills.router, prefix="/api/admin/skills", tags=["admin-skills"])
     app.include_router(admin_holidays.router, prefix="/api/admin/holidays", tags=["admin-holidays"])
     app.include_router(admin_dispatch.router, prefix="/api/admin/dispatch", tags=["admin-dispatch"])
+    app.include_router(admin_tenants.router, prefix="/api/admin/tenants", tags=["admin-tenants"])
     app.include_router(supervisor.router, prefix="/api/supervisor", tags=["supervisor"])
     app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
     app.include_router(hub_issues.router, prefix="/api/hub-issues", tags=["hub-issues"])
@@ -81,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
     app.include_router(webhooks.router, prefix="/webhook", tags=["webhook"])
     app.include_router(ai_cs_query.router, prefix="/api/ai-cs", tags=["ai-cs"])
+    app.include_router(portal.router, prefix="/api/portal", tags=["portal"])
 
     return app
 

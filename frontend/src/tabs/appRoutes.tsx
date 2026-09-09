@@ -17,6 +17,7 @@ import { CatalogPage } from "@/pages/admin/catalog/CatalogPage";
 import { SkillsPage } from "@/pages/admin/skills/SkillsPage";
 import { HolidaysPage } from "@/pages/admin/holidays/HolidaysPage";
 import { DispatchRulesPage } from "@/pages/admin/dispatch/DispatchRulesPage";
+import { TenantsPage } from "@/pages/admin/tenants/TenantsPage";
 import { ReflectWorkbenchPage } from "@/pages/reflect/ReflectWorkbenchPage";
 import { ReflectTrainingPage } from "@/pages/reflect-training/ReflectTrainingPage";
 import { KnowledgeBasePage } from "@/pages/knowledge-base/KnowledgeBasePage";
@@ -79,6 +80,14 @@ export const authedRoutes = (
       element={
         <RequireAdmin>
           <DispatchRulesPage />
+        </RequireAdmin>
+      }
+    />
+    <Route
+      path="/admin/tenants"
+      element={
+        <RequireAdmin>
+          <TenantsPage />
         </RequireAdmin>
       }
     />

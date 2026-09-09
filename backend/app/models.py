@@ -326,6 +326,63 @@ class CustomerMergeHistory(Base):
 # ---- D1: ticket entities ---------------------------------------------------
 
 
+class Tenant(Base):
+    """ADR-0017 D4：产品内提单接入租户（一个接入方 = 一个 tenant）。
+
+    hmac_secret 是租户服务端换门户 JWT 时的签名密钥（HMAC-SHA256），只在创建 /
+    轮换的响应中回显一次；is_active=False 立即拒绝该租户所有签名。
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    hmac_secret: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 提单默认落的产品线（可空；空则由 AI 归类链决定）
+    default_product_line_code: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("product_lines.code"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class TenantUser(Base):
+    """租户内的个人身份（企业内员工/客户），external_uid 由租户系统给定。
+
+    通过 IdentityResolver 落 customer_identities(source_code='embedded',
+    source_user_id=external_uid, source_custom_id=tenant.code)，与客户图谱打通。
+    """
+
+    __tablename__ = "tenant_users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "external_uid", name="uq_tenant_users_tenant_uid"),
+        Index("ix_tenant_users_tenant", "tenant_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
+    external_uid: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_identity_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("customer_identities.id"), nullable=True
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class Ticket(Base):
     """Single-source ticket; type column distinguishes Raw / Parent / Child.
 
@@ -388,6 +445,11 @@ class Ticket(Base):
     # Customer / product
     customer_identity_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("customer_identities.id"), nullable=True
+    )
+    # ADR-0017 D4：产品内提单（source_code='embedded'）的提单人；其它来源恒 NULL。
+    # 门户接口行级隔离靠它（提单人只能看自己的单）。
+    tenant_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("tenant_users.id"), nullable=True, index=True
     )
     product_line_code: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("product_lines.code"), nullable=True

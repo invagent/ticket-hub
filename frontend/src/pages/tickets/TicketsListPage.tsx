@@ -97,6 +97,7 @@ const SOURCE_OPTIONS: { value: string; label: string }[] = [
   { value: "zhichi", label: "智齿" },
   { value: "ai_cs", label: "内部提单" },
   { value: "zammad", label: "外部提单" },
+  { value: "embedded", label: "产品内提单" },
 ];
 
 const OP_STATUS_OPTIONS: { value: string; label: string }[] = [

@@ -11,6 +11,15 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
+  build: {
+    rollupOptions: {
+      // 多入口：员工端 index.html + 产品内提单 H5 门户 portal.html（ADR-0017 D4）
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        portal: path.resolve(__dirname, "portal.html"),
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

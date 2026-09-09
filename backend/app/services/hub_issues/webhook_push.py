@@ -55,6 +55,7 @@ _SOURCE_ZH = {
     "zammad": "Zammad",
     "feishu_ai": "飞书AI",
     "ai_cs": "AI客服",
+    "embedded": "产品内提单",
 }
 
 _TRANSFER_TEXT = {

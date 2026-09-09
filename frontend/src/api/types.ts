@@ -542,6 +542,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tenants */
+        get: operations["list_tenants_api_admin_tenants_get"];
+        put?: never;
+        /** Create Tenant */
+        post: operations["create_tenant_api_admin_tenants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tenants/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Tenant */
+        patch: operations["patch_tenant_api_admin_tenants__tenant_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/tenants/{tenant_id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Secret */
+        post: operations["rotate_secret_api_admin_tenants__tenant_id__rotate_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tenants/{tenant_id}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tenant Users */
+        get: operations["list_tenant_users_api_admin_tenants__tenant_id__users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -1298,6 +1367,110 @@ export interface paths {
         get: operations["workbench_metrics_api_metrics_workbench_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portal/auth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue Token */
+        post: operations["issue_token_api_portal_auth_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portal/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_portal_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portal/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Stats */
+        get: operations["my_stats_api_portal_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portal/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Tickets */
+        get: operations["list_my_tickets_api_portal_tickets_get"];
+        put?: never;
+        /** Create Ticket */
+        post: operations["create_ticket_api_portal_tickets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portal/tickets/{ticket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get My Ticket */
+        get: operations["get_my_ticket_api_portal_tickets__ticket_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update My Ticket */
+        patch: operations["update_my_ticket_api_portal_tickets__ticket_id__patch"];
+        trace?: never;
+    };
+    "/api/portal/tickets/{ticket_id}/supplement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Supplement My Ticket */
+        post: operations["supplement_my_ticket_api_portal_tickets__ticket_id__supplement_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2936,6 +3109,21 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** CreateTicketBody */
+        CreateTicketBody: {
+            /** Body */
+            body: string;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            } | null;
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** Title */
+            title: string;
+        };
         /** CustomerDedupOut */
         CustomerDedupOut: {
             /** Identities Matched */
@@ -4056,6 +4244,17 @@ export interface components {
             /** Authorize Url */
             authorize_url: string;
         };
+        /** MeResponse */
+        MeResponse: {
+            /** External Uid */
+            external_uid: string;
+            /** Name */
+            name: string;
+            /** Tenant Code */
+            tenant_code: string;
+            /** Tenant Name */
+            tenant_name: string;
+        };
         /** ModuleIn */
         ModuleIn: {
             /** Dev Owner User Id */
@@ -4281,6 +4480,93 @@ export interface components {
         PendingLinearReviewResponse: {
             /** Items */
             items: components["schemas"]["PendingLinearReviewItem"][];
+        };
+        /** PortalTicketDetail */
+        PortalTicketDetail: {
+            /** Body */
+            body: string | null;
+            /** Can Edit */
+            can_edit: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Has Reply */
+            has_reply: boolean;
+            /** Id */
+            id: number;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Reply Content */
+            reply_content: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Stage */
+            stage: string | null;
+            /** Stage Changed At */
+            stage_changed_at: string | null;
+            /** Stage Label */
+            stage_label: string | null;
+            /** Stage Tone */
+            stage_tone: string | null;
+            /** Timeline */
+            timeline: components["schemas"]["StageEvent"][];
+            /** Title */
+            title: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PortalTicketList */
+        PortalTicketList: {
+            /** Items */
+            items: components["schemas"]["PortalTicketOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PortalTicketOut */
+        PortalTicketOut: {
+            /** Can Edit */
+            can_edit: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Has Reply */
+            has_reply: boolean;
+            /** Id */
+            id: number;
+            /** Module */
+            module: string | null;
+            /** Product Line Code */
+            product_line_code: string | null;
+            /** Short Code */
+            short_code: string;
+            /** Stage */
+            stage: string | null;
+            /** Stage Changed At */
+            stage_changed_at: string | null;
+            /** Stage Label */
+            stage_label: string | null;
+            /** Stage Tone */
+            stage_tone: string | null;
+            /** Title */
+            title: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * ProductLineIn
@@ -4916,6 +5202,31 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** StageEvent */
+        StageEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Stage */
+            stage: string;
+            /** Stage Label */
+            stage_label: string;
+        };
+        /** StatsResponse */
+        StatsResponse: {
+            /** By Stage */
+            by_stage: {
+                [key: string]: number;
+            };
+            /** Closed */
+            closed: number;
+            /** Open */
+            open: number;
+            /** Total */
+            total: number;
+        };
         /**
          * SubIssueItem
          * @description owner-split 子 issue（ADR-0016 P4）— 详情页里程碑列表行。
@@ -4972,6 +5283,11 @@ export interface components {
             /** Supervisor Id */
             supervisor_id: number;
         };
+        /** SupplementBody */
+        SupplementBody: {
+            /** Content */
+            content: string;
+        };
         /**
          * SyncFromFeishuIn
          * @description Either pull a whole department or a specific list of open_ids.
@@ -5008,6 +5324,114 @@ export interface components {
             touched_user_ids: number[];
             /** Updated Count */
             updated_count: number;
+        };
+        /** TenantCreated */
+        TenantCreated: {
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Default Product Line Code */
+            default_product_line_code: string | null;
+            /** Hmac Secret */
+            hmac_secret: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Ticket Count
+             * @default 0
+             */
+            ticket_count: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * User Count
+             * @default 0
+             */
+            user_count: number;
+        };
+        /** TenantIn */
+        TenantIn: {
+            /** Code */
+            code: string;
+            /** Default Product Line Code */
+            default_product_line_code?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** TenantOut */
+        TenantOut: {
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Default Product Line Code */
+            default_product_line_code: string | null;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Ticket Count
+             * @default 0
+             */
+            ticket_count: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * User Count
+             * @default 0
+             */
+            user_count: number;
+        };
+        /** TenantPatch */
+        TenantPatch: {
+            /** Default Product Line Code */
+            default_product_line_code?: string | null;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** TenantUserOut */
+        TenantUserOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Customer Identity Id */
+            customer_identity_id: number | null;
+            /** Email */
+            email: string | null;
+            /** External Uid */
+            external_uid: string;
+            /** Id */
+            id: number;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Mobile */
+            mobile: string | null;
+            /** Name */
+            name: string | null;
         };
         /** TicketAnalyticsOut */
         TicketAnalyticsOut: {
@@ -5368,6 +5792,39 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /** TokenRequest */
+        TokenRequest: {
+            /** Email */
+            email?: string | null;
+            /** External Uid */
+            external_uid: string;
+            /** Mobile */
+            mobile?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Sign */
+            sign: string;
+            /** Tenant Code */
+            tenant_code: string;
+            /** Ts */
+            ts: number;
+        };
+        /** TokenResponse */
+        TokenResponse: {
+            /** Expires In */
+            expires_in: number;
+            /** Tenant Name */
+            tenant_name: string;
+            /** Tenant User Id */
+            tenant_user_id: number;
+            /** Token */
+            token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+        };
         /**
          * TransferAttempt
          * @description AI 转人工时的已尝试问答（只读展示，见 last_transfer_attempt）。
@@ -5414,6 +5871,13 @@ export interface components {
             title?: string | null;
             /** Type */
             type?: string | null;
+        };
+        /** UpdateTicketBody */
+        UpdateTicketBody: {
+            /** Body */
+            body?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /** UpsertBody */
         UpsertBody: {
@@ -6974,6 +7438,156 @@ export interface operations {
             };
         };
     };
+    list_tenants_api_admin_tenants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantOut"][];
+                };
+            };
+        };
+    };
+    create_tenant_api_admin_tenants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_tenant_api_admin_tenants__tenant_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_secret_api_admin_tenants__tenant_id__rotate_secret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tenant_users_api_admin_tenants__tenant_id__users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantUserOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_users_api_admin_users_get: {
         parameters: {
             query?: {
@@ -8277,6 +8891,248 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkbenchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_token_api_portal_auth_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_api_portal_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    my_stats_api_portal_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsResponse"];
+                };
+            };
+        };
+    };
+    list_my_tickets_api_portal_tickets_get: {
+        parameters: {
+            query?: {
+                stage?: string | null;
+                stages?: string[] | null;
+                q?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTicketList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_ticket_api_portal_tickets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTicketBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTicketOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_ticket_api_portal_tickets__ticket_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_ticket_api_portal_tickets__ticket_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTicketBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTicketOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supplement_my_ticket_api_portal_tickets__ticket_id__supplement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplementBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTicketOut"];
                 };
             };
             /** @description Validation Error */

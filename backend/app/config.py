@@ -215,6 +215,11 @@ class Settings(BaseSettings):
     # ---- Webhook auth ----
     webhook_access_token: str = ""
 
+    # ---- ADR-0017 D4：产品内提单门户 ----
+    portal_enabled: bool = True  # 关则 /api/portal/* 全部 404
+    portal_jwt_ttl_seconds: int = 60 * 60 * 2  # 门户 JWT（aud=portal）2h
+    portal_sign_skew_seconds: int = 300  # 租户签名 ts 允许的时钟偏差
+
     # ---- Routing ----
     default_pool_user_id: int | None = None
 
