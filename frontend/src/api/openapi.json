@@ -7794,6 +7794,17 @@
             ],
             "title": "Hub Issue Id"
           },
+          "hub_short_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Short Code"
+          },
           "hub_status": {
             "anyOf": [
               {
@@ -8545,6 +8556,17 @@
               }
             ],
             "title": "Hub Issue Id"
+          },
+          "hub_short_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Short Code"
           },
           "hub_status": {
             "anyOf": [
@@ -16233,7 +16255,7 @@
     },
     "/api/tickets/{ticket_id}/reply": {
       "post": {
-        "description": "向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。\n\n提交内容支持按条目自动拼接已完成子任务的解决方案说明。",
+        "description": "向 KSM/智齿提交回复：\n若存在独立子任务，要求至少有一个子任务已处理/答复；\n支持自动按条目拼接已完成子任务的解决方案说明。",
         "operationId": "ticket_reply_endpoint_api_tickets__ticket_id__reply_post",
         "parameters": [
           {

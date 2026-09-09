@@ -2281,9 +2281,9 @@ export interface paths {
         put?: never;
         /**
          * Ticket Reply Endpoint
-         * @description 向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。
-         *
-         *     提交内容支持按条目自动拼接已完成子任务的解决方案说明。
+         * @description 向 KSM/智齿提交回复：
+         *     若存在独立子任务，要求至少有一个子任务已处理/答复；
+         *     支持自动按条目拼接已完成子任务的解决方案说明。
          */
         post: operations["ticket_reply_endpoint_api_tickets__ticket_id__reply_post"];
         delete?: never;
@@ -5074,6 +5074,8 @@ export interface components {
             handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Short Code */
+            hub_short_code?: string | null;
             /** Hub Status */
             hub_status?: string | null;
             /** Id */
@@ -5245,6 +5247,8 @@ export interface components {
             handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Short Code */
+            hub_short_code?: string | null;
             /** Hub Status */
             hub_status?: string | null;
             /** Id */

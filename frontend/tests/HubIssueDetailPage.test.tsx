@@ -89,7 +89,7 @@ describe("HubIssueDetailPage", () => {
 
     expect(await screen.findByText("HUB-OP")).toBeInTheDocument();
     expect(screen.getByText("客户找不到入口")).toBeInTheDocument();
-    expect(screen.getByText("Operation")).toBeInTheDocument();
+    expect(screen.getAllByText("运营").length).toBeGreaterThanOrEqual(1);
     // 回复内容并入「任务进度 → 处理说明」（独立「回复」模块已移除）。
     // 本例未设 supervisor 身份 → canEdit=false → 处理说明只读展示正文（非编辑框）。
     expect(screen.queryByText(/^回复 v/)).not.toBeInTheDocument();

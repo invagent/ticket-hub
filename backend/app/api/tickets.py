@@ -35,7 +35,17 @@ from app.core.storage.minio_store import (
     guess_content_type,
 )
 from app.db import get_session
-from app.models import Attachment, Customer, CustomerIdentity, HubIssue, ProductLine, SyncOutbox, Ticket, User
+from app.models import (
+    AgentDecision,
+    Attachment,
+    Customer,
+    CustomerIdentity,
+    HubIssue,
+    ProductLine,
+    SyncOutbox,
+    Ticket,
+    User,
+)
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.repositories.ticket_hub_issue_history import TicketHubIssueHistoryRepository
@@ -921,7 +931,6 @@ def get_ticket_history(
     return HistoryResponse(ticket_id=ticket_id, items=events, ksm_nodes=ksm_nodes)
 
 
-
 # ---------------------------------------------------------------------------
 # 子任务（Hub 子任务）CRUD 与出站回复
 # ---------------------------------------------------------------------------
@@ -1161,6 +1170,33 @@ def ticket_reply_endpoint(
     if target_hub is None:
         raise HTTPException(status_code=400, detail="当前工单未关联任何有效的 Hub 任务")
 
+    # 若目标 Hub 为研发类或其他非 Operation 类型，提交答复表明已在线下/配置层面处置完成，
+    # 自动规整为 Operation 放行答复关单（清空 Linear 研发字段，满足 ck_hub_issues_linear_fields 约束）
+    if target_hub.type != "Operation":
+        old_type = target_hub.type
+        target_hub.type = "Operation"
+        target_hub.linear_uuid = None
+        target_hub.linear_identifier = None
+        target_hub.linear_status = None
+        target_hub.linear_status_synced_at = None
+        target_hub.status = "created"
+        ticket.predicted_type = "Operation"
+        db.add(
+            AgentDecision(
+                decision_type="classify_type",
+                subject_type="ticket",
+                subject_id=ticket.id,
+                proposal={
+                    "predicted_type": "Operation",
+                    "reason": f"提交答复自动将 {old_type} 规整为 Operation",
+                    "skill": "manual",
+                    "human_confirmed": True,
+                    "changed_by": f"user:{user.name}",
+                },
+            )
+        )
+        db.flush()
+
     try:
         reply_result = author_reply(
             db, target_hub.id, content=content, authored_by=f"user:{user.name}"
@@ -1209,7 +1245,11 @@ def ticket_reply_endpoint(
     target_hub = db.get(HubIssue, target_hub.id)
     if target_hub is not None and target_hub.type == "Operation":
         apply_op_status(
-            db, target_hub, to_status=OP_ANSWERED, handler=f"user:{user.name}", reason="主管人工答复"
+            db,
+            target_hub,
+            to_status=OP_ANSWERED,
+            handler=f"user:{user.name}",
+            reason="主管人工答复",
         )
         record_ticket_action(
             db, target_hub, action="reply", changed_by=f"user:{user.name}", reason="主管答复客户"

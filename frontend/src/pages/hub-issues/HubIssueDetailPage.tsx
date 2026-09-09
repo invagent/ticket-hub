@@ -118,6 +118,41 @@ export function HubIssueDetailPage() {
   );
 }
 
+const TYPE_LABEL: Record<string, string> = {
+  Operation: "运营",
+  Bug_fix: "Bug修复",
+  Demand: "需求",
+  Internal_task: "内部任务",
+};
+
+const HUB_STATUS_ZH: Record<string, string> = {
+  created: "已创建",
+  pending_review: "待确认分类",
+  pending_linear_review: "待确认推送",
+  pending: "待人工处理",
+  in_progress: "处理中",
+  released: "已发版",
+  answered: "已答复",
+  resolved: "已解决",
+  closed: "已关闭",
+  returned: "转单退回",
+  processing: "处理中",
+};
+
+const PRIORITY_ZH: Record<string, string> = {
+  critical: "紧急",
+  high: "高",
+  medium: "中",
+  low: "低",
+  lowest: "较低",
+};
+
+const FEEDBACK_STATUS_ZH: Record<string, string> = {
+  pending: "待回访",
+  resolved: "已解决",
+  stillbad: "未解决",
+};
+
 function Header({ data }: { data: HubIssueDetail }) {
   const t = TYPE_BADGE[data.type];
   return (
@@ -129,17 +164,17 @@ function Header({ data }: { data: HubIssueDetail }) {
           className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
           style={t ? { background: t.bg, color: t.fg, borderColor: t.bd } : undefined}
         >
-          {data.type}
+          {TYPE_LABEL[data.type] ?? data.type}
         </span>
       </h1>
       <div className="text-[11.5px] text-hub-textMuted flex gap-2 flex-wrap items-center">
-        <span>状态: {data.status}</span>
+        <span>状态: {HUB_STATUS_ZH[data.status] ?? data.status}</span>
         <span className="text-hub-textFaint">·</span>
         <span>出现 {data.occurrence_count} 次</span>
         {data.priority && (
           <>
             <span className="text-hub-textFaint">·</span>
-            <span>优先级 {data.priority}</span>
+            <span>优先级 {PRIORITY_ZH[data.priority] ?? data.priority}</span>
           </>
         )}
         {data.assigned_user_id != null && (
@@ -179,7 +214,7 @@ function Header({ data }: { data: HubIssueDetail }) {
           <>
             <span className="text-hub-textFaint">·</span>
             <span>
-              回访: {data.feedback_status}
+              回访: {FEEDBACK_STATUS_ZH[data.feedback_status] ?? data.feedback_status}
               {data.feedback_note && ` — ${data.feedback_note}`}
             </span>
           </>
@@ -188,13 +223,6 @@ function Header({ data }: { data: HubIssueDetail }) {
     </header>
   );
 }
-
-const TYPE_LABEL: Record<string, string> = {
-  Operation: "运营",
-  Bug_fix: "Bug修复",
-  Demand: "需求",
-  Internal_task: "内部任务",
-};
 
 function fmtDateTime(v: string | null | undefined): string {
   if (!v) return "—";
@@ -243,7 +271,7 @@ function TaskInfoCard({ data }: { data: HubIssueDetail }) {
     <Card title="任务信息">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
         <Field label="任务类型">{TYPE_LABEL[data.type] ?? data.type}</Field>
-        <Field label="任务状态">{data.status}</Field>
+        <Field label="任务状态">{HUB_STATUS_ZH[data.status] ?? data.status}</Field>
         <Field label="产品分类">
           {[data.product_line_code, data.product, data.module].filter(Boolean).join(" / ") || "—"}
         </Field>
@@ -725,7 +753,7 @@ function SubIssuesSection({ data }: { data: HubIssueDetail }) {
                 </span>
                 <span className="flex-1 min-w-0 truncate">{s.title}</span>
                 <span className="text-[11px] font-semibold flex-none" style={{ color }}>
-                  {s.status ?? "待同步"}
+                  {s.status ? linearStatusToCN(s.status) : "待同步"}
                 </span>
                 <span className="text-[11px] text-hub-textMuted flex-none w-[150px] text-right">
                   {s.released_at

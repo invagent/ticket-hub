@@ -528,7 +528,11 @@ def request_supply_endpoint(
     if settings.ksm_writeback_enabled and not settings.ksm_writeback_dry_run:
         for ob_id in result.outbox_ids:
             ob_row = db.get(SyncOutbox, ob_id)
-            if ob_row is not None and ob_row.target_source_code == "ksm" and ob_row.status != "sent":
+            if (
+                ob_row is not None
+                and ob_row.target_source_code == "ksm"
+                and ob_row.status != "sent"
+            ):
                 err_msg = ob_row.last_error or "KSM 补料外部请求失败"
                 raise HTTPException(status_code=400, detail=f"请求补充资料失败：{err_msg}")
 
@@ -679,6 +683,12 @@ def update_hub_attributes(
     if body.type is not None and body.type != hub.type:
         old = hub.type
         hub.type = body.type
+        # 研发类 → 非研发类：清 Linear 专属字段，满足 ck_hub_issues_linear_fields。
+        if old in ("Bug_fix", "Demand") and body.type not in ("Bug_fix", "Demand"):
+            hub.linear_uuid = None
+            hub.linear_identifier = None
+            hub.linear_status = None
+            hub.linear_status_synced_at = None
         # Operation → 研发类/内部任务：清 Operation 专属字段，否则违反
         # ck_hub_issues_operation_fields（非 Operation 要求 reply_content/authored_by 为 NULL）。
         # 与 reclassify 的清空口径一致。
@@ -1047,7 +1057,6 @@ def feedback_endpoint(
     return FeedbackResponse(hub_issue_id=r.hub_issue_id, feedback_status=r.feedback_status)
 
 
-
 # ---------------------------------------------------------------------------
 # 子任务（Hub 子任务）行内更新、删除与确认分流
 # ---------------------------------------------------------------------------
@@ -1091,8 +1100,31 @@ def update_subtask_endpoint(
 
     if body.title is not None:
         hub.title = body.title.strip()
-    if body.type is not None:
+    if body.type is not None and body.type != hub.type:
+        old_type = hub.type
         hub.type = body.type
+        if old_type in ("Bug_fix", "Demand") and body.type not in ("Bug_fix", "Demand"):
+            hub.linear_uuid = None
+            hub.linear_identifier = None
+            hub.linear_status = None
+            hub.linear_status_synced_at = None
+        if old_type == "Operation" and body.type in ("Bug_fix", "Demand", "Internal_task"):
+            hub.reply_content = None
+            hub.reply_authored_by = None
+            hub.reply_updated_at = None
+            hub.op_status = None
+            hub.op_handler = None
+            hub.op_status_changed_at = None
+            hub.op_handler_user_id = None
+        elif body.type == "Operation" and old_type != "Operation":
+            hub.status = "created"
+            apply_op_status(
+                db,
+                hub,
+                to_status=OP_PROCESSING,
+                handler="agent",
+                reason=f"修改 {old_type}→运营",
+            )
     if body.product_line_code is not None:
         hub.product_line_code = body.product_line_code
     if body.module is not None:
@@ -1110,7 +1142,9 @@ def update_subtask_endpoint(
         .first()
     )
     if ticket is not None:
-        if body.type is not None and (ticket.hub_issue_id == hub.id or ticket.predicted_type is None):
+        if body.type is not None and (
+            ticket.hub_issue_id == hub.id or ticket.predicted_type is None
+        ):
             ticket.predicted_type = body.type
         if body.product_line_code is not None:
             ticket.product_line_code = body.product_line_code
@@ -1193,20 +1227,28 @@ def confirm_subtask_endpoint(
 
         # 若原本没有说明且 AI 答复也未成功，则抛错阻断状态更新
         if not existing_solution and not generated_answer:
-            raise HTTPException(status_code=502, detail="AI 生成解决方案失败，请稍后重试或手动录入说明")
+            raise HTTPException(
+                status_code=502, detail="AI 生成解决方案失败，请稍后重试或手动录入说明"
+            )
 
-        # 答复生成成功后更新为已答复 (answered)
-        hub.status = "answered"
-        hub.op_status = OP_ANSWERED
-
-        # 若关联工单存在且该 Hub 为主任务，同步工单类型为 Operation
         ticket = (
             db.query(Ticket)
             .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
             .first()
         )
-        if ticket is not None and ticket.hub_issue_id == hub.id:
+        is_main_hub = ticket is not None and ticket.hub_issue_id == hub.id
+
+        # 状态流转：
+        # 如果是主任务本身，保持 created/processing，待处理人最终「提交答复」时才正式流转为 answered 并出站回写；
+        # 如果是独立子任务，标记为 answered 供主工单出站回复闸门拼接。
+        if is_main_hub and ticket is not None:
+            hub.status = "created"
+            hub.op_status = OP_PROCESSING
+            hub.reply_is_draft = True
             ticket.predicted_type = "Operation"
+        else:
+            hub.status = "answered"
+            hub.op_status = OP_ANSWERED
 
         db.commit()
         db.refresh(hub)
@@ -1222,7 +1264,9 @@ def confirm_subtask_endpoint(
             solution=hub.reply_content,
             assigned_user_id=hub.assigned_user_id,
             assigned_user_name=u_name,
-            message="应用类任务已确认，AI 答复已生成并标记为已答复" if generated_answer else "应用类任务已确认（已答复）",
+            message="应用类任务已确认，AI 答复已生成并标记为已答复"
+            if generated_answer
+            else "应用类任务已确认（已答复）",
         )
 
     # 2. 需求类 / Bug 类 (Demand / Bug_fix) 分支
@@ -1262,13 +1306,13 @@ def confirm_subtask_endpoint(
 
             consume_module_owner(db, hub.product_line_code, hub.module)
 
-        push_res = push_hub_issue_to_linear(
-            hub.id, db, assignee_override_user_id=assignee_id
-        )
+        push_res = push_hub_issue_to_linear(hub.id, db, assignee_override_user_id=assignee_id)
 
         settings = get_settings()
         if settings.linear_push_enabled and push_res is None:
-            raise HTTPException(status_code=502, detail="推送到 Linear 失败，请检查网络或 Linear 配置")
+            raise HTTPException(
+                status_code=502, detail="推送到 Linear 失败，请检查网络或 Linear 配置"
+            )
 
         hub.status = "processing"
         hub.assigned_user_id = assignee_id

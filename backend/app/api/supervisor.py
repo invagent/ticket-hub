@@ -2184,6 +2184,12 @@ def reclassify(
     old_zh = HUB_TYPE_ZH.get(old_type, old_type)
     new_zh = HUB_TYPE_ZH.get(body.new_type, body.new_type)
     hub.type = body.new_type
+    # 研发类 → 非研发类：清 Linear 专属字段，满足 ck_hub_issues_linear_fields。
+    if old_type in ("Bug_fix", "Demand") and body.new_type not in ("Bug_fix", "Demand"):
+        hub.linear_uuid = None
+        hub.linear_identifier = None
+        hub.linear_status = None
+        hub.linear_status_synced_at = None
     # Operation → 研发类：清 Operation 专属字段。处理中(processing)本无 reply_content，
     # 但显式清 op_status/op_handler 等，避免研发类残留运营态（违反字段契约），
     # 且满足 ck_hub_issues_operation_fields（研发类要求 reply_content/authored_by 为 NULL）。

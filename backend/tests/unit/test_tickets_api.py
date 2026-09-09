@@ -277,9 +277,7 @@ def test_list_tickets_filter_answered_includes_released_dev(
     """筛「处理完成」(answered) 把 released 的研发类工单也带出（与展示口径一致）。"""
     from app.models import HubIssue, Ticket
 
-    hub = HubIssue(
-        id=40, short_code="HUB-REL", type="Demand", title="done-dev", status="released"
-    )
+    hub = HubIssue(id=40, short_code="HUB-REL", type="Demand", title="done-dev", status="released")
     world.add(hub)
     world.flush()
     world.add(
@@ -418,16 +416,12 @@ def test_retry_outbox_endpoint_handler_can_retry(
 
     # ticket 100 的 handler_user_id=1（alice）；ksm_writeback 未开启 → OutboxRetryError → 409
     # 断言的是「授权通过、能走到业务层报错」而非 403（区分权限失败 vs 业务失败）。
-    r = app_client.post(
-        "/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee")
-    )
+    r = app_client.post("/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee"))
     assert r.status_code == 409
     assert "ksm_writeback_enabled" in r.json()["detail"]
 
 
-def test_retry_outbox_endpoint_rejects_non_handler(
-    app_client: TestClient, world: Session
-) -> None:
+def test_retry_outbox_endpoint_rejects_non_handler(app_client: TestClient, world: Session) -> None:
     from app.models import SyncOutbox
 
     world.add(
@@ -444,18 +438,12 @@ def test_retry_outbox_endpoint_rejects_non_handler(
     world.commit()
 
     # ticket 100 的 handler_user_id=1；用另一个非 handler 的 assignee 账号（bob=2）
-    r = app_client.post(
-        "/api/tickets/100/retry-outbox", headers=_bearer(2, role="assignee")
-    )
+    r = app_client.post("/api/tickets/100/retry-outbox", headers=_bearer(2, role="assignee"))
     assert r.status_code == 403
 
 
-def test_retry_outbox_endpoint_no_failed_row_409(
-    app_client: TestClient, world: Session
-) -> None:
-    r = app_client.post(
-        "/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee")
-    )
+def test_retry_outbox_endpoint_no_failed_row_409(app_client: TestClient, world: Session) -> None:
+    r = app_client.post("/api/tickets/100/retry-outbox", headers=_bearer(1, role="assignee"))
     assert r.status_code == 409
     assert "没有失败的回写记录" in r.json()["detail"]
 
@@ -908,9 +896,7 @@ def test_download_thumb_is_smaller_jpeg(
     """?size=thumb 对图片返回缩略图：JPEG、字节更小、带缓存头。"""
     big = _png(1000, 800)
     monkeypatch.setattr("app.api.tickets._fetch_source_bytes", lambda url, settings: big)
-    r = app_client.get(
-        "/api/tickets/500/attachments/900/download?size=thumb", headers=_bearer()
-    )
+    r = app_client.get("/api/tickets/500/attachments/900/download?size=thumb", headers=_bearer())
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/jpeg"
     assert len(r.content) < len(big)  # 缩略图远小于原图
@@ -925,9 +911,7 @@ def test_download_thumb_is_smaller_jpeg(
 
 def test_download_unknown_attachment_404(app_client: TestClient, att_world: Session) -> None:
     assert (
-        app_client.get(
-            "/api/tickets/500/attachments/9999/download", headers=_bearer()
-        ).status_code
+        app_client.get("/api/tickets/500/attachments/9999/download", headers=_bearer()).status_code
         == 404
     )
 
@@ -971,6 +955,54 @@ def test_ticket_reply_endpoint_success(app_client: TestClient, db_session: Sessi
     assert hub.reply_content == "这是处理答复方案说明"
 
 
+def test_ticket_reply_endpoint_converts_dev_type_to_operation(
+    app_client: TestClient, db_session: Session
+) -> None:
+    """研发类工单提交答复时自动规整为 Operation 放行答复关单并清空 Linear 字段。"""
+    hub = HubIssue(
+        id=703,
+        short_code="HUB-703",
+        type="Bug_fix",
+        title="测试研发任务转运营答复",
+        status="in_progress",
+        linear_uuid="lin-uuid-703",
+        linear_identifier="ENG-703",
+        linear_status="待处理",
+    )
+    t = Ticket(
+        id=703,
+        short_code="TKT-703",
+        title="测试研发工单",
+        type="Raw",
+        predicted_type="Bug_fix",
+        status="in_progress",
+        source_code="ksm",
+        source_ticket_id="KSM-703",
+        hub_issue_id=703,
+    )
+    db_session.add_all([hub, t])
+    db_session.commit()
+
+    r = app_client.post(
+        "/api/tickets/703/reply",
+        json={"content": "经核实为业务操作指引，无需代码改动，已指导客户操作"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["ticket_id"] == 703
+
+    db_session.refresh(hub)
+    assert hub.type == "Operation"
+    assert hub.linear_uuid is None
+    assert hub.linear_identifier is None
+    assert hub.op_status == "answered"
+    assert hub.reply_content == "经核实为业务操作指引，无需代码改动，已指导客户操作"
+
+    db_session.refresh(t)
+    assert t.predicted_type == "Operation"
+
+
 def test_ticket_reply_endpoint_empty_content_400(
     app_client: TestClient, db_session: Session
 ) -> None:
@@ -1002,4 +1034,3 @@ def test_ticket_reply_endpoint_empty_content_400(
         headers=_bearer(),
     )
     assert r.status_code == 400
-
