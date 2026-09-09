@@ -83,7 +83,7 @@ def test_first_ingest(world: Session) -> None:
 
 
 def test_ingest_handler_defaults_to_assignee(world: Session) -> None:
-    """入库时处理人(handler_user_id)默认=责任人(assigned_user_id)。"""
+    """入库时派单只写处理人(handler_user_id)；assigned_user_id 已停写（ADR-0017）。"""
     rule = _rule(world, match_sources=["zhichi"])
     world.add(DispatchAssignee(rule_id=rule.id, user_id=1, tier="main", is_active=True))
     world.commit()
@@ -91,7 +91,7 @@ def test_ingest_handler_defaults_to_assignee(world: Session) -> None:
     world.commit()
     ticket = world.get(Ticket, res.ticket_id)
     assert ticket is not None
-    assert ticket.assigned_user_id == 1
+    assert ticket.handler_user_id == 1  # ADR-0017：派单只写处理人
     assert ticket.handler_user_id == 1  # 处理人初始=责任人
 
 

@@ -114,7 +114,7 @@ def world(db_session: Session) -> Session:
                 status="done",
                 title="ksm done",
                 hub_issue_id=20,
-                handler_user_id=3,
+                # 无处理人 → 「仅未分配」筛选命中（ADR-0017：未分配 = handler_user_id 为空）
                 received_at=base - timedelta(hours=1),
             ),
             # soft-deleted: should NEVER appear in list/detail

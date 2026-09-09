@@ -105,7 +105,7 @@ def test_push_description_includes_source_tickets(world: Session) -> None:
 def test_push_uses_assignee_linear_id(world: Session) -> None:
     world.add(User(id=5, feishu_uid="ou_a", name="alice", linear_user_id="lin-u-5"))
     world.commit()
-    hub = _make_hub(world, 3, assigned_user_id=5)
+    hub = _make_hub(world, 3, owner_user_id=5)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].assignee_id == "lin-u-5"  # type: ignore[attr-defined]
@@ -123,7 +123,7 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
         )
     )
     world.commit()
-    hub = _make_hub(world, 9, assigned_user_id=6)
+    hub = _make_hub(world, 9, owner_user_id=6)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].team_id == "team-aralgo"  # type: ignore[attr-defined]
@@ -131,14 +131,14 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
 
 
 def test_push_uses_module_owner_over_assigned(world: Session) -> None:
-    """转研发责任人：模块研发责任人（modules.dev_owners 轮询）优先于入库责任人。"""
+    """转研发责任人：模块绑定研发责任人优先于 hub 已有 owner_user_id。"""
     world.add(User(id=30, feishu_uid="ou_a30", name="入库责任人", linear_user_id="lin-u-30"))
     world.add(User(id=31, feishu_uid="ou_a31", name="模块负责人", linear_user_id="lin-u-31"))
     world.add(ProductLine(code="fpy", name="fpy"))
     world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="模块负责人"))
     world.commit()
     hub = _make_hub(
-        world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块"
+        world, 30, owner_user_id=30, product_line_code="fpy", module="开票模块"
     )
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
@@ -147,26 +147,27 @@ def test_push_uses_module_owner_over_assigned(world: Session) -> None:
     assert hub.owner_user_id == 31  # consume_module_owner 选定后写责任人字段
 
 
-def test_push_consumes_module_owner_rotation_across_hubs(world: Session) -> None:
-    """同模块多人 dev_owners，连续两次推送应轮询到不同的人。"""
+def test_push_uses_single_bound_module_owner_across_hubs(world: Session) -> None:
+    """ADR-0017 D3：同模块所有推送都落到唯一绑定的研发责任人（不再轮询）。"""
     world.add(User(id=50, feishu_uid="ou_a50", name="研发甲", linear_user_id="lin-u-50"))
     world.add(User(id=51, feishu_uid="ou_a51", name="研发乙", linear_user_id="lin-u-51"))
     world.add(ProductLine(code="fpy2", name="fpy2"))
-    world.add(Module(product_line_code="fpy2", name="收票模块", dev_owners="研发甲、研发乙"))
+    world.add(
+        Module(
+            product_line_code="fpy2",
+            name="收票模块",
+            dev_owner_user_id=51,
+            dev_owners="研发甲、研发乙",  # legacy 字串不再参与选人
+        )
+    )
     world.commit()
-    hub1 = _make_hub(world, 51, product_line_code="fpy2", module="收票模块")
-    fake1 = _FakeLinearClient()
-    push_hub_issue_to_linear(hub1.id, world, client=fake1)  # type: ignore[arg-type]
-    assert fake1.requests[0].assignee_id == "lin-u-50"
-    world.refresh(hub1)
-    assert hub1.owner_user_id == 50
-
-    hub2 = _make_hub(world, 52, product_line_code="fpy2", module="收票模块")
-    fake2 = _FakeLinearClient()
-    push_hub_issue_to_linear(hub2.id, world, client=fake2)  # type: ignore[arg-type]
-    assert fake2.requests[0].assignee_id == "lin-u-51"
-    world.refresh(hub2)
-    assert hub2.owner_user_id == 51
+    for n in (51, 52):
+        hub = _make_hub(world, n, product_line_code="fpy2", module="收票模块")
+        fake = _FakeLinearClient()
+        push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+        assert fake.requests[0].assignee_id == "lin-u-51"
+        world.refresh(hub)
+        assert hub.owner_user_id == 51
 
 
 def test_push_uses_dispatched_assignee(world: Session) -> None:
@@ -185,7 +186,7 @@ def test_push_uses_dispatched_assignee(world: Session) -> None:
         )
     )
     world.commit()
-    hub = _make_hub(world, 20, type="Bug_fix", assigned_user_id=20)
+    hub = _make_hub(world, 20, type="Bug_fix", owner_user_id=20)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].assignee_id == "lu-dispatch-1"  # type: ignore[attr-defined]
@@ -196,7 +197,7 @@ def test_push_falls_back_to_default_team_for_group(world: Session) -> None:
     """Group assignee (no linear_team_id) → default team."""
     world.add(User(id=7, feishu_uid="ou_grp", name="数电开票组"))  # no linear mapping
     world.commit()
-    hub = _make_hub(world, 10, assigned_user_id=7)
+    hub = _make_hub(world, 10, owner_user_id=7)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].team_id == "team-1"  # type: ignore[attr-defined]  # settings.linear_team_id
@@ -250,16 +251,11 @@ def test_push_failure_marks_pending(world: Session) -> None:
     assert "Linear 推送失败" in (sh.reason or "")
 
 
-def test_push_failure_still_consumes_rotation_cursor(world: Session) -> None:
-    """已知行为（非 bug）：consume_module_owner 在 push 真正调用 Linear API 之前
-    执行——若随后 create_issue 失败转 pending，游标依旧前进（同一事务一并
-    commit）。与「游标始终前进，即使这一位当前不可用」的既定设计一致（见
-    module_owner.py consume_module_owner 文档），本测试锁定这个行为，防止未来
-    改动无声改变轮询语义。重试时会转给下一位，而非重试同一位。"""
+def test_push_failure_keeps_owner_and_cursor_untouched(world: Session) -> None:
+    """推送失败转 pending：责任人已选定（重推仍是同一人），游标不再有语义、恒为 0。"""
     world.add(User(id=60, feishu_uid="ou_a60", name="研发甲", linear_user_id="lin-u-60"))
-    world.add(User(id=61, feishu_uid="ou_a61", name="研发乙", linear_user_id="lin-u-61"))
     world.add(ProductLine(code="fpy3", name="fpy3"))
-    mod = Module(product_line_code="fpy3", name="退票模块", dev_owners="研发甲、研发乙")
+    mod = Module(product_line_code="fpy3", name="退票模块", dev_owner_user_id=60)
     world.add(mod)
     world.commit()
     hub = _make_hub(world, 53, product_line_code="fpy3", module="退票模块")
@@ -267,9 +263,9 @@ def test_push_failure_still_consumes_rotation_cursor(world: Session) -> None:
     assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
     world.refresh(hub)
     assert hub.status == "pending"
-    assert hub.owner_user_id == 60  # 已选定责任人（哪怕推送随后失败）
+    assert hub.owner_user_id == 60
     world.refresh(mod)
-    assert mod.dev_owner_rotation_cursor == 1  # 游标已前进，重推会轮到研发乙
+    assert mod.dev_owner_rotation_cursor == 0
 
 
 def test_unmatched_individual_assignee_marks_pending_without_push(world: Session) -> None:
@@ -278,7 +274,7 @@ def test_unmatched_individual_assignee_marks_pending_without_push(world: Session
         User(id=8, feishu_uid="ou_c", name="王五", email="wangwu@kingdee.com")
     )  # 有邮箱、无 linear_user_id
     world.commit()
-    hub = _make_hub(world, 11, assigned_user_id=8)
+    hub = _make_hub(world, 11, owner_user_id=8)
     fake = _FakeLinearClient()
     assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
     assert fake.requests == []  # 根本没尝试推
@@ -298,7 +294,7 @@ def test_pending_not_duplicated_on_retry(world: Session) -> None:
     """重试仍失败时不重复写 pending history。"""
     world.add(User(id=9, feishu_uid="ou_d", name="赵六", email="zhaoliu@kingdee.com"))
     world.commit()
-    hub = _make_hub(world, 12, assigned_user_id=9)
+    hub = _make_hub(world, 12, owner_user_id=9)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
@@ -314,7 +310,7 @@ def test_repush_success_restores_pending_to_created(world: Session) -> None:
     """pending 后修复（同步上了 Linear）→ 重推成功自动恢复 created。"""
     world.add(User(id=10, feishu_uid="ou_e", name="孙七", email="sunqi@kingdee.com"))
     world.commit()
-    hub = _make_hub(world, 13, assigned_user_id=10)
+    hub = _make_hub(world, 13, owner_user_id=10)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     world.refresh(hub)
@@ -343,7 +339,7 @@ def test_group_assignee_still_degrades_not_pending(world: Session) -> None:
     """组账号（无邮箱）仍走优雅降级：推默认 team 无 assignee，不置 pending。"""
     world.add(User(id=11, feishu_uid="ou_grp2", name="费用报销组"))  # 无邮箱
     world.commit()
-    hub = _make_hub(world, 14, assigned_user_id=11)
+    hub = _make_hub(world, 14, owner_user_id=11)
     fake = _FakeLinearClient()
     res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert res is not None
@@ -401,7 +397,7 @@ def test_hub_dedup_no_dup_pushes_normally(world: Session, monkeypatch: pytest.Mo
 
 
 def test_push_uses_assignee_override(world: Session) -> None:
-    """override 优先于 hub.assigned_user_id：assignee/team 都来自 override 用户。"""
+    """override 优先于 hub.owner_user_id：assignee/team 都来自 override 用户。"""
     world.add(
         User(
             id=30,
@@ -415,7 +411,7 @@ def test_push_uses_assignee_override(world: Session) -> None:
         User(id=31, feishu_uid="ou_assigned", name="assigned-dev", linear_user_id="lu-assigned")
     )
     world.commit()
-    hub = _make_hub(world, 30, assigned_user_id=31)
+    hub = _make_hub(world, 30, owner_user_id=31)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(  # type: ignore[arg-type]
         hub.id, world, client=fake, assignee_override_user_id=30
@@ -426,11 +422,11 @@ def test_push_uses_assignee_override(world: Session) -> None:
     assert hub.owner_user_id == 30  # override 值直接写责任人字段
 
 
-def test_push_without_override_uses_assigned_user_id(world: Session) -> None:
-    """无 override 时沿用现有 hub.assigned_user_id 逻辑（回归）。"""
+def test_push_without_override_uses_owner_user_id(world: Session) -> None:
+    """无 override 时沿用 hub.owner_user_id（ADR-0017：研发责任人唯一字段）。"""
     world.add(User(id=32, feishu_uid="ou_plain", name="plain-dev", linear_user_id="lu-plain"))
     world.commit()
-    hub = _make_hub(world, 31, assigned_user_id=32)
+    hub = _make_hub(world, 31, owner_user_id=32)
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     assert fake.requests[0].assignee_id == "lu-plain"  # type: ignore[attr-defined]

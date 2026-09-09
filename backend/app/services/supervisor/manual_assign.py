@@ -109,25 +109,24 @@ class ManualAssignService:
                 .values(handler_user_id=req.assigned_user_id)
             )
 
-            # 同步更新主 Hub 任务运营处理人
+            # 主 Hub 任务：更新动作执行者标签 op_handler，并清掉 legacy 镜像
+            # op_handler_user_id（ADR-0017 D3：处理人身份以 ticket.handler_user_id 为唯一
+            # 真源；残留旧值会让前任处理人仍通过 _authorize_hub_handler 的 legacy 分支）
             if ticket.hub_issue_id:
                 self._db.execute(
                     update(HubIssue)
                     .where(HubIssue.id == ticket.hub_issue_id)
-                    .values(
-                        op_handler_user_id=req.assigned_user_id,
-                        op_handler=f"user:{target.name}",
-                    )
+                    .values(op_handler=f"user:{target.name}", op_handler_user_id=None)
                 )
 
-            # 同步更新归属该工单的草稿态子任务处理人
+            # 草稿态子任务研发责任人跟随转交（owner_user_id 唯一字段）
             self._db.execute(
                 update(HubIssue)
                 .where(
                     (HubIssue.ticket_id == ticket.id) | (HubIssue.id == ticket.hub_issue_id),
                     HubIssue.status == "draft",
                 )
-                .values(assigned_user_id=req.assigned_user_id)
+                .values(owner_user_id=req.assigned_user_id)
             )
             history_repo.record(
                 entity_type="ticket",

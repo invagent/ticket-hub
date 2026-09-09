@@ -252,7 +252,7 @@ def execute_split(
         if (route.decision == "assigned" and len(route.assigned_user_ids) == 1) or (
             route.decision == "default_pool" and route.assigned_user_ids
         ):
-            child.assigned_user_id = route.assigned_user_ids[0]
+            child.handler_user_id = route.assigned_user_ids[0]  # ADR-0017：只写处理人
 
         history.record(
             entity_type="ticket",

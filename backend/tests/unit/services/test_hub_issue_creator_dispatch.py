@@ -80,7 +80,7 @@ def test_dev_class_handler_propagates_not_assigned(db_session: Session, ptype: s
     hub = db_session.get(HubIssue, result.hub_issue_id)
     db_session.refresh(t)
     assert t.handler_user_id == handler.id  # 入库时已分派，毕业不改写
-    assert hub.assigned_user_id == reporter.id  # 责任人不被覆盖
+    assert hub.assigned_user_id is None  # ADR-0017：deprecated 字段不再写
     assert hub.op_handler_user_id is None  # 研发类不写 op_handler_user_id
 
 
@@ -95,12 +95,11 @@ def test_dev_class_no_handler_sets_dispatch_missed_flag(db_session: Session) -> 
 
     assert result.dispatch_missed is True
     hub = db_session.get(HubIssue, result.hub_issue_id)
-    assert hub.assigned_user_id == reporter.id  # 无分派 → 保持责任人不变
+    assert hub.assigned_user_id is None  # ADR-0017：deprecated 字段不再写
 
 
-def test_operation_handler_propagates_to_op_handler_not_override(db_session: Session) -> None:
-    """Operation：ticket.handler_user_id 传播到 hub.op_handler_user_id，
-    assigned_user_id 保持入库责任人。"""
+def test_operation_handler_stays_on_ticket_only(db_session: Session) -> None:
+    """Operation：处理人只存在 ticket.handler_user_id（ADR-0017 D3），hub 层不再镜像。"""
     reporter = _seed_user(db_session, "reporter3")
     handler = _seed_user(db_session, "ophandler")
     t = _seed_classified_ticket(
@@ -111,8 +110,11 @@ def test_operation_handler_propagates_to_op_handler_not_override(db_session: Ses
     result = ensure_hub_issue_for_ticket(t.id, created_by="agent:hub_issue_auto", db=db_session)
 
     hub = db_session.get(HubIssue, result.hub_issue_id)
-    assert hub.op_handler_user_id == handler.id
-    assert hub.assigned_user_id == reporter.id  # Operation 不覆盖责任人
+    # ADR-0017 D3：处理人不再镜像到 hub 层，唯一真源是 ticket.handler_user_id
+    assert hub.op_handler_user_id is None
+    assert hub.assigned_user_id is None
+    db_session.refresh(t)
+    assert t.handler_user_id == handler.id
     assert result.dispatch_missed is False  # Operation 无结果也不设 missed
 
 

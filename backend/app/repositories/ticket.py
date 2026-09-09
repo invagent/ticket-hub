@@ -147,12 +147,19 @@ class TicketRepository:
         elif stage:
             base = base.where(Ticket.stage == stage)
             count_base = count_base.where(Ticket.stage == stage)
-        if assigned_user_ids:
-            base = base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
-            count_base = count_base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
-        elif assigned_user_id is not None:
-            base = base.where(Ticket.assigned_user_id == assigned_user_id)
-            count_base = count_base.where(Ticket.assigned_user_id == assigned_user_id)
+        # 「产研责任人」筛选（ADR-0017 D3）：研发责任人以所挂 hub.owner_user_id 为准；
+        # legacy ticket.assigned_user_id 仅覆盖历史数据（新入库已停写）。
+        owner_ids = assigned_user_ids or (
+            [assigned_user_id] if assigned_user_id is not None else None
+        )
+        if owner_ids:
+            owner_hubs = select(HubIssue.id).where(HubIssue.owner_user_id.in_(owner_ids))
+            cond = or_(
+                Ticket.assigned_user_id.in_(owner_ids),
+                Ticket.hub_issue_id.in_(owner_hubs),
+            )
+            base = base.where(cond)
+            count_base = count_base.where(cond)
         if received_from is not None:
             base = base.where(Ticket.received_at >= received_from)
             count_base = count_base.where(Ticket.received_at >= received_from)
@@ -195,8 +202,9 @@ class TicketRepository:
             base = base.where(Ticket.predicted_type.in_(predicted_types))
             count_base = count_base.where(Ticket.predicted_type.in_(predicted_types))
         if unassigned_only:
-            base = base.where(Ticket.assigned_user_id.is_(None))
-            count_base = count_base.where(Ticket.assigned_user_id.is_(None))
+            # 「未分配」= 没有处理人（工单环节唯一人 = handler_user_id）
+            base = base.where(Ticket.handler_user_id.is_(None))
+            count_base = count_base.where(Ticket.handler_user_id.is_(None))
         if customer_identity_id is not None:
             base = base.where(Ticket.customer_identity_id == customer_identity_id)
             count_base = count_base.where(Ticket.customer_identity_id == customer_identity_id)
@@ -361,7 +369,12 @@ class HubIssueRepository:
         if status:
             clauses.append(HubIssue.status == status)
         if assigned_user_id is not None:
-            clauses.append(HubIssue.assigned_user_id == assigned_user_id)
+            clauses.append(
+                or_(
+                    HubIssue.owner_user_id == assigned_user_id,
+                    HubIssue.assigned_user_id == assigned_user_id,  # legacy
+                )
+            )
         if product:
             # 产品分类筛选匹配 product_line_code（product 字段创建时未赋值，恒为空——
             # 真实产品信息在 product_line_code，继承自 ticket）。兼容历史 product 有值的行。

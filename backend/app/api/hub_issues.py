@@ -413,7 +413,7 @@ def _authorize_hub_handler(
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None:
         return  # 交给端点内 404
-    if hub.assigned_user_id == user.user_id or hub.op_handler_user_id == user.user_id:
+    if user.user_id in (hub.owner_user_id, hub.assigned_user_id, hub.op_handler_user_id):
         return
     # hub 层没落运营处理人（历史单 / 未走分派的单），但处理人身份落在 ticket 层
     # （ticket.handler_user_id，工单详情页据此判可见性/持有）。授权口径与可见性
@@ -752,9 +752,6 @@ def update_hub_attributes(
                     reason=f"手动修改 {old}→运营，回炉答复链",
                 )
                 db.flush()
-                handler_uid = default_owner_from_ticket_handler(db, hub)
-                if handler_uid is not None:
-                    hub.op_handler_user_id = handler_uid
             elif body.type in ("Bug_fix", "Demand") and hub.status not in (
                 "pending_linear_review",
                 "pending",
@@ -1258,7 +1255,7 @@ def confirm_subtask_endpoint(
             raise HTTPException(status_code=502, detail="推送到 Linear 失败，请检查网络或 Linear 配置")
 
         hub.status = "processing"
-        hub.assigned_user_id = assignee_id
+        hub.owner_user_id = assignee_id  # ADR-0017 D3：研发责任人唯一字段
         db.commit()
         db.refresh(hub)
 

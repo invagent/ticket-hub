@@ -158,13 +158,15 @@ def resolve_supervisor_name(db: Session, settings: Settings | None = None) -> st
 
 
 def resolve_op_handler(db: Session, hub: HubIssue, settings: Settings | None = None) -> str:
-    """转人工处理人名：优先预分配运营（op_handler_user_id 且 user 有效），
-    否则回落 resolve_supervisor_name（default_pool 或 '主管'）。"""
+    """转人工处理人名（ADR-0017 D3）：工单环节唯一处理人 = 关联 ticket 的
+    handler_user_id；历史单回落 legacy op_handler_user_id；都无则
+    resolve_supervisor_name（default_pool 或 '主管'）。"""
     settings = settings or get_settings()
-    uid = hub.op_handler_user_id
-    if uid is not None:
-        from app.models import User
+    from app.models import User
 
+    for uid in (default_owner_from_ticket_handler(db, hub), hub.op_handler_user_id):
+        if uid is None:
+            continue
         u = db.get(User, uid)
         if u is not None and u.deleted_at is None and u.is_active and u.name:
             return str(u.name)

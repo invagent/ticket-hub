@@ -4058,6 +4058,8 @@ export interface components {
         };
         /** ModuleIn */
         ModuleIn: {
+            /** Dev Owner User Id */
+            dev_owner_user_id?: number | null;
             /** Dev Owners */
             dev_owners?: string | null;
             /** Name */
@@ -4074,6 +4076,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Dev Owner User Id */
+            dev_owner_user_id?: number | null;
+            /** Dev Owner User Name */
+            dev_owner_user_name?: string | null;
             /** Dev Owners */
             dev_owners?: string | null;
             /** Id */
@@ -4102,6 +4108,8 @@ export interface components {
         };
         /** ModulePatch */
         ModulePatch: {
+            /** Dev Owner User Id */
+            dev_owner_user_id?: number | null;
             /** Dev Owners */
             dev_owners?: string | null;
             /** Product Owner */
@@ -5126,6 +5134,10 @@ export interface components {
             outbox_failed_id?: number | null;
             /** Outbox Failed Kind */
             outbox_failed_kind?: string | null;
+            /** Owner User Id */
+            owner_user_id?: number | null;
+            /** Owner User Name */
+            owner_user_name?: string | null;
             /** Parent Ticket Id */
             parent_ticket_id: number | null;
             /** Predicted Confidence */
@@ -5295,6 +5307,10 @@ export interface components {
             module: string | null;
             /** Op Status */
             op_status?: string | null;
+            /** Owner User Id */
+            owner_user_id?: number | null;
+            /** Owner User Name */
+            owner_user_name?: string | null;
             /** Predicted Confidence */
             predicted_confidence?: number | null;
             /** Predicted Type */

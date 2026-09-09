@@ -167,8 +167,8 @@ def build_webhook_fields(
 
     handleUser：调用方（_push_via_webhook）在真正推送前已 consume_module_owner
     选定责任人并通过 assignee_name 传入——这里不再自己查一次，避免脱离推送主流程
-    被调用时意外消耗轮询名额。未传入时回落 peek（只读预览，不消耗名额），再回落
-    入库责任人（hub.assigned_user_id）。
+    被调用时脱离主流程。未传入时回落 peek（只读），再回落 hub 已定研发责任人
+    （hub.owner_user_id；ADR-0017 D3 起不再读 assigned_user_id）。
     """
     settings = get_settings()
     src = _primary_source_ticket(db, hub)
@@ -178,8 +178,8 @@ def build_webhook_fields(
         owner = peek_module_owner(db, hub.product_line_code, hub.module)
         if owner is not None:
             assignee_name = owner.name or ""
-        elif hub.assigned_user_id is not None:
-            assignee = db.get(User, hub.assigned_user_id)
+        elif hub.owner_user_id is not None:
+            assignee = db.get(User, hub.owner_user_id)
             if assignee is not None:
                 assignee_name = assignee.name or ""
 

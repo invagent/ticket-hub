@@ -189,13 +189,14 @@ def test_assign_updates_hub_and_draft_subtasks(db_session: Session) -> None:
     db_session.refresh(pushed_sub)
 
     assert t.handler_user_id == target.id
-    # 主 Hub 的 op_handler_user_id 联动更新
-    assert hub.op_handler_user_id == target.id
+    # ADR-0017 D3：hub 只更新动作执行者标签，不再镜像 op_handler_user_id
+    assert hub.op_handler_user_id is None
     assert hub.op_handler == f"user:{target.name}"
-    # 草稿态子任务处理人联动更新
-    assert draft_sub.assigned_user_id == target.id
+    # 草稿态子任务研发责任人（owner_user_id）联动更新
+    assert draft_sub.owner_user_id == target.id
     # 已进入处理中的子任务（例如已推 Linear）不随意覆盖
-    assert pushed_sub.assigned_user_id == old_handler.id
+    assert pushed_sub.owner_user_id is None
+    assert pushed_sub.assigned_user_id == old_handler.id  # legacy 字段原样保留
 
 
 def test_assign_member_permissions(db_session: Session) -> None:

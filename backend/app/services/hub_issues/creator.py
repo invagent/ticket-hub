@@ -140,7 +140,6 @@ def ensure_hub_issue_for_ticket(
         op_status=OP_PROCESSING if issue_type == "Operation" else None,
         op_handler="agent" if issue_type == "Operation" else None,
         op_status_changed_at=datetime.now(UTC) if issue_type == "Operation" else None,
-        assigned_user_id=ticket.assigned_user_id,
         occurrence_count=1,
     )
     db.add(hub)
@@ -183,14 +182,12 @@ def ensure_hub_issue_for_ticket(
     db.flush()
 
     # 处理人已在入库时按来源+规则分派好（ticket.handler_user_id），毕业时不再
-    # 重新分派——这里只是把已有值传播到 hub 层（Operation 用 op_handler_user_id
-    # 承载「处理人本人可操作」的权限判断；研发类 ticket.handler_user_id 本身已是
-    # 处理人，不需要额外写）。入库分派无匹配（handler_user_id 为空）→
+    # 重新分派、也不再镜像到 hub 层（ADR-0017 D3：hub.op_handler_user_id /
+    # hub.assigned_user_id 已停写；「处理人本人可操作」的授权与转人工命名统一读
+    # 关联 ticket 的 handler_user_id）。入库分派无匹配（handler_user_id 为空）→
     # dispatch_missed，auto 路径据此转 pending 人工（见 create_hub_issue_for_ticket_auto）。
     dispatch_missed = False
-    if issue_type == "Operation":
-        hub.op_handler_user_id = ticket.handler_user_id
-    elif issue_type in ("Bug_fix", "Demand") and ticket.handler_user_id is None:
+    if issue_type in ("Bug_fix", "Demand") and ticket.handler_user_id is None:
         dispatch_missed = True
 
     db.add(

@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import AuthedUser, require_admin
 from app.core.logging import get_logger
 from app.db import get_session
-from app.models import Feature, Module, ProductLine
+from app.models import Feature, Module, ProductLine, User
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -45,6 +45,10 @@ class ModuleOut(BaseModel):
     is_active: bool
     status: str = "enabled"
     product_owner: str | None = None
+    # ADR-0017 D3：模块唯一研发责任人（用户 id 绑死）
+    dev_owner_user_id: int | None = None
+    dev_owner_user_name: str | None = None
+    # DEPRECATED：legacy 姓名字串，仅展示/回落用
     dev_owners: str | None = None
     updated_by: str | None = None
     created_at: datetime
@@ -57,14 +61,34 @@ class ModuleIn(BaseModel):
     product_line_code: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=128)
     product_owner: str | None = None
-    dev_owners: str | None = None
+    dev_owner_user_id: int | None = None
+    dev_owners: str | None = None  # DEPRECATED：Excel 导入仍传姓名，后端回落首名解析
 
 
 class ModulePatch(BaseModel):
     status: str | None = None          # "enabled" | "disabled"
     product_owner: str | None = None
-    dev_owners: str | None = None
+    dev_owner_user_id: int | None = None
+    dev_owners: str | None = None  # DEPRECATED
     updated_by: str | None = None
+
+
+def _require_active_user(db: Session, user_id: int | None) -> User | None:
+    """dev_owner_user_id 必须是在岗用户；None 表示清空。"""
+    if user_id is None:
+        return None
+    u = db.get(User, user_id)
+    if u is None or u.deleted_at is not None or not u.is_active:
+        raise HTTPException(status_code=422, detail=f"dev_owner_user_id {user_id} 不是在岗用户")
+    return u
+
+
+def _owner_name_map(db: Session, rows: list[Module]) -> dict[int, str]:
+    ids = {r.dev_owner_user_id for r in rows if r.dev_owner_user_id is not None}
+    if not ids:
+        return {}
+    urows = db.execute(select(User.id, User.name).where(User.id.in_(ids))).all()
+    return {r.id: r.name for r in urows}
 
 
 class FeatureOut(BaseModel):
@@ -105,6 +129,7 @@ def list_modules(
         pls = db.execute(select(ProductLine).where(ProductLine.code.in_(codes))).scalars().all()
         pl_map = {pl.code: pl for pl in pls}
 
+    owner_names = _owner_name_map(db, list(rows))
     result = []
     for r in rows:
         pl = pl_map.get(r.product_line_code)
@@ -117,6 +142,8 @@ def list_modules(
             is_active=r.is_active,
             status=getattr(r, "status", "enabled") or "enabled",
             product_owner=getattr(r, "product_owner", None),
+            dev_owner_user_id=r.dev_owner_user_id,
+            dev_owner_user_name=owner_names.get(r.dev_owner_user_id) if r.dev_owner_user_id else None,
             dev_owners=getattr(r, "dev_owners", None),
             updated_by=getattr(r, "updated_by", None),
             created_at=r.created_at,
@@ -137,12 +164,14 @@ def add_module(
     if pl is None:
         raise HTTPException(status_code=404, detail="product_line not found")
 
+    owner = _require_active_user(db, body.dev_owner_user_id)
     row = Module(
         product_line_code=body.product_line_code,
         name=body.name,
         is_active=True,
         status="enabled",
         product_owner=body.product_owner,
+        dev_owner_user_id=owner.id if owner else None,
         dev_owners=body.dev_owners,
         updated_by=None,
     )
@@ -172,6 +201,8 @@ def add_module(
         is_active=row.is_active,
         status=row.status,
         product_owner=row.product_owner,
+        dev_owner_user_id=row.dev_owner_user_id,
+        dev_owner_user_name=owner.name if owner else None,
         dev_owners=row.dev_owners,
         updated_by=row.updated_by,
         created_at=row.created_at,
@@ -193,6 +224,8 @@ def patch_module(
     patch = body.model_dump(exclude_unset=True)
     if "status" in patch and patch["status"] not in ("enabled", "disabled"):
         raise HTTPException(status_code=422, detail="status must be 'enabled' or 'disabled'")
+    if "dev_owner_user_id" in patch:
+        _require_active_user(db, patch["dev_owner_user_id"])
 
     for field, value in patch.items():
         setattr(row, field, value)
@@ -208,6 +241,7 @@ def patch_module(
     ).scalar_one_or_none()
 
     logger.info("admin_module_patched", id=module_id, by=admin.user_id, fields=list(patch.keys()))
+    owner_names = _owner_name_map(db, [row])
     return ModuleOut(
         id=row.id,
         product_line_code=row.product_line_code,
@@ -217,6 +251,8 @@ def patch_module(
         is_active=row.is_active,
         status=row.status,
         product_owner=row.product_owner,
+        dev_owner_user_id=row.dev_owner_user_id,
+        dev_owner_user_name=owner_names.get(row.dev_owner_user_id) if row.dev_owner_user_id else None,
         dev_owners=row.dev_owners,
         updated_by=row.updated_by,
         created_at=row.created_at,

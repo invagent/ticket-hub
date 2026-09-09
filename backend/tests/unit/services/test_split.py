@@ -122,7 +122,7 @@ def test_execute_materializes_children(world: Session) -> None:
         # 内容来自 sub_issue
         assert c.title in ("红字确认单开票步骤咨询", "苍穹开票状态不同步")
         # re-route: module 命中 alice
-        assert c.assigned_user_id == 1
+        assert c.handler_user_id == 1  # ADR-0017：只写处理人
         assert c.status == "received"
 
     # 审计: decision.proposal 记录 materialized 块
@@ -198,7 +198,7 @@ def test_child_falls_to_default_pool_when_no_scope(world: Session) -> None:
     for cid in res.child_ticket_ids:
         c = world.get(Ticket, cid)
         assert c is not None
-        assert c.assigned_user_id is None  # 未配 default_pool → 未分配，等 reroute
+        assert c.handler_user_id is None  # 未配 default_pool → 未分配，等 reroute
 
 
 # ---- auto path ---------------------------------------------------------------

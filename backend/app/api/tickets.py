@@ -78,10 +78,14 @@ class TicketSummary(BaseModel):
     product_line_code: str | None
     module: str | None
     feature: str | None
-    assigned_user_id: int | None  # 责任人（路由分工）
+    # DEPRECATED（ADR-0017 D3）：入库路由责任人已停写；已毕业研发类回落 hub.owner_user_id
+    assigned_user_id: int | None
     assigned_user_name: str | None = None
-    handler_user_id: int | None = None  # 处理人（当前实际持有人）
+    handler_user_id: int | None = None  # 处理人（工单环节唯一人）
     handler_user_name: str | None = None
+    # 研发责任人（研发环节唯一人）= 所挂 hub.owner_user_id
+    owner_user_id: int | None = None
+    owner_user_name: str | None = None
     predicted_type: str | None = None
     predicted_confidence: float | None = None  # AI 分类置信度；0=triage 失败兜底默认值，非真实判断
     hub_issue_id: int | None
@@ -332,10 +336,7 @@ def list_tickets(
     # batch-load user names to avoid N+1（责任人 + 处理人）
     user_ids = {t.assigned_user_id for t in p.items if t.assigned_user_id is not None}
     user_ids |= {t.handler_user_id for t in p.items if t.handler_user_id is not None}
-    user_name_map: dict[int, str] = {}
-    if user_ids:
-        rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
-        user_name_map = {r.id: r.name for r in rows}
+    hub_owner_map: dict[int, int | None] = {}
 
     # batch-load 所挂 hub_issue 的 op_status（仅 Operation 有值）+ reject_count，避免 N+1
     hub_ids = {t.hub_issue_id for t in p.items if t.hub_issue_id is not None}
@@ -365,10 +366,13 @@ def list_tickets(
                 HubIssue.module,
                 HubIssue.linear_status,
                 HubIssue.type,
+                HubIssue.owner_user_id,
             ).where(HubIssue.id.in_(hub_ids))
         ).all()
         hub_short_code_map = {r.id: r.short_code for r in hrows}
         hub_op_map = {r.id: r.op_status for r in hrows}
+        hub_owner_map = {r.id: r.owner_user_id for r in hrows}
+        user_ids |= {r.owner_user_id for r in hrows if r.owner_user_id is not None}
         hub_reject_map = {r.id: r.reject_count for r in hrows}
         hub_status_map = {r.id: r.status for r in hrows}
         hub_plc_map = {r.id: r.product_line_code for r in hrows}
@@ -390,6 +394,11 @@ def list_tickets(
         ).all()
         product_name_map = {r.code: r.name for r in prows}
         pl_resolve_hours_map = {r.code: r.sla_resolve_hours for r in prows}
+
+    user_name_map: dict[int, str] = {}  # 含 hub 研发责任人 id（上面已并入 user_ids）
+    if user_ids:
+        rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
+        user_name_map = {r.id: r.name for r in rows}
 
     now = datetime.now(UTC)
 
@@ -421,6 +430,12 @@ def list_tickets(
             s.handler_user_name = user_name_map.get(t.handler_user_id)
         if t.hub_issue_id is not None:
             s.hub_short_code = hub_short_code_map.get(t.hub_issue_id)
+            s.owner_user_id = hub_owner_map.get(t.hub_issue_id)
+            if s.owner_user_id is not None:
+                s.owner_user_name = user_name_map.get(s.owner_user_id)
+                if s.assigned_user_id is None:  # deprecated 字段回落研发责任人
+                    s.assigned_user_id = s.owner_user_id
+                    s.assigned_user_name = s.owner_user_name
             s.op_status = hub_op_map.get(t.hub_issue_id)
             s.reject_count = hub_reject_map.get(t.hub_issue_id, 0)
             s.hub_status = hub_status_map.get(t.hub_issue_id)
@@ -512,6 +527,13 @@ def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
         hub = db.get(HubIssue, ticket.hub_issue_id)
         if hub is not None:
             detail.hub_short_code = hub.short_code
+            detail.owner_user_id = hub.owner_user_id
+            if hub.owner_user_id is not None:
+                ou = db.get(User, hub.owner_user_id)
+                detail.owner_user_name = ou.name if ou else None
+                if detail.assigned_user_id is None:
+                    detail.assigned_user_id = hub.owner_user_id
+                    detail.assigned_user_name = detail.owner_user_name
             detail.op_status = hub.op_status
             detail.hub_status = hub.status
             detail.linear_status = hub.linear_status
@@ -1020,7 +1042,11 @@ def list_ticket_subtasks(
         .all()
     )
 
-    user_ids = {s.assigned_user_id for s in subs if s.assigned_user_id is not None}
+    # ADR-0017 D3：子任务研发责任人 = owner_user_id（legacy assigned_user_id 只读回落）
+    def _sub_owner(s: HubIssue) -> int | None:
+        return s.owner_user_id if s.owner_user_id is not None else s.assigned_user_id
+
+    user_ids = {_sub_owner(s) for s in subs if _sub_owner(s) is not None}
     u_map: dict[int, str] = {}
     if user_ids:
         rows = db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all()
@@ -1046,8 +1072,8 @@ def list_ticket_subtasks(
             module=s.module,
             status=s.status,
             linear_status=s.linear_status,
-            assigned_user_id=s.assigned_user_id,
-            assigned_user_name=u_map.get(s.assigned_user_id) if s.assigned_user_id else None,
+            assigned_user_id=_sub_owner(s),
+            assigned_user_name=u_map.get(_sub_owner(s) or -1),
             solution=s.reply_content,
         )
         out.append(st)

@@ -185,8 +185,8 @@ class KSMIngester:
         self._db.flush()  # dispatch_handler.add_log 需要 ticket.id 已落库
         dr = dispatch_handler(self._db, ticket)
         if dr.user_id is not None:
-            ticket.assigned_user_id = dr.user_id
-            ticket.handler_user_id = dr.user_id  # 处理人初始=责任人
+            # ADR-0017 D3：工单环节唯一处理人 = handler_user_id；assigned_user_id 已停写（deprecated）
+            ticket.handler_user_id = dr.user_id
         # 无匹配规则/无可用处理人 → leave None; 主管经「仅未分配」筛选后人工归属
 
         self._db.flush()

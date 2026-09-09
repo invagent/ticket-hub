@@ -86,7 +86,7 @@ def test_first_ingest_creates_customer_and_routes(ingest_world: Session) -> None
 
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
-    assert ticket.assigned_user_id == 1
+    assert ticket.handler_user_id == 1  # ADR-0017：派单只写处理人
     assert ticket.status == "received"
     assert ticket.type == "Raw"
     assert ticket.source_code == "ksm"
@@ -222,17 +222,17 @@ def test_no_rule_match_falls_to_default_config(ingest_world: Session) -> None:
     assert res.assigned_user_ids == [99]
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
-    assert ticket.assigned_user_id == 99
+    assert ticket.handler_user_id == 99  # ADR-0017：派单只写处理人
 
 
 def test_no_rule_no_default_leaves_assigned_null(ingest_world: Session) -> None:
-    """无匹配规则 + 无兜底配置 → assigned_user_id 留 NULL，交人工归属。"""
+    """无匹配规则 + 无兜底配置 → handler_user_id 留 NULL，交人工归属。"""
     res = KSMIngester(ingest_world).ingest(_payload())
     ingest_world.commit()
     assert res.routing_decision == "no_match"
     ticket = ingest_world.get(Ticket, res.ticket_id)
     assert ticket is not None
-    assert ticket.assigned_user_id is None
+    assert ticket.handler_user_id is None  # ADR-0017：派单只写处理人
 
 
 # ---- validation ----------------------------------------------------------
@@ -285,7 +285,7 @@ def test_webhook_ksm_e2e_full_payload(app_client, db_session: Session) -> None: 
 
     # Verify ingest by query
     t = db_session.query(Ticket).filter_by(source_ticket_id="ksm-bill-e2e").one()
-    assert t.assigned_user_id == 1
+    assert t.handler_user_id == 1  # ADR-0017：派单只写处理人
     assert t.product_line_code == "cloud-erp"
 
 

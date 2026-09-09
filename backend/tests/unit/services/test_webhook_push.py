@@ -174,11 +174,11 @@ def test_build_fields_handle_user_from_module_owner(world: Session) -> None:
     assert fields["handleUser"] == "研发负责人"
 
 
-def test_build_fields_handle_user_falls_back_to_assigned(world: Session) -> None:
-    """模块没配研发责任人时，handleUser 回落入库责任人 assigned_user_id。"""
+def test_build_fields_handle_user_falls_back_to_owner(world: Session) -> None:
+    """模块没配研发责任人时，handleUser 回落 hub 已定研发责任人 owner_user_id（ADR-0017）。"""
     world.add(User(id=50, feishu_uid="ou_o50", name="入库责任人"))
     world.commit()
-    hub = _make_hub(world, 50, assigned_user_id=50, product_line_code="fpy", module="开票模块")
+    hub = _make_hub(world, 50, owner_user_id=50, product_line_code="fpy", module="开票模块")
     _make_ksm_ticket(world, hub)
     fields = build_webhook_fields(world, hub)
     assert fields["handleUser"] == "入库责任人"

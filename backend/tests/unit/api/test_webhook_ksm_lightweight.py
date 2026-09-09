@@ -155,7 +155,8 @@ def test_lightweight_ping_returns_code0_immediately(
     assert t.title == "测试工单"
     assert t.product_line_code == "cloud-erp-star"
     assert t.module == "财务模块"
-    assert t.assigned_user_id == 1
+    assert t.handler_user_id == 1  # ADR-0017：派单只写处理人
+    assert t.assigned_user_id is None
     # notice 同步落库（迁移 0044，不设过期时间）——Redis 24h TTL 过期后仍有得回落。
     assert t.ksm_notice_num == "N-100"
     assert t.ksm_subscribe_num == "S-100"
@@ -204,7 +205,7 @@ def test_lightweight_ping_takes_over_immediately_after_dispatch(
     assert resp.status_code == 200
 
     t = ingest_world.query(Ticket).filter_by(source_ticket_id="BILL-TO-1").one()
-    assert t.assigned_user_id == 1  # 派单已生效
+    assert t.handler_user_id == 1  # 派单已生效（ADR-0017：只写处理人）
     assert t.ksm_takeover_status == "handled"  # 接管随派单立即完成，不等审核确认
 
 

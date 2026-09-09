@@ -182,8 +182,8 @@ class EscalationIngester:
 
         dr = dispatch_handler(self._db, ticket)
         if dr.user_id is not None:
-            ticket.assigned_user_id = dr.user_id
-            ticket.handler_user_id = dr.user_id  # 处理人初始=责任人
+            # ADR-0017 D3：工单环节唯一处理人 = handler_user_id；assigned_user_id 已停写（deprecated）
+            ticket.handler_user_id = dr.user_id
         dispatch_decision = "assigned" if dr.user_id is not None else "no_match"
 
         attachment_ids: list[int] = []

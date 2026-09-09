@@ -70,10 +70,12 @@ def test_resolve_falls_back_when_preassigned_inactive(db_session: Session) -> No
     assert resolve_op_handler(db_session, h, get_settings()) == "主管"
 
 
-def test_graduation_propagates_ticket_handler_to_op_handler_user_id(db_session: Session) -> None:
-    """入库即分派改造后：处理人已在入库时由 dispatch_handler 写进
-    ticket.handler_user_id，毕业时 creator 只是把它传播到 hub.op_handler_user_id，
-    不再重新跑分派规则。op_handler 名字仍是 'agent'——不打断 drain 自动答复口径。"""
+def test_graduation_keeps_handler_on_ticket_and_resolves_from_it(db_session: Session) -> None:
+    """ADR-0017 D3：处理人唯一真源是 ticket.handler_user_id，毕业不再镜像到
+    hub.op_handler_user_id；转人工命名 resolve_op_handler 直接从关联 ticket 解析。
+    op_handler 名字仍是 'agent'——不打断 drain 自动答复口径。"""
+    from app.services.hub_issues.op_status import resolve_op_handler
+
     db_session.add(Source(code="ksm", name="KSM"))
     _user(db_session, 7, "运营阿强")
     t = _op_ticket(db_session, 1, handler_user_id=7)
@@ -82,8 +84,9 @@ def test_graduation_propagates_ticket_handler_to_op_handler_user_id(db_session: 
     hub = db_session.get(HubIssue, res.hub_issue_id)
     assert hub is not None
     assert hub.type == "Operation"
-    assert hub.op_handler_user_id == 7  # 从 ticket.handler_user_id 传播过来
+    assert hub.op_handler_user_id is None  # 不再镜像
     assert hub.op_handler == "agent"  # 名字仍是 agent，drain 口径不受影响
+    assert resolve_op_handler(db_session, hub) == "运营阿强"  # 从 ticket.handler_user_id 解析
 
 
 def test_graduation_no_ticket_handler_leaves_op_handler_unassigned(db_session: Session) -> None:

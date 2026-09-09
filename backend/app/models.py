@@ -961,10 +961,15 @@ class Module(Base):
     status: Mapped[str] = mapped_column(String(16), default="enabled", nullable=False)
     # 产品责任人（逗号分隔多人）
     product_owner: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    # 研发责任人（逗号分隔多人）
+    # ADR-0017 D3：模块唯一研发责任人（用户 id 绑死，替代按姓名字串匹配 + 轮询）。
+    # module_owner.resolve_module_owner 只读它；为空时过渡期回落 dev_owners 首名。
+    dev_owner_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True, index=True
+    )
+    # DEPRECATED（ADR-0017）：研发责任人姓名字串（逗号分隔多人）。仅作过渡期回落与
+    # 展示兼容，新写入请用 dev_owner_user_id；迁移 0048 已按首名回填。
     dev_owners: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    # dev_owners 多人时的轮询游标（module_owner.py consume_module_owner 维护，
-    # 取模运算天然容错人员增减导致的越界，不需要显式重置）
+    # DEPRECATED（ADR-0017）：轮询游标不再推进（研发责任一致性：一个模块一个人）。
     dev_owner_rotation_cursor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # 最后操作人
     updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)

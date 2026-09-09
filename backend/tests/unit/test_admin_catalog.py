@@ -172,3 +172,45 @@ def test_delete_feature(app_client, world: Session) -> None:
     fid = r.json()["id"]
     r2 = app_client.delete(f"/api/admin/features/{fid}", headers=_admin_bearer())
     assert r2.status_code == 204
+
+
+# ---- ADR-0017 D3: dev_owner_user_id -------------------------------------------
+
+
+def test_module_dev_owner_user_id_roundtrip(app_client, world: Session) -> None:
+    world.add(User(id=7, feishu_uid="ou_dev7", name="研发甲", role="assignee"))
+    world.commit()
+    r = app_client.post(
+        "/api/admin/modules",
+        headers=_admin_bearer(),
+        json={"product_line_code": "cloud-fapiao", "name": "数电开票", "dev_owner_user_id": 7},
+    )
+    assert r.status_code == 201, r.text
+    assert (r.json()["dev_owner_user_id"], r.json()["dev_owner_user_name"]) == (7, "研发甲")
+    mid = r.json()["id"]
+
+    r = app_client.get("/api/admin/modules", headers=_admin_bearer())
+    assert r.json()[0]["dev_owner_user_name"] == "研发甲"
+
+    r = app_client.patch(
+        f"/api/admin/modules/{mid}", headers=_admin_bearer(), json={"dev_owner_user_id": None}
+    )
+    assert r.status_code == 200
+    assert r.json()["dev_owner_user_id"] is None and r.json()["dev_owner_user_name"] is None
+
+
+def test_module_dev_owner_must_be_active_user(app_client, world: Session) -> None:
+    world.add(User(id=8, feishu_uid="ou_dev8", name="离职", role="assignee", is_active=False))
+    world.commit()
+    r = app_client.post(
+        "/api/admin/modules",
+        headers=_admin_bearer(),
+        json={"product_line_code": "cloud-fapiao", "name": "x", "dev_owner_user_id": 8},
+    )
+    assert r.status_code == 422
+    r = app_client.post(
+        "/api/admin/modules",
+        headers=_admin_bearer(),
+        json={"product_line_code": "cloud-fapiao", "name": "y", "dev_owner_user_id": 999},
+    )
+    assert r.status_code == 422

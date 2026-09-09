@@ -116,6 +116,36 @@ function OwnerInput({
   );
 }
 
+/**
+ * DevOwnerSelect — ADR-0017 D3：研发责任人改为在岗用户**单选**（用户 id 绑死，不再多人轮询）。
+ */
+function DevOwnerSelect({
+  value,
+  onChange,
+  className,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  className?: string;
+}) {
+  const users = useActiveUsers();
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className={`px-2 py-1.5 border border-hub-border rounded-[7px] bg-white outline-none focus:border-hub-teal text-[12.5px] ${className ?? ""}`}
+      title="研发责任人（单人）"
+    >
+      <option value="">— 未指定研发责任人 —</option>
+      {(users.data ?? []).map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 // ---- 常量 ---------------------------------------------------------------
 
 const CATEGORY_OPTIONS = ["开票", "收票", "影像", "基础", "EOP", "档案", "其他"];
@@ -153,6 +183,9 @@ interface Module {
   is_active: boolean;
   status: string;
   product_owner: string | null;
+  // ADR-0017 D3：模块唯一研发责任人（用户 id 绑死）；dev_owners 为 legacy 姓名字串仅回落展示
+  dev_owner_user_id: number | null;
+  dev_owner_user_name: string | null;
   dev_owners: string | null;
   updated_by: string | null;
   created_at: string;
@@ -751,7 +784,7 @@ function ModuleAddForm({
   const [pl, setPl] = useState<string>("");
   const [name, setName] = useState("");
   const [productOwner, setProductOwner] = useState("");
-  const [devOwners, setDevOwners] = useState("");
+  const [devOwnerId, setDevOwnerId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dupModules, setDupModules] = useState<Module[]>([]);
 
@@ -761,13 +794,13 @@ function ModuleAddForm({
         product_line_code: pl,
         name: name.trim(),
         product_owner: productOwner.trim() || null,
-        dev_owners: devOwners.trim() || null,
+        dev_owner_user_id: devOwnerId,
       }),
     onSuccess: () => {
       setPl("");
       setName("");
       setProductOwner("");
-      setDevOwners("");
+      setDevOwnerId(null);
       setError(null);
       setDupModules([]);
       onAdded();
@@ -822,12 +855,7 @@ function ModuleAddForm({
           placeholder="产品责任人（非必填）"
           className="flex-1 min-w-0"
         />
-        <OwnerInput
-          value={devOwners}
-          onChange={setDevOwners}
-          placeholder="研发责任人（非必填，多人逗号分隔）"
-          className="flex-1 min-w-0"
-        />
+        <DevOwnerSelect value={devOwnerId} onChange={setDevOwnerId} className="flex-1 min-w-0" />
         <button type="submit" disabled={add.isPending} className={`${PRIMARY_BTN} self-start flex-none`}>
           {add.isPending ? "提交中…" : "添加"}
         </button>
@@ -966,7 +994,7 @@ function ModuleTable({ modules, onChanged }: { modules: Module[]; onChanged: () 
       case "name": return m.name ?? "";
       case "status": return m.status === "enabled" ? "启用" : "禁用";
       case "product_owner": return m.product_owner ?? "";
-      case "dev_owners": return m.dev_owners ?? "";
+      case "dev_owners": return m.dev_owner_user_name ?? m.dev_owners ?? "";
       case "updated_by": return m.updated_by ?? "";
       case "updated_at": { if (!m.updated_at) return ""; const d = new Date(m.updated_at); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
     }
@@ -1103,7 +1131,7 @@ function ModuleRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [productOwner, setProductOwner] = useState(m.product_owner ?? "");
-  const [devOwners, setDevOwners] = useState(m.dev_owners ?? "");
+  const [devOwnerId, setDevOwnerId] = useState<number | null>(m.dev_owner_user_id ?? null);
 
   const authUser = (() => { try { return JSON.parse(localStorage.getItem("auth_user") ?? "null"); } catch { return null; } })();
 
@@ -1124,7 +1152,7 @@ function ModuleRow({
   function save() {
     patch.mutate({
       product_owner: productOwner.trim() || null,
-      dev_owners: devOwners.trim() || null,
+      dev_owner_user_id: devOwnerId,
       updated_by: authUser?.name ?? null,
     });
   }
@@ -1161,13 +1189,14 @@ function ModuleRow({
       />
     ) : <span className="text-hub-textSecondary">{m.product_owner || "—"}</span>,
     dev_owners: editing ? (
-      <OwnerInput
-        value={devOwners}
-        onChange={setDevOwners}
-        placeholder="多人逗号分隔"
-        className="w-full"
-      />
-    ) : <span className="text-hub-textSecondary">{m.dev_owners || "—"}</span>,
+      <DevOwnerSelect value={devOwnerId} onChange={setDevOwnerId} className="w-full" />
+    ) : m.dev_owner_user_name ? (
+      <span className="text-hub-textSecondary">{m.dev_owner_user_name}</span>
+    ) : m.dev_owners ? (
+      <span className="text-hub-textFaint" title="旧版姓名字串（未绑定用户），推送时按首名回落；请编辑改为单选绑定">
+        {m.dev_owners}（未绑定）
+      </span>
+    ) : <span className="text-hub-textSecondary">—</span>,
     updated_at: <span className="font-mono text-[11px] text-hub-textFaint">{fmtDate(m.updated_at)}</span>,
     updated_by: <span className="text-hub-textSecondary">{m.updated_by || "—"}</span>,
   };
@@ -1217,7 +1246,7 @@ function ModuleRow({
             </button>
           ) : (
             <button
-              onClick={() => { setProductOwner(m.product_owner ?? ""); setDevOwners(m.dev_owners ?? ""); setEditing(true); }}
+              onClick={() => { setProductOwner(m.product_owner ?? ""); setDevOwnerId(m.dev_owner_user_id ?? null); setEditing(true); }}
               className="text-blue-500 hover:text-blue-600 font-semibold"
             >
               修改

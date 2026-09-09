@@ -4546,6 +4546,17 @@
       },
       "ModuleIn": {
         "properties": {
+          "dev_owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owner User Id"
+          },
           "dev_owners": {
             "anyOf": [
               {
@@ -4594,6 +4605,28 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "dev_owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owner User Id"
+          },
+          "dev_owner_user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owner User Name"
           },
           "dev_owners": {
             "anyOf": [
@@ -4696,6 +4729,17 @@
       },
       "ModulePatch": {
         "properties": {
+          "dev_owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Owner User Id"
+          },
           "dev_owners": {
             "anyOf": [
               {
@@ -8066,6 +8110,28 @@
             ],
             "title": "Outbox Failed Kind"
           },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "owner_user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Name"
+          },
           "parent_ticket_id": {
             "anyOf": [
               {
@@ -8806,6 +8872,28 @@
               }
             ],
             "title": "Op Status"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "owner_user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Name"
           },
           "predicted_confidence": {
             "anyOf": [

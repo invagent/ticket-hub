@@ -230,13 +230,14 @@ def push_hub_issue_to_linear(
             assignee_user = db.get(User, assignee_override_user_id)
             hub.owner_user_id = assignee_override_user_id
         else:
-            # 默认 assignee = 模块研发责任人（modules.dev_owners 轮询选人）；
-            # 查不到回落入库责任人（hub.assigned_user_id）。
+            # 默认 assignee = 模块唯一研发责任人（modules.dev_owner_user_id）；
+            # 查不到回落 hub 已定的研发责任人（owner_user_id，如确认推送时手选）；
+            # 都没有 → 默认 team 无 assignee（直连分支既定的优雅降级）。
             assignee_user = consume_module_owner(db, hub.product_line_code, hub.module)
             if assignee_user is not None:
                 hub.owner_user_id = assignee_user.id
-            elif hub.assigned_user_id is not None:
-                assignee_user = db.get(User, hub.assigned_user_id)
+            elif hub.owner_user_id is not None:
+                assignee_user = db.get(User, hub.owner_user_id)
         if assignee_user is not None:
             if assignee_user.email and not assignee_user.linear_user_id:
                 _mark_pending(

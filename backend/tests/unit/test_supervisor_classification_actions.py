@@ -144,8 +144,8 @@ def test_reclassify_to_operation_enters_answer_chain(
 
 
 def test_reclassify_to_operation_runs_dispatch(app_client: TestClient, act_world: Session) -> None:
-    """改判进 Operation 要把 ticket.handler_user_id(入库时分派好的处理人)传播到
-    op_handler_user_id;处理人在入库时确定,改判不重新分派(入库即分派改造)。"""
+    """改判进 Operation 不重新分派：处理人仍是入库时分派好的 ticket.handler_user_id
+    （ADR-0017 D3 起 hub 层不再镜像 op_handler_user_id）。"""
     from app.models import User
 
     act_world.add(User(id=7, feishu_uid="ou_op7", name="op7", role="assignee"))
@@ -162,7 +162,10 @@ def test_reclassify_to_operation_runs_dispatch(app_client: TestClient, act_world
     assert r.status_code == 200, r.text
     hub = act_world.get(HubIssue, 71)
     act_world.refresh(hub)
-    assert hub.op_handler_user_id == 7  # 入库时分派好的处理人传播到 op_handler_user_id
+    # ADR-0017 D3：处理人不再镜像到 hub.op_handler_user_id，唯一真源仍是 ticket.handler_user_id
+    assert hub.op_handler_user_id is None
+    act_world.refresh(ticket)
+    assert ticket.handler_user_id == 7
 
 
 def test_dismiss_closes(app_client: TestClient, act_world: Session) -> None:

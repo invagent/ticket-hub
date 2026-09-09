@@ -63,6 +63,16 @@ _ACTOR_SLUG_ZH: dict[str, str] = {
     "agent:hub_dedup": "AI 查重",
     "agent:triage": "AI 分类",
     "agent:classify": "AI 分类",
+    # ADR-0017 D3：链路各 checkpoint 的 Agent actor 统一 agent:<name>，不落人员
+    "agent:dispatch": "AI 派单",
+    "agent:hub_issue_auto": "AI 自动毕业",
+    "agent:linear_webhook": "系统转研发（webhook）",
+    "agent:operation_answer": "AI 自动答复",
+    "agent:module_resolve": "AI 模块归类",
+    "op:agent": "AI 处理",
+    "system:stage_sync": "系统状态同步",
+    "system:stage_reconcile": "系统状态对账",
+    "cascade:status_cascade": "状态级联",
 }
 
 

@@ -227,7 +227,8 @@ def _handler_scope(db: Session, user: AuthedUser) -> Any:
         Ticket.hub_issue_id.isnot(None),
     )
     return or_(
-        HubIssue.op_handler_user_id == user.user_id,
+        HubIssue.owner_user_id == user.user_id,
+        HubIssue.op_handler_user_id == user.user_id,  # legacy 历史单
         HubIssue.id.in_(handler_hub_ids),
     )
 
@@ -2229,11 +2230,8 @@ def reclassify(
             reason=f"改判 {old_zh}→运营，回炉答复链",
         )
         # 处理人已在入库时按来源+规则分派好（ticket.handler_user_id），改判类型
-        # 不重新分派，直接沿用（同 confirm-classification/PATCH attributes 口径）。
+        # 不重新分派，直接沿用；ADR-0017 起不再镜像到 hub.op_handler_user_id。
         db.flush()
-        handler_uid = default_owner_from_ticket_handler(db, hub)
-        if handler_uid is not None:
-            hub.op_handler_user_id = handler_uid
     elif body.new_type in ("Bug_fix", "Demand"):
         # 按模块负责人是否确定分流：确定 → created 直推 Linear；不确定 →
         # pending_linear_review 待处理人确认（工作台选人推送）。统一口径，不再
