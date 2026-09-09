@@ -27,6 +27,10 @@ from app.services.sla.workday import BEIJING
 _RANGES = ("today", "week", "month")
 
 _IN_PROGRESS_STATUSES = (
+    "processing",
+    "reviewing",
+    "supplementing",
+    "exception",
     "linked",
     "waiting_reply",
     "waiting_schedule",
@@ -35,7 +39,14 @@ _IN_PROGRESS_STATUSES = (
     "code_merged",
     "released",
 )
-_RESOLVED_STATUSES = ("done", "closed", "superseded", "rejected")
+_RESOLVED_STATUSES = (
+    "answered",
+    "done",
+    "closed",
+    "superseded",
+    "rejected",
+    "transferred_return",
+)
 
 
 @dataclass(slots=True, frozen=True)

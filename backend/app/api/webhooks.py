@@ -294,7 +294,7 @@ def _run_ksm_takeover(
         ticket = db.get(Ticket, ticket_id)
         if ticket is None:
             return
-        if ticket.status in ("closed", "transferred_return"):
+        if ticket.status in ("closed", "transferred_return", "done"):
             logger.info("ksm_takeover_skip_terminal", ticket_id=ticket_id, status=ticket.status)
             return
         if str(detail.get("status") or ticket.source_status or "") in ("4", "6"):

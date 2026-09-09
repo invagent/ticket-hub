@@ -89,7 +89,7 @@ def takeover_ksm_ticket(
     # supervisor 审核确认排的 BackgroundTask）姗姗来迟才执行到，仅凭
     # ksm_takeover_status is None 会误判成"新工单"重新 lock+handle，把
     # KSM 侧节点从退回目标又拽回协同处理，制造本地与 KSM 侧不一致。
-    if ticket.status in ("closed", "transferred_return"):
+    if ticket.status in ("closed", "transferred_return", "done"):
         logger.info(
             "ksm_takeover_skip_terminal",
             bill_id=bill_id,
@@ -101,7 +101,7 @@ def takeover_ksm_ticket(
     # 若所挂 Operation hub 处于转单退回状态，坚决不重新接管
     if ticket.hub_issue_id:
         hub = db.get(HubIssue, ticket.hub_issue_id)
-        if hub is not None and hub.op_status == OP_TRANSFERRED_RETURN:
+        if hub is not None and (hub.op_status == OP_TRANSFERRED_RETURN or hub.status == "returned"):
             logger.info(
                 "ksm_takeover_skip_hub_transferred_return",
                 bill_id=bill_id,

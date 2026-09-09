@@ -16306,6 +16306,59 @@
         ]
       }
     },
+    "/api/tickets/{ticket_id}/request-supply": {
+      "post": {
+        "description": "工单层面直接请求客户补充资料：自动确保关联 Hub 任务存在并向 KSM 触发出站写回。",
+        "operationId": "ticket_request_supply_endpoint_api_tickets__ticket_id__request_supply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestSupplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ticket Request Supply Endpoint",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
     "/api/tickets/{ticket_id}/retry-outbox": {
       "post": {
         "description": "手工重试该工单最近一次失败的出站回写（不限 kind，覆盖 reply/status/\nsupply/release_note/progress_note/return）。处理人本人或主管/管理员可点，\n权限口径与 /return 一致（ticket.handler_user_id）。同步执行，立即返回\n成败——不是仅仅把 status 重置为 pending 甩给下一轮 2 分钟 beat。",

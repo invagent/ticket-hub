@@ -117,7 +117,7 @@ class KSMIngester:
                     handler=resolve_op_handler(self._db, hub, get_settings()),
                     reason=f"客户驳回（第{hub.reject_count}次）",
                 )
-                if existing.status == "closed":
+                if existing.status in ("closed", "done"):
                     prev = existing.status
                     existing.status = "processing"
                     self._history.record(

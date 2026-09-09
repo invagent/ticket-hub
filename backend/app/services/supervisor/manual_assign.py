@@ -125,7 +125,7 @@ class ManualAssignService:
                 update(HubIssue)
                 .where(
                     (HubIssue.ticket_id == ticket.id) | (HubIssue.id == ticket.hub_issue_id),
-                    HubIssue.status == "draft",
+                    HubIssue.status.in_(["draft", "pending_review"]),
                 )
                 .values(assigned_user_id=req.assigned_user_id)
             )

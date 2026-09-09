@@ -534,12 +534,20 @@ export function TicketDetailPage() {
   // HubIssueDetailPage.tsx 的 supply mutation，补上工单详情页缺失的入口。
   const [supplyErr, setSupplyErr] = useState<string | null>(null);
   const supply = useMutation({
-    mutationFn: (note: string) =>
-      postByPath(
-        "/api/hub-issues/{hub_issue_id}/request-supply",
-        { hub_issue_id: detail.data?.hub_issue_id ?? 0 },
+    mutationFn: (note: string) => {
+      if (detail.data?.hub_issue_id) {
+        return postByPath(
+          "/api/hub-issues/{hub_issue_id}/request-supply",
+          { hub_issue_id: detail.data.hub_issue_id },
+          { note },
+        );
+      }
+      return postByPath(
+        "/api/tickets/{ticket_id}/request-supply",
+        { ticket_id: id },
         { note },
-      ),
+      );
+    },
     onSuccess: (r: any) => {
       setSupplyErr(null);
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
@@ -657,7 +665,7 @@ export function TicketDetailPage() {
   const canSeeReflectFull =
     currentRole() === "knowledge_op" || currentRole() === "supervisor" || currentRole() === "admin";
   const canSeeReflectAsHandler =
-    opStatus === "reviewing" && d?.handler_user_id != null && currentUserId() === d.handler_user_id;
+    (d?.status === "reviewing" || opStatus === "reviewing") && d?.handler_user_id != null && currentUserId() === d.handler_user_id;
   const canSeeReflect = canSeeReflectFull || canSeeReflectAsHandler;
   const escalationCtx = useQuery({
     queryKey: ["escalation-context", id],
@@ -1299,7 +1307,7 @@ export function TicketDetailPage() {
                       <span className="text-[12px] font-bold text-black tracking-wide">
                         处理说明
                       </span>
-                      {(d.op_status === "reviewing" || opStatus === "reviewing") && (
+                      {(d.status === "reviewing" || d.op_status === "reviewing" || opStatus === "reviewing") && (
                         <span className="text-[11.5px] text-hub-amber-deep font-normal">
                           AI 草稿待审核，确认后正式发出
                         </span>

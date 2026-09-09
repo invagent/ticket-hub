@@ -26,6 +26,11 @@ from app.api.history_labels import (
     humanize_status,
     load_user_names,
 )
+from app.api.hub_issues import (
+    RequestSupplyBody,
+    RequestSupplyResponse,
+    request_supply_endpoint,
+)
 from app.api.ksm_nodes import KsmNode, parse_ksm_nodes
 from app.config import get_settings
 from app.core.logging import get_logger
@@ -1172,6 +1177,17 @@ def ticket_reply_endpoint(
         else (sub_tasks[0] if sub_tasks else None)
     )
     if target_hub is None:
+        from app.services.hub_issues.creator import ensure_hub_issue_for_ticket
+
+        res = ensure_hub_issue_for_ticket(
+            ticket.id,
+            created_by=f"user:{user.name}",
+            type_override=ticket.predicted_type or "Operation",
+            db=db,
+        )
+        target_hub = db.get(HubIssue, res.hub_issue_id)
+
+    if target_hub is None:
         raise HTTPException(status_code=400, detail="当前工单未关联任何有效的 Hub 任务")
 
     # 若目标 Hub 为研发类或其他非 Operation 类型，提交答复表明已在线下/配置层面处置完成，
@@ -1282,4 +1298,39 @@ def ticket_reply_endpoint(
         ticket_id=ticket.id,
         outbox_ids=reply_result.outbox_ids,
         reply_content=content,
+    )
+
+
+@router.post("/{ticket_id}/request-supply", response_model=RequestSupplyResponse)
+def ticket_request_supply_endpoint(
+    ticket_id: int,
+    body: RequestSupplyBody,
+    user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> RequestSupplyResponse:
+    """工单层面直接请求客户补充资料：自动确保关联 Hub 任务存在并向 KSM 触发出站写回。"""
+    ticket = TicketRepository(db).get(ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    target_hub = db.get(HubIssue, ticket.hub_issue_id) if ticket.hub_issue_id else None
+    if target_hub is None:
+        from app.services.hub_issues.creator import ensure_hub_issue_for_ticket
+
+        res = ensure_hub_issue_for_ticket(
+            ticket.id,
+            created_by=f"user:{user.name}",
+            type_override=ticket.predicted_type or "Operation",
+            db=db,
+        )
+        target_hub = db.get(HubIssue, res.hub_issue_id)
+
+    if target_hub is None:
+        raise HTTPException(status_code=500, detail="未能成功创建关联 Hub 任务")
+
+    return request_supply_endpoint(
+        hub_issue_id=target_hub.id,
+        body=body,
+        user=user,
+        db=db,
     )

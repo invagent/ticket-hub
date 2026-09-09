@@ -2292,6 +2292,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/request-supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ticket Request Supply Endpoint
+         * @description 工单层面直接请求客户补充资料：自动确保关联 Hub 任务存在并向 KSM 触发出站写回。
+         */
+        post: operations["ticket_request_supply_endpoint_api_tickets__ticket_id__request_supply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/retry-outbox": {
         parameters: {
             query?: never;
@@ -9692,6 +9712,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketReplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticket_request_supply_endpoint_api_tickets__ticket_id__request_supply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestSupplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequestSupplyResponse"];
                 };
             };
             /** @description Validation Error */

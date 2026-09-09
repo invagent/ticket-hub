@@ -550,15 +550,18 @@ class HubIssueRepository:
         ts_now = now or datetime.now(UTC)
         active_open = (
             "created",
+            "draft",
             "waiting_reply",
             "waiting_schedule",
             "in_progress",
+            "processing",
             "scheduled",
             "waiting_assign",
             "assigned",
             # 待主管确认才推 Linear(require_review_before_linear 默认开下的主路径)
             # 和 Linear 推送失败待人工的 pending —— 都需 SLA 监控,否则静默滞留。
             "pending_review",
+            "pending_linear_review",
             "pending",
         )
         clauses = []

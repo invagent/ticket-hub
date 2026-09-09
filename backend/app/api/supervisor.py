@@ -1067,6 +1067,7 @@ _TICKET_TERMINAL_STATUSES = (
     "rejected",
     "superseded",
     "transferred_return",
+    "answered",
 )
 
 
