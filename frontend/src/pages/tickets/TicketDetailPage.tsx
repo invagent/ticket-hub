@@ -2448,25 +2448,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// 子任务 600×400 处理说明与解决方案面板（支持查看、修改与保存同步）
+// 子任务 600×400 处理说明与解决方案面板（直接展示并支持直接编辑修改，点击确认即保存）
 function SubTaskNoteModal({
   title,
   initialContent,
   canEdit = true,
-  initialMode = "view",
   onConfirm,
   onClose,
 }: {
   title: string;
   initialContent: string;
   canEdit?: boolean;
-  initialMode?: "view" | "edit";
   onConfirm: (content: string) => void;
   onClose: () => void;
 }) {
-  const [isEditing, setIsEditing] = useState(
-    initialMode === "edit" || !initialContent.trim(),
-  );
   const [content, setContent] = useState(initialContent);
 
   return (
@@ -2481,7 +2476,7 @@ function SubTaskNoteModal({
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-hub-borderLight bg-slate-50/70 flex-none">
           <div className="font-bold text-[14px] text-black">
-            {isEditing ? "编辑任务解决方案" : "任务解决方案"}（{title || "子任务"}）
+            编辑任务解决方案（{title || "子任务"}）
           </div>
           <button
             type="button"
@@ -2492,7 +2487,7 @@ function SubTaskNoteModal({
           </button>
         </div>
 
-        {isEditing ? (
+        {canEdit ? (
           <div className="p-4 flex-1 flex flex-col min-h-0">
             <textarea
               autoFocus
@@ -2503,7 +2498,7 @@ function SubTaskNoteModal({
               className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
             />
             <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
-              <span>保存后将同步更新本任务解决方案并在主单处理说明中更新记录</span>
+              <span>确认后将保存最新任务解决方案并在工单处理说明中同步更新记录</span>
               <span>{content.length} / 2000 字符</span>
             </div>
           </div>
@@ -2515,65 +2510,43 @@ function SubTaskNoteModal({
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-slate-400 text-[12.5px]">
-                暂无解决方案说明，点击下方【修改】进行录入
+                暂无解决方案说明
               </div>
             )}
           </div>
         )}
 
-        <div className="px-5 py-3 border-t border-hub-borderLight bg-slate-50/70 flex items-center justify-between gap-2 flex-none">
-          <div className="text-[11px] text-hub-textFaint">
-            {!isEditing && canEdit && "点击【修改】可编辑解决方案说明"}
-          </div>
-          <div className="flex items-center gap-2">
-            {isEditing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!initialContent.trim()) {
-                      onClose();
-                    } else {
-                      setContent(initialContent);
-                      setIsEditing(false);
-                    }
-                  }}
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onConfirm(content);
-                    onClose();
-                  }}
-                  className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
-                >
-                  保存
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
-                >
-                  关闭
-                </button>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer"
-                  >
-                    修改
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+        <div className="px-5 py-3 border-t border-hub-borderLight bg-slate-50/70 flex items-center justify-end gap-2 flex-none">
+          {canEdit ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                aria-label="保存"
+                onClick={() => {
+                  onConfirm(content);
+                  onClose();
+                }}
+                className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer shadow-xs"
+              >
+                确认
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-slate-400 cursor-pointer"
+            >
+              关闭
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -2795,7 +2768,6 @@ function SubTicketList({
     key: string | number;
     title: string;
     content: string;
-    initialMode?: "view" | "edit";
   } | null>(null);
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
 
@@ -3324,11 +3296,10 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: st.solution,
-                            initialMode: "view",
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看任务解决方案说明"
+                        title="点击查看并直接修改任务解决方案"
                       >
                         {truncSolution}
                       </button>
@@ -3340,7 +3311,6 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: "",
-                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
@@ -3489,11 +3459,10 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: st.solution,
-                            initialMode: "view",
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看任务解决方案说明"
+                        title="点击查看并直接修改任务解决方案"
                       >
                         {truncSolution}
                       </button>
@@ -3505,7 +3474,6 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: "",
-                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
@@ -3639,11 +3607,10 @@ function SubTicketList({
                             key: draftKey,
                             title: rowTitle,
                             content: st.solution,
-                            initialMode: "view",
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看任务解决方案说明"
+                        title="点击查看并直接修改任务解决方案"
                       >
                         {truncSolution}
                       </button>
@@ -3655,7 +3622,6 @@ function SubTicketList({
                             key: draftKey,
                             title: rowTitle,
                             content: "",
-                            initialMode: "edit",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
@@ -3718,12 +3684,11 @@ function SubTicketList({
         </div>
       )}
 
-      {/* 600×400 任务解决方案查看与修改弹窗 */}
+      {/* 600×400 任务解决方案直接查看与修改弹窗 */}
       {noteModal && (
         <SubTaskNoteModal
           title={noteModal.title}
           initialContent={noteModal.content}
-          initialMode={noteModal.initialMode}
           canEdit={canEdit}
           onClose={() => setNoteModal(null)}
           onConfirm={(content) => {

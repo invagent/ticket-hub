@@ -914,28 +914,24 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(screen.getByText("产研责任人")).toBeInTheDocument();
       expect(await screen.findByText("产研王五")).toBeInTheDocument();
 
-      // 3. 验证任务解决方案点击查看与修改：点击表格中解决方案文本打开查看弹窗
+      // 3. 验证任务解决方案点击直接查看与修改：点击表格中解决方案文本直接打开编辑输入弹窗
       const solutionTextBtn = screen.getByRole("button", { name: "方案内容" });
       fireEvent.click(solutionTextBtn);
 
-      // 弹窗处于查看模式，具备「修改」和「关闭」按钮
-      expect(await screen.findByText(/任务解决方案（/)).toBeInTheDocument();
-      const modalEditBtn = screen.getByRole("button", { name: "修改" });
-      expect(modalEditBtn).toBeInTheDocument();
+      // 弹窗直接处于可编辑状态，包含输入框与确认按钮
+      expect(await screen.findByText(/编辑任务解决方案（/)).toBeInTheDocument();
+      const textarea = screen.getByPlaceholderText(/请输入处理说明与解决方案/) as HTMLTextAreaElement;
+      expect(textarea).toBeInTheDocument();
+      expect(textarea.value).toBe("方案内容");
 
-      // 点击「修改」进入编辑模式
-      fireEvent.click(modalEditBtn);
-      expect(screen.getByText(/编辑任务解决方案（/)).toBeInTheDocument();
-      const textarea = screen.getByPlaceholderText(/请输入处理说明与解决方案/);
+      // 直接修改输入框内容并点击确认
       fireEvent.change(textarea, { target: { value: "修改后的完整解决方案" } });
-
-      // 点击保存
       const saveBtn = screen.getByRole("button", { name: "保存" });
       fireEvent.click(saveBtn);
 
       // 弹窗关闭，主单处理说明同步包含新方案
       await waitFor(() => {
-        expect(screen.queryByText(/任务解决方案（/)).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText(/请输入处理说明与解决方案/)).not.toBeInTheDocument();
       });
       const matches = await screen.findAllByText(/修改后的完整解决方案/);
       expect(matches.length).toBeGreaterThanOrEqual(1);
