@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from unittest.mock import patch
 
+import pytest
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsError
@@ -835,3 +836,93 @@ def test_replay_business_error_no_retry() -> None:
     except AiCsBusinessError:
         pass
     assert c.calls == 1
+
+
+def test_auto_answer_aborts_if_ticket_already_closed(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """防并发：即使 hub.op_status 为 processing，若关联 Ticket 已 closed，坚决不重答覆盖。"""
+    hub, ticket = _seed_op_hub(db_session, source="ksm_closed")
+    ticket.status = "closed"
+    db_session.commit()
+
+    called = False
+
+    def _boom(*a, **kw):
+        nonlocal called
+        called = True
+        return _FakeClient()
+
+    monkeypatch.setattr("app.services.agents.operation_answer.build_client", _boom)
+    ret = auto_answer_operation(db_session, hub.id)
+    assert ret is False
+    assert not called
+    db_session.refresh(hub)
+    assert hub.op_status == "processing"
+
+
+def test_auto_answer_aborts_if_reply_already_sent_in_outbox(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """防并发：若该任务已有已发送成功的 reply outbox 记录，坚决不重答覆盖。"""
+    from app.models import SyncOutbox
+
+    hub, ticket = _seed_op_hub(db_session, source="ksm_outbox")
+    ob = SyncOutbox(
+        ticket_id=ticket.id,
+        source_ticket_id=ticket.source_ticket_id,
+        hub_issue_id=hub.id,
+        kind="reply",
+        status="sent",
+        target_source_code="ksm",
+        payload={"reply_content": "test"},
+    )
+    db_session.add(ob)
+    db_session.commit()
+
+    called = False
+
+    def _boom(*a, **kw):
+        nonlocal called
+        called = True
+        return _FakeClient()
+
+    monkeypatch.setattr("app.services.agents.operation_answer.build_client", _boom)
+    ret = auto_answer_operation(db_session, hub.id)
+    assert ret is False
+    assert not called
+
+
+def test_drain_excludes_closed_tickets_and_sent_outbox(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """drain 扫描自动排除已 closed 工单或已有 sent reply 的任务。"""
+    from app.models import SyncOutbox
+
+    # hub1: 关联工单已 closed
+    h1, t1 = _seed_op_hub(db_session, source="ksm_d1")
+    t1.status = "closed"
+    # hub2: 已有 sent reply outbox
+    h2, t2 = _seed_op_hub(db_session, source="ksm_d2")
+    ob2 = SyncOutbox(
+        ticket_id=t2.id,
+        source_ticket_id=t2.source_ticket_id,
+        hub_issue_id=h2.id,
+        kind="reply",
+        status="sent",
+        target_source_code="ksm",
+        payload={"reply_content": "test"},
+    )
+    db_session.add_all([t1, ob2])
+    db_session.commit()
+
+    called_ids = []
+
+    def _mock_answer(db, hub_id, **kw):
+        called_ids.append(hub_id)
+        return False
+
+    monkeypatch.setattr("app.services.agents.operation_answer.auto_answer_operation", _mock_answer)
+    drain_operation_auto_reply(db_session)
+    assert h1.id not in called_ids
+    assert h2.id not in called_ids

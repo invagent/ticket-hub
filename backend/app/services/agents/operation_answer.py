@@ -18,7 +18,7 @@ from adapters.ai_cs.types import ReplayResult
 from app.config import Settings, get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
-from app.models import AgentDecision, HubIssue, Ticket
+from app.models import AgentDecision, HubIssue, SyncOutbox, Ticket
 from app.services.agents.answer_accuracy import score_answer_accuracy
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.hub_issues.op_status import (
@@ -189,13 +189,36 @@ def _replay_with_retry(
     raise last_err
 
 
-def _is_hub_already_settled(hub: HubIssue) -> bool:
+def _is_hub_already_settled(db: Session, hub: HubIssue) -> bool:
     """检查 Hub 是否已完成答复、已关单或已转单退回，防并发覆盖。"""
     if hub.op_status in (OP_ANSWERED, OP_CLOSED, OP_TRANSFERRED_RETURN):
         return True
     if hub.status in ("answered", "resolved", "closed"):
         return True
-    return bool(hub.reply_content and not hub.reply_is_draft)
+    if bool(hub.reply_content and not hub.reply_is_draft):
+        return True
+
+    # 防并发保护：检查关联工单是否已处于终态/已答复
+    ticket = (
+        db.query(Ticket)
+        .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
+        .first()
+    )
+    if ticket is not None and ticket.status in ("closed", "done", "answered", "transferred_return"):
+        return True
+
+    # 防并发保护：检查是否已有成功发送的出站回复（避免 AI 慢任务在事后覆盖已关单任务）
+    has_sent_reply = (
+        db.query(SyncOutbox.id)
+        .filter(
+            SyncOutbox.hub_issue_id == hub.id,
+            SyncOutbox.kind == "reply",
+            SyncOutbox.status == "sent",
+        )
+        .first()
+        is not None
+    )
+    return bool(has_sent_reply)
 
 
 def auto_answer_operation(
@@ -227,7 +250,7 @@ def auto_answer_operation(
         return False
 
     # 若工单已处于已答复或终态，绝不继续自动答复或转人工
-    if _is_hub_already_settled(hub):
+    if _is_hub_already_settled(db, hub):
         return False
 
     # escalation(ai_cs) 来源不自动答复（走 reflect 反思队列）
@@ -275,7 +298,7 @@ def auto_answer_operation(
     # 防并发竞态（如 replay 耗时 1-5 分钟期间，处理人已在界面人工提交答复、退回 KSM 或关闭工单）：
     # 若此时 hub 已进入终态或已被人工答复，丢弃本次 replay 结果，严禁将其重新打回 processing
     db.refresh(hub)
-    if _is_hub_already_settled(hub):
+    if _is_hub_already_settled(db, hub):
         logger.info(
             "operation_auto_reply_aborted_hub_settled",
             hub_issue_id=hub.id,
@@ -293,7 +316,7 @@ def auto_answer_operation(
     def _transfer(reason: str) -> bool:
         """降级留主管：op_status→processing/主管 + 记 transfer 审计。返回 False。"""
         db.refresh(hub)
-        if _is_hub_already_settled(hub):
+        if _is_hub_already_settled(db, hub):
             logger.info("operation_auto_reply_transfer_skipped_settled", hub_issue_id=hub.id)
             return False
         apply_op_status(
@@ -413,7 +436,7 @@ def auto_answer_operation(
         if not note:
             return _transfer("需补料但 supply_note 为空，降级留主管")
         db.refresh(hub)
-        if _is_hub_already_settled(hub):
+        if _is_hub_already_settled(db, hub):
             logger.info("operation_auto_supply_skipped_settled", hub_issue_id=hub.id)
             return False
         _save_draft_reply(db, hub, content=note)
@@ -449,9 +472,8 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
 
     扫描口径：type='Operation' + 未删除 + 非 ai_cs 来源（ai_cs 走 reflect 反思
     队列，auto_answer 内部也会拒，此处提前排除免得每轮空扫）+ op_status=processing
-    且 op_handler='agent'（即刚毕业尚未处理过）。op_handler≠agent 代表已转人工
-    介入中（含 supplementing 主管线下收集资料），排除在外（不抢主管正在处理的
-    工单）。
+    且 op_handler='agent'（即刚毕业尚未处理过）。
+    防并发过滤：已终态/已关单/已回写回复的工单坚决排除，避免覆盖人工处理成果。
     """
     settings = settings or get_settings()
     if not settings.operation_auto_reply_enabled:
@@ -466,12 +488,32 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
         )
         .exists()
     )
+    closed_ticket = (
+        select(Ticket.id)
+        .where(
+            (Ticket.hub_issue_id == HubIssue.id) | (Ticket.id == HubIssue.ticket_id),
+            Ticket.deleted_at.is_(None),
+            Ticket.status.in_(["closed", "done", "answered", "transferred_return"]),
+        )
+        .exists()
+    )
+    sent_reply_outbox = (
+        select(SyncOutbox.id)
+        .where(
+            SyncOutbox.hub_issue_id == HubIssue.id,
+            SyncOutbox.kind == "reply",
+            SyncOutbox.status == "sent",
+        )
+        .exists()
+    )
     stmt = (
         select(HubIssue.id)
         .where(
             HubIssue.type == "Operation",
             HubIssue.deleted_at.is_(None),
             ~ai_cs_ticket,
+            ~closed_ticket,
+            ~sent_reply_outbox,
             # 闸门①守卫：hub.status=='pending_review' 是毕业后停摆待主管确认
             # 分类的态（op_status 已预置 processing/agent，但还没过闸门）。
             # 确认分类/闸门①关的 Operation hub 落 status='created'——用它区分
@@ -492,6 +534,7 @@ def drain_operation_auto_reply(db: Session, *, settings: Settings | None = None)
         try:
             if auto_answer_operation(db, hub_id, settings=settings):
                 answered += 1
+            db.commit()
         except Exception:
             db.rollback()
             logger.exception("operation_auto_reply_drain_item_failed", hub_issue_id=hub_id)
