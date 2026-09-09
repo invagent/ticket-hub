@@ -897,17 +897,10 @@ def list_reviewing_answers(
 
     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
     """
-    q = (
-        db.query(HubIssue)
-        .outerjoin(Ticket, (Ticket.hub_issue_id == HubIssue.id) | (Ticket.id == HubIssue.ticket_id))
-        .filter(
-            HubIssue.deleted_at.is_(None),
-            or_(
-                and_(HubIssue.type == "Operation", HubIssue.op_status == "reviewing"),
-                Ticket.status == "reviewing",
-            ),
-        )
-        .distinct()
+    q = db.query(HubIssue).filter(
+        HubIssue.deleted_at.is_(None),
+        HubIssue.type == "Operation",
+        HubIssue.op_status == "reviewing",
     )
     scope = _handler_scope(db, user)
     if scope is not None:
