@@ -4,6 +4,8 @@ import {
   computeProcessStage,
   devProgressLabel,
   devProgressTone,
+  stageToProcessStage,
+  STAGE_LABEL,
 } from "./processStage";
 
 describe("linearStatusToCN", () => {
@@ -150,5 +152,29 @@ describe("devProgressLabel / devProgressTone", () => {
     expect(devProgressTone("In Progress")).toBe("progress");
     expect(devProgressTone("Backlog")).toBe("neutral");
     expect(devProgressTone(null)).toBe("neutral");
+  });
+});
+
+describe("ADR-0017 stage 快路径", () => {
+  it("stage 有值时直接查表，忽略旧 4 字段", () => {
+    const r = computeProcessStage({
+      stage: "dev_review",
+      predictedType: "Operation",
+      hubIssueId: 1,
+      opStatus: "closed", // 若走旧规则会显示「处理关闭」
+    });
+    expect(r).toEqual({ label: "测试中", tone: "progress" });
+  });
+
+  it("stage 缺省/未知时回落旧规则", () => {
+    expect(computeProcessStage({ stage: null, predictedType: "Bug_fix", hubIssueId: 1, hubStatus: "released" }).label).toBe("已发版");
+    expect(computeProcessStage({ stage: "not_a_stage", predictedType: "Bug_fix", hubIssueId: 1, hubStatus: "released" }).label).toBe("已发版");
+  });
+
+  it("stageToProcessStage 覆盖全部 18 个 stage 且与后端中文一致", () => {
+    expect(Object.keys(STAGE_LABEL)).toHaveLength(18);
+    expect(stageToProcessStage("pending_push")).toEqual({ label: "待确认转研发", tone: "pending" });
+    expect(stageToProcessStage("returned")?.tone).toBe("closed");
+    expect(stageToProcessStage(undefined)).toBeNull();
   });
 });

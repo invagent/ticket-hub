@@ -742,6 +742,7 @@ export function TicketDetailPage() {
                       <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
                     )}
                     <ProcessStatusBadge
+                      stage={d.stage}
                       opStatus={opStatus}
                       hubStatus={hub.data?.status}
                       predictedType={d.predicted_type}
@@ -1188,6 +1189,7 @@ export function TicketDetailPage() {
                 <div className="flex items-center gap-2.5">
                   <div className="text-[12px] font-bold text-black tracking-wide">节点详情</div>
                   <ProcessStatusBadge
+                    stage={d.stage}
                     opStatus={d.op_status}
                     hubStatus={hub.data?.status}
                     predictedType={d.predicted_type}

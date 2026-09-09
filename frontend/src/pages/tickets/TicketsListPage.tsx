@@ -47,6 +47,7 @@ function isTicketClosed(t: TicketSummary): boolean {
     return CLOSED_STATUSES.includes(t.status);
   }
   const stage = computeProcessStage({
+    stage: t.stage,
     predictedType: t.predicted_type,
     hubIssueId: t.hub_issue_id,
     hubStatus: t.hub_status,
@@ -359,6 +360,7 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
       return ticket.predicted_type;
     case "op_status": {
       const stage = computeProcessStage({
+        stage: ticket.stage,
         predictedType: ticket.predicted_type,
         hubIssueId: ticket.hub_issue_id,
         hubStatus: ticket.hub_status,

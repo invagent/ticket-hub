@@ -28,6 +28,7 @@ from app.services.agents.operation_answer import auto_answer_operation
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.supply_sync import SupplySyncError, request_supply
 from app.services.hub_issues.module_owner import peek_module_owner
+from app.services.state.stage import stage_label
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_CLOSED,
@@ -44,11 +45,20 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+def _with_stage_label(item: "HubIssueSummary") -> "HubIssueSummary":
+    item.stage_label = stage_label(item.stage)
+    return item
+
+
 class HubIssueSummary(BaseModel):
     id: int
     short_code: str
     type: str
     status: str
+    # ADR-0017 统一主状态（HUB_STAGES）；派生量
+    stage: str | None = None
+    stage_label: str | None = None
+    stage_changed_at: datetime | None = None
     title: str
     priority: str | None
     occurrence_count: int
@@ -209,7 +219,7 @@ def list_hub_issues(
         page_size=page_size,
     )
     return HubIssueListResponse(
-        items=[HubIssueSummary.model_validate(h) for h in p.items],
+        items=[_with_stage_label(HubIssueSummary.model_validate(h)) for h in p.items],
         total=p.total,
         page=p.page,
         page_size=p.page_size,
@@ -322,6 +332,7 @@ def get_hub_issue(
         raise HTTPException(status_code=404, detail="hub_issue not found")
     linked = TicketRepository(db).list_for_hub_issue(hub_issue_id)
     detail = HubIssueDetail.model_validate(hub)
+    detail.stage_label = stage_label(detail.stage)
     detail.linked_tickets = [LinkedTicket.model_validate(t) for t in linked]
     from app.models import HubIssueLinearIssue
 

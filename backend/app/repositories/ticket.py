@@ -110,6 +110,8 @@ class TicketRepository:
         source_ticket_q: str | None = None,
         op_status: str | None = None,
         op_statuses: list[str] | None = None,
+        stage: str | None = None,
+        stages: list[str] | None = None,
         received_from: datetime | None = None,
         received_to: datetime | None = None,
         created_from: datetime | None = None,
@@ -139,6 +141,12 @@ class TicketRepository:
         if status:
             base = base.where(Ticket.status == status)
             count_base = count_base.where(Ticket.status == status)
+        if stages:
+            base = base.where(Ticket.stage.in_(stages))
+            count_base = count_base.where(Ticket.stage.in_(stages))
+        elif stage:
+            base = base.where(Ticket.stage == stage)
+            count_base = count_base.where(Ticket.stage == stage)
         if assigned_user_ids:
             base = base.where(Ticket.assigned_user_id.in_(assigned_user_ids))
             count_base = count_base.where(Ticket.assigned_user_id.in_(assigned_user_ids))

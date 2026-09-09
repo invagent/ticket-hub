@@ -132,9 +132,11 @@ def test_execute_materializes_children(world: Session) -> None:
     assert m["child_ticket_ids"] == res.child_ticket_ids
     assert m["parent_prev_status"] == "received"
 
-    # status_history: 2 child + 1 parent
-    rows = world.query(StatusHistory).all()
+    # status_history: 2 child + 1 parent（ticket 层；ADR-0017 的 ticket_stage 行另计）
+    rows = world.query(StatusHistory).filter(StatusHistory.entity_type == "ticket").all()
     assert len(rows) == 3
+    stage_rows = world.query(StatusHistory).filter(StatusHistory.entity_type == "ticket_stage").all()
+    assert [r.to_status for r in stage_rows] == ["split"]  # parent received→split 驱动
 
 
 def test_execute_idempotent_guard(world: Session) -> None:

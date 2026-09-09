@@ -9,6 +9,10 @@
  *
  * 过去各页面各自映射、粒度不一（工单列表 2 档、hub 详情 6 段），且列表读 hub.status、
  * 详情读 linear_status，回同步延迟时二者短暂矛盾。本模块把映射收敛到一处，所有页面调它。
+ *
+ * ADR-0017（2026-09）：后端新增派生的统一主状态 `stage`（tickets.stage / hub_issues.stage），
+ * API 已返回 stage + stage_label。`computeProcessStage` 优先消费 `stage`；下面的 4 字段规则
+ * 仅在 stage 缺省（旧数据未回填 / 非 API 场景）时回落。
  */
 
 // ---- 研发阶段（Linear state → 中文 + 阶段索引），与 HubIssueDetailPage 里程碑同源 ----
@@ -45,9 +49,40 @@ export function linearStatusToCN(linearStatus: string | null | undefined): strin
   return LINEAR_CN[linearStatus.toLowerCase()] ?? linearStatus;
 }
 
-// ---- 统一处理阶段（跨 4 字段收敛，供 badge 显示） ----
+// ---- ADR-0017 统一主状态 stage（后端权威；本表与 backend services/state/stage.py STAGE_ZH/STAGE_TONE 同源） ----
 
 export type StageTone = "pending" | "progress" | "done" | "closed" | "exception" | "neutral";
+
+/** stage 枚举 → 中文 + 语义色。新增 stage 先改后端 STAGE_ZH，再同步这里。 */
+export const STAGE_LABEL: Record<string, { label: string; tone: StageTone }> = {
+  received: { label: "已接收", tone: "neutral" },
+  complaint: { label: "投诉待人工", tone: "exception" },
+  split: { label: "已拆分", tone: "neutral" },
+  pending_classify: { label: "待确认分类", tone: "pending" },
+  pending_dispatch: { label: "待指派", tone: "pending" },
+  processing: { label: "处理中", tone: "progress" },
+  pending_answer_review: { label: "答复待审核", tone: "pending" },
+  supplementing: { label: "待补充资料", tone: "progress" },
+  pending_push: { label: "待确认转研发", tone: "pending" },
+  in_dev: { label: "研发中", tone: "progress" },
+  dev_review: { label: "测试中", tone: "progress" },
+  released: { label: "已发版", tone: "done" },
+  canceled: { label: "已取消", tone: "exception" },
+  answered: { label: "已答复", tone: "done" },
+  resolved: { label: "已解决", tone: "closed" },
+  closed: { label: "已关闭", tone: "closed" },
+  returned: { label: "已退回", tone: "closed" },
+  exception: { label: "处理异常", tone: "exception" },
+};
+
+/** stage → ProcessStage；未知 stage 返回 null（调用方回落旧 4 字段规则）。 */
+export function stageToProcessStage(stage: string | null | undefined): ProcessStage | null {
+  if (!stage) return null;
+  const hit = STAGE_LABEL[stage];
+  return hit ? { label: hit.label, tone: hit.tone } : null;
+}
+
+// ---- 统一处理阶段（跨 4 字段收敛，供 badge 显示；stage 缺省时的回落规则） ----
 
 export interface ProcessStage {
   label: string;
@@ -84,6 +119,7 @@ const DEV_TYPES = new Set(["Bug_fix", "Demand"]);
 const HUB_CLOSED = new Set(["resolved", "closed"]);
 
 export interface StageInput {
+  stage?: string | null; // ADR-0017 后端派生的统一主状态；有值时直接查表，忽略下面 4 字段
   predictedType: string | null | undefined; // ticket.predicted_type / hub.type
   hubIssueId: number | null | undefined;
   hubStatus?: string | null; // hub.status
@@ -100,6 +136,10 @@ export interface StageInput {
  * 优先级：hub 终态(已关闭) > pending 系列 > Operation 运营机 > 研发通用态 > 回落 ticket 底层态。
  */
 export function computeProcessStage(input: StageInput): ProcessStage {
+  // 0. ADR-0017：后端已给统一主状态 → 直接查表（前后端口径由后端单点保证）
+  const fromStage = stageToProcessStage(input.stage);
+  if (fromStage) return fromStage;
+
   const { predictedType, hubIssueId, hubStatus, opStatus, ticketStatus, ticketStatusLabel } = input;
 
   // 1. 转单退回终态最高优先：工单或 Hub 只要进入转单退回/退回态，坚决显示「转单退回」（tone: closed）

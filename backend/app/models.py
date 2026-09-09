@@ -411,6 +411,12 @@ class Ticket(Base):
     # in ticket repository; full PG CHECK added in §future Alembic migration if needed)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     source_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # ADR-0017 统一主状态（大全集 TICKET_STAGES，见 services/state/stage.py）。派生量：
+    # 由 before_flush 监听器从 status/predicted_type + 所挂 hub 自动维护，业务代码不直接写。
+    stage: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    stage_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Hub linkage (FK added later — circular ref hub_issues.id ↔ tickets.hub_issue_id)
     hub_issue_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -583,6 +589,11 @@ class HubIssue(Base):
     product: Mapped[str | None] = mapped_column(String(128), nullable=True)
     module: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    # ADR-0017 统一主状态（HUB_STAGES ⊆ TICKET_STAGES）。派生量，监听器维护，见 tickets.stage。
+    stage: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    stage_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     priority: Mapped[str | None] = mapped_column(String(16), nullable=True)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
@@ -790,7 +801,10 @@ class StatusHistory(Base):
 
     __tablename__ = "status_history"
     __table_args__ = (
-        CheckConstraint("entity_type IN ('ticket','hub_issue')", name="ck_status_history_entity"),
+        CheckConstraint(
+            "entity_type IN ('ticket','hub_issue','ticket_stage','hub_stage')",
+            name="ck_status_history_entity",
+        ),
         Index("ix_status_history_entity", "entity_type", "entity_id", "changed_at"),
         Index("ix_status_history_changed", "changed_at"),
     )
@@ -1358,3 +1372,9 @@ class DispatchLog(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     __table_args__ = (Index("ix_dispatch_log_rule_created", "rule_id", "created_at"),)
+
+
+# ---- ADR-0017: stage 自动维护监听器（Session 类级 before_flush，幂等注册） ----
+# 放在 models 末尾：监听器内部延迟 import 本模块的 Ticket/HubIssue/StatusHistory，
+# 这里 import 它只是为了保证「凡加载了 models 的进程都注册了监听」。
+import app.services.state.listeners  # noqa: E402,F401  (side-effect import)

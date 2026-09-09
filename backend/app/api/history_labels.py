@@ -73,6 +73,13 @@ def humanize_type_tokens(text: str) -> str:
     return text
 
 
+def humanize_stage(stage: str | None) -> str | None:
+    """ADR-0017 统一主状态 → 中文（单一定义在 services/state/stage.py）。"""
+    from app.services.state.stage import stage_label
+
+    return stage_label(stage)
+
+
 def humanize_status(status: str | None) -> str | None:
     """单个状态枚举 → 中文（未知原样返回）。"""
     if status is None:

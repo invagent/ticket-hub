@@ -47,6 +47,7 @@ from app.services.cascade.outbox_retry import (
 )
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.cascade.return_sync import ReturnSyncError, request_return
+from app.services.state.stage import STAGE_ZH, stage_label
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     apply_op_status,
@@ -61,6 +62,10 @@ logger = get_logger(__name__)
 class TicketSummary(BaseModel):
     id: int
     short_code: str
+    # ADR-0017 统一主状态（大全集）：一眼看全后续处理走到哪；派生量，见 services/state/stage.py
+    stage: str | None = None
+    stage_label: str | None = None
+    stage_changed_at: datetime | None = None
     source_code: str | None
     source_ticket_id: str | None  # 来源工单 id（后台流转用，KSM= billId）
     source_ticket_number: str | None = (
@@ -267,6 +272,8 @@ def list_tickets(
     source_ticket_q: str | None = Query(None),  # 来源工单号/本系统编号子串搜索（全表）
     op_status: str | None = Query(None),  # 处理状态筛选（所挂 hub_issue 的 op_status）
     op_statuses: list[str] | None = Query(None),  # 处理状态多选筛选
+    stage: str | None = Query(None),  # ADR-0017 统一主状态筛选
+    stages: list[str] | None = Query(None),  # 统一主状态多选
     received_from: date | None = Query(None),  # 提单时间起
     received_to: date | None = Query(None),  # 提单时间止
     created_from: date | None = Query(None),  # 创建时间起
@@ -308,6 +315,8 @@ def list_tickets(
         source_ticket_q=source_ticket_q,
         op_status=op_status,
         op_statuses=op_statuses,
+        stage=stage,
+        stages=stages,
         received_from=rf_start,
         received_to=rf_end,
         created_from=cf_start,
@@ -405,6 +414,7 @@ def list_tickets(
 
     def _to_summary(t: Any) -> TicketSummary:
         s = TicketSummary.model_validate(t)
+        s.stage_label = stage_label(t.stage)
         if t.assigned_user_id is not None:
             s.assigned_user_name = user_name_map.get(t.assigned_user_id)
         if t.handler_user_id is not None:
@@ -488,6 +498,7 @@ def build_ticket_detail(db: Session, ticket: Ticket) -> TicketDetail:
     判断——调用方各自负责。"""
     ticket_id = ticket.id
     detail = TicketDetail.model_validate(ticket)
+    detail.stage_label = stage_label(ticket.stage)
     if ticket.assigned_user_id is not None:
         u = db.get(User, ticket.assigned_user_id)
         detail.assigned_user_name = u.name if u else None
@@ -823,16 +834,18 @@ def _fetch_source_bytes(source_url: str, settings: Any) -> bytes:
 class HistoryEvent(BaseModel):
     """One row in the merged ticket timeline.
 
-    Two `kind` values are emitted:
+    Three `kind` values are emitted:
       - 'status'        — a status_history transition (from→to)
       - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start
                            of an association; effective_to non-null = closed)
+      - 'stage'         — ADR-0017 统一主状态变迁（entity_type='ticket_stage'），
+                           from/to 是 stage 枚举，*_zh 走 STAGE_ZH
 
     Sorted by `occurred_at` ascending in the response (oldest → newest); the
     frontend reverses for display.
     """
 
-    kind: Literal["status", "hub_issue_link"]
+    kind: Literal["status", "hub_issue_link", "stage"]
     occurred_at: datetime
     # status fields (None when kind != 'status')
     from_status: str | None = None
@@ -880,6 +893,9 @@ def get_ticket_history(
     status_rows = StatusHistoryRepository(db).find_for_entity(
         entity_type="ticket", entity_id=ticket_id
     )
+    stage_rows = StatusHistoryRepository(db).find_for_entity(
+        entity_type="ticket_stage", entity_id=ticket_id
+    )
     relink_rows = TicketHubIssueHistoryRepository(db).find_for_ticket(ticket_id)
 
     # 处理节点文本人性化（读取层翻译，覆盖历史存量）：先批量查 reason 里 user_id 对应姓名，避免 N+1。
@@ -902,6 +918,22 @@ def get_ticket_history(
                 to_status_zh=humanize_status(s.to_status),
             )
         )
+    for st in stage_rows:
+        events.append(
+            HistoryEvent(
+                kind="stage",
+                occurred_at=st.changed_at,
+                from_status=st.from_status,
+                to_status=st.to_status,
+                changed_by=st.changed_by,
+                reason=st.reason,
+                metadata_=st.metadata_,
+                reason_display=st.reason,
+                actor_display=humanize_actor(st.changed_by, name_by_id),
+                from_status_zh=STAGE_ZH.get(st.from_status or "", st.from_status),
+                to_status_zh=STAGE_ZH.get(st.to_status, st.to_status),
+            )
+        )
     for h in relink_rows:
         events.append(
             HistoryEvent(
@@ -915,7 +947,8 @@ def get_ticket_history(
         )
     # Stable merge sort: status and relink with the same timestamp keep
     # status-first (status is the cause; relink is often the effect).
-    events.sort(key=lambda e: (e.occurred_at, 0 if e.kind == "status" else 1))
+    _kind_order = {"status": 0, "stage": 1, "hub_issue_link": 2}
+    events.sort(key=lambda e: (e.occurred_at, _kind_order.get(e.kind, 9)))
     # KSM 工单：解析源系统流转节点（handleSteps）供前端处理节点区块展示。
     ksm_nodes = parse_ksm_nodes(ticket.source_payload) if ticket.source_code == "ksm" else []
     return HistoryResponse(ticket_id=ticket_id, items=events, ksm_nodes=ksm_nodes)

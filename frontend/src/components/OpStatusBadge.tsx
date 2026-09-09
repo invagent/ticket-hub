@@ -53,6 +53,7 @@ export function OpStatusBadge({ status }: { status: string | null | undefined })
  * - 其余（未毕业/无 hub）→ 回落 ticket 底层状态
  */
 export function ProcessStatusBadge({
+  stage,
   opStatus,
   hubStatus,
   predictedType,
@@ -60,6 +61,7 @@ export function ProcessStatusBadge({
   ticketStatus,
   ticketStatusLabel,
 }: {
+  stage?: string | null; // ADR-0017 统一主状态（有值优先）
   opStatus: string | null | undefined;
   hubStatus: string | null | undefined;
   predictedType: string | null | undefined;
@@ -67,7 +69,8 @@ export function ProcessStatusBadge({
   ticketStatus: string;
   ticketStatusLabel: (s: string) => string;
 }) {
-  const stage = computeProcessStage({
+  const ps = computeProcessStage({
+    stage,
     predictedType,
     hubIssueId,
     hubStatus,
@@ -75,13 +78,13 @@ export function ProcessStatusBadge({
     ticketStatus,
     ticketStatusLabel,
   });
-  const c = STAGE_TONE_STYLE[stage.tone];
+  const c = STAGE_TONE_STYLE[ps.tone];
   return (
     <span
       className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
       style={{ background: c.bg, color: c.fg, borderColor: c.bd }}
     >
-      {stage.label}
+      {ps.label}
     </span>
   );
 }

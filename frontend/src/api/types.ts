@@ -2281,9 +2281,9 @@ export interface paths {
         put?: never;
         /**
          * Ticket Reply Endpoint
-         * @description 向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。
-         *
-         *     提交内容支持按条目自动拼接已完成子任务的解决方案说明。
+         * @description 向 KSM/智齿提交回复：
+         *     若存在独立子任务，要求至少有一个子任务已处理/答复；
+         *     支持自动按条目拼接已完成子任务的解决方案说明。
          */
         post: operations["ticket_reply_endpoint_api_tickets__ticket_id__reply_post"];
         delete?: never;
@@ -3470,10 +3470,12 @@ export interface components {
          * HistoryEvent
          * @description One row in the merged ticket timeline.
          *
-         *     Two `kind` values are emitted:
+         *     Three `kind` values are emitted:
          *       - 'status'        — a status_history transition (from→to)
          *       - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start
          *                            of an association; effective_to non-null = closed)
+         *       - 'stage'         — ADR-0017 统一主状态变迁（entity_type='ticket_stage'），
+         *                            from/to 是 stage 枚举，*_zh 走 STAGE_ZH
          *
          *     Sorted by `occurred_at` ascending in the response (oldest → newest); the
          *     frontend reverses for display.
@@ -3499,7 +3501,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "status" | "hub_issue_link";
+            kind: "status" | "hub_issue_link" | "stage";
             /** Metadata */
             metadata_?: {
                 [key: string]: unknown;
@@ -3685,6 +3687,12 @@ export interface components {
             self_found: boolean;
             /** Short Code */
             short_code: string;
+            /** Stage */
+            stage?: string | null;
+            /** Stage Changed At */
+            stage_changed_at?: string | null;
+            /** Stage Label */
+            stage_label?: string | null;
             /** Status */
             status: string;
             /** Status Changed At */
@@ -3795,6 +3803,12 @@ export interface components {
             self_found: boolean;
             /** Short Code */
             short_code: string;
+            /** Stage */
+            stage?: string | null;
+            /** Stage Changed At */
+            stage_changed_at?: string | null;
+            /** Stage Label */
+            stage_label?: string | null;
             /** Status */
             status: string;
             /** Status Changed At */
@@ -5074,6 +5088,8 @@ export interface components {
             handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Short Code */
+            hub_short_code?: string | null;
             /** Hub Status */
             hub_status?: string | null;
             /** Id */
@@ -5170,6 +5186,12 @@ export interface components {
             source_ticket_id: string | null;
             /** Source Ticket Number */
             source_ticket_number?: string | null;
+            /** Stage */
+            stage?: string | null;
+            /** Stage Changed At */
+            stage_changed_at?: string | null;
+            /** Stage Label */
+            stage_label?: string | null;
             /** Status */
             status: string;
             /** Title */
@@ -5245,6 +5267,8 @@ export interface components {
             handler_user_name?: string | null;
             /** Hub Issue Id */
             hub_issue_id: number | null;
+            /** Hub Short Code */
+            hub_short_code?: string | null;
             /** Hub Status */
             hub_status?: string | null;
             /** Id */
@@ -5313,6 +5337,12 @@ export interface components {
             source_ticket_id: string | null;
             /** Source Ticket Number */
             source_ticket_number?: string | null;
+            /** Stage */
+            stage?: string | null;
+            /** Stage Changed At */
+            stage_changed_at?: string | null;
+            /** Stage Label */
+            stage_label?: string | null;
             /** Status */
             status: string;
             /** Title */
@@ -9532,6 +9562,8 @@ export interface operations {
                 source_ticket_q?: string | null;
                 op_status?: string | null;
                 op_statuses?: string[] | null;
+                stage?: string | null;
+                stages?: string[] | null;
                 received_from?: string | null;
                 received_to?: string | null;
                 created_from?: string | null;

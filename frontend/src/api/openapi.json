@@ -2568,7 +2568,7 @@
         "type": "object"
       },
       "HistoryEvent": {
-        "description": "One row in the merged ticket timeline.\n\nTwo `kind` values are emitted:\n  - 'status'        — a status_history transition (from→to)\n  - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start\n                       of an association; effective_to non-null = closed)\n\nSorted by `occurred_at` ascending in the response (oldest → newest); the\nfrontend reverses for display.",
+        "description": "One row in the merged ticket timeline.\n\nThree `kind` values are emitted:\n  - 'status'        — a status_history transition (from→to)\n  - 'hub_issue_link' — a ticket_hub_issue_history row (effective_from start\n                       of an association; effective_to non-null = closed)\n  - 'stage'         — ADR-0017 统一主状态变迁（entity_type='ticket_stage'），\n                       from/to 是 stage 枚举，*_zh 走 STAGE_ZH\n\nSorted by `occurred_at` ascending in the response (oldest → newest); the\nfrontend reverses for display.",
         "properties": {
           "actor_display": {
             "anyOf": [
@@ -2662,7 +2662,8 @@
           "kind": {
             "enum": [
               "status",
-              "hub_issue_link"
+              "hub_issue_link",
+              "stage"
             ],
             "title": "Kind",
             "type": "string"
@@ -3319,6 +3320,40 @@
             "title": "Short Code",
             "type": "string"
           },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "stage_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Changed At"
+          },
+          "stage_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Label"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -3740,6 +3775,40 @@
           "short_code": {
             "title": "Short Code",
             "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "stage_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Changed At"
+          },
+          "stage_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Label"
           },
           "status": {
             "title": "Status",
@@ -7794,6 +7863,17 @@
             ],
             "title": "Hub Issue Id"
           },
+          "hub_short_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Short Code"
+          },
           "hub_status": {
             "anyOf": [
               {
@@ -8252,6 +8332,40 @@
             ],
             "title": "Source Ticket Number"
           },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "stage_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Changed At"
+          },
+          "stage_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Label"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -8545,6 +8659,17 @@
               }
             ],
             "title": "Hub Issue Id"
+          },
+          "hub_short_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Short Code"
           },
           "hub_status": {
             "anyOf": [
@@ -8868,6 +8993,40 @@
               }
             ],
             "title": "Source Ticket Number"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "stage_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Changed At"
+          },
+          "stage_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Label"
           },
           "status": {
             "title": "Status",
@@ -15879,6 +16038,41 @@
           },
           {
             "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stages",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stages"
+            }
+          },
+          {
+            "in": "query",
             "name": "received_from",
             "required": false,
             "schema": {
@@ -16233,7 +16427,7 @@
     },
     "/api/tickets/{ticket_id}/reply": {
       "post": {
-        "description": "向 KSM/智齿提交回复：只有至少有一个子任务已答复(answered)时才允许提交。\n\n提交内容支持按条目自动拼接已完成子任务的解决方案说明。",
+        "description": "向 KSM/智齿提交回复：\n若存在独立子任务，要求至少有一个子任务已处理/答复；\n支持自动按条目拼接已完成子任务的解决方案说明。",
         "operationId": "ticket_reply_endpoint_api_tickets__ticket_id__reply_post",
         "parameters": [
           {
