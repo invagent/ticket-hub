@@ -23,7 +23,7 @@ Monorepo，三个独立子栈：
 - `cli/` — Typer CLI（OpenAPI-driven）
 - `scripts/` — 对账、评测、迁移、压测、种子脚本（Python；**不进 docker 镜像**，镜像只 bake `backend/`，SIT 要跑得 `docker cp` 进容器）
 - `docs/adr/` — 架构决策记录（已采纳：0001/0002/0005/0012/0013/0014/0015/0016）
-- `docs/spec/` — data_model / api / routing 规格
+- `docs/spec/` — data_model / api / routing 规格；**`state-machines.md` = 各业务模块实际状态机与流程图（13 张 mermaid，含死值/越界写标注，ADR-0017 收口依据）**
 - `docs/superpowers/plans/` — **每个功能的实施计划（2026-07~08 新增功能的权威设计意图都在这里，比代码注释更完整）**
 - `docs/manual/operation-manual.md` — 产品操作手册（面向使用者）
 - `docs/memory/` — 另一位协作者的项目记忆（部署/踩坑/智齿接入）
