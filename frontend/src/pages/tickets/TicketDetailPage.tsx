@@ -618,10 +618,20 @@ export function TicketDetailPage() {
   const effectiveType = hub.data?.type ?? d?.predicted_type;
   const isDevType = effectiveType === "Bug_fix" || effectiveType === "Demand";
   const isOperation = effectiveType === "Operation";
-  // 答复完成(answered)或已关单(closed/transferred_return)：处理区只读，不可再编辑/提交（op_status 权威取 hub 详情）
+  // 答复完成(answered)或已关单/已退回：处理区只读，不可再编辑/提交
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
+  const isTicketTerminal =
+    d?.status === "closed" ||
+    d?.status === "transferred_return" ||
+    d?.status === "done" ||
+    d?.status === "superseded" ||
+    d?.status === "rejected";
   const opDone =
-    opStatus === "answered" || opStatus === "closed" || opStatus === "transferred_return";
+    opStatus === "answered" ||
+    opStatus === "closed" ||
+    opStatus === "transferred_return" ||
+    hub.data?.status === "returned" ||
+    isTicketTerminal;
   // 反思诊断抽屉：knowledge_op/supervisor/admin 全量可见；此外 reviewing 态
   // （AI 答复打分未过转人工审核）本工单处理人本人也能看——只诊断不改 skill
   // （ReflectDrawer 内部按角色再拆一层，RemedyColumn 仍 knowledge_op-only）。
