@@ -1103,6 +1103,20 @@ def update_subtask_endpoint(
     if body.product_line_code or body.module:
         upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)
 
+    # 同步更新关联 Ticket 的分类快照
+    ticket = (
+        db.query(Ticket)
+        .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
+        .first()
+    )
+    if ticket is not None:
+        if body.type is not None and (ticket.hub_issue_id == hub.id or ticket.predicted_type is None):
+            ticket.predicted_type = body.type
+        if body.product_line_code is not None:
+            ticket.product_line_code = body.product_line_code
+        if body.module is not None:
+            ticket.module = body.module
+
     db.commit()
     db.refresh(hub)
 
@@ -1184,6 +1198,16 @@ def confirm_subtask_endpoint(
         # 答复生成成功后更新为已答复 (answered)
         hub.status = "answered"
         hub.op_status = OP_ANSWERED
+
+        # 若关联工单存在且该 Hub 为主任务，同步工单类型为 Operation
+        ticket = (
+            db.query(Ticket)
+            .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
+            .first()
+        )
+        if ticket is not None and ticket.hub_issue_id == hub.id:
+            ticket.predicted_type = "Operation"
+
         db.commit()
         db.refresh(hub)
 

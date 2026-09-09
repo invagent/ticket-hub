@@ -973,18 +973,19 @@ def list_ticket_subtasks(
     if ticket is None:
         raise HTTPException(status_code=404, detail="ticket not found")
 
-    subs = (
-        db.execute(
-            select(HubIssue)
-            .where(
-                HubIssue.ticket_id == ticket_id,
-                HubIssue.id != (ticket.hub_issue_id or -1),
-                HubIssue.deleted_at.is_(None),
+    subs = list(
+        dict.fromkeys(
+            db.execute(
+                select(HubIssue)
+                .where(
+                    (HubIssue.ticket_id == ticket_id) | (HubIssue.id == ticket.hub_issue_id),
+                    HubIssue.deleted_at.is_(None),
+                )
+                .order_by(HubIssue.id.asc())
             )
-            .order_by(HubIssue.id.asc())
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
     )
 
     user_ids = {s.assigned_user_id for s in subs if s.assigned_user_id is not None}

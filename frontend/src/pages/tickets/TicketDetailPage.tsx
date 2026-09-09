@@ -1236,6 +1236,7 @@ export function TicketDetailPage() {
                           hub.data?.short_code ??
                           (d as any).hub_short_code ??
                           (d.hub_issue_id ? `HUB-${String(d.hub_issue_id).padStart(6, "0")}` : d.short_code),
+                        hub_id: hub.data?.id ?? d.hub_issue_id ?? undefined,
                         title: hub.data?.title ?? d.title,
                         predicted_type: hub.data?.type ?? d.predicted_type,
                         product_line_code: hub.data?.product_line_code ?? d.product_line_code,
@@ -1243,7 +1244,7 @@ export function TicketDetailPage() {
                         status: hub.data?.status ?? d.status,
                         assigned_user_name: d.assigned_user_name,
                         assigned_user_id: hub.data?.assigned_user_id ?? d.assigned_user_id,
-                        cached_reply_content: d.cached_reply_content,
+                        cached_reply_content: hub.data?.reply_content ?? d.cached_reply_content,
                       }}
                     />
                   ) : (
@@ -2641,6 +2642,7 @@ function SubTicketList({
   drafts: { title: string; type: string; product_line?: string; module?: string }[];
   self: {
     short_code: string;
+    hub_id?: number;
     title: string | null | undefined;
     predicted_type: string | null | undefined;
     product_line_code?: string | null;
@@ -2998,9 +3000,10 @@ function SubTicketList({
       return;
     }
 
-    // 若是真实落库的子任务（数字 id），调用真实后端 confirm-subtask 接口，成功后更新状态
-    if (typeof key === "number") {
-      confirmSubtaskMutation.mutate({ hubId: key });
+    // 若有对应的 Hub 任务（数字 id 或 self.hub_id），调用真实后端 confirm-subtask 接口，成功后更新状态
+    const targetHubId = typeof key === "number" ? key : self.hub_id;
+    if (targetHubId) {
+      confirmSubtaskMutation.mutate({ hubId: targetHubId });
     } else {
       updateRow(key, { confirmed: true });
       const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
@@ -3234,7 +3237,13 @@ function SubTicketList({
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
                       value={st.type}
-                      onChange={(e) => updateRow(rowKey, { type: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateRow(rowKey, { type: val });
+                        if (self.hub_id) {
+                          updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { type: val } });
+                        }
+                      }}
                       className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
                     >
                       <option value="">选择类型</option>
@@ -3249,7 +3258,15 @@ function SubTicketList({
                     <SearchableSelect
                       ariaLabel="子任务产品分类"
                       value={st.product_line_code}
-                      onChange={(val) => updateRow(rowKey, { product_line_code: val, module: "" })}
+                      onChange={(val) => {
+                        updateRow(rowKey, { product_line_code: val, module: "" });
+                        if (self.hub_id) {
+                          updateSubtaskMutation.mutate({
+                            hubId: self.hub_id,
+                            body: { product_line_code: val, module: "" },
+                          });
+                        }
+                      }}
                       options={productLineOptions}
                       placeholder="选择产品分类"
                       width={140}
@@ -3260,7 +3277,12 @@ function SubTicketList({
                     <SubTaskRowModuleSelect
                       plc={st.product_line_code}
                       value={st.module}
-                      onChange={(val) => updateRow(rowKey, { module: val })}
+                      onChange={(val) => {
+                        updateRow(rowKey, { module: val });
+                        if (self.hub_id) {
+                          updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { module: val } });
+                        }
+                      }}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3696,8 +3718,9 @@ function SubTicketList({
           onClose={() => setNoteModal(null)}
           onConfirm={(content) => {
             updateRow(noteModal.key, { solution: content });
-            if (typeof noteModal.key === "number") {
-              updateSubtaskMutation.mutate({ hubId: noteModal.key, body: { solution: content } });
+            const targetHubId = typeof noteModal.key === "number" ? noteModal.key : self.hub_id;
+            if (targetHubId) {
+              updateSubtaskMutation.mutate({ hubId: targetHubId, body: { solution: content } });
             }
             onSyncNote?.(noteModal.title, content);
             const nextTasks = getAllTasks({ key: noteModal.key, solution: content });
