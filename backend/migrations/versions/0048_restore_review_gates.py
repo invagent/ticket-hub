@@ -1,6 +1,6 @@
 """restore in-flight review gates (pending_review, pending_linear_review, pending)
 
-Revision ID: 0048_restore_in_flight_review_gates
+Revision ID: 0048_restore_review_gates
 Revises: 0047_unify_statuses
 """
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0048_restore_in_flight_review_gates"
+revision: str = "0048_restore_review_gates"
 down_revision: str | Sequence[str] | None = "0047_unify_statuses"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
