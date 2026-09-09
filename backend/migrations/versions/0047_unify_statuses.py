@@ -1,6 +1,6 @@
 """unify ticket and subtask statuses (two-tier SSOT)
 
-Revision ID: 0047_unify_ticket_and_subtask_statuses
+Revision ID: 0047_unify_statuses
 Revises: 0046_hub_issue_ticket_id
 """
 
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0047_unify_ticket_and_subtask_statuses"
+revision: str = "0047_unify_statuses"
 down_revision: str | Sequence[str] | None = "0046_hub_issue_ticket_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
