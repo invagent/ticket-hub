@@ -41,7 +41,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from adapters.ai_cs import AiCsBusinessError, AiCsError
@@ -897,10 +897,17 @@ def list_reviewing_answers(
 
     行级可见性：主管/admin 看全部；处理人只看处理人=自己的（_handler_scope）。
     """
-    q = db.query(HubIssue).filter(
-        HubIssue.deleted_at.is_(None),
-        HubIssue.type == "Operation",
-        HubIssue.op_status == "reviewing",
+    q = (
+        db.query(HubIssue)
+        .outerjoin(Ticket, (Ticket.hub_issue_id == HubIssue.id) | (Ticket.id == HubIssue.ticket_id))
+        .filter(
+            HubIssue.deleted_at.is_(None),
+            or_(
+                and_(HubIssue.type == "Operation", HubIssue.op_status == "reviewing"),
+                Ticket.status == "reviewing",
+            ),
+        )
+        .distinct()
     )
     scope = _handler_scope(db, user)
     if scope is not None:
@@ -1998,10 +2005,10 @@ def _get_pending_review_hub(db: Session, hub_issue_id: int) -> HubIssue:
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None or hub.deleted_at is not None:
         raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
-    if hub.status != "pending_review":
+    if hub.status not in ("pending_review", "draft"):
         raise HTTPException(
             status_code=409,
-            detail=f"hub {hub.short_code} status={hub.status!r} 非 pending_review，不可操作",
+            detail=f"hub {hub.short_code} status={hub.status!r} 非待确认状态，不可操作",
         )
     return hub
 
@@ -2051,7 +2058,7 @@ def _get_reclassifiable_hub(db: Session, hub_issue_id: int) -> HubIssue:
     hub = db.get(HubIssue, hub_issue_id)
     if hub is None or hub.deleted_at is not None:
         raise HTTPException(status_code=409, detail=f"hub_issue {hub_issue_id} not found")
-    if hub.status == "pending_review":
+    if hub.status in ("pending_review", "draft"):
         return hub
     if hub.type == "Operation" and hub.op_status in (OP_PROCESSING, OP_REVIEWING):
         return hub
@@ -2141,7 +2148,7 @@ def confirm_classification(
     )
     db.commit()
 
-    if hub.type in ("Bug_fix", "Demand") and hub.status == "created":
+    if hub.type in ("Bug_fix", "Demand") and hub.status in ("created", "processing"):
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
     # 接管主路径已改回入库/派单后立即触发（webhooks.py::_run_ksm_takeover）；
@@ -2269,8 +2276,8 @@ def reclassify(
     db.commit()
 
     # 直推 Linear：处理中 Operation 转研发（用户决策直推），或闸门③关的 pending_review 路径。
-    # status='created' 即已定为直推分支，据此触发（与上方 status 分流一致）。
-    if body.new_type in ("Bug_fix", "Demand") and hub.status == "created":
+    # status='processing' 即已定为直推分支，据此触发（与上方 status 分流一致）。
+    if body.new_type in ("Bug_fix", "Demand") and hub.status in ("created", "processing"):
         background_tasks.add_task(push_hub_issue_to_linear, hub.id)
 
     # 改判本身即视为已确认分类，同 confirm-classification 一样触发接管。
@@ -2390,10 +2397,14 @@ def confirm_linear_push(
     权限放宽到处理人本人（_authorize_hub_handler）。"""
     _authorize_hub_handler(db, body.hub_issue_id, user)
     hub = db.get(HubIssue, body.hub_issue_id)
-    if hub is None or hub.deleted_at is not None or hub.status != "pending_linear_review":
+    if (
+        hub is None
+        or hub.deleted_at is not None
+        or hub.status not in ("pending_linear_review", "draft")
+    ):
         raise HTTPException(
             status_code=409,
-            detail=f"hub_issue {body.hub_issue_id} 非 pending_linear_review，不可确认推送",
+            detail=f"hub_issue {body.hub_issue_id} 非待确认推送状态，不可确认推送",
         )
     assignee_user_id = body.assignee_user_id
     if assignee_user_id is None:
@@ -2407,7 +2418,7 @@ def confirm_linear_push(
         entity_type="hub_issue",
         entity_id=hub.id,
         from_status=prev,
-        to_status="created",
+        to_status=hub.status,
         changed_by=f"user:{user.name}",
         reason="确认推送 Linear",
     )

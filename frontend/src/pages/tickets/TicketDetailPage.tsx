@@ -1240,7 +1240,13 @@ export function TicketDetailPage() {
                       onSyncAllTasksNote={(formatted) => {
                         setNoteDrafts((prev) => ({ ...prev, 0: formatted }));
                       }}
-                      canEdit={isCurrentNode && isSupervisor() && !opDone}
+                      canEdit={
+                        isCurrentNode &&
+                        (isSupervisor() ||
+                          (d.handler_user_id != null && currentUserId() === d.handler_user_id) ||
+                          (d.assigned_user_id != null && currentUserId() === d.assigned_user_id)) &&
+                        !opDone
+                      }
                       externalSolutions={externalTaskSolutions}
                       self={{
                         short_code:
@@ -2786,6 +2792,7 @@ function SubTicketList({
     key: string | number;
     title: string;
     content: string;
+    canEdit?: boolean;
   } | null>(null);
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
 
@@ -3372,6 +3379,9 @@ function SubTicketList({
             {subtasks.map((stk: any) => {
               const rowKey = stk.id;
               const rowTitle = stk.title ?? `子任务 #${stk.id}`;
+              const isStkAssignee =
+                stk.assigned_user_id != null && currentUserId() === stk.assigned_user_id;
+              const canEditThisRow = canEdit || isStkAssignee;
               const st = getRowState(rowKey, {
                 type: stk.type ?? "",
                 product_line_code: stk.product_line_code ?? "",
@@ -3485,6 +3495,7 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: st.solution,
+                            canEdit: canEditThisRow,
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
@@ -3492,7 +3503,7 @@ function SubTicketList({
                       >
                         {truncSolution}
                       </button>
-                    ) : canEdit ? (
+                    ) : canEditThisRow ? (
                       <button
                         type="button"
                         onClick={() =>
@@ -3500,6 +3511,7 @@ function SubTicketList({
                             key: rowKey,
                             title: rowTitle,
                             content: "",
+                            canEdit: canEditThisRow,
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
@@ -3715,7 +3727,7 @@ function SubTicketList({
         <SubTaskNoteModal
           title={noteModal.title}
           initialContent={noteModal.content}
-          canEdit={canEdit}
+          canEdit={noteModal.canEdit ?? canEdit}
           onClose={() => setNoteModal(null)}
           onConfirm={(content) => {
             updateRow(noteModal.key, { solution: content });

@@ -50,9 +50,9 @@ def upgrade() -> None:
     )
 
     # 2. 任务执行状态（hub_issues.status）收敛清洗为 4 态：draft / processing / answered / returned
-    # 待确认阶段（含各类网关闸门拦截态）
+    # 待确认阶段（仅清洗普通初始态 created，严格保留在途闸门审核态 pending_review / pending_linear_review / pending）
     op.execute(
-        "UPDATE hub_issues SET status = 'draft' WHERE status IN ('created', 'pending_review', 'pending_linear_review', 'pending')"
+        "UPDATE hub_issues SET status = 'draft' WHERE status = 'created'"
     )
 
     # 开发中/进行中阶段
@@ -70,9 +70,9 @@ def upgrade() -> None:
         "UPDATE hub_issues SET status = 'returned' WHERE status IN ('returned', 'canceled')"
     )
 
-    # 兜底：其余非法值归入 draft
+    # 兜底：其余非法值归入 draft（严格保护在途闸门态）
     op.execute(
-        "UPDATE hub_issues SET status = 'draft' WHERE status NOT IN ('draft', 'processing', 'answered', 'returned')"
+        "UPDATE hub_issues SET status = 'draft' WHERE status NOT IN ('draft', 'processing', 'answered', 'returned', 'pending_review', 'pending_linear_review', 'pending')"
     )
 
     # 3. 清理非应用类（研发类/内部任务）残留的 op_status
