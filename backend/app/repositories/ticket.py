@@ -208,34 +208,46 @@ class TicketRepository:
             )
             base = base.where(cond)
             count_base = count_base.where(cond)
-        if op_statuses:
+        if op_statuses or op_status:
+            targets = list(op_statuses) if op_statuses else [op_status]  # type: ignore[list-item]
             dev_types = ("Bug_fix", "Demand")
-            conds: list[Any] = [HubIssue.op_status.in_(op_statuses)]
-            if "processing" in op_statuses:
-                conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status != "released"))
-            if "answered" in op_statuses:
-                conds.append(and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"))
+            dev_processing_statuses = ("in_progress", "processing", "created", "draft")
+            dev_answered_statuses = ("released", "answered")
+
+            conds: list[Any] = [HubIssue.op_status.in_(targets)]
+            if "processing" in targets:
+                conds.append(
+                    and_(HubIssue.type.in_(dev_types), HubIssue.status.in_(dev_processing_statuses))
+                )
+            if "answered" in targets:
+                conds.append(
+                    and_(HubIssue.type.in_(dev_types), HubIssue.status.in_(dev_answered_statuses))
+                )
+            if "transferred_return" in targets:
+                conds.append(
+                    or_(HubIssue.op_status == "transferred_return", HubIssue.status == "returned")
+                )
+            if "closed" in targets:
+                conds.append(
+                    or_(HubIssue.op_status == "closed", HubIssue.status.in_(("closed", "resolved")))
+                )
+
             hub_cond = or_(*conds) if len(conds) > 1 else conds[0]
             hub_sub = select(HubIssue.id).where(hub_cond)
-            ticket_cond = or_(Ticket.status.in_(op_statuses), Ticket.hub_issue_id.in_(hub_sub))
-            base = base.where(ticket_cond)
-            count_base = count_base.where(ticket_cond)
-        elif op_status:
-            # 处理状态筛选：优先匹配 Ticket.status，同时兼容按所挂 hub_issue 的 op_status 过滤
-            hub_cond = HubIssue.op_status == op_status
-            dev_types = ("Bug_fix", "Demand")
-            if op_status == "processing":
-                hub_cond = or_(
-                    hub_cond,
-                    and_(HubIssue.type.in_(dev_types), HubIssue.status != "released"),
+
+            # 严格以工单生命周期为准：已处于终态（closed / transferred_return / rejected / superseded）的工单，
+            # 绝不因 Hub 的陈旧状态或非 released 状态而误穿透到「处理中」等活跃状态列表。
+            terminal_statuses = ("closed", "transferred_return", "rejected", "superseded")
+            if any(s in ("processing", "reviewing", "supplementing") for s in targets) and not any(
+                s in terminal_statuses for s in targets
+            ):
+                ticket_cond = and_(
+                    Ticket.status.not_in(terminal_statuses),
+                    or_(Ticket.status.in_(targets), Ticket.hub_issue_id.in_(hub_sub)),
                 )
-            elif op_status == "answered":
-                hub_cond = or_(
-                    hub_cond,
-                    and_(HubIssue.type.in_(dev_types), HubIssue.status == "released"),
-                )
-            hub_sub = select(HubIssue.id).where(hub_cond)
-            ticket_cond = or_(Ticket.status == op_status, Ticket.hub_issue_id.in_(hub_sub))
+            else:
+                ticket_cond = or_(Ticket.status.in_(targets), Ticket.hub_issue_id.in_(hub_sub))
+
             base = base.where(ticket_cond)
             count_base = count_base.where(ticket_cond)
 

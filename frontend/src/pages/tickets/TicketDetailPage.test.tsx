@@ -795,11 +795,11 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       const enterDescBtn = await screen.findByRole("button", { name: "录入说明" });
       fireEvent.click(enterDescBtn);
 
-      const modalTitle = await screen.findByText(/编辑任务解决方案/);
+      const modalTitle = await screen.findByText(/编辑指派说明/);
       expect(modalTitle).toBeInTheDocument();
 
       // 3. 在弹窗中输入解决方案并点击保存
-      const modalTextarea = screen.getByPlaceholderText(/请输入处理说明与解决方案/);
+      const modalTextarea = screen.getByPlaceholderText(/请输入指派说明/);
       fireEvent.change(modalTextarea, { target: { value: "已协助处理解绑成功" } });
 
       const saveBtn = screen.getByRole("button", { name: "保存" });
@@ -807,7 +807,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
 
       // 4. 验证弹窗关闭，且处理说明在解决方案有值后已自动全量同步为多任务规范模板
       await waitFor(() => {
-        expect(screen.queryByText(/编辑任务解决方案/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/编辑指派说明/)).not.toBeInTheDocument();
       });
 
       expect(screen.getByText("问题1：")).toBeInTheDocument();
@@ -919,8 +919,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       fireEvent.click(solutionTextBtn);
 
       // 弹窗直接处于可编辑状态，包含输入框与确认按钮
-      expect(await screen.findByText(/编辑任务解决方案（/)).toBeInTheDocument();
-      const textarea = screen.getByPlaceholderText(/请输入处理说明与解决方案/) as HTMLTextAreaElement;
+      expect(await screen.findByText(/编辑指派说明（/)).toBeInTheDocument();
+      const textarea = screen.getByPlaceholderText(/请输入指派说明/) as HTMLTextAreaElement;
       expect(textarea).toBeInTheDocument();
       expect(textarea.value).toBe("方案内容");
 
@@ -931,7 +931,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
 
       // 弹窗关闭，主单处理说明同步包含新方案
       await waitFor(() => {
-        expect(screen.queryByPlaceholderText(/请输入处理说明与解决方案/)).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText(/请输入指派说明/)).not.toBeInTheDocument();
       });
       const matches = await screen.findAllByText(/修改后的完整解决方案/);
       expect(matches.length).toBeGreaterThanOrEqual(1);

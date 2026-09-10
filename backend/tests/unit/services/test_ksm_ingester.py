@@ -497,6 +497,34 @@ def test_ingest_reject_on_answered_ticket_already_open(db_session, monkeypatch) 
     assert existing.status == "processing"
 
 
+def test_ingest_answered_with_status_4_does_not_reopen(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """工单已答复时，KSM 重推携带 sourceStatus=4（关单同步），坚决不当作驳回重开。"""
+    from app.services.hub_issues.op_status import OP_ANSWERED
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_ANSWERED,
+        bill_id="bill-closed-sync",
+        short_code="TKT-CS-1",
+        hub_short_code="HUB-CS-1",
+    )
+    existing.status = "answered"
+    db_session.commit()
+
+    called = False
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda db, ticket, payload: True)
+    ing = mod.KSMIngester(db_session)
+    ing.ingest({"billId": "bill-closed-sync", "sourceStatus": "4", "status": "4"})
+    db_session.commit()
+
+    db_session.refresh(hub)
+    db_session.refresh(existing)
+    assert hub.op_status == OP_ANSWERED  # 保持 answered，未被打回 processing
+    assert hub.reject_count == 0  # 驳回计数不增加
+    assert existing.status == "answered"  # 工单不被误重开
+
+
 def test_ingest_noop_on_closed(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """已存在 ticket 且 hub.op_status=closed（硬终态）→ 原 no-op，不调 content_refresh。"""
     from app.services.hub_issues.op_status import OP_CLOSED

@@ -1025,11 +1025,11 @@ export interface paths {
          * Confirm Subtask Endpoint
          * @description 确认子任务：
          *
-         *     - 应用类 (Operation): 触发 AI 生成答复，回填解决方案说明，状态变更为 answered(已答复)
+         *     - 应用类 (Operation): 触发 AI 生成答复，回填指派说明，状态变更为 answered(已答复)
          *     - 需求类 / Bug 类 (Demand / Bug_fix):
-         *       1. 必须已录入解决方案说明，否则拦截
-         *       2. 路由模块责任人，若查无责任人且未传 override 则提示需要人工选择责任人
-         *       3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定责任人
+         *       1. 必须已录入指派说明，否则拦截
+         *       2. 责任人为任务处理人，若未分配处理人则拦截
+         *       3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定处理人
          */
         post: operations["confirm_subtask_endpoint_api_hub_issues__hub_issue_id__confirm_subtask_post"];
         delete?: never;

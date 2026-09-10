@@ -1208,11 +1208,11 @@ def confirm_subtask_endpoint(
 ) -> ConfirmSubTaskResponse:
     """确认子任务：
 
-    - 应用类 (Operation): 触发 AI 生成答复，回填解决方案说明，状态变更为 answered(已答复)
+    - 应用类 (Operation): 触发 AI 生成答复，回填指派说明，状态变更为 answered(已答复)
     - 需求类 / Bug 类 (Demand / Bug_fix):
-      1. 必须已录入解决方案说明，否则拦截
-      2. 路由模块责任人，若查无责任人且未传 override 则提示需要人工选择责任人
-      3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定责任人
+      1. 必须已录入指派说明，否则拦截
+      2. 责任人为任务处理人，若未分配处理人则拦截
+      3. 推送到 Linear，状态变更为 processing(处理中)，责任人更新为指定处理人
     """
     _authorize_hub_handler(db, hub_issue_id, user)
     hub = db.get(HubIssue, hub_issue_id)
@@ -1282,48 +1282,43 @@ def confirm_subtask_endpoint(
 
     # 2. 需求类 / Bug 类 (Demand / Bug_fix) 分支
     elif hub.type in ("Bug_fix", "Demand"):
-        # 校验：推送前需要录入解决方案说明
+        # 校验：推送前需要录入指派说明
         solution = (hub.reply_content or "").strip()
         if not solution:
             raise HTTPException(
                 status_code=400,
-                detail="需求类或 Bug 类任务在推送前必须先录入解决方案说明",
+                detail="需求类或 Bug 类任务在推送前必须先录入指派说明",
             )
 
-        # 责任人路由匹配
-        assignee_id = body.assignee_override_user_id
+        # 责任人：直接以任务处理人为准（优先使用 override，否则取 hub.assigned_user_id）
+        assignee_id = body.assignee_override_user_id or hub.assigned_user_id
         if assignee_id is None:
-            owner = peek_module_owner(db, hub.product_line_code, hub.module)
-            if owner is not None:
-                assignee_id = owner.id
-
-        if assignee_id is None:
-            # 查无责任人，需要手工选择责任人进行推送
-            return ConfirmSubTaskResponse(
-                hub_issue_id=hub.id,
-                status=hub.status,
-                solution=hub.reply_content,
-                assigned_user_id=hub.assigned_user_id,
-                need_manual_assignee=True,
-                message="未找到该产品线模块的研发责任人，请手动选择责任人后再进行推送",
+            raise HTTPException(
+                status_code=400,
+                detail="任务处理人为空，请先分配处理人后再进行确认推送",
             )
 
         # 执行推送到 Linear
         from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 
-        # 消费/更新轮询游标（若是通过模块匹配到的）
-        if body.assignee_override_user_id is None:
-            from app.services.hub_issues.module_owner import consume_module_owner
-
-            consume_module_owner(db, hub.product_line_code, hub.module)
-
         push_res = push_hub_issue_to_linear(hub.id, db, assignee_override_user_id=assignee_id)
 
         settings = get_settings()
         if settings.linear_push_enabled and push_res is None:
-            raise HTTPException(
-                status_code=502, detail="推送到 Linear 失败，请检查网络或 Linear 配置"
+            from app.models import StatusHistory
+
+            last_pending = (
+                db.query(StatusHistory)
+                .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+                .order_by(StatusHistory.id.desc())
+                .first()
             )
+            err_detail = (
+                last_pending.reason
+                if last_pending and last_pending.reason
+                else "推送到 Linear 失败，请检查网络或 Linear 配置"
+            )
+            raise HTTPException(status_code=502, detail=err_detail)
 
         hub.status = "processing"
         hub.assigned_user_id = assignee_id

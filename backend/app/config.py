@@ -179,10 +179,9 @@ class Settings(BaseSettings):
     # ---- Linear / hub_issue (D4) ----
     linear_api_key: str = ""
     linear_team_id: str = ""  # Linear team ID to create issues in
-    # 转研发推送出口：默认走飞书 webhook（下面三项），而非直连 Linear GraphQL。
-    # linear_webhook_enabled=True 时 push_hub_issue_to_linear 走 webhook；
-    # False 回落直连 Linear（linear_api_key + linear_team_id + linear_push_enabled）。
-    linear_webhook_enabled: bool = True
+    # 转研发推送出口：默认直连 Linear GraphQL（linear_api_key + linear_team_id + linear_push_enabled）。
+    # 当 linear_webhook_enabled=True 时走飞书 webhook 分流。
+    linear_webhook_enabled: bool = False
     linear_webhook_url: str = (
         "http://123.57.100.193/linear-webhook/feishu-ticket"
         "?access_token=cf23a80b86949372c2cddab05760a04309b4b6ec8e1ecc0a1fb58a167925bc3a"

@@ -82,6 +82,14 @@ class KSMIngester:
             self._sync_ksm_fields(existing, payload)
             hub = self._db.get(HubIssue, existing.hub_issue_id) if existing.hub_issue_id else None
             op = hub.op_status if hub is not None and hub.deleted_at is None else None
+
+            # 若 KSM 推送携带结案状态（sourceStatus=4 或 status=4），
+            # 属于答复后的关单状态同步或客户评价关单，绝不作为客户驳回重新打开工单
+            is_ksm_closed = str(payload.get("sourceStatus") or payload.get("status") or "") == "4"
+            if is_ksm_closed:
+                logger.info("ksm_ingest_closed_sync", bill_id=bill_id, existing_ticket_id=existing.id)
+                return self._dedup_result(existing)
+
             if op == OP_SUPPLEMENTING:
                 # 客户补料重推同 billId：content_refresh 刷内容 + 建新附件行，并把
                 # 工单转回 processing/agent，让 drain 重新扫到 → AI 自动重答 → 走

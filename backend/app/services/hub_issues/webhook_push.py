@@ -212,7 +212,7 @@ def build_webhook_fields(
         "handleUser": assignee_name,
         "handleSteps": _handle_steps_text(src),
         "feishuUrl": _feishu_url(src),
-        "handleDescription": hub.root_cause_analysis or "",
+        "handleDescription": hub.reply_content or hub.root_cause_analysis or "",
         "operate": _TRANSFER_TEXT.get(hub.type, ""),
     }
 

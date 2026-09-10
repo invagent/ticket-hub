@@ -40,7 +40,16 @@ from app.models import HubIssue, Ticket, User
 from app.repositories.status_history import StatusHistoryRepository
 from app.services.hub_issues.hub_dedup import maybe_supersede_duplicate
 from app.services.hub_issues.module_owner import consume_module_owner
-from app.services.hub_issues.webhook_push import push_hub_issue_to_webhook
+from app.services.hub_issues.webhook_push import (
+    _SOURCE_ZH,
+    _TICKET_TYPE_ZH,
+    _customer_name,
+    _feishu_url,
+    _primary_source_ticket,
+    _product_line_name,
+    _reporter_field,
+    push_hub_issue_to_webhook,
+)
 
 logger = get_logger(__name__)
 
@@ -76,7 +85,65 @@ def _mark_pending(db: Session, hub: HubIssue, *, reason: str) -> None:
 
 
 def _build_description(db: Session, hub: HubIssue) -> str:
-    parts = [hub.canonical_body or ""]
+    """构建 Linear Issue 描述正文（Markdown 结构化格式）。
+
+    包含：
+    1. 💡 指派说明（hub.reply_content）
+    2. 📝 原始问题描述（hub.canonical_body）
+    3. 📋 工单背景信息（短码、工单来源、客户名称、提单联系人、归属分类、系统链接）
+    4. 关联源工单引用底注
+    """
+    sections: list[str] = []
+
+    # 1. 💡 指派说明
+    instructions = (hub.reply_content or "").strip()
+    if instructions:
+        sections.append(f"### 💡 指派说明\n{instructions}")
+
+    # 2. 📝 原始问题描述
+    orig_body = (hub.canonical_body or "").strip()
+    if orig_body:
+        sections.append(f"### 📝 原始问题描述\n{orig_body}")
+
+    # 3. 📋 工单背景信息
+    meta_lines: list[str] = ["### 📋 工单背景信息"]
+    meta_lines.append(f"- **任务短码**: {hub.short_code} ({_TICKET_TYPE_ZH.get(hub.type, hub.type)})")
+
+    src = _primary_source_ticket(db, hub)
+    if src:
+        # 工单来源
+        source_name = _SOURCE_ZH.get(src.source_code or "", src.source_code or "未知")
+        ticket_no = src.source_ticket_number or src.source_ticket_id or src.short_code
+        meta_lines.append(f"- **工单来源**: {source_name} ({ticket_no})")
+
+        # 客户信息
+        cust_name = _customer_name(db, src) or (src.reporter_company or "")
+        if cust_name:
+            meta_lines.append(f"- **客户名称**: {cust_name}")
+
+        # 联系人信息
+        rep_name = _reporter_field(src, "name")
+        rep_mobile = _reporter_field(src, "mobile")
+        rep_email = _reporter_field(src, "email")
+        contact_parts = [p for p in [rep_name, rep_mobile, rep_email] if p]
+        if contact_parts:
+            meta_lines.append(f"- **提单联系人**: {' / '.join(contact_parts)}")
+
+    # 归属分类
+    pl_name = _product_line_name(db, hub.product_line_code)
+    cat_parts = [p for p in [pl_name, hub.module] if p]
+    if cat_parts:
+        meta_lines.append(f"- **归属分类**: {' / '.join(cat_parts)}")
+
+    # 系统链接
+    if src:
+        link = _feishu_url(src)
+        if link:
+            meta_lines.append(f"- **系统链接**: [点击在 Ticket-Hub 中查看详情]({link})")
+
+    sections.append("\n".join(meta_lines))
+
+    # 4. 底注引用
     sources = (
         db.query(Ticket)
         .filter(
@@ -88,34 +155,15 @@ def _build_description(db: Session, hub: HubIssue) -> str:
     )
     if sources:
         refs = ", ".join(f"{t.short_code} ({t.source_code or 'internal'})" for t in sources)
-        parts.append(f"\n---\nticket-hub: {hub.short_code} · source tickets: {refs}")
-    return "\n".join(p for p in parts if p).strip()
+        sections.append(f"---\n*ticket-hub: {hub.short_code} · source tickets: {refs}*")
+
+    return "\n\n".join(sections).strip()
 
 
 def _push_via_webhook(
     db: Session, hub: HubIssue, *, assignee_override_user_id: int | None = None
 ) -> LinearPushResult | None:
-    """转研发 webhook 分支。成功回写真实 Linear id/identifier（供展示/幂等/状态回同步）。
-
-    2026-09-04 手工重推实测纠正：webhook 响应体其实带真实 Linear
-    {"data":{"id","identifier","url"}}（旧代码/旧注释误以为拿不到，一直只存占位符
-    WEBHOOK-{short_code}，真实 identifier/url 从未落库，导致展示的是假编号、
-    linear_status_sync 也因 linear_uuid 恒 NULL 而无法回同步）。现在优先用
-    webhook_push 解析出的真实值；对方响应格式有出入解析不到时，才回落占位符
-    （不阻断推送，幂等仍靠 linear_identifier 非空）。
-
-    2026-09-08 修复两处与直连 Linear 分支（下方 push_hub_issue_to_linear 主体）
-    不一致的地方（TKT-006351 等 7 单复现——模块负责人未配置，本该在
-    pending_linear_review 卡人工确认，实际被静默推给了处理人）：
-      1. assignee_override_user_id 之前完全没被这个分支接收——工作台
-         confirm-linear-push 手选的人被直接丢弃，走这里又重新
-         consume_module_owner 选了一次（游标还被多推进一次）。
-      2. 查不到模块负责人也没手选人时，之前直接静默回落成
-         hub.assigned_user_id（入库处理人）继续推送——这条从
-         pending_linear_review 过来就是因为模块负责人不确定，处理人在
-         confirm-linear-push 若也没手选，应该继续卡人工，不能静默送出去。
-         直连 Linear 分支本来就有这层 _mark_pending 守卫，这里补齐对齐。
-    """
+    """转研发 webhook 分支。成功回写真实 Linear id/identifier（供展示/幂等/状态回同步）。"""
     if assignee_override_user_id is not None:
         owner = db.get(User, assignee_override_user_id)
         if owner is not None:
@@ -207,9 +255,31 @@ def push_hub_issue_to_linear(
                 return None
 
         # ---- 出口分流 ----
-        # 转研发默认走飞书 webhook；关闭时回落直连 Linear GraphQL（需 key+team+push_enabled）。
+        # 默认直连 Linear GraphQL（需 key+team+push_enabled）；开启时走飞书 webhook 分流。
         if settings.linear_webhook_enabled:
             return _push_via_webhook(db, hub, assignee_override_user_id=assignee_override_user_id)
+
+        # ---- 直连 Linear 前置强校验：指派说明与责任人 ----
+        solution = (hub.reply_content or "").strip()
+        if not solution:
+            logger.warning("linear_push_missing_solution", hub_issue_id=hub.id)
+            _mark_pending(db, hub, reason="指派说明为空，推送暂停请先录入指派说明")
+            return None
+
+        # 责任人为任务处理人：优先使用显式指定 (override)，否则直接取 hub.assigned_user_id
+        target_user_id = assignee_override_user_id or hub.assigned_user_id
+        if target_user_id is None:
+            logger.warning("linear_push_missing_assignee", hub_issue_id=hub.id)
+            _mark_pending(db, hub, reason="任务处理人为空，推送暂停请先分配处理人")
+            return None
+
+        assignee_user = db.get(User, target_user_id)
+        if assignee_user is None:
+            logger.warning("linear_push_assignee_not_found", hub_issue_id=hub.id, user_id=target_user_id)
+            _mark_pending(db, hub, reason=f"任务处理人(ID={target_user_id})不存在，推送暂停请重新分配")
+            return None
+
+        hub.owner_user_id = assignee_user.id
 
         if not (
             settings.linear_push_enabled and settings.linear_api_key and settings.linear_team_id
@@ -223,33 +293,20 @@ def push_hub_issue_to_linear(
         # as 'pending' instead of silently losing their assignee.
         assignee_linear_id: str | None = None
         team_id = settings.linear_team_id
-        assignee_user: User | None = None
-        if assignee_override_user_id is not None:
-            assignee_user = db.get(User, assignee_override_user_id)
-            hub.owner_user_id = assignee_override_user_id
-        else:
-            # 默认 assignee = 模块研发责任人（modules.dev_owners 轮询选人）；
-            # 查不到回落入库责任人（hub.assigned_user_id）。
-            assignee_user = consume_module_owner(db, hub.product_line_code, hub.module)
-            if assignee_user is not None:
-                hub.owner_user_id = assignee_user.id
-            elif hub.assigned_user_id is not None:
-                assignee_user = db.get(User, hub.assigned_user_id)
-        if assignee_user is not None:
-            if assignee_user.email and not assignee_user.linear_user_id:
-                _mark_pending(
-                    db,
-                    hub,
-                    reason=(
-                        f"处理人 {assignee_user.name}（{assignee_user.email}）在 Linear 工作区"
-                        "查无此人，推送暂停待人工处理（加入 Linear 后执行"
-                        " sync-from-linear 再重推）"
-                    ),
-                )
-                return None
-            assignee_linear_id = assignee_user.linear_user_id
-            if assignee_user.linear_team_id:
-                team_id = assignee_user.linear_team_id
+        if assignee_user.email and not assignee_user.linear_user_id:
+            _mark_pending(
+                db,
+                hub,
+                reason=(
+                    f"处理人 {assignee_user.name}（{assignee_user.email}）在 Linear 工作区"
+                    "查无此人，推送暂停待人工处理（加入 Linear 后执行"
+                    " sync-from-linear 再重推）"
+                ),
+            )
+            return None
+        assignee_linear_id = assignee_user.linear_user_id
+        if assignee_user.linear_team_id:
+            team_id = assignee_user.linear_team_id
 
         req = CreateIssueRequest(
             title=f"[{hub.short_code}] {hub.title}",

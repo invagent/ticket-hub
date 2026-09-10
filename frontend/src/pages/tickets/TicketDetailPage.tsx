@@ -2509,7 +2509,7 @@ function SubTaskNoteModal({
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-hub-borderLight bg-slate-50/70 flex-none">
           <div className="font-bold text-[14px] text-black">
-            编辑任务解决方案（{title || "子任务"}）
+            编辑指派说明（{title || "子任务"}）
           </div>
           <button
             type="button"
@@ -2527,11 +2527,11 @@ function SubTaskNoteModal({
               maxLength={2000}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="请输入处理说明与解决方案（最多 2000 字符）..."
+              placeholder="请输入指派说明（最多 2000 字符）..."
               className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
             />
             <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
-              <span>确认后将保存最新任务解决方案并在工单处理说明中同步更新记录</span>
+              <span>确认后将保存最新指派说明并在工单处理说明中同步更新记录</span>
               <span>{content.length} / 2000 字符</span>
             </div>
           </div>
@@ -2543,7 +2543,7 @@ function SubTaskNoteModal({
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-slate-400 text-[12.5px]">
-                暂无解决方案说明
+                暂无指派说明
               </div>
             )}
           </div>
@@ -3232,7 +3232,7 @@ function SubTicketList({
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">问题模块</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
-              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务解决方案</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">指派说明</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">操作</th>
             </tr>
           </thead>
@@ -3364,7 +3364,7 @@ function SubTicketList({
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改任务解决方案"
+                        title="点击查看并直接修改指派说明"
                       >
                         {truncSolution}
                       </button>
@@ -3532,7 +3532,7 @@ function SubTicketList({
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改任务解决方案"
+                        title="点击查看并直接修改指派说明"
                       >
                         {truncSolution}
                       </button>
@@ -3681,7 +3681,7 @@ function SubTicketList({
                           })
                         }
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改任务解决方案"
+                        title="点击查看并直接修改指派说明"
                       >
                         {truncSolution}
                       </button>
@@ -3771,7 +3771,7 @@ function SubTicketList({
             onSyncNote?.(noteModal.title, content);
             const nextTasks = getAllTasks({ key: noteModal.key, solution: content });
             onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
-            onToast?.("已更新任务解决方案并同步至工单处理说明", "success");
+            onToast?.("已更新指派说明并同步至工单处理说明", "success");
           }}
         />
       )}

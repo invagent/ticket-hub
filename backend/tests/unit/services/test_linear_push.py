@@ -41,6 +41,25 @@ def world(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> Session:
     monkeypatch.setenv("LINEAR_WEBHOOK_ENABLED", "false")
     get_settings.cache_clear()
     db_session.add(Source(code="ksm", name="KSM"))
+    db_session.add(
+        User(
+            id=999,
+            feishu_uid="ou_default_dev",
+            name="默认处理人",
+            linear_user_id="lin-default-999",
+            is_active=True,
+        )
+    )
+    t = Ticket(
+        id=9999,
+        short_code="TKT-DEFAULT-1",
+        source_code="ksm",
+        source_ticket_id="lp-default",
+        type="Raw",
+        status="received",
+        title="默认测试工单",
+    )
+    db_session.add(t)
     db_session.commit()
     yield db_session
     get_settings.cache_clear()
@@ -52,6 +71,9 @@ def _make_hub(db: Session, n: int, **overrides) -> HubIssue:  # type: ignore[no-
         "type": "Bug_fix",
         "title": "开票失败",
         "canonical_body": "详细复现步骤",
+        "reply_content": "排查结论与指派说明",
+        "assigned_user_id": 999,
+        "ticket_id": 9999,
         "status": "created",
         "priority": "high",
     }
@@ -82,22 +104,47 @@ def test_push_writes_back_linear_fields(world: Session) -> None:
 
 
 def test_push_description_includes_source_tickets(world: Session) -> None:
-    hub = _make_hub(world, 2)
-    world.add(
-        Ticket(
-            short_code="TKT-LP-1",
-            source_code="ksm",
-            source_ticket_id="lp-1",
-            type="Raw",
-            status="received",
-            title="x",
-            hub_issue_id=hub.id,
-        )
+    world.add(ProductLine(code="fpy_desc", name="金蝶发票云"))
+    t = Ticket(
+        short_code="TKT-LP-1",
+        source_code="ksm",
+        source_ticket_id="lp-1",
+        source_ticket_number="R20260910-0001",
+        reporter_company="时代飞鹏有限公司",
+        reporter={"name": "张三", "mobile": "13800000000", "email": "zhang@x.com"},
+        type="Raw",
+        status="received",
+        title="x",
     )
+    world.add(t)
     world.commit()
+    world.refresh(t)
+
+    hub = _make_hub(
+        world,
+        2,
+        title="发票金额错误",
+        canonical_body="详细复现步骤",
+        reply_content="经排查为税率计算误差，需修改后端算法",
+        product_line_code="fpy_desc",
+        module="开票管理",
+        ticket_id=t.id,
+    )
+    t.hub_issue_id = hub.id
+    world.commit()
+
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
     desc = fake.requests[0].description  # type: ignore[attr-defined]
+    assert "### 💡 指派说明" in desc
+    assert "经排查为税率计算误差，需修改后端算法" in desc
+    assert "### 📝 原始问题描述" in desc
+    assert "详细复现步骤" in desc
+    assert "### 📋 工单背景信息" in desc
+    assert "KSM (R20260910-0001)" in desc
+    assert "时代飞鹏有限公司" in desc
+    assert "张三" in desc
+    assert "13800000000" in desc
     assert "TKT-LP-1 (ksm)" in desc
     assert hub.short_code in desc
 
@@ -131,8 +178,8 @@ def test_push_routes_to_assignee_team(world: Session) -> None:
 
 
 def test_push_uses_module_owner_over_assigned(world: Session) -> None:
-    """转研发责任人：模块研发责任人（modules.dev_owners 轮询）优先于入库责任人。"""
-    world.add(User(id=30, feishu_uid="ou_a30", name="入库责任人", linear_user_id="lin-u-30"))
+    """转研发责任人：以任务处理人（hub.assigned_user_id）为准。"""
+    world.add(User(id=30, feishu_uid="ou_a30", name="处理人", linear_user_id="lin-u-30"))
     world.add(User(id=31, feishu_uid="ou_a31", name="模块负责人", linear_user_id="lin-u-31"))
     world.add(ProductLine(code="fpy", name="fpy"))
     world.add(Module(product_line_code="fpy", name="开票模块", dev_owners="模块负责人"))
@@ -140,31 +187,43 @@ def test_push_uses_module_owner_over_assigned(world: Session) -> None:
     hub = _make_hub(world, 30, assigned_user_id=30, product_line_code="fpy", module="开票模块")
     fake = _FakeLinearClient()
     push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
-    assert fake.requests[0].assignee_id == "lin-u-31"  # 模块负责人，而非 lin-u-30
+    assert fake.requests[0].assignee_id == "lin-u-30"  # 任务处理人，而非模块负责人
     world.refresh(hub)
-    assert hub.owner_user_id == 31  # consume_module_owner 选定后写责任人字段
+    assert hub.owner_user_id == 30
 
 
-def test_push_consumes_module_owner_rotation_across_hubs(world: Session) -> None:
-    """同模块多人 dev_owners，连续两次推送应轮询到不同的人。"""
-    world.add(User(id=50, feishu_uid="ou_a50", name="研发甲", linear_user_id="lin-u-50"))
-    world.add(User(id=51, feishu_uid="ou_a51", name="研发乙", linear_user_id="lin-u-51"))
-    world.add(ProductLine(code="fpy2", name="fpy2"))
-    world.add(Module(product_line_code="fpy2", name="收票模块", dev_owners="研发甲、研发乙"))
-    world.commit()
-    hub1 = _make_hub(world, 51, product_line_code="fpy2", module="收票模块")
-    fake1 = _FakeLinearClient()
-    push_hub_issue_to_linear(hub1.id, world, client=fake1)  # type: ignore[arg-type]
-    assert fake1.requests[0].assignee_id == "lin-u-50"
-    world.refresh(hub1)
-    assert hub1.owner_user_id == 50
+def test_push_missing_solution_stops_and_marks_pending(world: Session) -> None:
+    """指派说明为空 → 拦截不推送，置 pending 待人工。"""
+    hub = _make_hub(world, 51, reply_content="")
+    fake = _FakeLinearClient()
+    res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is None
+    assert fake.requests == []
+    world.refresh(hub)
+    assert hub.status == "pending"
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .one()
+    )
+    assert "指派说明为空" in (sh.reason or "")
 
-    hub2 = _make_hub(world, 52, product_line_code="fpy2", module="收票模块")
-    fake2 = _FakeLinearClient()
-    push_hub_issue_to_linear(hub2.id, world, client=fake2)  # type: ignore[arg-type]
-    assert fake2.requests[0].assignee_id == "lin-u-51"
-    world.refresh(hub2)
-    assert hub2.owner_user_id == 51
+
+def test_push_missing_assignee_stops_and_marks_pending(world: Session) -> None:
+    """任务处理人为空 → 拦截不推送，置 pending 待人工。"""
+    hub = _make_hub(world, 52, assigned_user_id=None)
+    fake = _FakeLinearClient()
+    res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is None
+    assert fake.requests == []
+    world.refresh(hub)
+    assert hub.status == "pending"
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="pending")
+        .one()
+    )
+    assert "任务处理人为空" in (sh.reason or "")
 
 
 def test_push_uses_dispatched_assignee(world: Session) -> None:
@@ -246,28 +305,6 @@ def test_push_failure_marks_pending(world: Session) -> None:
         .one()
     )
     assert "Linear 推送失败" in (sh.reason or "")
-
-
-def test_push_failure_still_consumes_rotation_cursor(world: Session) -> None:
-    """已知行为（非 bug）：consume_module_owner 在 push 真正调用 Linear API 之前
-    执行——若随后 create_issue 失败转 pending，游标依旧前进（同一事务一并
-    commit）。与「游标始终前进，即使这一位当前不可用」的既定设计一致（见
-    module_owner.py consume_module_owner 文档），本测试锁定这个行为，防止未来
-    改动无声改变轮询语义。重试时会转给下一位，而非重试同一位。"""
-    world.add(User(id=60, feishu_uid="ou_a60", name="研发甲", linear_user_id="lin-u-60"))
-    world.add(User(id=61, feishu_uid="ou_a61", name="研发乙", linear_user_id="lin-u-61"))
-    world.add(ProductLine(code="fpy3", name="fpy3"))
-    mod = Module(product_line_code="fpy3", name="退票模块", dev_owners="研发甲、研发乙")
-    world.add(mod)
-    world.commit()
-    hub = _make_hub(world, 53, product_line_code="fpy3", module="退票模块")
-    fake = _FakeLinearClient(raises=LinearNetworkError("timeout"))
-    assert push_hub_issue_to_linear(hub.id, world, client=fake) is None  # type: ignore[arg-type]
-    world.refresh(hub)
-    assert hub.status == "pending"
-    assert hub.owner_user_id == 60  # 已选定责任人（哪怕推送随后失败）
-    world.refresh(mod)
-    assert mod.dev_owner_rotation_cursor == 1  # 游标已前进，重推会轮到研发乙
 
 
 def test_unmatched_individual_assignee_marks_pending_without_push(world: Session) -> None:
