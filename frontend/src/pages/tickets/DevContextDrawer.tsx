@@ -182,11 +182,11 @@ export function DevContextDrawer({
         aria-modal="true"
         aria-labelledby="dev-drawer-title"
       >
-        {/* 标题栏【补充转产研上下文】+ 下方横线 */}
+        {/* 标题栏【转研发上下文补充】+ 下方横线 */}
         <div className="px-6 py-4 flex items-center justify-between border-b border-hub-borderLight flex-none bg-white">
           <div className="flex items-center gap-2.5">
             <h2 id="dev-drawer-title" className="m-0 text-[16px] font-bold text-slate-900 tracking-wide">
-              补充转产研上下文
+              转研发上下文补充
             </h2>
             {taskCode && (
               <span className="text-[11.5px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-50 text-[#6085e7] border border-blue-200">

@@ -979,8 +979,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       fireEvent.click(solutionTextBtn);
 
       // 弹窗直接处于可编辑状态，包含输入框与确认按钮
-      expect(await screen.findByText(/编辑指派说明（/)).toBeInTheDocument();
-      const textarea = screen.getByPlaceholderText(/请输入指派说明/) as HTMLTextAreaElement;
+      expect(await screen.findByText(/编辑处理说明（/)).toBeInTheDocument();
+      const textarea = screen.getByPlaceholderText(/请输入处理说明/) as HTMLTextAreaElement;
       expect(textarea).toBeInTheDocument();
       expect(textarea.value).toBe("方案内容");
 
@@ -991,7 +991,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
 
       // 弹窗关闭，主单处理说明同步包含新方案
       await waitFor(() => {
-        expect(screen.queryByPlaceholderText(/请输入指派说明/)).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText(/请输入处理说明/)).not.toBeInTheDocument();
       });
       const matches = await screen.findAllByText(/修改后的完整解决方案/);
       expect(matches.length).toBeGreaterThanOrEqual(1);
@@ -1012,7 +1012,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       // 验证4个小节均平级存在于容器中
       expect(screen.getByText("工单标签")).toBeInTheDocument();
       expect(screen.getByText("子任务列表")).toBeInTheDocument();
-      expect(screen.getByText("处理说明")).toBeInTheDocument();
+      expect(screen.getAllByText("处理说明").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("处理附件")).toBeInTheDocument();
     });
   });
@@ -1069,7 +1069,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       const drawerDialog = await screen.findByRole("dialog");
       expect(drawerDialog).toBeInTheDocument();
       expect(drawerDialog.className).toContain("w-[800px]");
-      expect(screen.getByText("补充转产研上下文")).toBeInTheDocument();
+      expect(screen.getByText("转研发上下文补充")).toBeInTheDocument();
 
       // 验证客户原始问题只读展示工单正文（工单内容区域与抽屉均有展示）
       expect(screen.getAllByText("客户报税时提示发票税号不匹配，请协助排查修复")).toHaveLength(2);
@@ -1106,6 +1106,65 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(replyPreview.textContent).toContain("【需求】-");
       expect(replyPreview.textContent).toContain("税号绑定逻辑调整为支持多企业代码");
       expect(replyPreview.textContent).toContain("【沟通记录】已与财务总监沟通，需要放宽企业代码18位严格校验");
+
+      // 验证子任务列表【处理说明】列成功回写展示沟通记录
+      expect(screen.getAllByText(/已与财务总监沟通/).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("工单关联多个子任务时，多个子任务的任务类型、产品分类、问题模块合并去重后展示在工单标签中", async () => {
+      renderTicket(
+        {
+          id: 123,
+          status: "in_progress",
+          short_code: "HUB-123",
+          title: "主工单测试",
+          predicted_type: "Demand",
+          product_line_code: "pl-ticket",
+          module: "收票助手-识别",
+          subtasks: [
+            {
+              id: 101,
+              short_code: "HUB-123-1",
+              title: "任务A需求",
+              type: "Demand",
+              product_line_code: "pl-ticket",
+              module: "收票助手-识别",
+              solution: "",
+              status: "draft",
+            },
+            {
+              id: 102,
+              short_code: "HUB-123-2",
+              title: "任务B应用",
+              type: "Operation",
+              product_line_code: "pl-ticket",
+              module: "全票池",
+              solution: "",
+              status: "draft",
+            },
+          ],
+        },
+        undefined,
+        [
+          http.get("*/api/admin/product-lines", () =>
+            HttpResponse.json([{ code: "pl-ticket", name: "标准版-收票", is_active: true }]),
+          ),
+        ],
+      );
+
+      // 验证工单类型合并去重展示：需求、应用类
+      await waitFor(() => {
+        const typeInput = screen.getByLabelText("工单类型") as HTMLInputElement;
+        expect(typeInput.value).toBe("需求、应用类");
+      });
+
+      // 验证产品分类合并去重展示：标准版-收票
+      const plcInput = screen.getByLabelText("产品分类") as HTMLInputElement;
+      expect(plcInput.value).toBe("标准版-收票");
+
+      // 验证问题模块合并去重展示：收票助手-识别、全票池
+      const modInput = screen.getByLabelText("问题模块") as HTMLInputElement;
+      expect(modInput.value).toBe("收票助手-识别、全票池");
     });
 
     it("在【补充转产研上下文】抽屉中点击【取消】直接关闭且不保留修改", async () => {

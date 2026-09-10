@@ -1361,7 +1361,12 @@ export function TicketDetailPage() {
                 )}
 
                 {/* 小节 1：工单标签和下面的key+值 是一节 */}
-                <TicketAttributesEditor ticket={d} hub={hub.data ?? null} syncedAttrs={syncedSubAttrs} />
+                <TicketAttributesEditor
+                  ticket={d}
+                  hub={hub.data ?? null}
+                  syncedAttrs={syncedSubAttrs}
+                  tasks={currentSubTasks}
+                />
 
                 {/* 小节 2：子任务和子任务列表是一节 */}
                 <div>
@@ -1400,6 +1405,12 @@ export function TicketDetailPage() {
                       }
                       isDevTransferred={isDevTransferred}
                       externalSolutions={externalTaskSolutions}
+                      onTaskSolutionChange={(key, sol) => {
+                        setExternalTaskSolutions((prev) => ({
+                          ...prev,
+                          [key]: sol,
+                        }));
+                      }}
                       isOpCompleted={isOpCompleted}
                       onTasksChange={setCurrentSubTasks}
                       self={{
@@ -2241,10 +2252,12 @@ function TicketAttributesEditor({
   ticket,
   hub,
   syncedAttrs,
+  tasks = [],
 }: {
   ticket: TicketDetailData;
   hub: HubDetailData | null;
   syncedAttrs?: { type?: string; productLine?: string; module?: string } | null;
+  tasks?: SubTaskSummaryItem[];
 }) {
   // 初始值：已毕业优先取 hub，未毕业取 ticket
   const initType = (hub?.type ??
@@ -2253,7 +2266,6 @@ function TicketAttributesEditor({
       : "Operation")) as string;
   const initPlc = (hub ? hub.product_line_code : ticket.product_line_code) ?? "";
   const initModule = (hub ? hub.module : ticket.module) ?? "";
-
 
   const productLines = useQuery({
     queryKey: ["admin", "product-lines"],
@@ -2279,9 +2291,62 @@ function TicketAttributesEditor({
   const initialPlcLabel = activeLines.find((p) => p.code === initPlc)?.name ?? initPlc ?? "";
   const initialModuleLabel = (modules.data ?? []).find((m) => m.code === initModule)?.name ?? initModule ?? "";
 
-  const displayType = syncedAttrs?.type || initialTypeLabel;
-  const displayPlc = syncedAttrs?.productLine || initialPlcLabel;
-  const displayModule = syncedAttrs?.module || initialModuleLabel;
+  // 多个子任务合并去重计算：工单类型、产品分类、问题模块（顿号、分隔）
+  const aggregatedAttrs = useMemo(() => {
+    if (!tasks || tasks.length === 0) return null;
+    const formatTaskType = (type?: string) => {
+      if (!type) return "";
+      const t = type.trim();
+      if (t === "Demand" || t.includes("需求")) return "需求";
+      if (t === "Operation" || t.includes("应用")) return "应用类";
+      if (
+        t === "Bug_fix" ||
+        t.toLowerCase() === "bug_fix" ||
+        t.toLowerCase() === "bug" ||
+        t === "BUG" ||
+        t.includes("Bug") ||
+        t.includes("bug")
+      ) {
+        return "Bug";
+      }
+      if (t === "Internal_task" || t.includes("内部")) return "内部任务";
+      return HUB_TYPE_LABELS[t] || t;
+    };
+
+    const types = Array.from(
+      new Set(tasks.map((t) => formatTaskType(t.type)).filter(Boolean)),
+    );
+    const plcs = Array.from(
+      new Set(
+        tasks
+          .map((t) => {
+            const name =
+              t.product_line_name ||
+              activeLines.find((l) => l.code === t.product_line_code)?.name ||
+              t.product_line_code;
+            return (name || "").trim();
+          })
+          .filter(Boolean),
+      ),
+    );
+    const modNames = Array.from(
+      new Set(
+        tasks
+          .map((t) => (t.module_name || t.module || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    return {
+      type: types.length > 0 ? types.join("、") : undefined,
+      productLine: plcs.length > 0 ? plcs.join("、") : undefined,
+      module: modNames.length > 0 ? modNames.join("、") : undefined,
+    };
+  }, [tasks, activeLines]);
+
+  const displayType = aggregatedAttrs?.type || syncedAttrs?.type || initialTypeLabel;
+  const displayPlc = aggregatedAttrs?.productLine || syncedAttrs?.productLine || initialPlcLabel;
+  const displayModule = aggregatedAttrs?.module || syncedAttrs?.module || initialModuleLabel;
 
   const confidencePercent =
     ticket.predicted_module_confidence != null
@@ -2677,7 +2742,7 @@ function SubTaskNoteModal({
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-hub-borderLight bg-slate-50/70 flex-none">
           <div className="font-bold text-[14px] text-black">
-            编辑指派说明（{title || "子任务"}）
+            编辑处理说明（{title || "子任务"}）
           </div>
           <button
             type="button"
@@ -2695,11 +2760,11 @@ function SubTaskNoteModal({
               maxLength={2000}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="请输入指派说明（最多 2000 字符）..."
+              placeholder="请输入处理说明（最多 2000 字符）..."
               className="w-full flex-1 p-3 text-[12.5px] border border-hub-border rounded-[7px] outline-none focus:border-hub-teal resize-none bg-white text-slate-800"
             />
             <div className="mt-2 flex items-center justify-between text-[11px] text-hub-textFaint flex-none">
-              <span>确认后将保存最新指派说明并在工单处理说明中同步更新记录</span>
+              <span>确认后将保存最新处理说明并在工单处理说明中同步更新记录</span>
               <span>{content.length} / 2000 字符</span>
             </div>
           </div>
@@ -2711,7 +2776,7 @@ function SubTaskNoteModal({
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-slate-400 text-[12.5px]">
-                暂无指派说明
+                暂无处理说明
               </div>
             )}
           </div>
@@ -2809,8 +2874,11 @@ export interface SubTaskSummaryItem {
   code: string;
   title: string;
   type: string;
+  type_name?: string;
   product_line_code?: string;
+  product_line_name?: string;
   module?: string;
+  module_name?: string;
   solution: string;
   status: string;
 }
@@ -2826,6 +2894,7 @@ function SubTicketList({
   drafts,
   self,
   externalSolutions,
+  onTaskSolutionChange,
   isOpCompleted = false,
   onDeleteDrafts,
   onAdd,
@@ -2863,6 +2932,7 @@ function SubTicketList({
     cached_reply_content: string | null | undefined;
   };
   externalSolutions?: Record<string | number, string>;
+  onTaskSolutionChange?: (key: string | number, solution: string) => void;
   isOpCompleted?: boolean;
   onDeleteDrafts?: (indices: number[]) => void;
   onAdd?: () => void;
@@ -3142,18 +3212,47 @@ function SubTicketList({
     },
   ) => {
     const cur = rowStates[key];
+    const altCur =
+      key === "self" && self.hub_id != null
+        ? rowStates[self.hub_id]
+        : typeof key === "number" && key === self.hub_id
+        ? rowStates["self"]
+        : undefined;
     const extSol = externalSolutions?.[key];
+    const altExtSol =
+      key === "self" && self.hub_id != null
+        ? externalSolutions?.[self.hub_id]
+        : typeof key === "number" && key === self.hub_id
+        ? externalSolutions?.["self"]
+        : undefined;
+    const effectiveExtSol = isValidSolution(extSol) ? extSol : (isValidSolution(altExtSol) ? altExtSol : extSol);
+
+    let effectiveSolution = initial.solution;
+    if (isValidSolution(cur?.solution)) {
+      effectiveSolution = cur!.solution!;
+    } else if (isValidSolution(altCur?.solution)) {
+      effectiveSolution = altCur!.solution!;
+    } else if (isValidSolution(effectiveExtSol)) {
+      effectiveSolution = effectiveExtSol!;
+    } else if (cur?.solution !== undefined) {
+      effectiveSolution = cur.solution;
+    } else if (altCur?.solution !== undefined) {
+      effectiveSolution = altCur.solution;
+    } else if (effectiveExtSol !== undefined) {
+      effectiveSolution = effectiveExtSol;
+    }
+
     return {
-      title: cur?.title !== undefined ? cur.title : initial.title,
-      type: cur?.type !== undefined ? cur.type : initial.type,
+      title: cur?.title !== undefined ? cur.title : (altCur?.title !== undefined ? altCur.title : initial.title),
+      type: cur?.type !== undefined ? cur.type : (altCur?.type !== undefined ? altCur.type : initial.type),
       product_line_code:
-        cur?.product_line_code !== undefined ? cur.product_line_code : initial.product_line_code,
-      module: cur?.module !== undefined ? cur.module : initial.module,
-      solution: extSol !== undefined ? extSol : (cur?.solution !== undefined ? cur.solution : initial.solution),
-      confirmed: cur?.confirmed ?? false,
-      assigned_user_id: cur?.assigned_user_id !== undefined ? cur.assigned_user_id : initial.assigned_user_id,
-      assigned_user_name: cur?.assigned_user_name !== undefined ? cur.assigned_user_name : initial.assigned_user_name,
-      status: cur?.status,
+        cur?.product_line_code !== undefined ? cur.product_line_code : (altCur?.product_line_code !== undefined ? altCur.product_line_code : initial.product_line_code),
+      module: cur?.module !== undefined ? cur.module : (altCur?.module !== undefined ? altCur.module : initial.module),
+      solution: effectiveSolution,
+      confirmed: cur?.confirmed ?? altCur?.confirmed ?? false,
+      assigned_user_id: cur?.assigned_user_id !== undefined ? cur.assigned_user_id : (altCur?.assigned_user_id !== undefined ? altCur.assigned_user_id : initial.assigned_user_id),
+      assigned_user_name: cur?.assigned_user_name !== undefined ? cur.assigned_user_name : (altCur?.assigned_user_name !== undefined ? altCur.assigned_user_name : initial.assigned_user_name),
+      status: cur?.status ?? altCur?.status,
     };
   };
 
@@ -3191,13 +3290,27 @@ function SubTicketList({
   ) => {
     setRowStates((prev) => {
       const cur = prev[key] ?? {};
-      return {
+      const next = {
         ...prev,
         [key]: {
           ...cur,
           ...patch,
         },
       };
+      if (key === "self" && self.hub_id != null) {
+        const hubCur = prev[self.hub_id] ?? {};
+        next[self.hub_id] = {
+          ...hubCur,
+          ...patch,
+        };
+      } else if (typeof key === "number" && key === self.hub_id) {
+        const selfCur = prev["self"] ?? {};
+        next["self"] = {
+          ...selfCur,
+          ...patch,
+        };
+      }
+      return next;
     });
   };
 
@@ -3279,13 +3392,18 @@ function SubTicketList({
       if (isDevTransferred && isDev) {
         effStatus = "processing";
       }
+      const selfPlc = st.product_line_code || self.product_line_code || "";
+      const selfPlName = activeLines.find((l) => l.code === selfPlc)?.name || selfPlc;
+      const selfMod = st.module || self.module || "";
       tasks.push({
         key: "self",
         code: self.short_code,
         title: tit,
         type: st.type || self.predicted_type || "",
-        product_line_code: st.product_line_code || self.product_line_code || "",
-        module: st.module || self.module || "",
+        product_line_code: selfPlc,
+        product_line_name: selfPlName,
+        module: selfMod,
+        module_name: selfMod,
         solution: sol,
         status: effStatus,
       });
@@ -3309,13 +3427,18 @@ function SubTicketList({
       if (isDevTransferred && isDev) {
         effStatus = "processing";
       }
+      const stkPlc = st.product_line_code || stk.product_line_code || "";
+      const stkPlName = activeLines.find((l) => l.code === stkPlc)?.name || stkPlc;
+      const stkMod = st.module || stk.module || "";
       tasks.push({
         key: sid,
         code: stk.short_code ?? `#${sid}`,
         title: tit,
         type: st.type || stk.type || "",
-        product_line_code: st.product_line_code || stk.product_line_code || "",
-        module: st.module || stk.module || "",
+        product_line_code: stkPlc,
+        product_line_name: stkPlName,
+        module: stkMod,
+        module_name: stkMod,
         solution: sol,
         status: effStatus,
       });
@@ -3339,13 +3462,18 @@ function SubTicketList({
       if (isDevTransferred && isDev) {
         effStatus = "processing";
       }
+      const dftPlc = st.product_line_code || dft.product_line || "";
+      const dftPlName = activeLines.find((l) => l.code === dftPlc)?.name || dftPlc;
+      const dftMod = st.module || dft.module || "";
       tasks.push({
         key: draftKey,
         code: `${self.short_code}-${subtasks.length + i + 1}`,
         title: tit,
         type: st.type || dft.type || "",
-        product_line_code: st.product_line_code || dft.product_line || "",
-        module: st.module || dft.module || "",
+        product_line_code: dftPlc,
+        product_line_name: dftPlName,
+        module: dftMod,
+        module_name: dftMod,
         solution: sol,
         status: effStatus,
       });
@@ -3463,10 +3591,29 @@ function SubTicketList({
       }
     });
 
+    const formatConfirmedType = (type?: string) => {
+      if (!type) return "";
+      const t = type.trim();
+      if (t === "Demand" || t.includes("需求")) return "需求";
+      if (t === "Operation" || t.includes("应用")) return "应用类";
+      if (
+        t === "Bug_fix" ||
+        t.toLowerCase() === "bug_fix" ||
+        t.toLowerCase() === "bug" ||
+        t === "BUG" ||
+        t.includes("Bug") ||
+        t.includes("bug")
+      ) {
+        return "Bug";
+      }
+      if (t === "Internal_task" || t.includes("内部")) return "内部任务";
+      return HUB_TYPE_LABELS[t] || t;
+    };
+
     const types = Array.from(
       new Set(
         confirmedRows
-          .map((r) => (HUB_TYPE_LABELS[r.type] ?? r.type ?? "").trim())
+          .map((r) => formatConfirmedType(r.type))
           .filter(Boolean),
       ),
     );
@@ -3489,9 +3636,9 @@ function SubTicketList({
     );
 
     onSyncConfirmedAttributes?.({
-      type: types.join(","),
-      productLine: plcs.join(","),
-      module: modules.join(","),
+      type: types.join("、"),
+      productLine: plcs.join("、"),
+      module: modules.join("、"),
     });
 
     if (typeof key !== "number") {
@@ -3660,7 +3807,7 @@ function SubTicketList({
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">问题模块</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
-              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">指派说明</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">处理说明</th>
               <th className="px-2.5 py-1.5 text-center font-bold whitespace-nowrap">附件</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">操作</th>
             </tr>
@@ -4654,7 +4801,7 @@ function SubTicketList({
             onSyncNote?.(noteModal.title, content);
             const nextTasks = getAllTasks({ key: noteModal.key, solution: content });
             onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
-            onToast?.("已更新指派说明并同步至工单处理说明", "success");
+            onToast?.("已更新处理说明并同步至工单处理说明", "success");
           }}
         />
       )}
@@ -4707,6 +4854,18 @@ function SubTicketList({
           onConfirm={({ title: newTitle, solution: newSolution, attachments: newAttachments }) => {
             const targetKey = devDrawerState.key;
             updateRow(targetKey, { title: newTitle, solution: newSolution });
+            if (targetKey === "self" && self.hub_id) {
+              updateRow(self.hub_id, { title: newTitle, solution: newSolution });
+            } else if (typeof targetKey === "number" && targetKey === self.hub_id) {
+              updateRow("self", { title: newTitle, solution: newSolution });
+            }
+
+            onTaskSolutionChange?.(targetKey, newSolution);
+            if (targetKey === "self" && self.hub_id) {
+              onTaskSolutionChange?.(self.hub_id, newSolution);
+            } else if (typeof targetKey === "number" && targetKey === self.hub_id) {
+              onTaskSolutionChange?.("self", newSolution);
+            }
 
             if (onTaskAttachmentsChange) {
               onTaskAttachmentsChange((prev) => ({
@@ -4732,6 +4891,7 @@ function SubTicketList({
               const draftIdx = parseInt(targetKey.replace("draft-", ""), 10);
               if (!isNaN(draftIdx) && drafts[draftIdx]) {
                 drafts[draftIdx].title = newTitle;
+                (drafts[draftIdx] as any).solution = newSolution;
               }
             }
 
