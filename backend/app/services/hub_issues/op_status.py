@@ -72,8 +72,7 @@ def apply_op_status(
     # 状态不可逆保护：如果工单或 Hub 已经处于 supplementing（已向客户发起补料，外部处于等待反馈），
     # 严禁被后置的审核中间态（reviewing）反向覆盖（但客户补料回流转 processing 正常允许）
     if to_status == OP_REVIEWING and (
-        hub.op_status == OP_SUPPLEMENTING
-        or any(t.status == "supplementing" for t in tickets)
+        hub.op_status == OP_SUPPLEMENTING or any(t.status == "supplementing" for t in tickets)
     ):
         logger.info(
             "op_status_downgrade_rejected",

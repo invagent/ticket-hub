@@ -423,7 +423,9 @@ export function TicketDetailPage() {
         const list = next[key];
         if (list && list.some((x) => x.id === id)) {
           const item = list.find((x) => x.id === id);
-          if (item?.url) URL.revokeObjectURL(item.url);
+          if (item?.url && typeof URL.revokeObjectURL === "function") {
+            URL.revokeObjectURL(item.url);
+          }
           next[key] = list.filter((x) => x.id !== id);
           found = true;
           break;

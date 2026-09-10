@@ -128,15 +128,16 @@ function renderTicket(
     }),
     http.post("*/api/tickets/:ticket_id/attachments/upload", async ({ request, params }) => {
       const body = (await request.json()) as any;
+      const fakeId = Math.floor(Math.random() * 1000000) + 1000;
       return HttpResponse.json({
-        id: 9999,
+        id: fakeId,
         filename: body.filename,
         kind: "image",
         mime: body.mime || "image/png",
         size_bytes: 1024,
         vision_status: "skipped",
         extracted_text: null,
-        download_url: `/api/tickets/${params.ticket_id}/attachments/9999/download`,
+        download_url: `/api/tickets/${params.ticket_id}/attachments/${fakeId}/download`,
         hub_issue_id: body.hub_issue_id ?? null,
       });
     }),
