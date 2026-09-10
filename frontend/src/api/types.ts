@@ -868,6 +868,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub-issues/catalog/module-owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Catalog Module Owner
+         * @description 根据产品分类与问题模块查询指定责任人（require_user）。
+         */
+        get: operations["get_catalog_module_owner_api_hub_issues_catalog_module_owner_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub-issues/catalog/modules": {
         parameters: {
             query?: never;
@@ -4350,6 +4370,17 @@ export interface components {
             updated_at?: string | null;
             /** Updated By */
             updated_by?: string | null;
+        };
+        /** ModuleOwnerResponse */
+        ModuleOwnerResponse: {
+            /** Module */
+            module?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** User Id */
+            user_id?: number | null;
+            /** User Name */
+            user_name?: string | null;
         };
         /** ModulePatch */
         ModulePatch: {
@@ -7856,6 +7887,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HubIssueListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_catalog_module_owner_api_hub_issues_catalog_module_owner_get: {
+        parameters: {
+            query: {
+                product_line_code: string;
+                module: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleOwnerResponse"];
                 };
             };
             /** @description Validation Error */

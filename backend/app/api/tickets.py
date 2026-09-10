@@ -1178,8 +1178,11 @@ def create_ticket_subtask(
     if plc or mod:
         upsert_catalog(db, product_line_code=plc, module=mod)
 
-    # 初始处理人与工单当前处理人相同
-    initial_assignee = ticket.handler_user_id or ticket.assigned_user_id
+    # 初始处理人优先使用模块指定责任人，未配置时回落工单当前处理人
+    from app.services.hub_issues.module_owner import peek_module_owner
+
+    owner = peek_module_owner(db, plc, mod) if plc and mod else None
+    initial_assignee = owner.id if owner else (ticket.handler_user_id or ticket.assigned_user_id)
 
     hub = HubIssue(
         short_code=_next_hub_short_code(db),

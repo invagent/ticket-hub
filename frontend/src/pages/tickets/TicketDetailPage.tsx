@@ -3467,6 +3467,28 @@ function SubTicketList({
     });
   };
 
+  // 根据产品分类与问题模块自动带出指定责任人
+  const fetchAndApplyModuleOwner = useCallback(
+    async (rowKey: string | number, plc?: string, mod?: string) => {
+      if (!plc || !mod) return;
+      try {
+        const res: any = await api.get("/api/hub-issues/catalog/module-owner", {
+          product_line_code: plc,
+          module: mod,
+        });
+        if (res && res.user_id !== undefined && res.user_id !== null) {
+          updateRow(rowKey, {
+            assigned_user_id: res.user_id,
+            assigned_user_name: res.user_name,
+          });
+        }
+      } catch {
+        // 静默处理，不阻塞操作
+      }
+    },
+    [],
+  );
+
   const getAllTasks = (overridePatch?: { key: string | number; title?: string; solution: string }): TaskNoteItem[] => {
     const tasks: TaskNoteItem[] = [];
     if (showSelf) {
@@ -3998,6 +4020,8 @@ function SubTicketList({
                 product_line_code: self.product_line_code ?? "",
                 module: self.module ?? "",
                 solution: self.cached_reply_content ?? "",
+                assigned_user_id: self.assigned_user_id,
+                assigned_user_name: self.assigned_user_name,
               });
               const rowTitle = st.title || self.title || "当前工单任务";
               const isDev = isDemandOrBug(st.type);
@@ -4103,6 +4127,7 @@ function SubTicketList({
                       value={st.module}
                       onChange={(val) => {
                         updateRow(rowKey, { module: val });
+                        void fetchAndApplyModuleOwner(rowKey, st.product_line_code, val);
                         if (self.hub_id) {
                           updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { module: val } });
                         }
@@ -4323,6 +4348,8 @@ function SubTicketList({
                 product_line_code: stk.product_line_code ?? "",
                 module: stk.module ?? "",
                 solution: stk.solution ?? "",
+                assigned_user_id: stk.assigned_user_id,
+                assigned_user_name: stk.assigned_user_name,
               });
               const rowTitle = st.title || stk.title || `子任务 #${stk.id}`;
               const isDev = isDemandOrBug(st.type);
@@ -4418,6 +4445,7 @@ function SubTicketList({
                       value={st.module}
                       onChange={(val) => {
                         updateRow(rowKey, { module: val });
+                        void fetchAndApplyModuleOwner(rowKey, st.product_line_code, val);
                         updateSubtaskMutation.mutate({ hubId: stk.id, body: { module: val } });
                       }}
                       disabled={!canEditThisRow || isRowLocked}
@@ -4649,7 +4677,9 @@ function SubTicketList({
               const rowTitle = st.title || dft.title || `新建子任务 #${i + 1}`;
               const isDev = isDemandOrBug(st.type);
               const isRowLocked = isDevTransferred && isDev;
-              const currentAssigneeName = devOwners || "—";
+              const currentAssigneeName =
+                st.assigned_user_name ??
+                (st.assigned_user_id ? `#${st.assigned_user_id}` : devOwners || "—");
               const plName =
                 productLineOptions.find((p) => p.code === st.product_line_code)?.name ||
                 st.product_line_code ||
@@ -4723,7 +4753,10 @@ function SubTicketList({
                     <SubTaskRowModuleSelect
                       plc={st.product_line_code}
                       value={st.module}
-                      onChange={(val) => updateRow(draftKey, { module: val })}
+                      onChange={(val) => {
+                        updateRow(draftKey, { module: val });
+                        void fetchAndApplyModuleOwner(draftKey, st.product_line_code, val);
+                      }}
                       disabled={!canEdit || isRowLocked}
                     />
                   </td>
@@ -4747,7 +4780,9 @@ function SubTicketList({
                       );
                     })()}
                   </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {currentAssigneeName}
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     {isValidSolution(st.solution) ? (
                       <button

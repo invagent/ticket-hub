@@ -291,6 +291,13 @@ class CatalogModuleOut(BaseModel):
     name: str
 
 
+class ModuleOwnerResponse(BaseModel):
+    product_line_code: str | None = None
+    module: str | None = None
+    user_id: int | None = None
+    user_name: str | None = None
+
+
 @router.get("/catalog/modules", response_model=list[CatalogModuleOut])
 def list_catalog_modules(
     product_line_code: str | None = Query(None),
@@ -309,6 +316,23 @@ def list_catalog_modules(
         q = q.filter(Module.product_line_code == product_line_code)
     rows = q.order_by(Module.name).all()
     return [CatalogModuleOut(code=m.name, name=m.name) for m in rows]
+
+
+@router.get("/catalog/module-owner", response_model=ModuleOwnerResponse)
+def get_catalog_module_owner(
+    product_line_code: str = Query(..., min_length=1),
+    module: str = Query(..., min_length=1),
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> ModuleOwnerResponse:
+    """根据产品分类与问题模块查询指定责任人（require_user）。"""
+    owner = peek_module_owner(db, product_line_code, module)
+    return ModuleOwnerResponse(
+        product_line_code=product_line_code,
+        module=module,
+        user_id=owner.id if owner else None,
+        user_name=owner.name if owner else None,
+    )
 
 
 @router.get("/{hub_issue_id}", response_model=HubIssueDetail)
@@ -1136,10 +1160,8 @@ def update_subtask_endpoint(
     if body.product_line_code or body.module:
         upsert_catalog(db, product_line_code=hub.product_line_code, module=hub.module)
 
-    # 若任务类型为研发类（Bug_fix / Demand），自动根据产品线与问题模块匹配研发责任人
-    if hub.type in ("Bug_fix", "Demand") and (
-        body.product_line_code is not None or body.module is not None or body.type is not None
-    ):
+    # 自动根据产品线与问题模块匹配责任人（支持所有任务类型）
+    if body.product_line_code is not None or body.module is not None or body.type is not None:
         owner = peek_module_owner(db, hub.product_line_code, hub.module)
         if owner is not None:
             hub.assigned_user_id = owner.id

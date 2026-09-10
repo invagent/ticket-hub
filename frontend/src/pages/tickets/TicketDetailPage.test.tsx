@@ -94,6 +94,9 @@ function renderTicket(
     ...(customHandlers ?? [
       http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
       http.get("*/api/hub-issues/catalog/modules", () => HttpResponse.json([])),
+      http.get("*/api/hub-issues/catalog/module-owner", () =>
+        HttpResponse.json({ product_line_code: "pl-test", module: "m-test", user_id: 42, user_name: "测试责任人" }),
+      ),
     ]),
     http.get("*/api/admin/users", () => HttpResponse.json([])),
     http.patch("*/api/hub-issues/:hub_issue_id/subtask", async ({ request, params }) => {
@@ -525,6 +528,54 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
 
     // 任务状态列更新为「处理中」
     expect(screen.getByRole("cell", { name: "处理中" })).toBeInTheDocument();
+  });
+
+  it("子任务列表中选择产品分类与问题模块后，任务处理人即时自动变更为指定责任人", async () => {
+    renderTicket(
+      {
+        id: 10,
+        status: "in_progress",
+        predicted_type: "Operation",
+        product_line_code: null,
+        module: null,
+        assigned_user_name: "原处理人",
+      },
+      undefined,
+      [
+        http.get("*/api/admin/product-lines", () =>
+          HttpResponse.json([{ code: "pl-test", name: "数电票", is_active: true }]),
+        ),
+        http.get("*/api/hub-issues/catalog/modules", () =>
+          HttpResponse.json([{ code: "m-test", name: "测试模块", is_active: true }]),
+        ),
+        http.get("*/api/hub-issues/catalog/module-owner", () =>
+          HttpResponse.json({
+            product_line_code: "pl-test",
+            module: "m-test",
+            user_id: 88,
+            user_name: "模块指定责任人",
+          }),
+        ),
+      ],
+    );
+
+    // 初始显示原处理人
+    expect((await screen.findAllByText("原处理人")).length).toBeGreaterThan(0);
+
+    // 1. 选择产品分类
+    const plcTrigger = screen.getByLabelText("子任务产品分类");
+    fireEvent.click(plcTrigger);
+    const plcOption = await screen.findByRole("button", { name: "数电票" });
+    fireEvent.click(plcOption);
+
+    // 2. 选择问题模块
+    const moduleTrigger = await screen.findByLabelText("子任务问题模块");
+    fireEvent.click(moduleTrigger);
+    const moduleOption = await screen.findByRole("button", { name: "测试模块" });
+    fireEvent.click(moduleOption);
+
+    // 3. 验证任务处理人自动变更为「模块指定责任人」
+    expect(await screen.findByText("模块指定责任人")).toBeInTheDocument();
   });
 
   it("子任务列表点击添加后仅新增一行，系统自动生成的第一行保持保留不被覆盖", async () => {

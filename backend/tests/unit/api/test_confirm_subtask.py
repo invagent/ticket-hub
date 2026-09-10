@@ -134,3 +134,71 @@ def test_confirm_subtask_success_pushes_linear(
     subtask_world.refresh(hub)
     assert hub.status == "processing"
     assert hub.assigned_user_id == 10
+
+
+def test_get_catalog_module_owner(app_client: TestClient, subtask_world: Session) -> None:
+    """GET /api/hub-issues/catalog/module-owner 能正确解析出指定责任人。"""
+    from app.models import Module
+
+    subtask_world.add(
+        Module(
+            product_line_code="PROLINE-TEST",
+            name="开票模块",
+            dev_owners="dev-ten",
+            status="enabled",
+            is_active=True,
+        )
+    )
+    subtask_world.commit()
+
+    resp = app_client.get(
+        "/api/hub-issues/catalog/module-owner",
+        params={"product_line_code": "PROLINE-TEST", "module": "开票模块"},
+        headers=_bearer(2),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == 10
+    assert data["user_name"] == "dev-ten"
+
+
+def test_update_subtask_matches_owner_for_operation_type(
+    app_client: TestClient, subtask_world: Session
+) -> None:
+    """无论任务类型是否为 Operation，只要选择产品线和模块即自动匹配责任人。"""
+    from app.models import Module
+
+    subtask_world.add(
+        Module(
+            product_line_code="PROLINE-TEST",
+            name="咨询模块",
+            dev_owners="dev-ten",
+            status="enabled",
+            is_active=True,
+        )
+    )
+    hub = HubIssue(
+        ticket_id=100,
+        short_code="HUB-SUB-OP",
+        type="Operation",
+        title="咨询任务",
+        canonical_body="咨询问题",
+        assigned_user_id=2,  # 原处理人为 2
+        status="draft",
+    )
+    subtask_world.add(hub)
+    subtask_world.commit()
+
+    resp = app_client.patch(
+        f"/api/hub-issues/{hub.id}/subtask",
+        json={"product_line_code": "PROLINE-TEST", "module": "咨询模块"},
+        headers=_bearer(2),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["assigned_user_id"] == 10
+    assert data["assigned_user_name"] == "dev-ten"
+
+    subtask_world.refresh(hub)
+    assert hub.assigned_user_id == 10
+

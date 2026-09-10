@@ -4933,6 +4933,56 @@
         "title": "ModuleOut",
         "type": "object"
       },
+      "ModuleOwnerResponse": {
+        "properties": {
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "product_line_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Line Code"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "title": "ModuleOwnerResponse",
+        "type": "object"
+      },
       "ModulePatch": {
         "properties": {
           "dev_owners": {
@@ -13262,6 +13312,60 @@
           }
         },
         "summary": "List Hub Issues",
+        "tags": [
+          "hub-issues"
+        ]
+      }
+    },
+    "/api/hub-issues/catalog/module-owner": {
+      "get": {
+        "description": "根据产品分类与问题模块查询指定责任人（require_user）。",
+        "operationId": "get_catalog_module_owner_api_hub_issues_catalog_module_owner_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product_line_code",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Product Line Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "module",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Module",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleOwnerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Catalog Module Owner",
         "tags": [
           "hub-issues"
         ]
