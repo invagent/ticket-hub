@@ -1236,6 +1236,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/knowledge-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Knowledge Items
+         * @description 获取知识库列表（多维服务端筛选与分页）。
+         */
+        get: operations["list_knowledge_items_api_knowledge_base_get"];
+        put?: never;
+        /**
+         * Create Knowledge Item
+         * @description 创建知识库条目：默认状态为 pending_review (待审核)，编号按规则生成。
+         */
+        post: operations["create_knowledge_item_api_knowledge_base_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-base/batch-offline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Offline Knowledge
+         * @description 批量下架知识条目。
+         */
+        post: operations["batch_offline_knowledge_api_knowledge_base_batch_offline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-base/batch-online": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Online Knowledge
+         * @description 批量上架知识条目。
+         */
+        post: operations["batch_online_knowledge_api_knowledge_base_batch_online_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-base/batch-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Review Knowledge
+         * @description 批量审核通过或驳回。
+         */
+        post: operations["batch_review_knowledge_api_knowledge_base_batch_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/knowledge-base/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Knowledge Item
+         * @description 获取单个知识库条目详情。
+         */
+        get: operations["get_knowledge_item_api_knowledge_base__item_id__get"];
+        /**
+         * Update Knowledge Item
+         * @description 更新知识库条目。
+         */
+        put: operations["update_knowledge_item_api_knowledge_base__item_id__put"];
+        post?: never;
+        /**
+         * Delete Knowledge Item
+         * @description 软删除知识库条目。
+         */
+        delete: operations["delete_knowledge_item_api_knowledge_base__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/daily-dashboard": {
         parameters: {
             query?: never;
@@ -2757,6 +2869,18 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** BatchReviewBody */
+        BatchReviewBody: {
+            /** Action */
+            action: string;
+            /** Ids */
+            ids: string[];
+        };
+        /** BatchStatusBody */
+        BatchStatusBody: {
+            /** Ids */
+            ids: string[];
+        };
         /** BatchSupplyBody */
         BatchSupplyBody: {
             /** Note */
@@ -2964,6 +3088,36 @@ export interface components {
             hub_issue_short_code: string;
             /** Ticket Id */
             ticket_id: number;
+            /** Type */
+            type: string;
+        };
+        /** CreateKnowledgeItemBody */
+        CreateKnowledgeItemBody: {
+            /** Attachments */
+            attachments?: {
+                [key: string]: unknown;
+            }[];
+            /** Content */
+            content: string;
+            /** Created By */
+            created_by?: string | null;
+            /** Module Code */
+            module_code: string;
+            /** Module Name */
+            module_name: string;
+            /** Product Line Code */
+            product_line_code: string;
+            /** Product Line Name */
+            product_line_name: string;
+            /**
+             * Status
+             * @default pending_review
+             */
+            status: string;
+            /** Ticket Id */
+            ticket_id?: number | null;
+            /** Title */
+            title: string;
             /** Type */
             type: string;
         };
@@ -3983,6 +4137,75 @@ export interface components {
             error: string | null;
             /** Space Id */
             space_id: string;
+        };
+        /** KnowledgeItemListResponse */
+        KnowledgeItemListResponse: {
+            /** Items */
+            items: components["schemas"]["KnowledgeItemOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** KnowledgeItemOut */
+        KnowledgeItemOut: {
+            /**
+             * Attachments
+             * @default []
+             */
+            attachments: {
+                [key: string]: unknown;
+            }[];
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Created By User Id */
+            created_by_user_id?: number | null;
+            /** Id */
+            id: string;
+            /** Module Code */
+            module_code: string;
+            /** Module Name */
+            module_name: string;
+            /** Product Line Code */
+            product_line_code: string;
+            /** Product Line Name */
+            product_line_name: string;
+            /**
+             * Recent Calls
+             * @default 0
+             */
+            recent_calls: number;
+            /** Reviewed At */
+            reviewed_at?: string | null;
+            /** Reviewed By */
+            reviewed_by?: string | null;
+            /** Status */
+            status: string;
+            /** Ticket Id */
+            ticket_id?: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Total Calls
+             * @default 0
+             */
+            total_calls: number;
+            /** Type */
+            type: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** KpiOut */
         KpiOut: {
@@ -5406,6 +5629,29 @@ export interface components {
             type: string;
             /** Updated Ticket Count */
             updated_ticket_count: number;
+        };
+        /** UpdateKnowledgeItemBody */
+        UpdateKnowledgeItemBody: {
+            /** Attachments */
+            attachments?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Content */
+            content?: string | null;
+            /** Module Code */
+            module_code?: string | null;
+            /** Module Name */
+            module_name?: string | null;
+            /** Product Line Code */
+            product_line_code?: string | null;
+            /** Product Line Name */
+            product_line_name?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Type */
+            type?: string | null;
         };
         /** UpdateSubTaskBody */
         UpdateSubTaskBody: {
@@ -8188,6 +8434,277 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UrgeResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_knowledge_items_api_knowledge_base_get: {
+        parameters: {
+            query?: {
+                type?: string | null;
+                status?: string | null;
+                statuses?: string[] | null;
+                product_line_code?: string | null;
+                module_code?: string | null;
+                search?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeItemListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_knowledge_item_api_knowledge_base_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateKnowledgeItemBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_offline_knowledge_api_knowledge_base_batch_offline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_online_knowledge_api_knowledge_base_batch_online_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_review_knowledge_api_knowledge_base_batch_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchReviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_item_api_knowledge_base__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_knowledge_item_api_knowledge_base__item_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateKnowledgeItemBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_knowledge_item_api_knowledge_base__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import {
   getKnowledgeItems,
+  saveKnowledgeItems,
   batchReviewKnowledge,
   batchOfflineKnowledge,
   batchOnlineKnowledge,
@@ -273,11 +274,28 @@ export function KnowledgeBasePage() {
 
   // 响应式监听知识库变动（如工单详情抽屉添加后同步更新）
   useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/api/knowledge-base", { page_size: 200 })
+      .then((res: any) => {
+        if (cancelled) return;
+        if (res && Array.isArray(res.items) && res.items.length > 0) {
+          setItems(res.items);
+          saveKnowledgeItems(res.items);
+        }
+      })
+      .catch((err) => {
+        console.warn("Initial load from /api/knowledge-base failed, using local items:", err);
+      });
+
     const handleUpdate = () => {
       setItems(getKnowledgeItems());
     };
     window.addEventListener(KNOWLEDGE_BASE_UPDATED_EVENT, handleUpdate);
-    return () => window.removeEventListener(KNOWLEDGE_BASE_UPDATED_EVENT, handleUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(KNOWLEDGE_BASE_UPDATED_EVENT, handleUpdate);
+    };
   }, []);
 
   // 基础数据源：产品线与模块
@@ -426,8 +444,13 @@ export function KnowledgeBasePage() {
   };
 
   // 批量审核确认
-  const handleConfirmBatchReview = () => {
+  const handleConfirmBatchReview = async () => {
     if (selectedIds.length === 0) return;
+    try {
+      await api.post("/api/knowledge-base/batch-review", { ids: selectedIds, action: reviewResult });
+    } catch (e) {
+      console.warn("API batch-review failed, using local fallback:", e);
+    }
     batchReviewKnowledge(selectedIds, reviewResult);
     setItems(getKnowledgeItems());
     setBatchReviewModalOpen(false);
@@ -436,8 +459,13 @@ export function KnowledgeBasePage() {
   };
 
   // 批量下架确认
-  const handleConfirmBatchOffline = () => {
+  const handleConfirmBatchOffline = async () => {
     if (selectedIds.length === 0) return;
+    try {
+      await api.post("/api/knowledge-base/batch-offline", { ids: selectedIds });
+    } catch (e) {
+      console.warn("API batch-offline failed, using local fallback:", e);
+    }
     batchOfflineKnowledge(selectedIds);
     setItems(getKnowledgeItems());
     setBatchOfflineConfirmOpen(false);
@@ -446,8 +474,13 @@ export function KnowledgeBasePage() {
   };
 
   // 批量上架确认
-  const handleBatchOnline = () => {
+  const handleBatchOnline = async () => {
     if (selectedIds.length === 0) return;
+    try {
+      await api.post("/api/knowledge-base/batch-online", { ids: selectedIds });
+    } catch (e) {
+      console.warn("API batch-online failed, using local fallback:", e);
+    }
     batchOnlineKnowledge(selectedIds);
     setItems(getKnowledgeItems());
     showToast(`已批量上架 ${selectedIds.length} 条知识点`);

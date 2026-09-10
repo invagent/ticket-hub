@@ -24,6 +24,8 @@ export interface KnowledgeBaseDrawerProps {
   item?: KnowledgeItem | null;
   mode?: "create" | "view";
   actionType?: "submit_only" | "answer_only" | "both";
+  ticketHandlerName?: string;
+  ticketId?: number;
   // 提供 onAnswerAndSubmit 则显示「提交并作答」按钮，并将内容回写触发工单
   onAnswerAndSubmit?: (content: string) => void;
   onSubmitSuccess?: (item: KnowledgeItem) => void;
@@ -43,6 +45,8 @@ export function KnowledgeBaseDrawer({
   mode = item ? "view" : "create",
   onAnswerAndSubmit,
   actionType = onAnswerAndSubmit ? "answer_only" : "submit_only",
+  ticketHandlerName,
+  ticketId,
   onSubmitSuccess,
 }: KnowledgeBaseDrawerProps) {
   const [title, setTitle] = useState("");
@@ -201,6 +205,30 @@ export function KnowledgeBaseDrawer({
 
     const selectedPl = productLineOptions.find((p) => p.code === productLineCode);
     const selectedMod = moduleOptions.find((m) => m.code === moduleCode);
+    const creator = ticketHandlerName || (JSON.parse(localStorage.getItem("auth_user") || "null")?.name ?? "当前用户");
+
+    const payload = {
+      title: trimmedTitle,
+      type,
+      product_line_code: productLineCode,
+      product_line_name: selectedPl?.name ?? productLineCode,
+      module_code: moduleCode,
+      module_name: selectedMod?.name ?? moduleCode,
+      content: trimmedContent,
+      status: "pending_review",
+      created_by: creator,
+      ticket_id: ticketId,
+      attachments,
+    };
+
+    // 优先向后端提交真实持久化数据
+    try {
+      api.post("/api/knowledge-base", payload).catch((err) => {
+        console.warn("Backend knowledge-base API error:", err);
+      });
+    } catch (e) {
+      console.warn("api.post sync error", e);
+    }
 
     const newItem = addKnowledgeItem({
       title: trimmedTitle,
@@ -210,8 +238,9 @@ export function KnowledgeBaseDrawer({
       module_code: moduleCode,
       module_name: selectedMod?.name ?? moduleCode,
       content: trimmedContent,
+      status: "pending_review",
       attachments,
-      created_by: "当前用户",
+      created_by: creator,
     });
 
     if (answerCurrentTicket && onAnswerAndSubmit) {

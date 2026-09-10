@@ -2102,6 +2102,8 @@ export function TicketDetailPage() {
         defaultProductLine={syncedSubAttrs?.productLine || d?.product_line_code || ""}
         defaultModule={syncedSubAttrs?.module || d?.module || ""}
         actionType="submit_only"
+        ticketHandlerName={d?.handler_user_name ?? d?.assigned_user_name ?? undefined}
+        ticketId={d?.id}
         onSubmitSuccess={() => {
           showTopToast("知识库已新增", "success");
           setKnowledgeDrawerOpen(false);
@@ -3264,17 +3266,22 @@ function SubTicketList({
   } | null>(null);
 
   const [selfHidden, setSelfHidden] = useState(false);
-  const showSelf = childIds.length === 0 && (!selfHidden || (subtasks.length === 0 && drafts.length === 0));
+  // 过滤出除主任务(self)以外的真实独立子任务，防止主任务在列表和子任务中重复出现两次
+  const childSubtasks = useMemo(
+    () => subtasks.filter((s: any) => (self.hub_id ? s.id !== self.hub_id : true)),
+    [subtasks, self.hub_id],
+  );
+  const showSelf = childIds.length === 0 && (!selfHidden || (childSubtasks.length === 0 && drafts.length === 0));
 
   const allRowKeys: (string | number)[] = useMemo(() => {
     const keys: (string | number)[] = [];
     if (showSelf) {
       keys.push("self");
     }
-    subtasks.forEach((s: any) => keys.push(s.id));
+    childSubtasks.forEach((s: any) => keys.push(s.id));
     drafts.forEach((_, i) => keys.push(`draft-${i}`));
     return keys;
-  }, [showSelf, subtasks, drafts]);
+  }, [showSelf, childSubtasks, drafts]);
 
   const isKeyLocked = (k: string | number) => {
     if (!isDevTransferred) return false;
@@ -3479,7 +3486,7 @@ function SubTicketList({
         solution: sol,
       });
     }
-    subtasks.forEach((stk: any) => {
+    childSubtasks.forEach((stk: any) => {
       const sid = stk.id;
       const st = getRowState(sid, {
         title: stk.title ?? `子任务 #${sid}`,
@@ -3509,7 +3516,7 @@ function SubTicketList({
       const sol = overridePatch && overridePatch.key === draftKey ? overridePatch.solution : st.solution;
       const tit = overridePatch && overridePatch.key === draftKey && overridePatch.title !== undefined ? overridePatch.title : (st.title || dft.title || `新建子任务 #${i + 1}`);
       tasks.push({
-        code: `${self.short_code}-${subtasks.length + i + 1}`,
+        code: `${self.short_code}-${childSubtasks.length + i + 1}`,
         title: tit,
         type: st.type || dft.type || "",
         solution: sol,
@@ -3565,7 +3572,7 @@ function SubTicketList({
         confirmed: rowStates["self"]?.confirmed,
       });
     }
-    subtasks.forEach((stk: any) => {
+    childSubtasks.forEach((stk: any) => {
       const sid = stk.id;
       const st = getRowState(sid, {
         title: stk.title ?? `子任务 #${sid}`,
@@ -3635,7 +3642,7 @@ function SubTicketList({
       const dftMod = st.module || dft.module || "";
       tasks.push({
         key: draftKey,
-        code: `${self.short_code}-${subtasks.length + i + 1}`,
+        code: `${self.short_code}-${childSubtasks.length + i + 1}`,
         title: tit,
         type: st.type || dft.type || "",
         product_line_code: dftPlc,
@@ -3658,7 +3665,7 @@ function SubTicketList({
     // 任务解决方案有值后自动同步至处理说明
     const tasks = getAllTasks();
     const hasAnySolution = tasks.some((t) => isValidSolution(t.solution));
-    if (hasAnySolution || subtasks.length > 0 || drafts.length > 0) {
+    if (hasAnySolution || childSubtasks.length > 0 || drafts.length > 0) {
       if (tasks.length > 0) {
         const formatted = formatTasksReplyNote(tasks);
         if (formatted && formatted !== lastSyncedRef.current) {
@@ -3668,9 +3675,9 @@ function SubTicketList({
       }
     }
   }, [
-    subtasks.length,
+    childSubtasks.length,
     drafts.length,
-    subtasks.map((s: any) => `${s.short_code}:${s.solution}`).join(","),
+    childSubtasks.map((s: any) => `${s.short_code}:${s.solution}`).join(","),
     self.short_code,
     self.cached_reply_content,
     isOpCompleted,
@@ -3731,7 +3738,7 @@ function SubTicketList({
       }
     }
 
-    subtasks.forEach((stk: any) => {
+    childSubtasks.forEach((stk: any) => {
       const sid = stk.id;
       const isConf = key === sid || rowStates[sid]?.confirmed;
       if (isConf) {
@@ -4304,9 +4311,8 @@ function SubTicketList({
               );
             })()}
 
-            {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取） */}
-            {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取） */}
-            {subtasks.map((stk: any) => {
+            {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取，排除已在主行展示的 self） */}
+            {childSubtasks.map((stk: any) => {
               const rowKey = stk.id;
               const isStkAssignee =
                 stk.assigned_user_id != null && currentUserId() === stk.assigned_user_id;
@@ -4985,6 +4991,8 @@ function SubTicketList({
           defaultModule={kbDrawerState.module}
           defaultContent={kbDrawerState.solution}
           actionType="answer_only"
+          ticketHandlerName={self.assigned_user_name ?? undefined}
+          ticketId={ticketId}
           onAnswerAndSubmit={(content) => {
             const targetKey = kbDrawerState.key;
             updateRow(targetKey, { solution: content });

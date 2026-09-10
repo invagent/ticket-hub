@@ -1362,3 +1362,53 @@ class DispatchLog(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     __table_args__ = (Index("ix_dispatch_log_rule_created", "rule_id", "created_at"),)
+
+
+# ---- 知识库管理（Knowledge Base）------------------------------------------
+
+
+class KnowledgeBaseItem(Base):
+    """知识库条目：持久化存储系统知识内容，支持多端共享、关联工单回填与审核流转。"""
+
+    __tablename__ = "knowledge_base_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending_review','active','rejected','offline')",
+            name="ck_knowledge_base_items_status",
+        ),
+        Index("ix_kb_items_status", "status"),
+        Index("ix_kb_items_product_module", "product_line_code", "module_code"),
+        Index("ix_kb_items_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # FPYFAQ + YYYYMMDD + 4位流水号
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)  # FAQ | 操作手册 | 交付配置
+    product_line_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_line_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    module_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    module_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending_review", nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    ticket_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    recent_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
