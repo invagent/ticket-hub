@@ -19,7 +19,7 @@ import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
 import { KnowledgeBaseDrawer } from "@/pages/knowledge-base/KnowledgeBaseDrawer";
-import { StatusBadge, subtaskStatusBadge } from "./ticketStatus";
+import { StatusBadge, subtaskStatusBadge, ticketStatusLabel } from "./ticketStatus";
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -233,7 +233,7 @@ export function parseReplyNoteSolutions(
 
   const trimmed = content.trim();
   const lines = trimmed.split("\n");
-  let currentTaskIdx = -1;
+  let currentTaskIdx = tasks.length === 1 ? 0 : -1;
   let collectingSolution = false;
   let currentSolLines: string[] = [];
 
@@ -405,6 +405,7 @@ export function TicketDetailPage() {
     module?: string;
   } | null>(null);
   const [noteViewMode, setNoteViewMode] = useState<"preview" | "edit">("preview");
+  const [currentSubTasks, setCurrentSubTasks] = useState<SubTaskSummaryItem[]>([]);
 
   useEffect(() => {
     if (!transferDevAlert) return;
@@ -501,6 +502,9 @@ export function TicketDetailPage() {
       showTopToast(hubErrMsg(e), "warning");
     },
   });
+  // 允许详情页在提交答复/补充资料/退回转单成功后本地立即切换不可操作终态
+  const [overrideStatus, setOverrideStatus] = useState<string | null>(null);
+
   // 运营正常跟进：向 KSM/智齿提交答复（走带有至少一个子任务已完成闸门校验和自动按条目拼接的新接口）
   const [replyErr, setReplyErr] = useState<string | null>(null);
   const reply = useMutation({
@@ -512,6 +516,7 @@ export function TicketDetailPage() {
       ),
     onSuccess: (res: any) => {
       setReplyErr(null);
+      setOverrideStatus("answered");
       if (res?.reply_content) {
         setNoteDrafts((prev) => ({ ...prev, 0: res.reply_content }));
       }
@@ -550,6 +555,7 @@ export function TicketDetailPage() {
     },
     onSuccess: (r: any) => {
       setSupplyErr(null);
+      setOverrideStatus("supplementing");
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
@@ -570,6 +576,7 @@ export function TicketDetailPage() {
       postByPath("/api/tickets/{ticket_id}/return", { ticket_id: id }, { deal_opinion: dealOpinion }),
     onSuccess: () => {
       setReturnErr(null);
+      setOverrideStatus("transferred_return");
       void qc.invalidateQueries({ queryKey: ["ticket-detail", id] });
       void qc.invalidateQueries({ queryKey: ["ticket-history", id] });
       void qc.invalidateQueries({ queryKey: ["hub-issue-detail", hubId] });
@@ -643,20 +650,53 @@ export function TicketDetailPage() {
   const isOperation = effectiveType === "Operation";
   // 答复完成(answered)或已关单/已退回：处理区只读，不可再编辑/提交
   const opStatus = hub.data?.op_status ?? d?.op_status ?? null;
+  const effectiveOpStatus = overrideStatus ?? opStatus;
+  const effectiveTicketStatus = overrideStatus ?? d?.status ?? "";
   const isTicketTerminal =
     d?.status === "closed" ||
     d?.status === "transferred_return" ||
     d?.status === "done" ||
     d?.status === "superseded" ||
     d?.status === "rejected";
-  const opDone =
+
+  // 用户明确需求：点击【提交答复】后工单状态变【处理完成】，工单界面的所有操作按钮都被禁用且不显示；
+  // 工单状态【补充资料】【退回转单】【处理关闭】都是不可操作的状态，不可操作的状态都不显示。
+  const isNonOperable =
+    Boolean(overrideStatus) ||
     isTicketTerminal ||
-    d?.status === "answered" ||
-    d?.op_status === "answered" ||
-    opStatus === "answered" ||
-    opStatus === "closed" ||
-    opStatus === "transferred_return" ||
+    effectiveOpStatus === "answered" ||
+    effectiveOpStatus === "closed" ||
+    effectiveOpStatus === "supplementing" ||
+    effectiveOpStatus === "transferred_return" ||
+    effectiveOpStatus === "transferred" ||
+    effectiveOpStatus === "unresolved_return" ||
+    effectiveTicketStatus === "answered" ||
+    effectiveTicketStatus === "replied" ||
+    effectiveTicketStatus === "completed" ||
+    effectiveTicketStatus === "done" ||
+    effectiveTicketStatus === "closed" ||
+    effectiveTicketStatus === "resolved" ||
+    effectiveTicketStatus === "supplementing" ||
+    effectiveTicketStatus === "transferred_return" ||
+    effectiveTicketStatus === "transferred" ||
+    effectiveTicketStatus === "returned" ||
+    hub.data?.status === "closed" ||
+    hub.data?.status === "resolved" ||
     hub.data?.status === "returned";
+
+  const opDone = isNonOperable;
+
+  const isOpCompleted =
+    Boolean(overrideStatus) ||
+    effectiveOpStatus === "answered" ||
+    effectiveTicketStatus === "answered" ||
+    effectiveTicketStatus === "replied" ||
+    effectiveTicketStatus === "done" ||
+    effectiveTicketStatus === "completed" ||
+    d?.status === "answered" ||
+    d?.status === "done" ||
+    d?.status === "closed" ||
+    d?.status === "resolved";
   // 反思诊断抽屉：knowledge_op/supervisor/admin 全量可见；此外 reviewing 态
   // （AI 答复打分未过转人工审核）本工单处理人本人也能看——只诊断不改 skill
   // （ReflectDrawer 内部按角色再拆一层，RemedyColumn 仍 knowledge_op-only）。
@@ -665,7 +705,9 @@ export function TicketDetailPage() {
   const canSeeReflectFull =
     currentRole() === "knowledge_op" || currentRole() === "supervisor" || currentRole() === "admin";
   const canSeeReflectAsHandler =
-    (d?.status === "reviewing" || opStatus === "reviewing") && d?.handler_user_id != null && currentUserId() === d.handler_user_id;
+    (d?.status === "reviewing" || opStatus === "reviewing" || effectiveOpStatus === "reviewing") &&
+    d?.handler_user_id != null &&
+    currentUserId() === d.handler_user_id;
   const canSeeReflect = canSeeReflectFull || canSeeReflectAsHandler;
   const escalationCtx = useQuery({
     queryKey: ["escalation-context", id],
@@ -676,7 +718,7 @@ export function TicketDetailPage() {
   const showReflectBtn = canSeeReflect && !!escalationCtx.data?.is_escalation;
   // 待审核(reviewing)：AI 草稿答复存 hub.reply_content（未级联到 ticket），
   // 供审核人在处理说明框查看/编辑后点答复正式发出。
-  const draftReply = opStatus === "reviewing" ? (hub.data?.reply_content ?? "") : "";
+  const draftReply = effectiveOpStatus === "reviewing" ? (hub.data?.reply_content ?? "") : "";
   // 标记诊断按钮可见性：运营类 + 已毕业确认 + AI 已答复未关闭 + 答复确实是 AI 自动发的
   // （不是主管/处理人人工发的或编辑过的）；处理人本人或主管可点。
   const aiAutoReplied = hub.data?.reply_authored_by === "agent:ai_cs";
@@ -684,7 +726,7 @@ export function TicketDetailPage() {
   const canFlagDiagnosis =
     isOperation &&
     classified &&
-    opStatus === "answered" &&
+    effectiveOpStatus === "answered" &&
     aiAutoReplied &&
     (isSupervisor() ||
       (d?.handler_user_id != null && currentUserId() === d.handler_user_id));
@@ -781,7 +823,7 @@ export function TicketDetailPage() {
                         hub.data?.status === "released" &&
                         (d.predicted_type === "Bug_fix" || d.predicted_type === "Demand")
                           ? "released"
-                          : d.status
+                          : (overrideStatus ?? d.status)
                       }
                     />
                     <RemainingTag hours={d.remaining_hours} />
@@ -797,189 +839,230 @@ export function TicketDetailPage() {
                     )}
                   </div>
                 </header>
-                {/* 右上角操作按钮区 + 返回列表 */}
+                {/* 右上角操作按钮区 + 返回列表（不可操作状态如处理完成、补充资料、退回转单、处理关闭等一律不显示操作按钮，仅保留返回列表） */}
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {/* 1. 提交答复 */}
-                  <button
-                    type="button"
-                    disabled={reply.isPending || suggestion === "split" || opDone}
-                    onClick={() => {
-                      if (suggestion === "normal" || suggestion === "supplement" || suggestion === "escalate_dev") {
-                        const content = (
-                          noteDrafts[0] ??
-                          d.cached_reply_content ??
-                          draftReply ??
-                          ""
-                        ).trim();
-                        if (!content) {
-                          setReplyErr("处理说明为空，无法答复");
-                          return;
-                        }
+                  {!isNonOperable && (
+                    <>
+                      {/* 1. 提交答复 */}
+                      <button
+                        type="button"
+                        disabled={reply.isPending || suggestion === "split" || opDone}
+                        onClick={() => {
+                          if (suggestion === "normal" || suggestion === "supplement" || suggestion === "escalate_dev") {
+                            const content = (
+                              noteDrafts[0] ??
+                              d.cached_reply_content ??
+                              draftReply ??
+                              ""
+                            ).trim();
 
-                        // 提交答复时：将更新的答复会写更新到对应的子任务解决方案处
-                        const tasksToSync: { code: string; key: string | number }[] = [];
-                        const childIds = d.children_ticket_ids ?? [];
-                        if (childIds.length === 0 && subDrafts.length === 0) {
-                          tasksToSync.push({ code: d.short_code, key: "self" });
-                        }
-                        childIds.forEach((cid, idx) => {
-                          tasksToSync.push({
-                            code: childResults[idx]?.data?.short_code ?? `#${cid}`,
-                            key: cid,
-                          });
-                        });
-                        subDrafts.forEach((_, idx) => {
-                          const code = `${d.short_code}-${(childIds.length || 1) + idx + 1}`;
-                          tasksToSync.push({ code, key: `draft-${idx}` });
-                        });
+                            // 提交答复时：将更新的答复会写更新到对应的子任务解决方案处
+                            const tasksToSync: { code: string; key: string | number }[] = [];
+                            const childIds = d.children_ticket_ids ?? [];
+                            if (childIds.length === 0 && subDrafts.length === 0) {
+                              tasksToSync.push({ code: d.short_code, key: "self" });
+                            }
+                            childIds.forEach((cid, idx) => {
+                              tasksToSync.push({
+                                code: childResults[idx]?.data?.short_code ?? `#${cid}`,
+                                key: cid,
+                              });
+                            });
+                            subDrafts.forEach((_, idx) => {
+                              const code = `${d.short_code}-${(childIds.length || 1) + idx + 1}`;
+                              tasksToSync.push({ code, key: `draft-${idx}` });
+                            });
 
-                        const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
-                        if (Object.keys(parsedMap).length > 0) {
-                          setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
-                        }
+                            const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
+                            if (Object.keys(parsedMap).length > 0) {
+                              setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
+                            }
 
-                        reply.mutate(content);
-                      } else if (suggestion === "return") {
-                        setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
-                        setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
-                      } else if (suggestion === "split") {
-                        setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
-                        setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
-                      }
-                    }}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                  >
-                    {suggestion === "return"
-                      ? "退回转单"
-                      : suggestion === "split"
-                        ? "拆分转单（待后端）"
-                        : reply.isPending
-                          ? "提交中…"
-                          : "提交答复"}
-                  </button>
+                            // 校验：节点详情下的子任务列表任务类型是【应用类】的记录，解决方案都不为空，为空提示“{任务编号}任务解决方案为空，请先录入后再提交”
+                            const tasksToCheck: SubTaskSummaryItem[] =
+                              currentSubTasks.length > 0
+                                ? currentSubTasks
+                                : [
+                                    {
+                                      key: "self",
+                                      code:
+                                        hub.data?.short_code ??
+                                        (d as any).hub_short_code ??
+                                        (d.hub_issue_id
+                                          ? `HUB-${String(d.hub_issue_id).padStart(6, "0")}`
+                                          : d.short_code),
+                                      title: hub.data?.title ?? d.title ?? "",
+                                      type: (hub.data?.type ?? d.predicted_type ?? d.type ?? "") as string,
+                                      solution: content,
+                                      status: "",
+                                    },
+                                  ];
 
-                  {/* 2. 转产研 */}
-                  <button
-                    type="button"
-                    disabled={opDone}
-                    title="处理说明转产研说明并提交产研"
-                    onClick={() => {
-                      const content = (
-                        noteDrafts[0] ??
-                        d.cached_reply_content ??
-                        draftReply ??
-                        ""
-                      ).trim();
-                      if (!content) {
-                        setTransferDevAlert("请在处理说明转产研说明，没有录入不能转产研");
-                        return;
-                      }
-                      showTopToast("已成功转产研，处理说明已同步", "success");
-                      setLocalActions((p) => [{ label: "转产研处理" }, ...p]);
-                    }}
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                  >
-                    转产研
-                  </button>
+                            for (const t of tasksToCheck) {
+                              const isOp = t.type === "Operation" || t.type === "应用类";
+                              if (isOp) {
+                                const sol = (
+                                  parsedMap[t.key] ??
+                                  (tasksToCheck.length === 1 && content ? content : t.solution) ??
+                                  ""
+                                ).trim();
+                                if (!sol) {
+                                  const msg = `${t.code}任务解决方案为空，请先录入后再提交`;
+                                  showTopToast(msg, "warning");
+                                  setReplyErr(msg);
+                                  return;
+                                }
+                              }
+                            }
 
-                  {/* 3. 转派 */}
-                  {isSupervisor() && (
-                    <button
-                      type="button"
-                      onClick={() => setTransferOpen(true)}
-                      disabled={opDone}
-                      title="转派处理人（提交答复前可转派）"
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                    >
-                      转派
-                    </button>
+                            if (!content) {
+                              setReplyErr("处理说明为空，无法答复");
+                              return;
+                            }
+
+                            reply.mutate(content);
+                          } else if (suggestion === "return") {
+                            setConfirmNotice("退回转单：打回工单逻辑待后端接口，暂未执行");
+                            setLocalActions((p) => [{ label: "退回转单（待后端）" }, ...p]);
+                          } else if (suggestion === "split") {
+                            setConfirmNotice("拆分转单：拆分逻辑后续版本支持");
+                            setLocalActions((p) => [{ label: "拆分转单（待后端）" }, ...p]);
+                          }
+                        }}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                      >
+                        {suggestion === "return"
+                          ? "退回转单"
+                          : suggestion === "split"
+                            ? "拆分转单（待后端）"
+                            : reply.isPending
+                              ? "提交中…"
+                              : "提交答复"}
+                      </button>
+
+                      {/* 2. 转产研 */}
+                      <button
+                        type="button"
+                        disabled={opDone}
+                        title="处理说明转产研说明并提交产研"
+                        onClick={() => {
+                          const content = (
+                            noteDrafts[0] ??
+                            d.cached_reply_content ??
+                            draftReply ??
+                            ""
+                          ).trim();
+                          if (!content) {
+                            setTransferDevAlert("请在处理说明转产研说明，没有录入不能转产研");
+                            return;
+                          }
+                          showTopToast("已成功转产研，处理说明已同步", "success");
+                          setLocalActions((p) => [{ label: "转产研处理" }, ...p]);
+                        }}
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                      >
+                        转产研
+                      </button>
+
+                      {/* 3. 转派 */}
+                      {isSupervisor() && (
+                        <button
+                          type="button"
+                          onClick={() => setTransferOpen(true)}
+                          disabled={opDone}
+                          title="转派处理人（提交答复前可转派）"
+                          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                        >
+                          转派
+                        </button>
+                      )}
+
+                      {/* 4. 退回 KSM */}
+                      {(d.source_code === "ksm" || !d.source_code) && (
+                        <button
+                          type="button"
+                          disabled={returnKsm.isPending || opDone}
+                          title="退回 KSM 重新分派（不可逆）"
+                          onClick={() => {
+                            const content = (
+                              noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                            ).trim();
+                            if (!content) {
+                              setReturnErr("处理说明为空，无法退回");
+                              return;
+                            }
+                            if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
+                              return;
+                            }
+                            returnKsm.mutate(content);
+                          }}
+                          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                        >
+                          {returnKsm.isPending ? "退回中…" : "退回 KSM"}
+                        </button>
+                      )}
+
+                      {/* 5. 补充资料 */}
+                      {(d.source_code === "ksm" || !d.source_code) && (
+                        <button
+                          type="button"
+                          disabled={supply.isPending || opDone}
+                          title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
+                          onClick={() => {
+                            const content = (
+                              noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
+                            ).trim();
+                            if (!content) {
+                              setSupplyErr("处理说明为空，无法请求补料");
+                              return;
+                            }
+                            supply.mutate(content);
+                          }}
+                          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                        >
+                          {supply.isPending ? "提交中…" : "补充资料"}
+                        </button>
+                      )}
+
+                      {/* 6. 拆单 */}
+                      <button
+                        type="button"
+                        onClick={() => setAddSubOpen(true)}
+                        disabled={opDone}
+                        title="拆分多单/新建子工单"
+                        className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                      >
+                        拆单
+                      </button>
+
+                      {/* 诊断 */}
+                      {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
+                        <button
+                          type="button"
+                          onClick={() => setDiagnosisOpen(true)}
+                          title="AI 自动答复有问题？标记后送知识运营复核诊断"
+                          className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 cursor-pointer shadow-xs"
+                        >
+                          诊断
+                        </button>
+                      )}
+                      {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
+                        <span className="text-[10.5px] text-hub-textFaint">
+                          已标记诊断
+                        </span>
+                      )}
+                    </>
                   )}
 
-                  {/* 4. 退回 KSM */}
-                  {(d.source_code === "ksm" || !d.source_code) && (
-                    <button
-                      type="button"
-                      disabled={returnKsm.isPending || opDone}
-                      title="退回 KSM 重新分派（不可逆）"
-                      onClick={() => {
-                        const content = (
-                          noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                        ).trim();
-                        if (!content) {
-                          setReturnErr("处理说明为空，无法退回");
-                          return;
-                        }
-                        if (!window.confirm("确认将本工单退回 KSM 重新分派？该操作不可逆。")) {
-                          return;
-                        }
-                        returnKsm.mutate(content);
-                      }}
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-rose text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                    >
-                      {returnKsm.isPending ? "退回中…" : "退回 KSM"}
-                    </button>
-                  )}
-
-                  {/* 5. 补充资料 */}
-                  {(d.source_code === "ksm" || !d.source_code) && (
-                    <button
-                      type="button"
-                      disabled={supply.isPending || opDone}
-                      title="把处理说明作为补料说明提交给 KSM，要求客户补充资料"
-                      onClick={() => {
-                        const content = (
-                          noteDrafts[0] ?? d.cached_reply_content ?? draftReply ?? ""
-                        ).trim();
-                        if (!content) {
-                          setSupplyErr("处理说明为空，无法请求补料");
-                          return;
-                        }
-                        supply.mutate(content);
-                      }}
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                    >
-                      {supply.isPending ? "提交中…" : "补充资料"}
-                    </button>
-                  )}
-
-                  {/* 6. 拆单 */}
-                  <button
-                    type="button"
-                    onClick={() => setAddSubOpen(true)}
-                    disabled={opDone}
-                    title="拆分多单/新建子工单"
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
-                  >
-                    拆单
-                  </button>
-
-                  {/* 7. 完善知识库 */}
+                  {/* 7. 完善知识库：不受工单状态限制，均可调用维护知识库面板 */}
                   <button
                     type="button"
                     onClick={() => setKnowledgeDrawerOpen(true)}
-                    disabled={opDone}
                     title="录入并维护知识库"
-                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+                    className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-white text-slate-700 border border-hub-border hover:border-[#6085e7] cursor-pointer shadow-xs"
                   >
                     完善知识库
                   </button>
-
-                  {/* 诊断 */}
-                  {canFlagDiagnosis && !alreadyFlaggedDiagnosis && (
-                    <button
-                      type="button"
-                      onClick={() => setDiagnosisOpen(true)}
-                      title="AI 自动答复有问题？标记后送知识运营复核诊断"
-                      className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-purple text-white hover:brightness-95 cursor-pointer shadow-xs"
-                    >
-                      诊断
-                    </button>
-                  )}
-                  {canFlagDiagnosis && alreadyFlaggedDiagnosis && (
-                    <span className="text-[10.5px] text-hub-textFaint">
-                      已标记诊断
-                    </span>
-                  )}
 
                   {/* 返回列表 */}
                   <button
@@ -1227,7 +1310,7 @@ export function TicketDetailPage() {
                       hub.data?.status === "released" &&
                       (d.predicted_type === "Bug_fix" || d.predicted_type === "Demand")
                         ? "released"
-                        : d.status
+                        : (overrideStatus ?? d.status)
                     }
                   />
                 </div>
@@ -1272,6 +1355,8 @@ export function TicketDetailPage() {
                         !opDone
                       }
                       externalSolutions={externalTaskSolutions}
+                      isOpCompleted={isOpCompleted}
+                      onTasksChange={setCurrentSubTasks}
                       self={{
                         short_code:
                           hub.data?.short_code ??
@@ -1406,7 +1491,15 @@ export function TicketDetailPage() {
 
                   {opDone && (
                     <div className="mt-1 text-[10.5px] text-hub-textFaint text-right">
-                      已{opStatus === "closed" ? "关单" : "答复完成"}，不可再编辑
+                      工单状态为【
+                      {effectiveOpStatus === "answered" ||
+                      effectiveTicketStatus === "answered" ||
+                      effectiveOpStatus === "done" ||
+                      effectiveTicketStatus === "done" ||
+                      effectiveTicketStatus === "completed"
+                        ? "处理完成"
+                        : ticketStatusLabel(effectiveTicketStatus || effectiveOpStatus || "")}
+                      】，不可再编辑
                     </div>
                   )}
                   {replyErr && <div className="mt-1 text-[11px] text-hub-rose text-right">{replyErr}</div>}
@@ -1436,7 +1529,7 @@ export function TicketDetailPage() {
                         </span>
                       )}
                     </div>
-                    {isCurrentNode && (
+                    {isCurrentNode && !opDone && (
                       <label className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] font-medium rounded-[6px] border border-hub-border hover:border-[#6085e7] text-slate-700 hover:text-[#6085e7] bg-white cursor-pointer transition-colors shadow-2xs">
                         <svg
                           className="w-3.5 h-3.5 text-slate-500"
@@ -1456,7 +1549,6 @@ export function TicketDetailPage() {
                           type="file"
                           multiple
                           className="hidden"
-                          disabled={opDone}
                           onChange={(e) => {
                             if (e.target.files) {
                               handleAddProcFiles(e.target.files);
@@ -1471,26 +1563,32 @@ export function TicketDetailPage() {
                   {/* 附件列表或空状态提示 */}
                   {isCurrentNode ? (
                     procAttachments.length === 0 ? (
-                      <div
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (e.dataTransfer.files) handleAddProcFiles(e.dataTransfer.files);
-                        }}
-                        className="border border-dashed border-slate-300 hover:border-[#6085e7] rounded-[7px] p-3 text-center transition-colors bg-slate-50/50"
-                      >
-                        <p className="text-[11.5px] text-slate-500 m-0">
-                          点击右上角「上传附件」或直接在此处按{" "}
-                          <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
-                            Ctrl+V
-                          </kbd>
-                          （Mac{" "}
-                          <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
-                            ⌘+V
-                          </kbd>
-                          ）粘贴截图与文件
-                        </p>
-                      </div>
+                      opDone ? (
+                        <div className="border border-dashed border-slate-200 rounded-[7px] p-3 text-center bg-slate-50/50">
+                          <p className="text-[11.5px] text-slate-400 m-0">暂无处理附件</p>
+                        </div>
+                      ) : (
+                        <div
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (e.dataTransfer.files) handleAddProcFiles(e.dataTransfer.files);
+                          }}
+                          className="border border-dashed border-slate-300 hover:border-[#6085e7] rounded-[7px] p-3 text-center transition-colors bg-slate-50/50"
+                        >
+                          <p className="text-[11.5px] text-slate-500 m-0">
+                            点击右上角「上传附件」或直接在此处按{" "}
+                            <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                              Ctrl+V
+                            </kbd>
+                            （Mac{" "}
+                            <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10.5px] font-mono text-slate-700">
+                              ⌘+V
+                            </kbd>
+                            ）粘贴截图与文件
+                          </p>
+                        </div>
+                      )
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                         {procAttachments.map((att) => {
@@ -1531,15 +1629,16 @@ export function TicketDetailPage() {
                                   <span>{att.uploadedAt}</span>
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveProcAttachment(att.id)}
-                                disabled={opDone}
-                                title="删除此附件"
-                                className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none disabled:opacity-40"
-                              >
-                                ✕
-                              </button>
+                              {!opDone && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveProcAttachment(att.id)}
+                                  title="删除此附件"
+                                  className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none"
+                                >
+                                  ✕
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1803,21 +1902,13 @@ export function TicketDetailPage() {
         </div>
       )}
 
-      {/* 500px 完善知识库右侧滑出抽屉 */}
+      {/* 800px 完善知识库右侧滑出抽屉（仅提交，无提交并作答） */}
       <KnowledgeBaseDrawer
         open={knowledgeDrawerOpen}
         onClose={() => setKnowledgeDrawerOpen(false)}
         defaultProductLine={syncedSubAttrs?.productLine || d?.product_line_code || ""}
         defaultModule={syncedSubAttrs?.module || d?.module || ""}
-        onAnswerAndSubmit={(content) => {
-          setNoteDrafts((prev) => {
-            const cur = (prev[0] ?? d?.cached_reply_content ?? draftReply ?? "").trim();
-            const nextVal = cur ? `${content}\n\n${cur}` : content;
-            return { ...prev, 0: nextVal };
-          });
-          showTopToast("已生成知识库并写入处理说明", "success");
-          setKnowledgeDrawerOpen(false);
-        }}
+        actionType="submit_only"
         onSubmitSuccess={() => {
           showTopToast("知识库已新增", "success");
           setKnowledgeDrawerOpen(false);
@@ -2636,6 +2727,15 @@ const SUB_TASK_TYPES = [
   { code: "Operation", name: "应用类" },
 ];
 
+export interface SubTaskSummaryItem {
+  key: string | number;
+  code: string;
+  title: string;
+  type: string;
+  solution: string;
+  status: string;
+}
+
 // 子任务列表：逐个拉取子工单详情（children_ticket_ids）。
 // 任务类型、产品分类、问题模块均可编辑，支持搜索筛选与级联；
 // 处理说明支持 600×400 弹窗录入，解决方案截取 10 字符，支持浮窗查看与双行同步主单；新增操作列确认分类。
@@ -2645,9 +2745,11 @@ function SubTicketList({
   drafts,
   self,
   externalSolutions,
+  isOpCompleted = false,
   onDeleteDrafts,
   onAdd,
   onToast,
+  onTasksChange,
   onSyncNote,
   onSyncAllTasksNote,
   onSyncConfirmedAttributes,
@@ -2669,9 +2771,11 @@ function SubTicketList({
     cached_reply_content: string | null | undefined;
   };
   externalSolutions?: Record<string | number, string>;
+  isOpCompleted?: boolean;
   onDeleteDrafts?: (indices: number[]) => void;
   onAdd?: () => void;
   onToast?: (msg: string, type?: "success" | "warning") => void;
+  onTasksChange?: (tasks: SubTaskSummaryItem[]) => void;
   onSyncNote?: (taskTitle: string, taskSolution: string) => void;
   onSyncAllTasksNote?: (formattedNote: string) => void;
   onSyncConfirmedAttributes?: (attrs: {
@@ -2815,6 +2919,7 @@ function SubTicketList({
         confirmed?: boolean;
         assigned_user_id?: number | null;
         assigned_user_name?: string | null;
+        status?: string;
       }
     >
   >({});
@@ -2828,6 +2933,14 @@ function SubTicketList({
     canEdit?: boolean;
   } | null>(null);
   const [confirmToast, setConfirmToast] = useState<string | null>(null);
+  const [aiStatusMap, setAiStatusMap] = useState<Record<string | number, "idle" | "loading" | "done">>({});
+  const [kbDrawerState, setKbDrawerState] = useState<{
+    key: string | number;
+    title: string;
+    product_line_code: string;
+    module: string;
+    solution: string;
+  } | null>(null);
 
   const [selfHidden, setSelfHidden] = useState(false);
   const showSelf = subtasks.length === 0 && (!selfHidden || drafts.length === 0);
@@ -2906,6 +3019,7 @@ function SubTicketList({
       confirmed: cur?.confirmed ?? false,
       assigned_user_id: cur?.assigned_user_id !== undefined ? cur.assigned_user_id : initial.assigned_user_id,
       assigned_user_name: cur?.assigned_user_name !== undefined ? cur.assigned_user_name : initial.assigned_user_name,
+      status: cur?.status,
     };
   };
 
@@ -2937,6 +3051,7 @@ function SubTicketList({
       confirmed: boolean;
       assigned_user_id?: number | null;
       assigned_user_name?: string | null;
+      status?: string;
     }>,
   ) => {
     setRowStates((prev) => {
@@ -3000,9 +3115,82 @@ function SubTicketList({
     return tasks;
   };
 
+  const getSummaryTasks = (overridePatch?: { key: string | number; solution: string }): SubTaskSummaryItem[] => {
+    const tasks: SubTaskSummaryItem[] = [];
+    if (showSelf) {
+      const st = getRowState("self", {
+        type: self.predicted_type ?? "",
+        product_line_code: self.product_line_code ?? "",
+        module: self.module ?? "",
+        solution: self.cached_reply_content ?? "",
+      });
+      const sol = overridePatch && overridePatch.key === "self" ? overridePatch.solution : st.solution;
+      const isOp = st.type === "Operation" || self.predicted_type === "Operation";
+      const effStatus = isOpCompleted && isOp
+        ? "completed"
+        : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
+      tasks.push({
+        key: "self",
+        code: self.short_code,
+        title: self.title ?? "当前工单任务",
+        type: st.type || self.predicted_type || "",
+        solution: sol,
+        status: effStatus,
+      });
+    }
+    subtasks.forEach((stk: any) => {
+      const sid = stk.id;
+      const st = getRowState(sid, {
+        type: stk.type ?? "",
+        product_line_code: stk.product_line_code ?? "",
+        module: stk.module ?? "",
+        solution: stk.solution ?? "",
+      });
+      const sol = overridePatch && overridePatch.key === sid ? overridePatch.solution : st.solution;
+      const isOp = st.type === "Operation" || stk.type === "Operation";
+      const effStatus = isOpCompleted && isOp
+        ? "completed"
+        : (st.status ?? (st.confirmed ? "processing" : (stk.status || "draft")));
+      tasks.push({
+        key: sid,
+        code: stk.short_code ?? `#${sid}`,
+        title: stk.title ?? `子任务 #${sid}`,
+        type: st.type || stk.type || "",
+        solution: sol,
+        status: effStatus,
+      });
+    });
+    drafts.forEach((dft, i) => {
+      const draftKey = `draft-${i}`;
+      const st = getRowState(draftKey, {
+        type: dft.type || "",
+        product_line_code: dft.product_line || "",
+        module: dft.module || "",
+        solution: "",
+      });
+      const sol = overridePatch && overridePatch.key === draftKey ? overridePatch.solution : st.solution;
+      const isOp = st.type === "Operation" || dft.type === "Operation";
+      const effStatus = isOpCompleted && isOp
+        ? "completed"
+        : (st.status ?? (st.confirmed ? "processing" : "draft"));
+      tasks.push({
+        key: draftKey,
+        code: `${self.short_code}-${subtasks.length + i + 1}`,
+        title: dft.title || `新建子任务 #${i + 1}`,
+        type: st.type || dft.type || "",
+        solution: sol,
+        status: effStatus,
+      });
+    });
+    return tasks;
+  };
+
   const lastSyncedRef = useRef<string>("");
 
   useEffect(() => {
+    const summary = getSummaryTasks();
+    onTasksChange?.(summary);
+
     // 任务解决方案有值后自动同步至处理说明
     const tasks = getAllTasks();
     const hasAnySolution = tasks.some((t) => t.solution && t.solution.trim());
@@ -3021,7 +3209,8 @@ function SubTicketList({
     subtasks.map((s: any) => `${s.short_code}:${s.solution}`).join(","),
     self.short_code,
     self.cached_reply_content,
-    Object.entries(rowStates).map(([k, v]) => `${k}:${v.solution}`).join(","),
+    isOpCompleted,
+    Object.entries(rowStates).map(([k, v]) => `${k}:${v.solution}:${v.status}:${v.confirmed}:${v.type}`).join(","),
     externalSolutions ? Object.entries(externalSolutions).map(([k, v]) => `${k}:${v}`).join(",") : "",
   ]);
 
@@ -3050,8 +3239,9 @@ function SubTicketList({
     const targetHubId = typeof key === "number" ? key : self.hub_id;
     if (targetHubId) {
       confirmSubtaskMutation.mutate({ hubId: targetHubId, rowKey: key });
+      updateRow(key, { confirmed: true, status: "processing" });
     } else {
-      updateRow(key, { confirmed: true });
+      updateRow(key, { confirmed: true, status: "processing" });
       const successMsg = `已确认任务（${rowTitle || key}），任务状态已更新为处理中`;
       if (onToast) {
         onToast(successMsg, "success");
@@ -3147,6 +3337,75 @@ function SubTicketList({
     }
   };
 
+  const handleAiAnswer = async (
+    key: string | number,
+    rowTitle: string,
+    st: { type?: string; product_line_code?: string; module?: string; solution?: string },
+  ) => {
+    const missing: string[] = [];
+    if (!st.type?.trim()) missing.push("任务类型");
+    if (!st.product_line_code?.trim()) missing.push("产品分类");
+    if (!st.module?.trim()) missing.push("问题模块");
+
+    if (missing.length > 0) {
+      const msg = `请先补充${missing.join("、")}缺失字段后再进行AI作答`;
+      if (onToast) {
+        onToast(msg, "warning");
+      } else {
+        setConfirmToast(msg);
+        setTimeout(() => setConfirmToast(null), 3500);
+      }
+      return;
+    }
+
+    setAiStatusMap((prev) => ({ ...prev, [key]: "loading" as const }));
+    // 点击AI 作答后，任务状态从【待确认】变成【处理中】
+    updateRow(key, { status: "processing" });
+
+    try {
+      if (typeof key === "number") {
+        await patchByPath(
+          "/api/hub-issues/{hub_issue_id}/subtask",
+          { hub_issue_id: key },
+          {
+            type: st.type,
+            product_line_code: st.product_line_code,
+            module: st.module,
+          },
+        );
+        const res: any = await postByPath(
+          "/api/hub-issues/{hub_issue_id}/confirm-subtask",
+          { hub_issue_id: key },
+          { assignee_override_user_id: null },
+        );
+        if (res?.need_manual_assignee) {
+          setManualAssignModal({ hubId: key, title: rowTitle });
+        }
+        if (res?.solution || res?.reply_content) {
+          const newSol = res.solution || res.reply_content;
+          updateRow(key, { solution: newSol, confirmed: true, status: "processing" });
+        } else {
+          updateRow(key, { confirmed: true, status: "processing" });
+        }
+        void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+        void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+        void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+      } else {
+        handleConfirmRow(key, rowTitle, st);
+        updateRow(key, { status: "processing" });
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      if (onToast) onToast("AI作答已完成", "success");
+    } catch (err: any) {
+      console.warn("AI作答接口异常或无结果", err);
+      updateRow(key, { status: "processing" });
+      if (onToast) onToast(hubErrMsg(err) || "AI作答返回未生成默认方案，请人工完善", "warning");
+    } finally {
+      // 不管是否有结果返回解决方案，在收到接口返回后，按钮都变成【人工完善】
+      setAiStatusMap((prev) => ({ ...prev, [key]: "done" as const }));
+    }
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -3198,9 +3457,10 @@ function SubTicketList({
               >
                 <input
                   type="checkbox"
+                  disabled={!canEdit}
                   checked={allSelected}
                   onChange={toggleSelectAll}
-                  className="rounded border-slate-300 cursor-pointer"
+                  className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 />
               </th>
               <th
@@ -3233,6 +3493,7 @@ function SubTicketList({
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">指派说明</th>
+              <th className="px-2.5 py-1.5 text-center font-bold whitespace-nowrap">附件</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">操作</th>
             </tr>
           </thead>
@@ -3252,6 +3513,8 @@ function SubTicketList({
                   ? `${st.solution.slice(0, 10)}...`
                   : st.solution
                 : "";
+              const currentAiStatus =
+                aiStatusMap[rowKey] ?? (st.confirmed || st.solution?.trim() ? "done" : "idle");
 
               return (
                 <tr className="group border-t border-hub-borderLight hover:bg-slate-50">
@@ -3261,9 +3524,10 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
+                      disabled={!canEdit}
                       checked={selectedKeys.has(rowKey)}
                       onChange={() => toggleRow(rowKey)}
-                      className="rounded border-slate-300 cursor-pointer"
+                      className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                   </td>
                   <td
@@ -3282,6 +3546,7 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
+                      disabled={!canEdit}
                       value={st.type}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -3290,7 +3555,9 @@ function SubTicketList({
                           updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { type: val } });
                         }
                       }}
-                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                      className={`text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal h-[28px] ${
+                        !canEdit ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
+                      }`}
                     >
                       <option value="">选择类型</option>
                       {SUB_TASK_TYPES.map((t) => (
@@ -3317,6 +3584,7 @@ function SubTicketList({
                       placeholder="选择产品分类"
                       width={140}
                       compact
+                      disabled={!canEdit}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3329,13 +3597,15 @@ function SubTicketList({
                           updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { module: val } });
                         }
                       }}
+                      disabled={!canEdit}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
-                      const effStatus = st.confirmed
-                        ? "processing"
-                        : (self.status || "draft");
+                      const isOp = st.type === "Operation" || self.predicted_type === "Operation";
+                      const effStatus = isOpCompleted && isOp
+                        ? "completed"
+                        : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
                       const b = subtaskStatusBadge(effStatus);
                       return (
                         <span
@@ -3372,37 +3642,86 @@ function SubTicketList({
                       <button
                         type="button"
                         onClick={() =>
-                          setNoteModal({
+                          setKbDrawerState({
                             key: rowKey,
                             title: rowTitle,
-                            content: "",
+                            product_line_code: st.product_line_code || "",
+                            module: st.module || "",
+                            solution: "",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
+                        title="点击打开维护知识库面板"
                       >
-                        录入说明
+                        无方案，去完善
                       </button>
                     ) : (
                       <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
+                  <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
+                    0
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="确认任务"
-                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
-                        disabled={st.confirmed}
-                        onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
-                        className={`font-medium ${
-                          st.confirmed
-                            ? "text-slate-400 cursor-not-allowed opacity-50"
-                            : "text-[#6085e7] hover:underline cursor-pointer"
-                        }`}
-                      >
-                        确认
-                      </button>
-                    </div>
+                    {canEdit ? (
+                      <div className="flex items-center gap-2">
+                        {currentAiStatus === "loading" ? (
+                          <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
+                            <svg
+                              className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v8H4z"
+                              />
+                            </svg>
+                            AI作答中...
+                          </span>
+                        ) : currentAiStatus === "done" ? (
+                          <button
+                            type="button"
+                            aria-label="人工完善"
+                            onClick={() =>
+                              setKbDrawerState({
+                                key: rowKey,
+                                title: rowTitle,
+                                product_line_code: st.product_line_code || "",
+                                module: st.module || "",
+                                solution: st.solution || "",
+                              })
+                            }
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击打开维护知识库面板"
+                          >
+                            人工完善
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label="AI作答"
+                            onClick={() => handleAiAnswer(rowKey, rowTitle, st)}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击调用 Agent 进行自动作答"
+                          >
+                            AI作答
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -3426,6 +3745,8 @@ function SubTicketList({
                   ? `${st.solution.slice(0, 10)}...`
                   : st.solution
                 : "";
+              const currentAiStatus =
+                aiStatusMap[rowKey] ?? (stk.status === "answered" || st.solution?.trim() ? "done" : "idle");
 
               return (
                 <tr key={stk.id} className="group border-t border-hub-borderLight hover:bg-slate-50">
@@ -3435,9 +3756,10 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
+                      disabled={!canEdit}
                       checked={selectedKeys.has(rowKey)}
                       onChange={() => toggleRow(rowKey)}
-                      className="rounded border-slate-300 cursor-pointer"
+                      className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                   </td>
                   <td
@@ -3458,13 +3780,16 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
+                      disabled={!canEdit}
                       value={st.type}
                       onChange={(e) => {
                         const val = e.target.value;
                         updateRow(rowKey, { type: val });
                         updateSubtaskMutation.mutate({ hubId: stk.id, body: { type: val } });
                       }}
-                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                      className={`text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal h-[28px] ${
+                        !canEdit ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
+                      }`}
                     >
                       <option value="">选择类型</option>
                       {SUB_TASK_TYPES.map((t) => (
@@ -3489,6 +3814,7 @@ function SubTicketList({
                       placeholder="选择产品分类"
                       width={140}
                       compact
+                      disabled={!canEdit}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3499,11 +3825,16 @@ function SubTicketList({
                         updateRow(rowKey, { module: val });
                         updateSubtaskMutation.mutate({ hubId: stk.id, body: { module: val } });
                       }}
+                      disabled={!canEdit}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
-                      const b = subtaskStatusBadge(stk.status);
+                      const isOp = st.type === "Operation" || stk.type === "Operation";
+                      const effStatus = isOpCompleted && isOp
+                        ? "completed"
+                        : (st.status ?? (st.confirmed ? "processing" : (stk.status || "draft")));
+                      const b = subtaskStatusBadge(effStatus);
                       return (
                         <span
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
@@ -3540,38 +3871,86 @@ function SubTicketList({
                       <button
                         type="button"
                         onClick={() =>
-                          setNoteModal({
+                          setKbDrawerState({
                             key: rowKey,
                             title: rowTitle,
-                            content: "",
-                            canEdit: canEditThisRow,
+                            product_line_code: st.product_line_code || "",
+                            module: st.module || "",
+                            solution: "",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
+                        title="点击打开维护知识库面板"
                       >
-                        录入说明
+                        无方案，去完善
                       </button>
                     ) : (
                       <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
+                  <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
+                    {stk.attachments_count ?? (Array.isArray(stk.attachments) ? stk.attachments.length : 0)}
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="确认任务"
-                        title={stk.status === "answered" || stk.status === "processing" ? "任务处理中或已答复" : "确认"}
-                        disabled={stk.status === "answered" || stk.status === "processing"}
-                        onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
-                        className={`font-medium ${
-                          stk.status === "answered" || stk.status === "processing"
-                            ? "text-slate-400 cursor-not-allowed opacity-50"
-                            : "text-[#6085e7] hover:underline cursor-pointer"
-                        }`}
-                      >
-                        确认
-                      </button>
-                    </div>
+                    {canEdit ? (
+                      <div className="flex items-center gap-2">
+                        {currentAiStatus === "loading" ? (
+                          <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
+                            <svg
+                              className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v8H4z"
+                              />
+                            </svg>
+                            AI作答中...
+                          </span>
+                        ) : currentAiStatus === "done" ? (
+                          <button
+                            type="button"
+                            aria-label="人工完善"
+                            onClick={() =>
+                              setKbDrawerState({
+                                key: rowKey,
+                                title: rowTitle,
+                                product_line_code: st.product_line_code || "",
+                                module: st.module || "",
+                                solution: st.solution || "",
+                              })
+                            }
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击打开维护知识库面板"
+                          >
+                            人工完善
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label="AI作答"
+                            onClick={() => handleAiAnswer(rowKey, rowTitle, st)}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击调用 Agent 进行自动作答"
+                          >
+                            AI作答
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -3592,6 +3971,8 @@ function SubTicketList({
                   ? `${st.solution.slice(0, 10)}...`
                   : st.solution
                 : "";
+              const currentAiStatus =
+                aiStatusMap[draftKey] ?? (st.confirmed || st.solution?.trim() ? "done" : "idle");
 
               return (
                 <tr key={draftKey} className="group border-t border-hub-borderLight bg-amber-50/50 hover:bg-amber-50">
@@ -3654,9 +4035,10 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
-                      const effStatus = st.confirmed
-                        ? (st.type === "Operation" ? "answered" : "processing")
-                        : "draft";
+                      const isOp = st.type === "Operation" || dft.type === "Operation";
+                      const effStatus = isOpCompleted && isOp
+                        ? "completed"
+                        : (st.status ?? (st.confirmed ? "processing" : "draft"));
                       const b = subtaskStatusBadge(effStatus);
                       return (
                         <span
@@ -3689,36 +4071,81 @@ function SubTicketList({
                       <button
                         type="button"
                         onClick={() =>
-                          setNoteModal({
+                          setKbDrawerState({
                             key: draftKey,
                             title: rowTitle,
-                            content: "",
+                            product_line_code: st.product_line_code || "",
+                            module: st.module || "",
+                            solution: "",
                           })
                         }
                         className="text-[#6085e7] hover:underline cursor-pointer"
+                        title="点击打开维护知识库面板"
                       >
-                        录入说明
+                        无方案，去完善
                       </button>
                     ) : (
                       <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
+                  <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
+                    0
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label="确认任务"
-                        title={st.confirmed ? "已确认（任务处理中）" : "确认"}
-                        disabled={st.confirmed}
-                        onClick={() => handleConfirmRow(draftKey, rowTitle, st)}
-                        className={`font-medium ${
-                          st.confirmed
-                            ? "text-slate-400 cursor-not-allowed opacity-50"
-                            : "text-[#6085e7] hover:underline cursor-pointer"
-                        }`}
-                      >
-                        确认
-                      </button>
+                      {currentAiStatus === "loading" ? (
+                        <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
+                          <svg
+                            className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8v8H4z"
+                            />
+                          </svg>
+                          AI作答中...
+                        </span>
+                      ) : currentAiStatus === "done" ? (
+                        <button
+                          type="button"
+                          aria-label="人工完善"
+                          onClick={() =>
+                            setKbDrawerState({
+                              key: draftKey,
+                              title: rowTitle,
+                              product_line_code: st.product_line_code || "",
+                              module: st.module || "",
+                              solution: st.solution || "",
+                            })
+                          }
+                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开维护知识库面板"
+                        >
+                          人工完善
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label="AI作答"
+                          onClick={() => handleAiAnswer(draftKey, rowTitle, st)}
+                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击调用 Agent 进行自动作答"
+                        >
+                          AI作答
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -3772,6 +4199,34 @@ function SubTicketList({
             const nextTasks = getAllTasks({ key: noteModal.key, solution: content });
             onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
             onToast?.("已更新指派说明并同步至工单处理说明", "success");
+          }}
+        />
+      )}
+
+      {/* 从工单子任务发起的维护知识库抽屉（800px，富文本，仅取消与提交并作答） */}
+      {kbDrawerState && (
+        <KnowledgeBaseDrawer
+          open={true}
+          onClose={() => setKbDrawerState(null)}
+          defaultTitle={kbDrawerState.title}
+          defaultType="FAQ"
+          defaultProductLine={kbDrawerState.product_line_code}
+          defaultModule={kbDrawerState.module}
+          defaultContent={kbDrawerState.solution}
+          actionType="answer_only"
+          onAnswerAndSubmit={(content) => {
+            const targetKey = kbDrawerState.key;
+            updateRow(targetKey, { solution: content });
+            if (typeof targetKey === "number") {
+              updateSubtaskMutation.mutate({ hubId: targetKey, body: { solution: content } });
+            }
+            onSyncNote?.(kbDrawerState.title, content);
+            const nextTasks = getAllTasks({ key: targetKey, solution: content });
+            onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
+            if (onToast) {
+              onToast("已更新任务解决方案并同步至工单处理说明", "success");
+            }
+            setKbDrawerState(null);
           }}
         />
       )}

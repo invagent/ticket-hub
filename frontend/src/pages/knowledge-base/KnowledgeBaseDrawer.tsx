@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { PortalSearchSelect } from "@/components/PortalSearchSelect";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   addKnowledgeItem,
   type KnowledgeAttachment,
@@ -17,8 +18,12 @@ export interface KnowledgeBaseDrawerProps {
   onClose: () => void;
   defaultProductLine?: string;
   defaultModule?: string;
+  defaultTitle?: string;
+  defaultType?: KnowledgeType;
+  defaultContent?: string;
   item?: KnowledgeItem | null;
   mode?: "create" | "view";
+  actionType?: "submit_only" | "answer_only" | "both";
   // 提供 onAnswerAndSubmit 则显示「提交并作答」按钮，并将内容回写触发工单
   onAnswerAndSubmit?: (content: string) => void;
   onSubmitSuccess?: (item: KnowledgeItem) => void;
@@ -31,9 +36,13 @@ export function KnowledgeBaseDrawer({
   onClose,
   defaultProductLine = "",
   defaultModule = "",
+  defaultTitle = "",
+  defaultType = "FAQ",
+  defaultContent = "",
   item,
   mode = item ? "view" : "create",
   onAnswerAndSubmit,
+  actionType = onAnswerAndSubmit ? "answer_only" : "submit_only",
   onSubmitSuccess,
 }: KnowledgeBaseDrawerProps) {
   const [title, setTitle] = useState("");
@@ -45,8 +54,7 @@ export function KnowledgeBaseDrawer({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const imgInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. 获取启用的产品线
   const productLinesQuery = useQuery({
@@ -92,9 +100,9 @@ export function KnowledgeBaseDrawer({
   // 打开抽屉时初始化默认值
   useEffect(() => {
     if (open) {
-      setTitle("");
-      setType("FAQ");
-      setContent("");
+      setTitle(defaultTitle || "");
+      setType(defaultType || "FAQ");
+      setContent(defaultContent || "");
       setAttachments([]);
       setUploadError(null);
       setFormError(null);
@@ -105,7 +113,7 @@ export function KnowledgeBaseDrawer({
       setProductLineCode(firstPlc);
       setModuleCode(firstMod);
     }
-  }, [open, defaultProductLine, defaultModule]);
+  }, [open, defaultProductLine, defaultModule, defaultTitle, defaultType, defaultContent]);
 
   // 如果打开抽屉且暂无指定产品线，默认选中第一条可用产品线
   useEffect(() => {
@@ -114,53 +122,46 @@ export function KnowledgeBaseDrawer({
     }
   }, [open, productLineCode, productLineOptions]);
 
-  // 文件上传处理
-  const handleUploadImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 统一附件上传处理（图片 < 1M，视频 < 50M）
+  const handleUploadAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError(null);
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // 单张不超过 1MB
-      if (file.size > 1 * 1024 * 1024) {
-        setUploadError(`图片「${file.name}」大小 ${(file.size / 1024 / 1024).toFixed(2)}MB 超过限制，单张不可超过 1MB`);
-        continue;
+      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|ogg|mov|avi|mkv)$/i.test(file.name);
+      if (isVideo) {
+        // 视频需 < 50MB
+        if (file.size >= 50 * 1024 * 1024) {
+          setUploadError(`视频「${file.name}」大小 ${(file.size / 1024 / 1024).toFixed(2)}MB 超过限制，视频需 < 50MB`);
+          continue;
+        }
+        setAttachments((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            type: "video",
+            url: URL.createObjectURL(file),
+          },
+        ]);
+      } else {
+        // 图片需 < 1MB
+        if (file.size >= 1 * 1024 * 1024) {
+          setUploadError(`图片「${file.name}」大小 ${(file.size / 1024 / 1024).toFixed(2)}MB 超过限制，图片需 < 1MB`);
+          continue;
+        }
+        setAttachments((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            type: "image",
+            url: URL.createObjectURL(file),
+          },
+        ]);
       }
-      setAttachments((prev) => [
-        ...prev,
-        {
-          name: file.name,
-          size: file.size,
-          type: "image",
-          url: URL.createObjectURL(file),
-        },
-      ]);
-    }
-    e.target.value = "";
-  };
-
-  const handleUploadVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUploadError(null);
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      // 单个视频不超过 50MB
-      if (file.size > 50 * 1024 * 1024) {
-        setUploadError(`视频「${file.name}」大小 ${(file.size / 1024 / 1024).toFixed(2)}MB 超过限制，单个不可超过 50MB`);
-        continue;
-      }
-      setAttachments((prev) => [
-        ...prev,
-        {
-          name: file.name,
-          size: file.size,
-          type: "video",
-          url: URL.createObjectURL(file),
-        },
-      ]);
     }
     e.target.value = "";
   };
@@ -232,9 +233,9 @@ export function KnowledgeBaseDrawer({
         aria-hidden="true"
       />
 
-      {/* 500px 宽度右侧滑出抽屉 */}
+      {/* 800px 宽度右侧滑出抽屉 */}
       <div
-        className="relative z-10 w-[500px] h-full bg-white shadow-2xl flex flex-col font-hub text-slate-800 animate-in slide-in-from-right duration-200"
+        className="relative z-10 w-[800px] max-w-[95vw] h-full bg-white shadow-2xl flex flex-col font-hub text-slate-800 animate-in slide-in-from-right duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="knowledge-drawer-title"
@@ -469,65 +470,47 @@ export function KnowledgeBaseDrawer({
               />
             </div>
 
-            {/* 3.5 知识内容：详细内容、2000 字、支持图片 (<=1MB) 与视频 (<=50MB) */}
+            {/* 3.5 知识内容：详细内容、2000 字、富文本录入框（支持加粗、插入超链接、插入图片等） */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="font-semibold text-slate-700">
                   <span className="text-rose-500 mr-1">*</span>知识内容
                 </label>
-                <span className="text-[11.5px] text-slate-400 font-mono">
-                  {content.length}/2000
-                </span>
               </div>
-              <div className="relative">
-                <textarea
-                  value={content}
-                  maxLength={2000}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="详细录入该知识点解答内容、标准解决方案或操作步骤..."
-                  className="w-full text-[12.5px] border border-hub-border rounded-[7px] p-3 min-h-[140px] outline-none focus:border-hub-teal transition-colors leading-relaxed pb-8"
-                />
-              </div>
+              <RichTextEditor
+                value={content}
+                onChange={setContent}
+                placeholder="详细录入该知识点解答内容、标准解决方案或操作步骤，支持加粗、插入超链接、图片等..."
+                maxLength={2000}
+                minHeight={160}
+              />
 
-              {/* 附件上传按钮与限制提示 */}
-              <div className="mt-2 flex items-center gap-3">
+              {/* 附件上传按钮与限制提示：统一为【上传附件】，右侧 #666666 颜色提示 图片<1M,视频<50M */}
+              <div className="mt-2.5 flex items-center gap-2.5 flex-wrap">
                 <input
-                  ref={imgInputRef}
+                  ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*"
                   multiple
                   className="hidden"
-                  onChange={handleUploadImage}
-                />
-                <input
-                  ref={videoInputRef}
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  onChange={handleUploadVideo}
+                  onChange={handleUploadAttachment}
                 />
 
                 <button
                   type="button"
-                  onClick={() => imgInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] rounded-[6px] border border-hub-border bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-700"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-[6px] border border-hub-border bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-700 shadow-xs"
                 >
-                  <span>📷 上传图片</span>
-                  <span className="text-[10px] text-slate-400">(≤1M)</span>
+                  <span>📎 上传附件</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => videoInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11.5px] rounded-[6px] border border-hub-border bg-slate-50 hover:bg-slate-100 cursor-pointer text-slate-700"
-                >
-                  <span>🎬 上传视频</span>
-                  <span className="text-[10px] text-slate-400">(≤50M)</span>
-                </button>
+                <span style={{ color: "#666666" }} className="text-[11.5px] select-none">
+                  图片&lt;1M,视频&lt;50M
+                </span>
               </div>
 
               {uploadError && (
-                <p className="mt-1.5 text-[11px] text-rose-500">{uploadError}</p>
+                <p className="mt-1.5 text-[11px] text-rose-500 font-medium">{uploadError}</p>
               )}
 
               {/* 已上传附件列表 */}
@@ -583,8 +566,8 @@ export function KnowledgeBaseDrawer({
                 取消
               </button>
 
-              {/* 3.6 提交并作答：在知识库生成记录，并将知识内容回写当前工单处理说明 */}
-              {onAnswerAndSubmit && (
+              {/* 3.6 提交并作答：在知识库生成记录，并将知识内容回写当前工单任务解决方案 */}
+              {(actionType === "answer_only" || actionType === "both") && (
                 <button
                   type="button"
                   onClick={() => handleSave(true)}
@@ -595,13 +578,15 @@ export function KnowledgeBaseDrawer({
               )}
 
               {/* 3.7 提交：在知识库生成记录，不回写当前工单处理说明 */}
-              <button
-                type="button"
-                onClick={() => handleSave(false)}
-                className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 cursor-pointer shadow-sm"
-              >
-                提交
-              </button>
+              {(actionType === "submit_only" || actionType === "both") && (
+                <button
+                  type="button"
+                  onClick={() => handleSave(false)}
+                  className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 cursor-pointer shadow-sm"
+                >
+                  提交
+                </button>
+              )}
             </>
           )}
         </div>

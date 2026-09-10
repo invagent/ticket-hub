@@ -77,6 +77,7 @@ describe("TicketsListPage", () => {
       "工单来源系统",
       "处理人",
       "处理状态",
+      "处理环节",
       "工单处理说明",
       "产研责任人",
       "提单时间",
@@ -437,4 +438,102 @@ describe("TicketsListPage", () => {
     expect(screen.getByText("TKT-001")).toBeInTheDocument();
     expect(screen.getByText("TKT-002")).toBeInTheDocument();
   });
+
+  it("renders process stage badge and filters by 处理环节", async () => {
+    const stageSamples = {
+      items: [
+        {
+          id: 101,
+          short_code: "TKT-S1",
+          source_code: "ksm",
+          source_ticket_id: "ksm-101",
+          type: "Raw",
+          status: "received",
+          title: "服务流转工单",
+          product_line_code: "cloud-fapiao",
+          module: "开票管理",
+          created_at: "2026-08-01T10:00:00Z",
+          received_at: "2026-08-01T10:00:00Z",
+        },
+        {
+          id: 102,
+          short_code: "TKT-S2",
+          source_code: "zhichi",
+          source_ticket_id: "zc-102",
+          type: "Raw",
+          status: "received",
+          title: "产研工单Bug",
+          predicted_type: "Bug_fix",
+          product_line_code: "cloud-fapiao",
+          module: "开票管理",
+          created_at: "2026-08-01T10:00:00Z",
+          received_at: "2026-08-01T10:00:00Z",
+        },
+        {
+          id: 103,
+          short_code: "TKT-S3",
+          source_code: "ksm",
+          source_ticket_id: "ksm-103",
+          type: "Raw",
+          status: "closed",
+          title: "已完成工单",
+          product_line_code: "cloud-fapiao",
+          module: "开票管理",
+          created_at: "2026-08-01T10:00:00Z",
+          received_at: "2026-08-01T10:00:00Z",
+        },
+      ],
+      total: 3,
+      page: 1,
+      page_size: 50,
+      has_more: false,
+    };
+
+    server.use(http.get("*/api/tickets", () => HttpResponse.json(stageSamples)));
+    renderPage();
+
+    expect(await screen.findByText("TKT-S1")).toBeInTheDocument();
+    expect(screen.getByText("TKT-S2")).toBeInTheDocument();
+    expect(screen.getByText("TKT-S3")).toBeInTheDocument();
+
+    // 验证展示了对应的处理环节徽标
+    expect(screen.getByText("服务处理")).toBeInTheDocument();
+    expect(screen.getByText("产研处理")).toBeInTheDocument();
+    expect(screen.getByText("完成")).toBeInTheDocument();
+
+    // 打开处理环节多选下拉框
+    const stageDropdownBtn = screen.getByRole("button", { name: /^处理环节/ });
+    fireEvent.click(stageDropdownBtn);
+
+    // 勾选【产研处理】
+    const rAndDOption = screen.getByRole("checkbox", { name: "产研处理" });
+    fireEvent.click(rAndDOption);
+
+    // 只保留 TKT-S2
+    expect(screen.getByText("TKT-S2")).toBeInTheDocument();
+    expect(screen.queryByText("TKT-S1")).not.toBeInTheDocument();
+    expect(screen.queryByText("TKT-S3")).not.toBeInTheDocument();
+
+    // 切换勾选【完成】（触发解除默认 op_statuses 限制并获取新数据）
+    const doneOption = screen.getByRole("checkbox", { name: "完成" });
+    fireEvent.click(doneOption);
+    // 同时包含产研处理和完成
+    expect(await screen.findByText("TKT-S2")).toBeInTheDocument();
+    expect(screen.getByText("TKT-S3")).toBeInTheDocument();
+    expect(screen.queryByText("TKT-S1")).not.toBeInTheDocument();
+
+    // 取消勾选【产研处理】，只保留完成
+    fireEvent.click(rAndDOption);
+    expect(await screen.findByText("TKT-S3")).toBeInTheDocument();
+    expect(screen.queryByText("TKT-S2")).not.toBeInTheDocument();
+    expect(screen.queryByText("TKT-S1")).not.toBeInTheDocument();
+
+    // 勾选【全部】，自动重置为全部（展示所有工单）
+    const allOption = screen.getByRole("checkbox", { name: "全部" });
+    fireEvent.click(allOption);
+    expect(await screen.findByText("TKT-S1")).toBeInTheDocument();
+    expect(screen.getByText("TKT-S2")).toBeInTheDocument();
+    expect(screen.getByText("TKT-S3")).toBeInTheDocument();
+  });
 });
+

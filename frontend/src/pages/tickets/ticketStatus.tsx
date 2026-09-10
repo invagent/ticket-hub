@@ -1,7 +1,16 @@
-/**
- * ticket.status 英文枚举 → 中文 label + 徽标配色。
- * 独立文件避免 TicketsListPage ↔ TicketDetailPage 循环依赖（两页都从这里 import）。
- */
+import { computeProcessStage } from "@/api/processStage";
+import type { TicketSummary } from "@/api/client";
+
+const CLOSED_STATUSES = ["closed", "resolved", "transferred_return", "superseded", "rejected"];
+
+export type ProcessLinkStage = "服务处理" | "产研处理" | "完成";
+
+export const PROCESS_STAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: "ALL", label: "全部" },
+  { value: "服务处理", label: "服务处理" },
+  { value: "产研处理", label: "产研处理" },
+  { value: "完成", label: "完成" },
+];
 
 export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg: string; bd: string }> = {
   processing: { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" },
@@ -21,8 +30,8 @@ export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg
   in_progress: { label: "处理中", bg: "#e9f3f2", fg: "#14666a", bd: "#cfe4e2" },
   code_merged: { label: "代码已合并", bg: "#e9f3f2", fg: "#14666a", bd: "#cfe4e2" },
   released: { label: "已发版", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  replied: { label: "已回复", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
-  resolved: { label: "已解决", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
+  replied: { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
+  resolved: { label: "处理关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
   split: { label: "已拆分", bg: "#f2edf8", fg: "#7a5ba6", bd: "#ddd0ec" },
   done: { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
   superseded: { label: "被取代", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" },
@@ -33,9 +42,10 @@ export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg
   pending: { label: "待人工处理", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
   draft: { label: "待确认", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" },
   returned: { label: "已退回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" },
+  completed: { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
 };
 
-/** 子任务专用精简状态映射：待确认 / 处理中 / 已答复 / 已退回 / 已关闭 */
+/** 子任务专用精简状态映射：待确认 / 处理中 / 处理完成 / 已完成 / 退回转单 / 处理关闭 */
 export function subtaskStatusBadge(status: string | null | undefined): {
   label: string;
   bg: string;
@@ -43,11 +53,17 @@ export function subtaskStatusBadge(status: string | null | undefined): {
   bd: string;
 } {
   const s = (status || "").toLowerCase();
-  if (["answered", "released", "done"].includes(s)) {
-    return { label: "已答复", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" };
+  if (["completed"].includes(s)) {
+    return { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" };
   }
-  if (["returned", "canceled", "transferred_return"].includes(s)) {
-    return { label: "已退回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" };
+  if (["answered", "released", "done", "replied"].includes(s)) {
+    return { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" };
+  }
+  if (["returned", "canceled", "transferred_return", "transferred"].includes(s)) {
+    return { label: "退回转单", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" };
+  }
+  if (["closed", "resolved"].includes(s)) {
+    return { label: "处理关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" };
   }
   if (["processing", "in_progress"].includes(s)) {
     return { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" };
@@ -74,4 +90,66 @@ export function StatusBadge({ status }: { status: string }) {
       {c.label}
     </span>
   );
+}
+
+export function isTicketClosed(t: TicketSummary): boolean {
+  if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
+    return false;
+  }
+  if (t.hub_issue_id == null) {
+    return CLOSED_STATUSES.includes(t.status);
+  }
+  const stage = computeProcessStage({
+    predictedType: t.predicted_type,
+    hubIssueId: t.hub_issue_id,
+    hubStatus: t.hub_status,
+    opStatus: t.op_status,
+    ticketStatus: t.status,
+    ticketStatusLabel,
+  });
+  return stage.tone === "closed";
+}
+
+export function getTicketProcessLink(t: TicketSummary): ProcessLinkStage {
+  if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
+    return "服务处理";
+  }
+  // 1. 工单关闭后环节记录为【完成】
+  if (
+    isTicketClosed(t) ||
+    t.status === "closed" ||
+    t.status === "done" ||
+    t.status === "resolved" ||
+    t.status === "answered" ||
+    t.status === "completed" ||
+    t.status === "transferred_return" ||
+    t.status === "superseded" ||
+    t.status === "rejected" ||
+    t.op_status === "closed" ||
+    t.op_status === "answered" ||
+    t.op_status === "transferred_return" ||
+    t.hub_status === "closed" ||
+    t.hub_status === "resolved" ||
+    t.hub_status === "released" ||
+    Boolean((t as any).actual_resolved_at) ||
+    Boolean((t as any).closed_at) ||
+    Boolean((t as any).resolved_at)
+  ) {
+    return "完成";
+  }
+
+  // 2. 升级到研发后记录为【产研处理】
+  if (
+    t.predicted_type === "Bug_fix" ||
+    t.predicted_type === "Demand" ||
+    (t as any).type === "Bug_fix" ||
+    (t as any).type === "Demand" ||
+    Boolean(t.linear_status) ||
+    Boolean(t.assigned_user_id)
+  ) {
+    return "产研处理";
+  }
+
+  // 3. 列表新增记录时/服务处理中状态值为：【服务处理】
+  return "服务处理";
 }

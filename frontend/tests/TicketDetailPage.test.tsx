@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -690,12 +690,13 @@ describe("TicketDetailPage", () => {
     );
     renderPage(340);
     await screen.findByRole("heading", { name: "TKT-340" });
-    const ta = await screen.findByPlaceholderText(/填写当前节点处理说明/);
-    expect((ta as HTMLTextAreaElement).value).toContain("请提供:1) 报错截图 2) 操作步骤");
+    expect(
+      (await screen.findAllByText(/请提供:1\) 报错截图 2\) 操作步骤/)).length,
+    ).toBeGreaterThanOrEqual(1);
     localStorage.clear();
   });
 
-  it("答复后(op_status=answered)处理说明只读、提交按钮禁用", async () => {
+  it("答复后(op_status=answered)处理说明只读、提交等操作按钮不显示", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubOperationTicket(341, { op_status: "answered", cached_reply_content: "已发出的答复" });
     server.use(
@@ -711,13 +712,20 @@ describe("TicketDetailPage", () => {
     );
     renderPage(341);
     await screen.findByRole("heading", { name: "TKT-341" });
-    const ta = (await screen.findByPlaceholderText(/已答复完成，只读/)) as HTMLTextAreaElement;
-    expect(ta.readOnly).toBe(true);
+    expect((await screen.findAllByText("已发出的答复")).length).toBeGreaterThanOrEqual(1);
     // 处理建议下拉隐藏不展示
     expect(screen.queryByRole("combobox", { name: "处理建议" })).not.toBeInTheDocument();
-    // 提交答复按钮禁用
-    expect(screen.getByRole("button", { name: "提交答复" })).toBeDisabled();
-    expect(screen.getByText(/已答复完成，不可再编辑/)).toBeInTheDocument();
+    // 不可操作状态：操作按钮禁用不显示
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转产研" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回 KSM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拆单" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完善知识库" })).toBeInTheDocument();
+    // 返回列表按钮仍显示
+    expect(screen.getByRole("button", { name: "返回列表" })).toBeInTheDocument();
+    expect(screen.getByText(/工单状态为【处理完成】，不可再编辑/)).toBeInTheDocument();
     localStorage.clear();
   });
 
@@ -781,9 +789,9 @@ describe("TicketDetailPage", () => {
     );
     renderPage(360);
     await screen.findByRole("heading", { name: "TKT-360" });
-    // 顶部标签 + 节点详情两处显示「已发版」；子任务列表按精简状态显示「已答复」
+    // 顶部标签 + 节点详情两处显示「已发版」；子任务列表按精简状态显示「处理完成」
     expect(await screen.findAllByText("已发版")).toHaveLength(2);
-    expect(await screen.findByText("已答复")).toBeInTheDocument();
+    expect(await screen.findByText("处理完成")).toBeInTheDocument();
     localStorage.clear();
   });
 
@@ -830,6 +838,290 @@ describe("TicketDetailPage", () => {
     expect(typeInput).toBeDisabled();
     expect(screen.queryByRole("button", { name: "转研发并推送" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认分类" })).not.toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("不可操作状态【补充资料】【退回转单】【处理关闭】所有操作按钮全部禁用不显示，仅保留返回列表", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+
+    // 1. 补充资料
+    stubOperationTicket(370, { op_status: "supplementing" });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "supplementing",
+        }),
+      ),
+    );
+    const { unmount: unmount1 } = renderPage(370);
+    await screen.findByRole("heading", { name: "TKT-370" });
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转产研" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回 KSM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拆单" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完善知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回列表" })).toBeInTheDocument();
+    unmount1();
+
+    // 2. 退回转单
+    stubOperationTicket(371, { op_status: "transferred_return" });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          op_status: "transferred_return",
+        }),
+      ),
+    );
+    const { unmount: unmount2 } = renderPage(371);
+    await screen.findByRole("heading", { name: "TKT-371" });
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转产研" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回 KSM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拆单" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完善知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回列表" })).toBeInTheDocument();
+    unmount2();
+
+    // 3. 处理关闭
+    stubOperationTicket(372, { status: "closed", op_status: "closed" });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "closed",
+          op_status: "closed",
+        }),
+      ),
+    );
+    const { unmount: unmount3 } = renderPage(372);
+    await screen.findByRole("heading", { name: "TKT-372" });
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转产研" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回 KSM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拆单" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完善知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回列表" })).toBeInTheDocument();
+    unmount3();
+
+    localStorage.clear();
+  });
+
+  it("点击【提交答复】后收到反馈确认工单答复完成，工单状态变【处理完成】，所有操作按钮变为不显示", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(373, { op_status: "processing", cached_reply_content: "拟答复文本内容" });
+    server.use(
+      http.post("*/api/hub-issues/88/reply", async () => {
+        return HttpResponse.json({
+          hub_issue_id: 88,
+          version: 1,
+          cascaded_ticket_count: 1,
+          outbox_count: 1,
+        });
+      }),
+      http.post("*/api/tickets/373/reply", async () => {
+        return HttpResponse.json({
+          ticket_id: 373,
+          outbox_ids: [1],
+          reply_content: "拟答复文本内容",
+        });
+      }),
+    );
+    renderPage(373);
+    await screen.findByRole("heading", { name: "TKT-373" });
+
+    // 初始处理中状态：可操作按钮正常显示
+    const submitBtn = await screen.findByRole("button", { name: "提交答复" });
+    expect(submitBtn).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "转产研" })).toBeInTheDocument();
+
+    // 点击提交答复
+    await userEvent.click(submitBtn);
+
+    // 提交后响应成功：工单状态变为【已答复】或【处理完成】
+    await waitFor(() => {
+      expect(
+        screen.queryAllByText("已答复").length + screen.queryAllByText("处理完成").length,
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    // 所有操作按钮变为不显示，仅保留【返回列表】
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转产研" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转派" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "退回 KSM" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "补充资料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拆单" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完善知识库" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回列表" })).toBeInTheDocument();
+
+    localStorage.clear();
+  });
+
+  it("点击AI作答后任务状态从【待确认】变成【处理中】", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    stubOperationTicket(374, {
+      op_status: "processing",
+      product_line_code: "elec_inv",
+      module: "issue",
+      cached_reply_content: null,
+    });
+    server.use(
+      http.get("*/api/admin/product-lines", () =>
+        HttpResponse.json([{ code: "elec_inv", name: "电子发票" }]),
+      ),
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          product_line_code: "elec_inv",
+          module: "issue",
+        }),
+      ),
+      http.post("*/api/hub-issues/88/confirm-subtask", async () => {
+        return HttpResponse.json({
+          need_manual_assignee: false,
+          solution: "AI自动生成作答方案",
+        });
+      }),
+    );
+    renderPage(374);
+    await screen.findByRole("heading", { name: "TKT-374" });
+
+    // 初始状态应为【待确认】
+    expect(await screen.findByText("待确认")).toBeInTheDocument();
+
+    // 点击【AI作答】
+    const aiBtn = await screen.findByRole("button", { name: "AI作答" });
+    await userEvent.click(aiBtn);
+
+    // 任务状态从【待确认】变成【处理中】（顶部工单状态徽标 + 子任务列表任务状态徽标均展示处理中）
+    await waitFor(() => {
+      expect(screen.getAllByText("处理中").length).toBeGreaterThanOrEqual(2);
+    });
+
+    localStorage.clear();
+  });
+
+  it("提交答复校验：应用类任务解决方案为空提示并拦截，录入后提交返回应用类任务变为【已完成】", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    let replyCalled = false;
+    stubOperationTicket(375, {
+      op_status: "processing",
+      product_line_code: "elec_inv",
+      module: "issue",
+      cached_reply_content: "", // 解决方案为空
+    });
+    server.use(
+      http.get("*/api/admin/product-lines", () =>
+        HttpResponse.json([{ code: "elec_inv", name: "电子发票" }]),
+      ),
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "created",
+          product_line_code: "elec_inv",
+          module: "issue",
+        }),
+      ),
+      http.post("*/api/hub-issues/88/reply", async () => {
+        replyCalled = true;
+        return HttpResponse.json({
+          hub_issue_id: 88,
+          version: 1,
+          cascaded_ticket_count: 1,
+          outbox_count: 1,
+        });
+      }),
+      http.post("*/api/tickets/375/reply", async () => {
+        replyCalled = true;
+        return HttpResponse.json({
+          ticket_id: 375,
+          outbox_ids: [1],
+          reply_content: "人工补充的解决方案",
+        });
+      }),
+    );
+    renderPage(375);
+    await screen.findByRole("heading", { name: "TKT-375" });
+
+    // 1. 解决方案为空时点击提交答复 -> 拦截并提示
+    const submitBtn = await screen.findByRole("button", { name: "提交答复" });
+    await userEvent.click(submitBtn);
+
+    const warningEls = await screen.findAllByText(/任务解决方案为空，请先录入后再提交/);
+    expect(warningEls.length).toBeGreaterThanOrEqual(1);
+    expect(replyCalled).toBe(false);
+
+    // 2. 模拟录入处理说明与解决方案
+    const ta = screen.getByPlaceholderText(/填写当前节点处理说明/);
+    fireEvent.change(ta, { target: { value: "解决方案：人工补充的解决方案" } });
+
+    // 3. 再次点击提交答复 -> 提交成功，所有应用类的任务状态修改为【已完成】
+    await userEvent.click(submitBtn);
+    await waitFor(() => expect(replyCalled).toBe(true));
+
+    await waitFor(() => {
+      expect(screen.getByText("已完成")).toBeInTheDocument();
+    });
+
+    localStorage.clear();
+  });
+
+  it("【完善知识库】按钮不受工单状态限制，在处理完成等状态下仍可显示并调用维护知识库面板", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
+    // 工单为处理完成终态
+    stubOperationTicket(376, {
+      status: "answered",
+      op_status: "answered",
+      product_line_code: "elec_inv",
+      module: "issue",
+    });
+    server.use(
+      http.get("*/api/hub-issues/88", () =>
+        HttpResponse.json({
+          id: 88,
+          short_code: "HUB-88",
+          type: "Operation",
+          status: "answered",
+          op_status: "answered",
+        }),
+      ),
+    );
+    renderPage(376);
+    await screen.findByRole("heading", { name: "TKT-376" });
+
+    // 【提交答复】等业务按钮不显示
+    expect(screen.queryByRole("button", { name: "提交答复" })).not.toBeInTheDocument();
+
+    // 【完善知识库】不受状态限制，依然显示且可用
+    const kbBtn = screen.getByRole("button", { name: "完善知识库" });
+    expect(kbBtn).toBeInTheDocument();
+    expect(kbBtn).not.toBeDisabled();
+
+    // 点击【完善知识库】可调用维护知识库面板
+    await userEvent.click(kbBtn);
+    expect(await screen.findByRole("heading", { name: "维护知识库" })).toBeInTheDocument();
+
     localStorage.clear();
   });
 });

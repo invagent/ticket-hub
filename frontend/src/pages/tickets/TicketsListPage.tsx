@@ -5,7 +5,7 @@
  * - 交互：列宽拖拽、列顺序拖拽、横向滚动；列偏好(顺序+宽度)持久化 localStorage
  * - 保留：主管多选行 + 重新触发分配 / 批量指派、分页、URL 筛选驱动
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -23,7 +23,13 @@ import { AssignResultDialog } from "./AssignResultDialog";
 import { BatchSupplyDialog } from "./BatchSupplyDialog";
 import { BatchTransferDialog } from "./BatchTransferDialog";
 import { PredictedTypeBadge } from "./TicketDetailPage";
-import { StatusBadge, ticketStatusLabel } from "./ticketStatus";
+import {
+  StatusBadge,
+  ticketStatusLabel,
+  isTicketClosed,
+  PROCESS_STAGE_OPTIONS,
+  getTicketProcessLink,
+} from "./ticketStatus";
 import { devProgressLabel, devProgressTone, STAGE_TONE_STYLE } from "@/api/processStage";
 
 function getAuthUser(): { id: number; name: string; role: string } | null {
@@ -34,14 +40,6 @@ function getAuthUser(): { id: number; name: string; role: string } | null {
   }
 }
 
-const CLOSED_STATUSES = ["done", "closed", "superseded", "rejected", "transferred_return"];
-
-function isTicketClosed(t: TicketSummary): boolean {
-  if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
-    return false;
-  }
-  return CLOSED_STATUSES.includes(t.status);
-}
 
 
 function fmtTime(v: string | null | undefined): string {
@@ -96,12 +94,12 @@ const OP_STATUS_OPTIONS: { value: string; label: string }[] = [
 
 const DEFAULT_OP_STATUSES = ["processing", "reviewing", "supplementing"];
 
-// v8: 筛选栏固定顶部并提升对比度、增加超时状态列与筛选、右侧快捷统计标签
-const PREFS_KEY = "tickets_table_prefs_v20260908_v4";
+// v9: 新增【处理环节】列、替换提单企业为处理环节多选筛选
+const PREFS_KEY = "tickets_table_prefs_v20260909_process_stage";
 type TablePrefs = { order?: ColumnOrderState; sizing?: ColumnSizingState };
 
 // 默认列顺序（工单列表优化）：
-// 工单号、来源工单号、标题、问题描述、产品分类、问题模块、工单处理说明、工单类型、处理状态、处理人、
+// 工单号、来源工单号、标题、问题描述、产品分类、问题模块、工单处理说明、工单类型、处理状态、处理环节、处理人、
 // 产研责任人、主产品、提单模块、驳回次数、关联任务、研发进度、服务等级、标准处理时长、剩余处理时间、超时状态、
 // 提单公司、公司税号、提单人、提单人手机、提单人邮箱、联系人、联系人手机、联系邮箱、归属租户编号、
 // 归属租户、工单来源系统、提单时间、创建时间、处理完成时间、处理关闭时间、最后更新时间。
@@ -116,6 +114,7 @@ const DEFAULT_ORDER: string[] = [
   "closing_note",
   "predicted_type",
   "op_status",
+  "process_stage",
   "handler_user",
   "assigned_user",
   "product_name",
@@ -343,6 +342,8 @@ function getTicketColumnValue(ticket: TicketSummary, colId: string): string {
     case "status": {
       return ticketStatusLabel(ticket.status);
     }
+    case "process_stage":
+      return getTicketProcessLink(ticket);
     case "handler_user":
       return ticket.handler_user_name ?? (ticket.handler_user_id ? String(ticket.handler_user_id) : "");
     case "assigned_user":
@@ -686,13 +687,21 @@ export function TicketsListPage() {
 
   const status = params.get("status") ?? ""; // 工单原始状态：UI 已隐藏,仍支持外部链接带入
 
+  // 处理环节多选：全部 / 服务处理 / 产研处理 / 完成
+  const processStagesParam = params.getAll("process_stages");
+  const processStagesKey = processStagesParam.join(",");
+  const processStages = useMemo(() => processStagesParam, [processStagesKey]);
+
   // 状态筛选条件多选：默认选中 处理中、补充重提、待审核
+  // 当用户在处理环节中选择「完成」或「全部」时，若未指定处理状态，默认不限定仅查进行中，允许后端返回已完成工单
   const isOpStatusSpecified = params.has("op_statuses") || params.has("op_status");
   const rawOpStatuses = params.getAll("op_statuses").filter(Boolean);
   const legacyOpStatus = params.get("op_status");
+  const hasFinishedStage = processStages.includes("完成") || processStages.includes("ALL");
+  const effectiveDefaultOpStatuses = hasFinishedStage ? [] : DEFAULT_OP_STATUSES;
   const opStatuses = isOpStatusSpecified
     ? (rawOpStatuses.length > 0 ? rawOpStatuses : (legacyOpStatus ? [legacyOpStatus] : []))
-    : DEFAULT_OP_STATUSES;
+    : effectiveDefaultOpStatuses;
 
   const overdueFilter = params.get("overdue_status") ?? "";
   const [quickTag, setQuickTag] = useState<"green_vip" | "today" | "overdue" | "unassigned" | null>(null);
@@ -735,7 +744,6 @@ export function TicketsListPage() {
 
   // 输入框本地态 + debounce 同步到 URL（避免每次击键都请求）
   const [sourceTicketInput, setSourceTicketInput] = useState(sourceTicketQ);
-  const [reporterCompanyInput, setReporterCompanyInput] = useState(reporterCompany);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showReroute, setShowReroute] = useState(false);
@@ -770,10 +778,6 @@ export function TicketsListPage() {
     setSourceTicketInput(sourceTicketQ);
   }, [sourceTicketQ]);
 
-  useEffect(() => {
-    setReporterCompanyInput(reporterCompany);
-  }, [reporterCompany]);
-
   // 搜索框 debounce（350ms）→ 写入 URL source_ticket_q，触发后端查询
   useEffect(() => {
     const v = sourceTicketInput.trim();
@@ -783,26 +787,11 @@ export function TicketsListPage() {
       if (v) next.set("source_ticket_q", v);
       else next.delete("source_ticket_q");
       next.set("page", "1");
-      setParams(next);
+      setParams(next, { replace: true });
       setSelectedIds(new Set());
     }, 350);
     return () => clearTimeout(t);
   }, [sourceTicketInput, sourceTicketQ, params, setParams]);
-
-  // 提单企业 debounce（350ms）
-  useEffect(() => {
-    const v = reporterCompanyInput.trim();
-    if (v === reporterCompany) return;
-    const t = setTimeout(() => {
-      const next = new URLSearchParams(params);
-      if (v) next.set("reporter_company", v);
-      else next.delete("reporter_company");
-      next.set("page", "1");
-      setParams(next);
-      setSelectedIds(new Set());
-    }, 350);
-    return () => clearTimeout(t);
-  }, [reporterCompanyInput, reporterCompany, params, setParams]);
 
   const tickets = useQuery({
     queryKey: [
@@ -907,6 +896,11 @@ export function TicketsListPage() {
       list = list.filter((t) => !t.handler_user_id);
     }
 
+    // 处理环节筛选：支持多选（全部、服务处理、产研处理、完成）
+    if (processStages.length > 0 && !processStages.includes("ALL")) {
+      list = list.filter((t) => processStages.includes(getTicketProcessLink(t)));
+    }
+
     const filterEntries = Object.entries(headerFilters).filter(
       ([, f]) => f && f.value && f.value.trim() !== "",
     );
@@ -924,7 +918,7 @@ export function TicketsListPage() {
     }
 
     return list;
-  }, [rawItems, overdueFilter, quickTag, todayStr, headerFilters]);
+  }, [rawItems, overdueFilter, quickTag, todayStr, processStagesKey, headerFilters]);
 
   const currentHandlersDisplay = useMemo(() => {
     const handlerNames = new Set<string>();
@@ -944,19 +938,20 @@ export function TicketsListPage() {
   const allSelected = items.length > 0 && items.every((t) => selectedIds.has(t.id));
   const someSelected = items.some((t) => selectedIds.has(t.id)) && !allSelected;
 
-  if (headerCheckboxRef.current) {
-    headerCheckboxRef.current.indeterminate = someSelected;
-  }
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = someSelected;
+    }
+  }, [someSelected]);
 
-
-  function setMultiFilter(key: string, values: (string | number)[]) {
+  const setMultiFilter = useCallback((key: string, values: (string | number)[]) => {
     const next = new URLSearchParams(params);
     next.delete(key);
     for (const v of values) next.append(key, String(v));
     next.set("page", "1");
-    setParams(next);
+    setParams(next, { replace: true });
     setSelectedIds(new Set());
-  }
+  }, [params, setParams]);
 
   function handleSourceCodesChange(next: string[]) {
     const nextParams = new URLSearchParams(params);
@@ -964,7 +959,7 @@ export function TicketsListPage() {
     nextParams.delete("source_code");
     for (const s of next) nextParams.append("source_codes", s);
     nextParams.set("page", "1");
-    setParams(nextParams);
+    setParams(nextParams, { replace: true });
     setSelectedIds(new Set());
   }
 
@@ -978,7 +973,7 @@ export function TicketsListPage() {
       for (const s of next) nextParams.append("op_statuses", s);
     }
     nextParams.set("page", "1");
-    setParams(nextParams);
+    setParams(nextParams, { replace: true });
     setSelectedIds(new Set());
   }
 
@@ -987,24 +982,22 @@ export function TicketsListPage() {
     if (val) next.set("overdue_status", val);
     else next.delete("overdue_status");
     next.set("page", "1");
-    setParams(next);
+    setParams(next, { replace: true });
     setSelectedIds(new Set());
   }
 
   function resetAllFilters() {
-    setParams(new URLSearchParams());
+    setParams(new URLSearchParams(), { replace: true });
     setSelectedIds(new Set());
     setSourceTicketInput("");
-    setReporterCompanyInput("");
     setQuickTag(null);
     setHeaderFilters({});
   }
 
-
   function setPage(p: number) {
     const next = new URLSearchParams(params);
     next.set("page", String(p));
-    setParams(next);
+    setParams(next, { replace: true });
     setSelectedIds(new Set());
   }
 
@@ -1028,9 +1021,19 @@ export function TicketsListPage() {
     if (toVal) next.set(toKey, toVal);
     else next.delete(toKey);
     next.set("page", "1");
-    setParams(next);
+    setParams(next, { replace: true });
     setSelectedIds(new Set());
   }
+
+  const handleProcessStageChange = useCallback((next: string[]) => {
+    const justAddedAll = !processStages.includes("ALL") && next.includes("ALL");
+    if (justAddedAll) {
+      setMultiFilter("process_stages", ["ALL"]);
+      return;
+    }
+    const cleaned = next.filter((v) => v !== "ALL");
+    setMultiFilter("process_stages", cleaned);
+  }, [processStages, setMultiFilter]);
 
   const isOpStatusDifferentFromDefault =
     opStatuses.length !== DEFAULT_OP_STATUSES.length ||
@@ -1046,6 +1049,7 @@ export function TicketsListPage() {
       handlerUserIds.length ||
       effectiveAssignedUserIds.length ||
       predictedTypes.length ||
+      (processStages.length > 0 && !processStages.includes("ALL")) ||
       sourceTicketQ.trim() ||
       reporterCompany.trim() ||
       receivedFrom ||
@@ -1239,6 +1243,34 @@ export function TicketsListPage() {
             return <StatusBadge status="processing" />;
           }
           return <StatusBadge status={t.status} />;
+        },
+      },
+      {
+        id: "process_stage",
+        header: "处理环节",
+        accessorFn: (row) => getTicketProcessLink(row),
+        size: 95,
+        cell: ({ row }) => {
+          const t = row.original;
+          const stage = getTicketProcessLink(t);
+          const style =
+            stage === "完成"
+              ? { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" }
+              : stage === "产研处理"
+                ? { bg: "#eef1fb", fg: "#4b4fb3", bd: "#d4d8f2" }
+                : { bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" };
+          return (
+            <span
+              className="inline-block px-2 py-0.5 rounded-full text-[10.5px] font-bold border whitespace-nowrap"
+              style={{
+                backgroundColor: style.bg,
+                color: style.fg,
+                borderColor: style.bd,
+              }}
+            >
+              {stage}
+            </span>
+          );
         },
       },
       {
@@ -1674,7 +1706,7 @@ export function TicketsListPage() {
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSupervisor, allSelected, selectedIds, items]);
+  }, [isSupervisor, allSelected, selectedIds]);
 
   // 冻结列：选择框 + 工单号 + 来源工单号（sticky left）
   // 冻结列：选择框 + 工单号 + 来源工单号（sticky left）
@@ -1949,14 +1981,12 @@ export function TicketsListPage() {
               onChange={(types) => setMultiFilter("predicted_types", types)}
             />
 
-            {/* 7. 提单企业搜索 */}
-            <input
-              type="text"
-              value={reporterCompanyInput}
-              onChange={(e) => setReporterCompanyInput(e.target.value)}
-              placeholder="提单企业"
-              title="按提单公司/企业名称筛选"
-              className="h-[30px] w-full text-xs px-2.5 border border-[#cbd5e1] rounded-[7px] bg-white outline-none focus:border-hub-teal"
+            {/* 7. 处理环节多选 */}
+            <MultiCheckDropdown
+              placeholder="处理环节"
+              options={PROCESS_STAGE_OPTIONS}
+              value={processStages}
+              onChange={handleProcessStageChange}
             />
 
             {/* 8. 超时状态筛选 + 重置筛选 */}
