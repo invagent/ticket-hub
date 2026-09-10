@@ -331,8 +331,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     expect(modInput).toBeDisabled();
     expect(modInput.className).toContain("w-[300px]");
 
-    // 3. 子任务点击确认后，同步到上方单据
-    const confirmSubBtn = await screen.findByRole("button", { name: "确认任务" });
+    // 3. 子任务点击AI作答后，同步到上方单据
+    const confirmSubBtn = await screen.findByRole("button", { name: "AI作答" });
     fireEvent.click(confirmSubBtn);
 
     // 验证同步后的内容
@@ -418,18 +418,18 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       ],
     );
 
-    // 1. 验证操作列已移除「修改说明」按钮，仅保留「确认」
-    const confirmBtn = await screen.findByRole("button", { name: "确认任务" });
+    // 1. 验证操作列按钮为【AI作答】
+    const confirmBtn = await screen.findByRole("button", { name: "AI作答" });
     expect(confirmBtn).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "修改说明" })).not.toBeInTheDocument();
 
-    // 2. 字段为空时点击确认
+    // 2. 字段为空时点击 AI作答
     expect(confirmBtn).not.toBeDisabled();
     fireEvent.click(confirmBtn);
 
     // 页面顶部提示缺失字段
     expect(
-      await screen.findByText(/请先补充任务类型、产品分类、问题模块缺失字段后再确认/),
+      await screen.findByText(/请先补充.*缺失字段后再进行AI作答/),
     ).toBeInTheDocument();
 
     // 3. 选择任务类型、产品分类、问题模块
@@ -446,16 +446,12 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     const moduleOption = await screen.findByRole("button", { name: "测试模块" });
     fireEvent.click(moduleOption);
 
-    // 4. 再次点击确认
+    // 4. 再次点击 AI作答
     fireEvent.click(confirmBtn);
 
-    // 页面顶部展示成功提示
-    expect(await screen.findByText(/状态已更新为处理中/)).toBeInTheDocument();
-
-    // 确认后文案保持为「确认」且被禁用
-    expect(confirmBtn).toHaveTextContent("确认");
-    expect(confirmBtn).not.toHaveTextContent("已确认");
-    expect(confirmBtn).toBeDisabled();
+    // AI 作答完成后按钮变成【人工完善】
+    const manualBtn = await screen.findByRole("button", { name: "人工完善" });
+    expect(manualBtn).toBeInTheDocument();
 
     // 任务状态列更新为「处理中」
     expect(screen.getByRole("cell", { name: "处理中" })).toBeInTheDocument();
@@ -472,11 +468,11 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     });
 
     // 初始状态：等待子任务列表就绪，只有系统自动分的一行
-    await screen.findByRole("button", { name: "确认任务" });
+    await screen.findByRole("button", { name: "AI作答" });
     expect(screen.getAllByText("TKT-000888")).toHaveLength(2); // 1个在顶部标题，1个在子任务表格
     expect(screen.getAllByText("系统原始主任务")).toHaveLength(2); // 1个在工单主题，1个在子任务表格
     expect(screen.queryByText("待生成")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "确认任务" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "AI作答" })).toHaveLength(1);
 
     // 点击添加子任务
     const addBtn = screen.getByRole("button", { name: "添加" });
@@ -493,7 +489,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     expect(screen.getAllByText("TKT-000888")).toHaveLength(2);
     expect(screen.getAllByText("系统原始主任务")).toHaveLength(2);
     expect(screen.getByText("待生成")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "确认任务" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "AI作答" })).toHaveLength(2);
 
     // 再次点击添加子任务
     fireEvent.click(addBtn);
@@ -508,7 +504,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     expect(screen.getAllByText("TKT-000888")).toHaveLength(2);
     expect(screen.getAllByText("系统原始主任务")).toHaveLength(2);
     expect(screen.getAllByText("待生成")).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "确认任务" })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: "AI作答" })).toHaveLength(3);
   });
 
   it("子任务列表中的产品分类与问题模块下拉框在顶层展示（Portal 至 document.body 且 z-index 9999）", async () => {
@@ -530,7 +526,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       ],
     );
 
-    await screen.findByRole("button", { name: "确认任务" });
+    await screen.findByRole("button", { name: "AI作答" });
 
     // 点击子任务列表的产品分类下拉
     const plcTrigger = screen.getByLabelText("子任务产品分类");
@@ -779,35 +775,49 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     });
 
     it("处理说明移除切换按钮，支持双击修改与提交答复时会写子任务解决方案，任务解决方案有值后自动同步", async () => {
-      renderTicket({
-        status: "in_progress",
-        short_code: "HUB-202609010001",
-        title: "发票云解绑发票查询不到这张发票",
-        cached_reply_content: null,
-      });
+      renderTicket(
+        {
+          status: "in_progress",
+          short_code: "HUB-202609010001",
+          title: "发票云解绑发票查询不到这张发票",
+          product_line_code: "pl-test",
+          module: "m-test",
+          cached_reply_content: null,
+        },
+        undefined,
+        [
+          http.get("*/api/admin/product-lines", () =>
+            HttpResponse.json([{ code: "pl-test", name: "数电票", is_active: true }]),
+          ),
+          http.get("*/api/hub-issues/catalog/modules", () =>
+            HttpResponse.json([{ code: "m-test", name: "测试模块" }]),
+          ),
+        ],
+      );
 
       // 1. 验证【格式预览】与【编辑内容】切换按钮已被彻底移除，子任务列表无【同步至处理说明】按钮
       expect(screen.queryByRole("button", { name: /格式预览/ })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /编辑内容/ })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /同步至处理说明/ })).not.toBeInTheDocument();
 
-      // 2. 点击子任务列表中「录入说明」按钮打开 600×400 录入弹窗
-      const enterDescBtn = await screen.findByRole("button", { name: "录入说明" });
+      // 2. 点击子任务列表中「无方案，去完善」按钮打开 800px 维护知识库抽屉
+      const enterDescBtn = await screen.findByRole("button", { name: "无方案，去完善" });
       fireEvent.click(enterDescBtn);
 
-      const modalTitle = await screen.findByText(/编辑任务解决方案/);
-      expect(modalTitle).toBeInTheDocument();
+      const drawerTitle = await screen.findByText("维护知识库");
+      expect(drawerTitle).toBeInTheDocument();
 
-      // 3. 在弹窗中输入解决方案并点击保存
-      const modalTextarea = screen.getByPlaceholderText(/请输入处理说明与解决方案/);
-      fireEvent.change(modalTextarea, { target: { value: "已协助处理解绑成功" } });
+      // 3. 在富文本录入框中输入解决方案并点击「提交并作答」
+      const editorBox = screen.getByRole("textbox", { name: "富文本知识内容" });
+      editorBox.innerHTML = "已协助处理解绑成功";
+      fireEvent.input(editorBox);
 
-      const saveBtn = screen.getByRole("button", { name: "保存" });
+      const saveBtn = screen.getByRole("button", { name: "提交并作答" });
       fireEvent.click(saveBtn);
 
-      // 4. 验证弹窗关闭，且处理说明在解决方案有值后已自动全量同步为多任务规范模板
+      // 4. 验证抽屉关闭，且处理说明在解决方案有值后已自动全量同步为多任务规范模板
       await waitFor(() => {
-        expect(screen.queryByText(/编辑任务解决方案/)).not.toBeInTheDocument();
+        expect(screen.queryByText("维护知识库")).not.toBeInTheDocument();
       });
 
       expect(screen.getByText("问题1：")).toBeInTheDocument();
