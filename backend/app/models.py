@@ -1093,11 +1093,15 @@ class Attachment(Base):
             name="ck_attachments_vision_status",
         ),
         Index("ix_attachments_ticket", "ticket_id"),
+        Index("ix_attachments_hub_issue_id", "hub_issue_id"),
         Index("ix_attachments_vision_pending", "vision_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), nullable=False)
+    hub_issue_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("hub_issues.id", ondelete="SET NULL"), nullable=True
+    )
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     filename: Mapped[str | None] = mapped_column(String(512), nullable=True)

@@ -37,6 +37,8 @@ from app.core.logging import get_logger
 from app.core.storage.minio_store import (
     MinioNotConfiguredError,
     MinioStore,
+    attachment_object_key,
+    classify_attachment_kind,
     guess_content_type,
 )
 from app.db import get_session
@@ -155,6 +157,7 @@ class AttachmentOut(BaseModel):
     vision_status: str
     extracted_text: str | None  # OCR 结果（无 key 时为空）
     download_url: str
+    hub_issue_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -773,6 +776,86 @@ def download_attachment(
     raise HTTPException(status_code=404, detail="attachment content unavailable")
 
 
+class UploadAttachmentBody(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=512)
+    content_base64: str = Field(..., description="Base64 编码的文件二进制流")
+    hub_issue_id: int | None = Field(None, description="可选关联的子任务/HubIssue ID")
+    mime: str | None = Field(None, description="MIME 类型，留空自动猜测")
+
+
+@router.post("/{ticket_id}/attachments/upload", response_model=AttachmentOut)
+def upload_attachment(
+    ticket_id: int,
+    body: UploadAttachmentBody,
+    _user: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> AttachmentOut:
+    """上传工单/子任务附件：Base64 解码流式写入 MinIO，在 attachments 表建行，返回 AttachmentOut。"""
+    import base64
+
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None or ticket.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="ticket not found")
+
+    if body.hub_issue_id is not None:
+        hub = db.get(HubIssue, body.hub_issue_id)
+        if hub is None or hub.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="hub_issue not found")
+
+    try:
+        data = base64.b64decode(body.content_base64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Base64 内容解析失败: {e}") from e
+
+    final_filename = body.filename.strip()
+    size_bytes = len(data)
+    kind = classify_attachment_kind(final_filename)
+    mime = body.mime or guess_content_type(
+        filename=final_filename, source_url=None, kind=kind, data=data
+    )
+
+    settings = get_settings()
+    att = Attachment(
+        ticket_id=ticket_id,
+        hub_issue_id=body.hub_issue_id,
+        filename=final_filename,
+        mime=mime,
+        size_bytes=size_bytes,
+        kind=kind,
+        vision_status="pending" if kind == "image" else "skipped",
+    )
+    db.add(att)
+    db.flush()
+
+    try:
+        store = MinioStore(settings)
+        key = attachment_object_key(ticket_id, att.id, final_filename)
+        storage_url = store.put_bytes(key, data, mime)
+        att.storage_key = storage_url
+        db.commit()
+        db.refresh(att)
+    except MinioNotConfiguredError:
+        logger.warning("attachment_upload_minio_not_configured", att_id=att.id)
+        db.commit()
+        db.refresh(att)
+    except Exception as e:
+        logger.error("attachment_upload_minio_failed", error=str(e), att_id=att.id)
+        db.rollback()
+        raise HTTPException(status_code=502, detail=f"附件存储失败：{e}") from e
+
+    return AttachmentOut(
+        id=att.id,
+        filename=att.filename,
+        kind=att.kind,
+        mime=att.mime,
+        size_bytes=att.size_bytes,
+        vision_status=att.vision_status,
+        extracted_text=att.extracted_text,
+        download_url=f"/api/tickets/{ticket_id}/attachments/{att.id}/download",
+        hub_issue_id=att.hub_issue_id,
+    )
+
+
 def _thumb_key(key: str) -> str:
     """原图对象 key → 缩略图 key（同前缀加 .thumb.jpg，与原图并存于 MinIO）。"""
     return f"{key}.thumb.jpg"
@@ -958,6 +1041,7 @@ class SubTaskOut(BaseModel):
     assigned_user_id: int | None
     assigned_user_name: str | None = None
     solution: str | None = None
+    attachments: list[AttachmentOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -1020,6 +1104,36 @@ def list_ticket_subtasks(
         ).all()
         pl_map = {r.code: r.name for r in prows}
 
+    sub_ids = [s.id for s in subs]
+    from collections import defaultdict
+
+    att_map: dict[int, list[AttachmentOut]] = defaultdict(list)
+    if sub_ids:
+        sub_atts = (
+            db.execute(
+                select(Attachment)
+                .where(Attachment.hub_issue_id.in_(sub_ids))
+                .order_by(Attachment.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        for a in sub_atts:
+            if a.hub_issue_id is not None:
+                att_map[a.hub_issue_id].append(
+                    AttachmentOut(
+                        id=a.id,
+                        filename=a.filename,
+                        kind=a.kind,
+                        mime=a.mime,
+                        size_bytes=a.size_bytes,
+                        vision_status=a.vision_status,
+                        extracted_text=a.extracted_text,
+                        download_url=f"/api/tickets/{a.ticket_id}/attachments/{a.id}/download",
+                        hub_issue_id=a.hub_issue_id,
+                    )
+                )
+
     out: list[SubTaskOut] = []
     for s in subs:
         st = SubTaskOut(
@@ -1035,6 +1149,7 @@ def list_ticket_subtasks(
             assigned_user_id=s.assigned_user_id,
             assigned_user_name=u_map.get(s.assigned_user_id) if s.assigned_user_id else None,
             solution=s.reply_content,
+            attachments=att_map.get(s.id, []),
         )
         out.append(st)
     return out

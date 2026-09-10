@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { postByPath } from "@/api/client";
 import { extractDevSolutionParts } from "./replyNoteUtils";
 
 export interface TaskAttachment {
@@ -18,6 +19,8 @@ export interface TaskAttachment {
 export interface DevContextDrawerProps {
   open: boolean;
   onClose: () => void;
+  ticketId?: number;
+  hubIssueId?: number;
   // 关联工单客户原始问题
   ticketContent: string;
   // 任务编号（可选）
@@ -50,6 +53,8 @@ export interface DevContextDrawerProps {
 export function DevContextDrawer({
   open,
   onClose,
+  ticketId,
+  hubIssueId,
   ticketContent,
   taskCode,
   taskKey,
@@ -92,8 +97,10 @@ export function DevContextDrawer({
   const displayModule = moduleName || "—";
   const displayAssignee = assigneeName || "—";
 
-  // 添加上传附件
-  const handleAddFiles = (files: FileList | File[]) => {
+  const [isUploading, setIsUploading] = useState(false);
+
+  // 添加上传附件（真实流式写入后端 MinIO 与 attachments 表）
+  const handleAddFiles = async (files: FileList | File[]) => {
     const fileArr = Array.from(files);
     if (fileArr.length === 0) return;
 
@@ -101,35 +108,67 @@ export function DevContextDrawer({
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
 
-    const newItems: TaskAttachment[] = fileArr.map((f, idx) => {
+    setIsUploading(true);
+    const readBase64 = (file: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const res = reader.result as string;
+          const b64 = res.includes(",") ? res.split(",")[1] : res;
+          resolve(b64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+    const newItems: TaskAttachment[] = [];
+    for (let idx = 0; idx < fileArr.length; idx++) {
+      const f = fileArr[idx];
       const seq = attachments.length + idx + 1;
       const displayName = `${basePrefix}-${seq}`;
       const ext = f.name && f.name.includes(".") ? f.name.slice(f.name.lastIndexOf(".")) : "";
       const fullName = `${displayName}${ext}`;
 
-      const isImg = f.type.startsWith("image/");
-      const isVideo = f.type.startsWith("video/");
-      const url =
-        (isImg || isVideo) && typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
-          ? URL.createObjectURL(f)
-          : undefined;
+      let attachId = `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`;
+      let downloadUrl: string | undefined = undefined;
 
-      return {
-        id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      try {
+        if (ticketId) {
+          const b64 = await readBase64(f);
+          const res = await postByPath(
+            "/api/tickets/{ticket_id}/attachments/upload",
+            { ticket_id: ticketId },
+            {
+              filename: fullName,
+              content_base64: b64,
+              hub_issue_id: hubIssueId ?? undefined,
+              mime: f.type || undefined,
+            },
+          );
+          attachId = String(res.id);
+          downloadUrl = res.download_url;
+        }
+      } catch (err: any) {
+        console.error("Failed to upload attachment", err);
+      }
+
+      newItems.push({
+        id: attachId,
         name: fullName,
         displayName,
         originalName: f.name || fullName,
         size: f.size,
         type: f.type || "application/octet-stream",
-        url,
+        url: downloadUrl || (typeof URL !== "undefined" && typeof URL.createObjectURL === "function" ? URL.createObjectURL(f) : undefined),
         file: f,
         uploadedAt: timeStr,
         taskCode: taskCode || "",
         taskKey,
-      };
-    });
+      });
+    }
 
     setAttachments((prev) => [...prev, ...newItems]);
+    setIsUploading(false);
   };
 
   // 删除附件
@@ -326,7 +365,7 @@ export function DevContextDrawer({
                       d="M12 4v16m8-8H4"
                     />
                   </svg>
-                  <span>上传附件</span>
+                  <span>{isUploading ? "正在上传…" : "上传附件"}</span>
                   <input
                     type="file"
                     multiple
@@ -376,12 +415,10 @@ export function DevContextDrawer({
                       className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative shadow-2xs"
                     >
                       {isImg && att.url ? (
-                        <img
-                          src={att.url}
+                        <DrawerAttachmentThumb
+                          url={att.url}
                           alt={att.name}
-                          className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
-                          onClick={() => setPreviewImgUrl(att.url!)}
-                          title="点击预览大图"
+                          onClick={(resolved) => setPreviewImgUrl(resolved)}
                         />
                       ) : isVideo ? (
                         <div className="w-10 h-10 rounded bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-[10px] flex-none">
@@ -487,5 +524,68 @@ export function DevContextDrawer({
         </div>
       )}
     </div>
+  );
+}
+
+function DrawerAttachmentThumb({
+  url,
+  alt,
+  onClick,
+}: {
+  url: string;
+  alt: string;
+  onClick?: (resolvedUrl: string) => void;
+}) {
+  const isProxied =
+    url.startsWith("/api/") ||
+    url.startsWith("/ticket-hub/api/") ||
+    url.startsWith("/hub-issue/api/");
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isProxied) {
+      setBlobUrl(url);
+      return;
+    }
+    let revoked: string | null = null;
+    let cancelled = false;
+    const token = localStorage.getItem("auth_token");
+    const apiBase = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+    fetch(`${apiBase}${url}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.blob();
+      })
+      .then((b) => {
+        if (cancelled) return;
+        const obj = URL.createObjectURL(b);
+        revoked = obj;
+        setBlobUrl(obj);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [url, isProxied]);
+
+  if (!blobUrl) {
+    return (
+      <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-[9px] text-slate-400 flex-none">
+        加载中
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={blobUrl}
+      alt={alt}
+      className="w-10 h-10 rounded object-cover border border-slate-100 flex-none cursor-pointer hover:opacity-90"
+      onClick={() => onClick?.(blobUrl)}
+      title="点击预览大图"
+    />
   );
 }

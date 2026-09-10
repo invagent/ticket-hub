@@ -320,6 +320,17 @@
             ],
             "title": "Filename"
           },
+          "hub_issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Issue Id"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -7251,6 +7262,14 @@
             ],
             "title": "Assigned User Name"
           },
+          "attachments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttachmentOut"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -9124,6 +9143,51 @@
           }
         },
         "title": "UpdateSubTaskBody",
+        "type": "object"
+      },
+      "UploadAttachmentBody": {
+        "properties": {
+          "content_base64": {
+            "description": "Base64 编码的文件二进制流",
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "hub_issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "可选关联的子任务/HubIssue ID",
+            "title": "Hub Issue Id"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "MIME 类型，留空自动猜测",
+            "title": "Mime"
+          }
+        },
+        "required": [
+          "filename",
+          "content_base64"
+        ],
+        "title": "UploadAttachmentBody",
         "type": "object"
       },
       "UpsertBody": {
@@ -16140,6 +16204,59 @@
           }
         },
         "summary": "Get Ticket",
+        "tags": [
+          "tickets"
+        ]
+      }
+    },
+    "/api/tickets/{ticket_id}/attachments/upload": {
+      "post": {
+        "description": "上传工单/子任务附件：Base64 解码流式写入 MinIO，在 attachments 表建行，返回 AttachmentOut。",
+        "operationId": "upload_attachment_api_tickets__ticket_id__attachments_upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "title": "Ticket Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadAttachmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Attachment",
         "tags": [
           "tickets"
         ]

@@ -56,6 +56,33 @@ def apply_op_status(
     if hub.op_status == to_status and hub.op_handler == handler:
         return False
 
+    # 影子双写：将状态同步应用至关联工单的 Ticket.status（终态工单除外）
+    from app.models import Ticket
+
+    terminal_ticket_statuses = {"closed", "transferred_return"}
+    tickets = (
+        db.query(Ticket)
+        .filter(
+            (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
+            Ticket.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    # 状态不可逆保护：如果工单或 Hub 已经处于 supplementing（已向客户发起补料，外部处于等待反馈），
+    # 严禁被后置的审核中间态（reviewing）反向覆盖（但客户补料回流转 processing 正常允许）
+    if to_status == OP_REVIEWING and (
+        hub.op_status == OP_SUPPLEMENTING
+        or any(t.status == "supplementing" for t in tickets)
+    ):
+        logger.info(
+            "op_status_downgrade_rejected",
+            hub_issue_id=hub.id,
+            current_op_status=hub.op_status,
+            attempted_status=to_status,
+        )
+        return False
+
     prev = hub.op_status
     hub.op_status = to_status
     hub.op_handler = handler
@@ -68,19 +95,6 @@ def apply_op_status(
         changed_by=f"op:{handler}",
         reason=reason,
         metadata={"op_handler": handler},
-    )
-
-    # 影子双写：将状态同步应用至关联工单的 Ticket.status（终态工单除外）
-    from app.models import Ticket
-
-    terminal_ticket_statuses = {"closed", "transferred_return"}
-    tickets = (
-        db.query(Ticket)
-        .filter(
-            (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
-            Ticket.deleted_at.is_(None),
-        )
-        .all()
     )
     for t in tickets:
         if t.status != to_status and t.status not in terminal_ticket_statuses:

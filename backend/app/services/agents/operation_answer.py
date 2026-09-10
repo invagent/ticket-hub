@@ -27,6 +27,7 @@ from app.services.hub_issues.op_status import (
     OP_EXCEPTION,
     OP_PROCESSING,
     OP_REVIEWING,
+    OP_SUPPLEMENTING,
     OP_TRANSFERRED_RETURN,
     apply_op_status,
     resolve_op_handler,
@@ -190,35 +191,42 @@ def _replay_with_retry(
 
 
 def _is_hub_already_settled(db: Session, hub: HubIssue) -> bool:
-    """检查 Hub 是否已完成答复、已关单或已转单退回，防并发覆盖。"""
-    if hub.op_status in (OP_ANSWERED, OP_CLOSED, OP_TRANSFERRED_RETURN):
+    """检查 Hub 是否已完成答复、已关单、已转单退回或正在补充资料，防并发覆盖。"""
+    if hub.op_status in (OP_ANSWERED, OP_CLOSED, OP_TRANSFERRED_RETURN, OP_SUPPLEMENTING):
         return True
     if hub.status in ("answered", "resolved", "closed"):
         return True
     if bool(hub.reply_content and not hub.reply_is_draft):
         return True
 
-    # 防并发保护：检查关联工单是否已处于终态/已答复
+    # 防并发保护：检查关联工单是否已处于终态/已答复/正在补充资料
     ticket = (
         db.query(Ticket)
         .filter((Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id))
         .first()
     )
-    if ticket is not None and ticket.status in ("closed", "done", "answered", "transferred_return"):
+    if ticket is not None and ticket.status in (
+        "closed",
+        "done",
+        "answered",
+        "transferred_return",
+        "supplementing",
+    ):
         return True
 
-    # 防并发保护：检查是否已有成功发送的出站回复（避免 AI 慢任务在事后覆盖已关单任务）
-    has_sent_reply = (
+    # 防并发保护：检查是否已有成功发送的出站回复或补料请求（避免 AI 慢任务在事后覆盖已发动作）
+    has_sent_outbox = (
         db.query(SyncOutbox.id)
         .filter(
-            SyncOutbox.hub_issue_id == hub.id,
-            SyncOutbox.kind == "reply",
+            (SyncOutbox.hub_issue_id == hub.id)
+            | (SyncOutbox.ticket_id == (ticket.id if ticket else None)),
+            SyncOutbox.kind.in_(("reply", "supply", "return")),
             SyncOutbox.status == "sent",
         )
         .first()
         is not None
     )
-    return bool(has_sent_reply)
+    return bool(has_sent_outbox)
 
 
 def auto_answer_operation(
@@ -351,6 +359,10 @@ def auto_answer_operation(
                 mode == "enforce" and score.accuracy < settings.operation_answer_accuracy_threshold
             )
             if needs_review:
+                db.refresh(hub)
+                if _is_hub_already_settled(db, hub):
+                    logger.info("operation_auto_reply_review_skipped_settled", hub_issue_id=hub.id)
+                    return False
                 reason = (
                     "全部答复转主管人工确认"
                     if mode == "review"
@@ -401,6 +413,10 @@ def auto_answer_operation(
             )
             accuracy_extra = {"accuracy": score.accuracy, "reason": score.reason, "mode": mode}
 
+        db.refresh(hub)
+        if _is_hub_already_settled(db, hub):
+            logger.info("operation_auto_reply_direct_skipped_settled", hub_issue_id=hub.id)
+            return False
         try:
             author_reply(db, hub.id, content=answer, authored_by="agent:ai_cs")
         except ReplySyncError as e:

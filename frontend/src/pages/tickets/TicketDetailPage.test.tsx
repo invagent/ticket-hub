@@ -96,6 +96,50 @@ function renderTicket(
       http.get("*/api/hub-issues/catalog/modules", () => HttpResponse.json([])),
     ]),
     http.get("*/api/admin/users", () => HttpResponse.json([])),
+    http.patch("*/api/hub-issues/:hub_issue_id/subtask", async ({ request, params }) => {
+      const body = (await request.json()) as any;
+      return HttpResponse.json({
+        hub_issue_id: Number(params.hub_issue_id),
+        status: "processing",
+        solution: body.solution,
+      });
+    }),
+    http.patch("/api/hub-issues/:hub_issue_id/subtask", async ({ request, params }) => {
+      const body = (await request.json()) as any;
+      return HttpResponse.json({
+        hub_issue_id: Number(params.hub_issue_id),
+        status: "processing",
+        solution: body.solution,
+      });
+    }),
+    http.post("*/api/hub-issues/:hub_issue_id/confirm-subtask", ({ params }) => {
+      return HttpResponse.json({
+        hub_issue_id: Number(params.hub_issue_id),
+        status: "processing",
+        message: "任务已推送到 Linear",
+      });
+    }),
+    http.post("/api/hub-issues/:hub_issue_id/confirm-subtask", ({ params }) => {
+      return HttpResponse.json({
+        hub_issue_id: Number(params.hub_issue_id),
+        status: "processing",
+        message: "任务已推送到 Linear",
+      });
+    }),
+    http.post("*/api/tickets/:ticket_id/attachments/upload", async ({ request, params }) => {
+      const body = (await request.json()) as any;
+      return HttpResponse.json({
+        id: 9999,
+        filename: body.filename,
+        kind: "image",
+        mime: body.mime || "image/png",
+        size_bytes: 1024,
+        vision_status: "skipped",
+        extracted_text: null,
+        download_url: `/api/tickets/${params.ticket_id}/attachments/9999/download`,
+        hub_issue_id: body.hub_issue_id ?? null,
+      });
+    }),
   ];
   if (hubDetail) {
     handlers.push(http.get(`*/api/hub-issues/${hubDetail.id}`, () => HttpResponse.json(hubDetail)));
@@ -1322,6 +1366,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
         predicted_type: "Demand",
         product_line_code: "pl-1",
         module: "m-1",
+        assigned_user_id: 1,
+        assigned_user_name: "开发A",
         cached_reply_content: "已初步定位为数电票接口异常，现转产研处理",
       });
 
@@ -1515,6 +1561,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
             product_line_code: "", // 缺少产品分类
             module: "", // 缺少问题模块
             status: "draft",
+            assigned_user_id: 1,
+            assigned_user_name: "开发A",
             solution: "", // 缺少解决方案
           },
         ],
@@ -1555,6 +1603,8 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
             product_line_code: "cloud-erp",
             module: "base",
             status: "draft",
+            assigned_user_id: 1,
+            assigned_user_name: "开发A",
             solution: "转产研上下文", // 属于系统默认占位内容，绝不能被判定为有效值
           },
         ],

@@ -468,6 +468,11 @@ export function TicketDetailPage() {
   });
   // 允许详情页在提交答复/补充资料/退回转单成功后本地立即切换不可操作终态
   const [overrideStatus, setOverrideStatus] = useState<string | null>(null);
+  const [pageManualAssignModal, setPageManualAssignModal] = useState<{
+    hubId: number;
+    title: string;
+  } | null>(null);
+  const [isPushingLinear, setIsPushingLinear] = useState(false);
 
   // 运营正常跟进：向 KSM/智齿提交答复（走带有至少一个子任务已完成闸门校验和自动按条目拼接的新接口）
   const [replyErr, setReplyErr] = useState<string | null>(null);
@@ -897,9 +902,7 @@ export function TicketDetailPage() {
                       {/* 2. 转产研 */}
                       <button
                         type="button"
-                        disabled={opDone || isDevTransferred}
-                        title={isDevTransferred ? "已转产研处理" : "处理说明转产研说明并提交产研"}
-                        onClick={() => {
+                        onClick={async () => {
                           const content = (
                             noteDrafts[0] ??
                             d.cached_reply_content ??
@@ -930,6 +933,10 @@ export function TicketDetailPage() {
                                     module: d.module ?? "",
                                     solution: (d.cached_reply_content ?? "").trim(),
                                     status: "",
+                                    assigned_user_id: hub.data?.assigned_user_id ?? d.assigned_user_id ?? null,
+                                    assigned_user_name: d.assigned_user_name ?? null,
+                                    hub_id: hub.data?.id ?? d.hub_issue_id ?? undefined,
+                                    linear_status: hub.data?.linear_status ?? d.linear_status,
                                   },
                                 ];
 
@@ -970,11 +977,64 @@ export function TicketDetailPage() {
                             if (!validSol) missing.push("任务解决方案");
 
                             if (missing.length > 0) {
-                              const msg = `任务 ${t.code} 的${missing.join("、")}为空，请先补全后再转产研`;
+                              const msg = `任务 ${t.code || t.title} 的${missing.join("、")}为空，请先补全后再转产研`;
                               showTopToast(msg, "warning");
                               setTransferDevAlert(msg);
                               return;
                             }
+                          }
+
+                          // 4. 调用后端真实推送 Linear
+                          setTransferDevAlert(null);
+                          setIsPushingLinear(true);
+                          const unpushedTasks = devTasks.filter(
+                            (t) => t.status !== "processing" && t.status !== "closed",
+                          );
+                          try {
+                            for (const t of unpushedTasks) {
+                              const targetHubId =
+                                typeof t.key === "number"
+                                  ? t.key
+                                  : t.key === "self"
+                                  ? (hub.data?.id ?? d.hub_issue_id)
+                                  : t.hub_id;
+                              if (!targetHubId) continue;
+
+                              const directSol = (t.solution ?? "").trim();
+                              const parsedSol = (parsedMap[t.key] ?? "").trim();
+                              const solToSave = isValidSolution(directSol) ? directSol : parsedSol;
+
+                              // 1. 确保最新方案说明保存到 DB
+                              await patchByPath(
+                                "/api/hub-issues/{hub_issue_id}/subtask",
+                                { hub_issue_id: targetHubId },
+                                {
+                                  solution: solToSave,
+                                  product_line_code: t.product_line_code,
+                                  module: t.module,
+                                },
+                              );
+
+                              // 2. 调用 confirm-subtask 接口推送到 Linear
+                              const res: any = await postByPath(
+                                "/api/hub-issues/{hub_issue_id}/confirm-subtask",
+                                { hub_issue_id: targetHubId },
+                                { assignee_override_user_id: t.assigned_user_id ?? null },
+                              );
+
+                              if (res?.need_manual_assignee) {
+                                setPageManualAssignModal({ hubId: targetHubId, title: t.title });
+                                showTopToast(res.message || "未找到责任人，请手动选择", "warning");
+                                setIsPushingLinear(false);
+                                return;
+                              }
+                            }
+                          } catch (err: any) {
+                            showTopToast(hubErrMsg(err) || "推送到 Linear 失败，请检查配置", "warning");
+                            setIsPushingLinear(false);
+                            return;
+                          } finally {
+                            setIsPushingLinear(false);
                           }
 
                           setIsDevTransferred(true);
@@ -984,6 +1044,9 @@ export function TicketDetailPage() {
                             qc.setQueryData(["ticket-detail", ticketId], (old: any) =>
                               old ? { ...old, process_stage: "产研处理", process_link: "产研处理" } : old,
                             );
+                            void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+                            void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+                            void qc.invalidateQueries({ queryKey: ["hub-issues"] });
                           }
                           qc.setQueriesData({ queryKey: ["tickets"] }, (old: any) => {
                             if (!old || !Array.isArray(old.items)) return old;
@@ -999,9 +1062,11 @@ export function TicketDetailPage() {
                           showTopToast("已成功转产研，处理说明已同步", "success");
                           setLocalActions((p) => [{ label: "转产研处理" }, ...p]);
                         }}
+                        disabled={opDone || isDevTransferred || isPushingLinear}
+                        title={isDevTransferred ? "已转产研处理" : "处理说明转产研说明并提交产研"}
                         className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
                       >
-                        转产研
+                        {isPushingLinear ? "转产研中…" : "转产研"}
                       </button>
 
                       {/* 3. 转派 */}
@@ -1990,6 +2055,44 @@ export function TicketDetailPage() {
         </div>
       )}
 
+      {/* 顶层转产研手动指定责任人弹窗 */}
+      {pageManualAssignModal && (
+        <Modal onClose={() => setPageManualAssignModal(null)}>
+          <ModalHeader title="手动指定研发责任人推送" onClose={() => setPageManualAssignModal(null)} />
+          <div className="px-5 py-4 flex flex-col gap-3">
+            <p className="text-xs text-hub-textSecondary">
+              该模块未配置默认研发责任人，请从下方选择责任人以推送到 Linear：
+            </p>
+            <div>
+              <SearchableUserSelect
+                value={undefined}
+                onChange={async (uid) => {
+                  if (uid) {
+                    try {
+                      await postByPath(
+                        "/api/hub-issues/{hub_issue_id}/confirm-subtask",
+                        { hub_issue_id: pageManualAssignModal.hubId },
+                        { assignee_override_user_id: uid },
+                      );
+                      setPageManualAssignModal(null);
+                      showTopToast("已成功指定责任人并推送到 Linear", "success");
+                      if (ticketId) {
+                        void qc.invalidateQueries({ queryKey: ["ticket-subtasks", ticketId] });
+                        void qc.invalidateQueries({ queryKey: ["ticket-detail", ticketId] });
+                        void qc.invalidateQueries({ queryKey: ["hub-issues"] });
+                      }
+                    } catch (e: any) {
+                      showTopToast(hubErrMsg(e) || "推送失败", "warning");
+                    }
+                  }
+                }}
+                placeholder="搜索并选择研发责任人..."
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* 800px 完善知识库右侧滑出抽屉（仅提交，无提交并作答） */}
       <KnowledgeBaseDrawer
         open={knowledgeDrawerOpen}
@@ -2881,6 +2984,11 @@ export interface SubTaskSummaryItem {
   module_name?: string;
   solution: string;
   status: string;
+  assigned_user_id?: number | null;
+  assigned_user_name?: string | null;
+  hub_id?: number;
+  linear_status?: string | null;
+  confirmed?: boolean;
 }
 
 // 子任务列表：逐个拉取子工单详情（children_ticket_ids）。
@@ -2961,6 +3069,42 @@ function SubTicketList({
   });
 
   const subtasks = subtasksQuery.data ?? [];
+
+  // 从服务端加载各子任务持久化的真实附件
+  useEffect(() => {
+    if (!subtasksQuery.data || !onTaskAttachmentsChange) return;
+    const serverMap: Record<string | number, TaskAttachment[]> = {};
+    for (const stk of subtasksQuery.data) {
+      if (stk.attachments && stk.attachments.length > 0) {
+        serverMap[stk.id] = stk.attachments.map((a: any) => ({
+          id: String(a.id),
+          name: a.filename || "attachment",
+          displayName: (a.filename || "attachment").replace(/\.[^/.]+$/, ""),
+          originalName: a.filename || "attachment",
+          size: a.size_bytes || 0,
+          type: a.mime || "application/octet-stream",
+          url: a.download_url,
+          uploadedAt: "已保存",
+          taskCode: stk.short_code,
+          taskKey: stk.id,
+        }));
+        if (self.hub_id && stk.id === self.hub_id) {
+          serverMap["self"] = serverMap[stk.id];
+        }
+      }
+    }
+    if (Object.keys(serverMap).length > 0) {
+      onTaskAttachmentsChange((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(serverMap)) {
+          if (!next[k] || next[k].length === 0) {
+            next[k] = v;
+          }
+        }
+        return next;
+      });
+    }
+  }, [subtasksQuery.data, self.hub_id, onTaskAttachmentsChange]);
 
   // 行内更新 mutation
   const updateSubtaskMutation = useMutation({
@@ -3406,6 +3550,17 @@ function SubTicketList({
         module_name: selfMod,
         solution: sol,
         status: effStatus,
+        assigned_user_id:
+          rowStates["self"]?.assigned_user_id !== undefined
+            ? rowStates["self"]?.assigned_user_id
+            : self.assigned_user_id ?? null,
+        assigned_user_name:
+          rowStates["self"]?.assigned_user_name !== undefined
+            ? rowStates["self"]?.assigned_user_name
+            : self.assigned_user_name ?? null,
+        hub_id: self.hub_id,
+        linear_status: (self as any).linear_status ?? undefined,
+        confirmed: rowStates["self"]?.confirmed,
       });
     }
     subtasks.forEach((stk: any) => {
@@ -3441,6 +3596,17 @@ function SubTicketList({
         module_name: stkMod,
         solution: sol,
         status: effStatus,
+        assigned_user_id:
+          rowStates[sid]?.assigned_user_id !== undefined
+            ? rowStates[sid]?.assigned_user_id
+            : stk.assigned_user_id ?? null,
+        assigned_user_name:
+          rowStates[sid]?.assigned_user_name !== undefined
+            ? rowStates[sid]?.assigned_user_name
+            : stk.assigned_user_name ?? null,
+        hub_id: sid,
+        linear_status: stk.linear_status,
+        confirmed: rowStates[sid]?.confirmed,
       });
     });
     drafts.forEach((dft, i) => {
@@ -4839,6 +5005,14 @@ function SubTicketList({
         <DevContextDrawer
           open={true}
           onClose={() => setDevDrawerState(null)}
+          ticketId={ticketId}
+          hubIssueId={
+            typeof devDrawerState.key === "number"
+              ? devDrawerState.key
+              : devDrawerState.key === "self"
+              ? self.hub_id
+              : undefined
+          }
           ticketContent={ticketContent || ""}
           taskCode={devDrawerState.code}
           taskKey={devDrawerState.key}

@@ -2228,6 +2228,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/attachments/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Attachment
+         * @description 上传工单/子任务附件：Base64 解码流式写入 MinIO，在 attachments 表建行，返回 AttachmentOut。
+         */
+        post: operations["upload_attachment_api_tickets__ticket_id__attachments_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/attachments/{attachment_id}/download": {
         parameters: {
             query?: never;
@@ -2708,6 +2728,8 @@ export interface components {
             extracted_text: string | null;
             /** Filename */
             filename: string | null;
+            /** Hub Issue Id */
+            hub_issue_id?: number | null;
             /** Id */
             id: number;
             /** Kind */
@@ -4942,6 +4964,11 @@ export interface components {
             assigned_user_id: number | null;
             /** Assigned User Name */
             assigned_user_name?: string | null;
+            /**
+             * Attachments
+             * @default []
+             */
+            attachments: components["schemas"]["AttachmentOut"][];
             /** Id */
             id: number;
             /** Linear Status */
@@ -5392,6 +5419,26 @@ export interface components {
             title?: string | null;
             /** Type */
             type?: string | null;
+        };
+        /** UploadAttachmentBody */
+        UploadAttachmentBody: {
+            /**
+             * Content Base64
+             * @description Base64 编码的文件二进制流
+             */
+            content_base64: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Hub Issue Id
+             * @description 可选关联的子任务/HubIssue ID
+             */
+            hub_issue_id?: number | null;
+            /**
+             * Mime
+             * @description MIME 类型，留空自动猜测
+             */
+            mime?: string | null;
         };
         /** UpsertBody */
         UpsertBody: {
@@ -9612,6 +9659,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_attachment_api_tickets__ticket_id__attachments_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadAttachmentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentOut"];
                 };
             };
             /** @description Validation Error */
