@@ -194,16 +194,21 @@ def _push_via_webhook(
     hub.linear_identifier = identifier
     hub.linear_status = "已转产研"
     hub.linear_status_synced_at = datetime.now(UTC)
-    if hub.status == "pending":
+    if hub.status in ("pending", "returned"):
+        prev_status = hub.status
+        hub.status = "processing"
         StatusHistoryRepository(db).record(
             entity_type="hub_issue",
             entity_id=hub.id,
-            from_status="pending",
-            to_status="created",
+            from_status=prev_status,
+            to_status="processing",
             changed_by="agent:linear_webhook",
-            reason="转研发 webhook 重推成功，pending 解除",
+            reason=(
+                f"转研发 webhook 重推成功，pending 解除"
+                if prev_status == "pending"
+                else f"转研发 webhook 重新推送成功（{identifier}）"
+            ),
         )
-        hub.status = "created"
     db.commit()
     logger.info("linear_webhook_push_committed", hub_issue_id=hub.id, identifier=identifier)
     return LinearPushResult(
@@ -237,7 +242,7 @@ def push_hub_issue_to_linear(
         if hub.type not in ("Bug_fix", "Demand"):
             logger.info("linear_push_skip_type", hub_issue_id=hub_issue_id, type=hub.type)
             return None
-        if hub.linear_uuid is not None or hub.linear_identifier is not None:
+        if (hub.linear_uuid is not None or hub.linear_identifier is not None) and hub.status != "returned":
             logger.info(
                 "linear_push_already_pushed",
                 hub_issue_id=hub_issue_id,
@@ -249,7 +254,7 @@ def push_hub_issue_to_linear(
             logger.info("linear_push_skip_superseded", hub_issue_id=hub_issue_id)
             return None
         # hub 级语义去重：与已推的同产品线 hub 重复 → supersede，不重复建
-        if settings.hub_dedup_enabled:
+        if settings.hub_dedup_enabled and hub.status != "returned":
             dup_id = maybe_supersede_duplicate(db, hub)
             if dup_id is not None:
                 return None
@@ -332,16 +337,22 @@ def push_hub_issue_to_linear(
         hub.linear_uuid = created.id
         hub.linear_identifier = created.identifier
         hub.linear_status_synced_at = datetime.now(UTC)
-        if hub.status == "pending":
-            # A previously-stuck push now went through — back to normal flow.
-            hub.status = "created"
+        hub.linear_status = "待处理"
+        prev_status = hub.status
+        if prev_status in ("pending", "returned"):
+            # pending 解除恢复 created；returned 重推恢复 processing
+            hub.status = "processing" if prev_status == "returned" else "created"
             StatusHistoryRepository(db).record(
                 entity_type="hub_issue",
                 entity_id=hub.id,
-                from_status="pending",
-                to_status="created",
+                from_status=prev_status,
+                to_status=hub.status,
                 changed_by="agent:linear_push",
-                reason=f"Linear 重推成功（{created.identifier}），pending 解除",
+                reason=(
+                    f"Linear 重新推送成功（{created.identifier}），恢复处理中"
+                    if prev_status == "returned"
+                    else f"Linear 重推成功（{created.identifier}），pending 解除"
+                ),
             )
         db.commit()
         logger.info(

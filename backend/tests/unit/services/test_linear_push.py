@@ -485,3 +485,30 @@ def test_push_override_unmatched_individual_marks_pending(world: Session) -> Non
     assert fake.requests == []
     world.refresh(hub)
     assert hub.status == "pending"
+
+
+def test_push_allows_repush_when_returned(world: Session) -> None:
+    """被研发退回（status='returned' 且已存在 linear_uuid）的任务，允许重新推送到 Linear。"""
+    hub = _make_hub(
+        world,
+        99,
+        status="returned",
+        linear_uuid="old-linear-uuid",
+        linear_identifier="OLD-ENG-1",
+        reply_content="已补充更详细排查说明",
+    )
+    fake = _FakeLinearClient()
+    res = push_hub_issue_to_linear(hub.id, world, client=fake)  # type: ignore[arg-type]
+    assert res is not None
+    assert len(fake.requests) == 1
+    world.refresh(hub)
+    assert hub.status == "processing"
+    assert hub.linear_uuid == "uuid-123"
+    assert hub.linear_identifier == "ENG-42"
+    sh = (
+        world.query(StatusHistory)
+        .filter_by(entity_type="hub_issue", entity_id=hub.id, to_status="processing")
+        .order_by(StatusHistory.id.desc())
+        .first()
+    )
+    assert "Linear 重新推送成功" in (sh.reason or "")

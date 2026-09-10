@@ -679,10 +679,8 @@ export function TicketDetailPage() {
     effectiveTicketStatus === "supplementing" ||
     effectiveTicketStatus === "transferred_return" ||
     effectiveTicketStatus === "transferred" ||
-    effectiveTicketStatus === "returned" ||
     hub.data?.status === "closed" ||
-    hub.data?.status === "resolved" ||
-    hub.data?.status === "returned";
+    hub.data?.status === "resolved";
 
   const opDone = isNonOperable;
 
@@ -3508,6 +3506,11 @@ function SubTicketList({
                 module: self.module ?? "",
                 solution: self.cached_reply_content ?? "",
               });
+              const isOp = st.type === "Operation" || self.predicted_type === "Operation";
+              const effStatus = isOpCompleted && isOp
+                ? "completed"
+                : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
+              const b = subtaskStatusBadge(effStatus);
               const truncSolution = st.solution
                 ? st.solution.length > 10
                   ? `${st.solution.slice(0, 10)}...`
@@ -3601,21 +3604,12 @@ function SubTicketList({
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {(() => {
-                      const isOp = st.type === "Operation" || self.predicted_type === "Operation";
-                      const effStatus = isOpCompleted && isOp
-                        ? "completed"
-                        : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
-                      const b = subtaskStatusBadge(effStatus);
-                      return (
-                        <span
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
-                          style={{ background: b.bg, color: b.fg, borderColor: b.bd }}
-                        >
-                          {b.label}
-                        </span>
-                      );
-                    })()}
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                      style={{ background: b.bg, color: b.fg, borderColor: b.bd }}
+                    >
+                      {b.label}
+                    </span>
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {st.assigned_user_name ??
@@ -3665,7 +3659,16 @@ function SubTicketList({
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {canEdit ? (
                       <div className="flex items-center gap-2">
-                        {currentAiStatus === "loading" ? (
+                        {effStatus === "returned" || self.status === "returned" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="被研发退回，点击重新推送到 Linear"
+                          >
+                            重新推送
+                          </button>
+                        ) : currentAiStatus === "loading" ? (
                           <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
                             <svg
                               className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
@@ -3892,9 +3895,18 @@ function SubTicketList({
                     {stk.attachments_count ?? (Array.isArray(stk.attachments) ? stk.attachments.length : 0)}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {canEdit ? (
+                    {canEditThisRow ? (
                       <div className="flex items-center gap-2">
-                        {currentAiStatus === "loading" ? (
+                        {stk.status === "returned" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmRow(rowKey, rowTitle, st)}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="被研发退回，点击重新推送到 Linear"
+                          >
+                            重新推送
+                          </button>
+                        ) : currentAiStatus === "loading" ? (
                           <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
                             <svg
                               className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
@@ -4093,7 +4105,16 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      {currentAiStatus === "loading" ? (
+                      {st.type === "Bug_fix" || st.type === "Demand" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmRow(draftKey, rowTitle, st)}
+                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击确认并推送到 Linear"
+                        >
+                          确认推送
+                        </button>
+                      ) : currentAiStatus === "loading" ? (
                         <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
                           <svg
                             className="animate-spin h-3.5 w-3.5 text-[#6085e7]"

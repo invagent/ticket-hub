@@ -1301,6 +1301,7 @@ def confirm_subtask_endpoint(
         # 执行推送到 Linear
         from app.services.hub_issues.linear_push import push_hub_issue_to_linear
 
+        prev_hub_status = hub.status
         push_res = push_hub_issue_to_linear(hub.id, db, assignee_override_user_id=assignee_id)
 
         settings = get_settings()
@@ -1328,13 +1329,18 @@ def confirm_subtask_endpoint(
         u = db.get(User, assignee_id)
         u_name = u.name if u else None
 
+        msg = (
+            f"任务已重新推送到 Linear（{hub.linear_identifier or ''}），状态变更为处理中"
+            if prev_hub_status == "returned"
+            else "任务已推送到 Linear，状态变更为处理中"
+        )
         return ConfirmSubTaskResponse(
             hub_issue_id=hub.id,
             status=hub.status,
             solution=hub.reply_content,
             assigned_user_id=hub.assigned_user_id,
             assigned_user_name=u_name,
-            message="任务已推送到 Linear，状态变更为处理中",
+            message=msg,
         )
 
     else:
