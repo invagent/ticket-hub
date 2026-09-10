@@ -194,7 +194,7 @@ def _is_hub_already_settled(db: Session, hub: HubIssue) -> bool:
     """检查 Hub 是否已完成答复、已关单、已转单退回或正在补充资料，防并发覆盖。"""
     if hub.op_status in (OP_ANSWERED, OP_CLOSED, OP_TRANSFERRED_RETURN, OP_SUPPLEMENTING):
         return True
-    if hub.status in ("answered", "resolved", "closed"):
+    if hub.status in ("answered", "resolved", "closed", "returned"):
         return True
     if bool(hub.reply_content and not hub.reply_is_draft):
         return True
@@ -290,6 +290,17 @@ def auto_answer_operation(
     try:
         replay_result = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
     except AiCsError:
+        # 防并发竞态（如 replay 耗时 1-5 分钟期间，处理人已在界面人工提交答复、退回 KSM、补料或关单）：
+        # 若此时 hub 已进入终态或已被人工处理，丢弃本次异常处理，严禁反向覆盖为 exception
+        db.refresh(hub)
+        if _is_hub_already_settled(db, hub):
+            logger.info(
+                "operation_auto_reply_exception_aborted_hub_settled",
+                hub_issue_id=hub.id,
+                op_status=hub.op_status,
+                hub_status=hub.status,
+            )
+            return False
         # 系统故障（replay 全部失败/业务错误）→ 落 exception 转人工，不再无限重扫。
         apply_op_status(
             db,

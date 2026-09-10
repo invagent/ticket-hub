@@ -690,6 +690,43 @@ def test_drain_replay_failure_falls_to_exception_not_rescanned(db_session: Sessi
     assert report2.scanned == 0
 
 
+def test_replay_failure_aborts_if_hub_settled_concurrently(db_session: Session) -> None:
+    """防并发竞态：若在 replay 重试期间工单已转单退回、已答复或关单，系统故障分支丢弃异常，严禁反向打回 exception。"""
+    hub, ticket = _seed_op_hub(db_session)
+    db_session.commit()
+
+    class _ConcurrentlySettlingClient:
+        def __init__(self, sess: Session, h: HubIssue, t: Ticket) -> None:
+            self._sess = sess
+            self._h = h
+            self._t = t
+
+        def replay(self, *a: object, **kw: object) -> object:
+            # 模拟在 replay 网络等待期间，处理人在界面把工单退回了 KSM
+            self._t.status = "transferred_return"
+            self._h.status = "returned"
+            self._h.op_status = "transferred_return"
+            self._sess.commit()
+            # 随后网络超时抛出 AiCsError
+            raise AiCsError("timeout")
+
+        def close(self) -> None:
+            pass
+
+    fake = _ConcurrentlySettlingClient(db_session, hub, ticket)
+    with patch("app.services.agents.operation_answer.build_client", return_value=fake):
+        ans = auto_answer_operation(db_session, hub.id, settings=_S())
+
+    assert ans is False
+    db_session.refresh(hub)
+    db_session.refresh(ticket)
+    # 状态必须保持为 transferred_return / returned，坚决不能被覆盖为 exception
+    assert hub.op_status == "transferred_return"
+    assert hub.status == "returned"
+    assert ticket.status == "transferred_return"
+
+
+
 # ---- answer-router _route_answer 单测 ----
 
 from types import SimpleNamespace  # noqa: E402
