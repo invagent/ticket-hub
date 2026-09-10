@@ -131,6 +131,22 @@ def _build_description(db: Session, hub: HubIssue) -> str:
         if contact_parts:
             meta_lines.append(f"- **提单联系人**: {' / '.join(contact_parts)}")
 
+        # 工单处理人（支持/客服人员）
+        handler_uid = src.handler_user_id or src.assigned_user_id
+        if handler_uid:
+            hu = db.get(User, handler_uid)
+            if hu:
+                hu_text = f"{hu.name} ({hu.email})" if hu.email else hu.name
+                meta_lines.append(f"- **工单处理人**: {hu_text}")
+
+    # 产研责任人（研发人员）
+    owner_id = hub.owner_user_id or hub.assigned_user_id
+    if owner_id:
+        ou = db.get(User, owner_id)
+        if ou:
+            ou_text = f"{ou.name} ({ou.email})" if ou.email else ou.name
+            meta_lines.append(f"- **产研责任人**: {ou_text}")
+
     # 归属分类
     pl_name = _product_line_name(db, hub.product_line_code)
     cat_parts = [p for p in [pl_name, hub.module] if p]

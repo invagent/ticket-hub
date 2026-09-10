@@ -186,6 +186,14 @@ def build_webhook_fields(
     product_line = settings.linear_webhook_default_product_line
     product_category = _product_line_name(db, hub.product_line_code)
 
+    ticket_handler_name = ""
+    if src:
+        handler_uid = src.handler_user_id or src.assigned_user_id
+        if handler_uid:
+            hu = db.get(User, handler_uid)
+            if hu and hu.name:
+                ticket_handler_name = hu.name
+
     return {
         "title": hub.title or "",
         "description": hub.canonical_body or "",
@@ -210,6 +218,7 @@ def build_webhook_fields(
         "telephone": _reporter_field(src, "tel"),
         "email": _reporter_field(src, "email"),
         "handleUser": assignee_name,
+        "ticketHandler": ticket_handler_name,
         "handleSteps": _handle_steps_text(src),
         "feishuUrl": _feishu_url(src),
         "handleDescription": hub.reply_content or hub.root_cause_analysis or "",
