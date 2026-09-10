@@ -111,6 +111,12 @@ export function isTicketClosed(t: TicketSummary): boolean {
 }
 
 export function getTicketProcessLink(t: TicketSummary): ProcessLinkStage {
+  if ((t as any).process_stage) {
+    return (t as any).process_stage as ProcessLinkStage;
+  }
+  if ((t as any).process_link) {
+    return (t as any).process_link as ProcessLinkStage;
+  }
   if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
     return "服务处理";
   }

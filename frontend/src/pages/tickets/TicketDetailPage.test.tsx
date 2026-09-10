@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -9,12 +9,15 @@ import {
   TicketDetailPage,
   formatTasksReplyNote,
   renderFormattedReplyNote,
+  parseReplyNoteSolutions,
+  extractDevSolutionParts,
 } from "./TicketDetailPage";
 
 function renderTicket(
   ticketOverrides: Record<string, unknown>,
   hubDetail?: Record<string, unknown>,
   customHandlers?: Parameters<typeof server.use>,
+  initialSubtasks?: any[],
 ) {
   const baseTicket = {
     id: 10,
@@ -63,9 +66,31 @@ function renderTicket(
   };
   const ticket = { ...baseTicket, ...ticketOverrides };
   const tId = Number(ticket.id ?? 10);
+  const mockSubtasks: any[] = initialSubtasks
+    ? [...initialSubtasks]
+    : (ticketOverrides as any).subtasks
+      ? [...((ticketOverrides as any).subtasks as any[])]
+      : [];
   const handlers = [
     http.get(`*/api/tickets/${tId}`, () => HttpResponse.json(ticket)),
     http.get(`*/api/tickets/${tId}/history`, () => HttpResponse.json({ ticket_id: tId, items: [] })),
+    http.get(`*/api/tickets/${tId}/subtasks`, () => HttpResponse.json(mockSubtasks)),
+    http.post(`*/api/tickets/${tId}/subtasks`, async ({ request }) => {
+      const body: any = await request.json();
+      const newSubtask = {
+        id: 9000 + mockSubtasks.length + 1,
+        short_code: `${ticket.short_code ?? `TKT-${tId}`}-${mockSubtasks.length + 1}`,
+        ticket_id: tId,
+        title: body.title,
+        type: body.type,
+        product_line_code: body.product_line_code,
+        module: body.module,
+        status: "draft",
+        solution: "",
+      };
+      mockSubtasks.push(newSubtask);
+      return HttpResponse.json(newSubtask, { status: 201 });
+    }),
     ...(customHandlers ?? [
       http.get("*/api/admin/product-lines", () => HttpResponse.json([])),
       http.get("*/api/hub-issues/catalog/modules", () => HttpResponse.json([])),
@@ -434,7 +459,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
 
     // 3. 选择任务类型、产品分类、问题模块
     const typeSelect = screen.getByDisplayValue("选择类型");
-    fireEvent.change(typeSelect, { target: { value: "Demand" } });
+    fireEvent.change(typeSelect, { target: { value: "Operation" } });
 
     const plcTrigger = screen.getByLabelText("子任务产品分类");
     fireEvent.click(plcTrigger);
@@ -463,7 +488,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       short_code: "TKT-000888",
       title: "系统原始主任务",
       status: "in_progress",
-      predicted_type: "Demand",
+      predicted_type: "Operation",
       children_ticket_ids: [],
     });
 
@@ -484,11 +509,12 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     const dialogConfirm = screen.getAllByRole("button", { name: "确认" });
     fireEvent.click(dialogConfirm[dialogConfirm.length - 1]);
 
-    // 添加后：系统自动生成的一行依然存在，同时出现新增子任务一行（共 2 行）
+    // 添加后：系统自动生成的一行依然存在，同时出现新增子任务一行（恰好生成 1 行，共 2 行）
     expect(await screen.findByText("新增子任务一")).toBeInTheDocument();
+    expect(screen.getAllByText("新增子任务一")).toHaveLength(1);
     expect(screen.getAllByText("TKT-000888")).toHaveLength(2);
     expect(screen.getAllByText("系统原始主任务")).toHaveLength(2);
-    expect(screen.getByText("待生成")).toBeInTheDocument();
+    expect(screen.getByText("TKT-000888-1")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "AI作答" })).toHaveLength(2);
 
     // 再次点击添加子任务
@@ -498,12 +524,13 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     const dialogConfirm2 = screen.getAllByRole("button", { name: "确认" });
     fireEvent.click(dialogConfirm2[dialogConfirm2.length - 1]);
 
-    // 再次添加后：共有 3 行（系统原始行 + 新增子任务一 + 新增子任务二）
+    // 再次添加后：共有 3 行（系统原始行 + 新增子任务一 + 新增子任务二），各只生成 1 行
     expect(await screen.findByText("新增子任务二")).toBeInTheDocument();
-    expect(screen.getByText("新增子任务一")).toBeInTheDocument();
+    expect(screen.getAllByText("新增子任务二")).toHaveLength(1);
+    expect(screen.getAllByText("新增子任务一")).toHaveLength(1);
     expect(screen.getAllByText("TKT-000888")).toHaveLength(2);
     expect(screen.getAllByText("系统原始主任务")).toHaveLength(2);
-    expect(screen.getAllByText("待生成")).toHaveLength(2);
+    expect(screen.getByText("TKT-000888-2")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "AI作答" })).toHaveLength(3);
   });
 
@@ -511,7 +538,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
     renderTicket(
       {
         status: "in_progress",
-        predicted_type: "Demand",
+        predicted_type: "Operation",
         product_line_code: "pl-test",
         module: null,
       },
@@ -723,21 +750,29 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(stickyWrapper?.className).not.toContain("-mt-5");
     });
 
-    it("formatTasksReplyNote 正确拼接单任务与多任务，解决方案为空时显示 ---，问题间间隔1行", () => {
+    it("formatTasksReplyNote 单任务直接显示解决方案不做问题拆分，多任务显示问题数并按模板拼接", () => {
       // 1. 空任务
       expect(formatTasksReplyNote([])).toBe("");
 
-      // 2. 单任务无解决方案（工单拆分后无解决方案示例）
-      const single = formatTasksReplyNote([
+      // 2. 单任务无解决方案：返回空
+      const singleEmpty = formatTasksReplyNote([
         {
           code: "HUB-202609010001",
           title: "发票云解绑发票查询不到这张发票",
           solution: "",
         },
       ]);
-      expect(single).toBe(
-        "工单包含问题数：1\n问题1：HUB-202609010001-发票云解绑发票查询不到这张发票\n解决方案：---",
-      );
+      expect(singleEmpty).toBe("");
+
+      // 3. 单任务有解决方案：直接返回该任务解决方案，不做问题拆分
+      const singleWithSol = formatTasksReplyNote([
+        {
+          code: "HUB-202609010001",
+          title: "发票云解绑发票查询不到这张发票",
+          solution: "已协助处理解绑成功",
+        },
+      ]);
+      expect(singleWithSol).toBe("已协助处理解绑成功");
 
       // 3. 多任务且包含自定义解决方案，间隔1行
       const multiple = formatTasksReplyNote([
@@ -753,11 +788,25 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
         },
       ]);
       expect(multiple).toBe(
-        "工单包含问题数：2\n" +
-          "问题1：HUB-202609010001-发票云解绑发票查询不到这张发票\n" +
-          "解决方案：已协助处理解绑成功\n\n" +
-          "问题2：HUB-202609010002-接口超时\n" +
-          "解决方案：---",
+        "工单包含问题数量2\n" +
+          "问题1:【应用类】-HUB-202609010001-发票云解绑发票查询不到这张发票\n" +
+          "【解决方案】已协助处理解绑成功\n\n" +
+          "问题2:【应用类】-HUB-202609010002-接口超时\n" +
+          "【解决方案】---",
+      );
+
+      // 4. 单任务需求/BUG类型模板
+      const singleDemand = formatTasksReplyNote([
+        {
+          code: "HUB-202609010003",
+          title: "优化发票导出功能",
+          solution: "与业务方确认批量导出异步化方案",
+          type: "Demand",
+        },
+      ]);
+      expect(singleDemand).toBe(
+        "【需求】-优化发票导出功能\n" +
+          "【沟通记录】与业务方确认批量导出异步化方案",
       );
     });
 
@@ -778,6 +827,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       renderTicket(
         {
           status: "in_progress",
+          predicted_type: "Operation",
           short_code: "HUB-202609010001",
           title: "发票云解绑发票查询不到这张发票",
           product_line_code: "pl-test",
@@ -815,15 +865,14 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       const saveBtn = screen.getByRole("button", { name: "提交并作答" });
       fireEvent.click(saveBtn);
 
-      // 4. 验证抽屉关闭，且处理说明在解决方案有值后已自动全量同步为多任务规范模板
+      // 4. 验证抽屉关闭，且处理说明在单任务下不做问题拆分，直接显示关联任务的解决方案
       await waitFor(() => {
         expect(screen.queryByText("维护知识库")).not.toBeInTheDocument();
       });
 
-      expect(screen.getByText("问题1：")).toBeInTheDocument();
-      expect(screen.getByText("解决方案：")).toBeInTheDocument();
       expect(screen.getAllByText(/已协助处理解绑成功/).length).toBeGreaterThanOrEqual(2);
-      expect(screen.getByText("工单包含问题数：1")).toBeInTheDocument();
+      expect(screen.queryByText("工单包含问题数：1")).not.toBeInTheDocument();
+      expect(screen.queryByText("问题1：")).not.toBeInTheDocument();
 
       // 5. 验证双击修改处理说明：双击预览层进入编辑模式
       const previewBox = screen.getByTitle("双击修改处理说明");
@@ -872,6 +921,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       renderTicket(
         {
           status: "in_progress",
+          predicted_type: "Operation",
           short_code: "HUB-202609010001",
           hub_issue_id: 10,
           handler_user_name: "交付张三",
@@ -922,7 +972,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(screen.getByText("处理人")).toBeInTheDocument();
       expect(screen.getByText("交付张三")).toBeInTheDocument();
       expect(screen.getByText("产研责任人")).toBeInTheDocument();
-      expect(await screen.findByText("产研王五")).toBeInTheDocument();
+      expect((await screen.findAllByText("产研王五")).length).toBeGreaterThanOrEqual(1);
 
       // 3. 验证任务解决方案点击直接查看与修改：点击表格中解决方案文本直接打开编辑输入弹窗
       const solutionTextBtn = screen.getByRole("button", { name: "方案内容" });
@@ -964,6 +1014,506 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(screen.getByText("子任务列表")).toBeInTheDocument();
       expect(screen.getByText("处理说明")).toBeInTheDocument();
       expect(screen.getByText("处理附件")).toBeInTheDocument();
+    });
+  });
+
+  describe("工单详情转产研上下文补充操作面板与处理说明逆向回填", () => {
+    it("parseReplyNoteSolutions 逆向回填应用类与需求/Bug类解决方案", () => {
+      // 1. 多任务逆向回写解析（包含应用类与需求类）
+      const multiNote =
+        "工单包含问题数量2\n" +
+        "问题1:【应用类】-HUB-202609010001-发票云解绑发票查询不到这张发票\n" +
+        "【解决方案】后台解绑缓存已清空\n\n" +
+        "问题2:【需求】-HUB-202609010002-批量导出异步化\n" +
+        "【沟通记录】已与客户沟通，下周交付\n" +
+        "【研发反馈】排期在Sprint 45";
+
+      const parsed = parseReplyNoteSolutions(multiNote, [
+        { key: "task-1", code: "HUB-202609010001", type: "Operation" },
+        { key: "task-2", code: "HUB-202609010002", type: "Demand" },
+      ]);
+
+      expect(parsed["task-1"]).toBe("后台解绑缓存已清空");
+      expect(parsed["task-2"]).toBe("【沟通记录】已与客户沟通，下周交付\n【研发反馈】排期在Sprint 45");
+
+      // 2. extractDevSolutionParts 提取沟通记录与研发反馈
+      const parts = extractDevSolutionParts(parsed["task-2"]);
+      expect(parts.communicationNote).toBe("已与客户沟通，下周交付");
+      expect(parts.feedbackNote).toBe("排期在Sprint 45");
+    });
+
+    it("子任务类型为需求或BUG时：操作列显示【去补充】而非【AI作答】，解决方案显示【转产研上下文】；点击打开800px抽屉，录入沟通记录并修改说明后回写同步", async () => {
+      renderTicket({
+        status: "in_progress",
+        short_code: "HUB-DEV-001",
+        title: "税号绑定异常",
+        body: "客户报税时提示发票税号不匹配，请协助排查修复",
+        predicted_type: "Demand",
+        product_line_code: "pl-test",
+        module: "m-test",
+        cached_reply_content: null,
+      });
+
+      // 1. 验证操作列不显示【AI作答】，显示【去补充】
+      expect(screen.queryByRole("button", { name: "AI作答" })).not.toBeInTheDocument();
+      const devContextBtn = await screen.findByRole("button", { name: "去补充" });
+      expect(devContextBtn).toBeInTheDocument();
+
+      // 2. 验证任务解决方案默认提示词为“转产研上下文”
+      const solutionBtn = screen.getByRole("button", { name: "转产研上下文" });
+      expect(solutionBtn).toBeInTheDocument();
+
+      // 3. 点击【去补充】打开【转产研上下文补充操作面板】（800px 抽屉）
+      fireEvent.click(devContextBtn);
+
+      const drawerDialog = await screen.findByRole("dialog");
+      expect(drawerDialog).toBeInTheDocument();
+      expect(drawerDialog.className).toContain("w-[800px]");
+      expect(screen.getByText("补充转产研上下文")).toBeInTheDocument();
+
+      // 验证客户原始问题只读展示工单正文（工单内容区域与抽屉均有展示）
+      expect(screen.getAllByText("客户报税时提示发票税号不匹配，请协助排查修复")).toHaveLength(2);
+
+      // 验证任务类型卡片
+      expect(within(drawerDialog).getByText("需求")).toBeInTheDocument();
+
+      // 4. 修改任务说明与录入沟通记录
+      const titleInput = screen.getByPlaceholderText("请输入任务说明") as HTMLInputElement;
+      expect(titleInput.value).toBe("税号绑定异常");
+      fireEvent.change(titleInput, { target: { value: "税号绑定逻辑调整为支持多企业代码" } });
+
+      const commTextarea = screen.getByPlaceholderText(
+        "请录入客户沟通记录、日志、版本号、排查过程或截图说明...",
+      ) as HTMLTextAreaElement;
+      fireEvent.change(commTextarea, {
+        target: { value: "已与财务总监沟通，需要放宽企业代码18位严格校验" },
+      });
+
+      // 5. 点击【确认】提交
+      const confirmBtn = screen.getByRole("button", { name: "确认" });
+      fireEvent.click(confirmBtn);
+
+      // 6. 验证抽屉关闭，任务说明更新，处理说明按单需求模板格式回写
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      // 验证表格展示更新后的任务说明（子任务表格与处理说明均同步更新展示）
+      expect(screen.getAllByText("税号绑定逻辑调整为支持多企业代码")).toHaveLength(2);
+
+      // 验证处理说明格式：【需求】-任务说明\n【沟通记录】沟通记录内容
+      const replyPreview = screen.getByTitle("双击修改处理说明");
+      expect(replyPreview.textContent).toContain("【需求】-");
+      expect(replyPreview.textContent).toContain("税号绑定逻辑调整为支持多企业代码");
+      expect(replyPreview.textContent).toContain("【沟通记录】已与财务总监沟通，需要放宽企业代码18位严格校验");
+    });
+
+    it("在【补充转产研上下文】抽屉中点击【取消】直接关闭且不保留修改", async () => {
+      renderTicket({
+        status: "in_progress",
+        short_code: "HUB-DEV-002",
+        title: "开票接口卡顿",
+        predicted_type: "Bug_fix",
+      });
+
+      // 打开抽屉
+      const devContextBtn = await screen.findByRole("button", { name: "去补充" });
+      fireEvent.click(devContextBtn);
+
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+      // 修改任务说明
+      const titleInput = screen.getByPlaceholderText("请输入任务说明") as HTMLInputElement;
+      fireEvent.change(titleInput, { target: { value: "修改但未保存" } });
+
+      // 点击【取消】
+      const cancelBtn = screen.getByRole("button", { name: "取消" });
+      fireEvent.click(cancelBtn);
+
+      // 抽屉关闭，任务说明保持原样
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText("修改但未保存")).not.toBeInTheDocument();
+      expect(screen.getAllByText("开票接口卡顿").length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("转产研上下文抽屉支持上传图片/文件/视频附件，按任务编号-流水号命名，子任务列表附件数更新且汇总展示在处理附件小节", async () => {
+      renderTicket({
+        status: "in_progress",
+        short_code: "HUB-002053",
+        title: "发票开具税率异常",
+        body: "税率计算错误排查",
+        predicted_type: "Demand",
+      });
+
+      // 1. 等待页面加载完毕并校验初始状态：子任务列表附件数为 0，处理附件小节提示暂无附件
+      const supplementBtn = await screen.findByRole("button", { name: "去补充" });
+      expect(supplementBtn).toBeInTheDocument();
+
+      const initialZeroCount = screen.getByRole("cell", { name: "0" });
+      expect(initialZeroCount).toBeInTheDocument();
+      expect(screen.getByText(/点击右上角「上传附件」/)).toBeInTheDocument();
+
+      // 2. 点击【去补充】打开抽屉
+      fireEvent.click(supplementBtn);
+
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer).toBeInTheDocument();
+
+      // 3. 沟通记录区域包含附件录入口
+      expect(within(drawer).getByText("沟通记录附件")).toBeInTheDocument();
+      expect(within(drawer).getByText("(0)")).toBeInTheDocument();
+
+      // 4. 上传一个图片附件
+      const fileInput = drawer.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).not.toBeNull();
+
+      const fakeImage = new File(["fake-image-data"], "error_screenshot.png", { type: "image/png" });
+      fireEvent.change(fileInput, { target: { files: [fakeImage] } });
+
+      // 验证附件命名遵循：任务编号-流水号（HUB-002053-1）
+      expect(await within(drawer).findByText("HUB-002053-1")).toBeInTheDocument();
+      expect(within(drawer).getByText("(error_screenshot.png)")).toBeInTheDocument();
+      expect(within(drawer).getByText("(1)")).toBeInTheDocument();
+
+      // 5. 再上传一个视频附件与文件附件
+      const fakeVideo = new File(["fake-video-data"], "reproduce.mp4", { type: "video/mp4" });
+      const fakeDoc = new File(["fake-doc-data"], "config.pdf", { type: "application/pdf" });
+      fireEvent.change(fileInput, { target: { files: [fakeVideo, fakeDoc] } });
+
+      // 验证第2、第3个附件流水号
+      expect(await within(drawer).findByText("HUB-002053-2")).toBeInTheDocument();
+      expect(await within(drawer).findByText("HUB-002053-3")).toBeInTheDocument();
+      expect(within(drawer).getByText("(3)")).toBeInTheDocument();
+
+      // 6. 删除第3个附件
+      const deleteDocBtn = within(drawer).getByRole("button", { name: "删除附件 HUB-002053-3" });
+      fireEvent.click(deleteDocBtn);
+      expect(within(drawer).queryByText("HUB-002053-3")).not.toBeInTheDocument();
+      expect(within(drawer).getByText("(2)")).toBeInTheDocument();
+
+      // 7. 点击【确认】提交
+      const confirmBtn = within(drawer).getByRole("button", { name: "确认" });
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      // 8. 验证子任务列表「附件」列计数更新为 2
+      expect(screen.getByRole("cell", { name: "2" })).toBeInTheDocument();
+
+      // 9. 验证节点详情「处理附件」小节统计展示所有任务的附件，标题显示 (2)
+      expect(screen.getByText("处理附件")).toBeInTheDocument();
+      expect(screen.getByText("(2)")).toBeInTheDocument();
+      expect(screen.getByText("HUB-002053-1")).toBeInTheDocument();
+      expect(screen.getByText("HUB-002053-2")).toBeInTheDocument();
+
+      // 10. 在处理附件小节删除附件 HUB-002053-2
+      const deleteFromProcBtn = screen.getByRole("button", { name: "删除附件 HUB-002053-2" });
+      fireEvent.click(deleteFromProcBtn);
+
+      // 验证处理附件计数减为 1，子任务列表附件计数同步减为 1
+      expect(screen.getByText("(1)")).toBeInTheDocument();
+      expect(screen.getByRole("cell", { name: "1" })).toBeInTheDocument();
+      expect(screen.queryByText("HUB-002053-2")).not.toBeInTheDocument();
+    });
+
+    it("在转产研上下文抽屉中上传附件后点击【取消】，抽屉关闭且不保存附件，子任务列表与处理附件计数保持为0", async () => {
+      renderTicket({
+        status: "in_progress",
+        short_code: "HUB-CANCEL-001",
+        title: "发票查询超时",
+        predicted_type: "Demand",
+      });
+
+      const supplementBtn = await screen.findByRole("button", { name: "去补充" });
+      fireEvent.click(supplementBtn);
+
+      const drawer = await screen.findByRole("dialog");
+      const fileInput = drawer.querySelector('input[type="file"]') as HTMLInputElement;
+
+      const fakeImage = new File(["data"], "test.png", { type: "image/png" });
+      fireEvent.change(fileInput, { target: { files: [fakeImage] } });
+
+      expect(await within(drawer).findByText("HUB-CANCEL-001-1")).toBeInTheDocument();
+
+      // 点击取消
+      const cancelBtn = within(drawer).getByRole("button", { name: "取消" });
+      fireEvent.click(cancelBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      // 子任务列表附件数仍为 0
+      expect(screen.getByRole("cell", { name: "0" })).toBeInTheDocument();
+      expect(screen.queryByText("HUB-CANCEL-001-1")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("场景2：处理说明已有内容时点击【转产研】增强与禁用联动", () => {
+    it("单个需求任务：处理说明与字段完整时点击【转产研】，环节更新为产研处理，需求任务更新为处理中，去补充禁用，解决方案点击仅作只读查看", async () => {
+      renderTicket({
+        status: "draft",
+        op_status: "processing",
+        short_code: "HUB-DEV-001",
+        title: "数电票接口异常",
+        predicted_type: "Demand",
+        product_line_code: "pl-1",
+        module: "m-1",
+        cached_reply_content: "已初步定位为数电票接口异常，现转产研处理",
+      });
+
+      // 1. 验证初始状态：环节为【服务处理】，任务状态为【待确认】，【去补充】和【转产研】均可点击
+      expect(await screen.findByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      const subtaskTable = screen.getAllByRole("table")[0];
+      expect(within(subtaskTable).getByText("待确认")).toBeInTheDocument();
+      const supplementBtn = screen.getByRole("button", { name: "去补充" });
+      expect(supplementBtn).not.toBeDisabled();
+      const transferDevBtn = screen.getByRole("button", { name: "转产研" });
+      expect(transferDevBtn).not.toBeDisabled();
+
+      // 2. 点击【转产研】
+      fireEvent.click(transferDevBtn);
+
+      // 3. 验证工单处理环节更新为【产研处理】
+      expect(await screen.findByLabelText("处理环节：产研处理")).toBeInTheDocument();
+
+      // 4. 验证关联的需求任务状态更新为【处理中】
+      expect(within(subtaskTable).getByText("处理中")).toBeInTheDocument();
+
+      // 5. 验证需求任务操作列去补充按钮禁用（置灰且 disabled，点击不打开抽屉）
+      expect(supplementBtn).toBeDisabled();
+      expect(supplementBtn).toHaveClass("cursor-not-allowed");
+      fireEvent.click(supplementBtn);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      // 6. 验证任务解决方案禁止编辑，但点击可以打开只读抽屉进行查看
+      const solutionBtn = within(subtaskTable).getByRole("button", {
+        name: /已初步定位|数电票接口/,
+      });
+      expect(solutionBtn).not.toBeDisabled();
+      expect(solutionBtn).toHaveAttribute("title", "已转产研处理（点击查看转产研上下文）");
+
+      fireEvent.click(solutionBtn);
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer).toBeInTheDocument();
+      expect(within(drawer).queryByRole("button", { name: "确认" })).not.toBeInTheDocument();
+      expect(within(drawer).queryByText("上传附件")).not.toBeInTheDocument();
+      expect(within(drawer).getByPlaceholderText("请输入任务说明")).toBeDisabled();
+      expect(within(drawer).getByPlaceholderText(/请录入客户沟通记录/)).toBeDisabled();
+
+      // 点击关闭抽屉
+      fireEvent.click(within(drawer).getByRole("button", { name: "关闭抽屉" }));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      // 7. 验证【转产研】按钮自身置灰禁用
+      expect(transferDevBtn).toBeDisabled();
+
+      // 8. 验证处理说明区域只读且禁用编辑
+      const noteTextarea = screen.getByPlaceholderText("已转产研处理，只读");
+      expect(noteTextarea).toBeInTheDocument();
+      expect(noteTextarea).toHaveAttribute("readonly");
+      expect(screen.queryByTitle("双击修改处理说明")).not.toBeInTheDocument();
+    });
+
+    it("多个关联子任务：点击【转产研】后，需求任务更新为处理中，应用类任务保持原状态，应用类操作不受管控", async () => {
+      renderTicket(
+        {
+          status: "draft",
+          op_status: "processing",
+          short_code: "HUB-MULTI-001",
+          children_ticket_ids: [101, 102],
+          cached_reply_content: "多个子任务统一转交产研团队跟进",
+        },
+        undefined,
+        [
+          http.get("*/api/tickets/101", () => HttpResponse.json({ id: 101, short_code: "HUB-SUB-101", title: "需求类子任务" })),
+          http.get("*/api/tickets/102", () => HttpResponse.json({ id: 102, short_code: "HUB-SUB-102", title: "应用类子任务" })),
+        ],
+        [
+          {
+            id: 101,
+            short_code: "HUB-SUB-101",
+            type: "Demand",
+            title: "需求类子任务",
+            product_line_code: "cloud-erp",
+            module: "base",
+            status: "draft",
+            assigned_user_id: 1,
+            assigned_user_name: "开发A",
+            solution: "已排查确定数电票开具参数缺失，需要研发修改校验规则",
+          },
+          {
+            id: 102,
+            short_code: "HUB-SUB-102",
+            type: "Operation",
+            title: "应用类子任务",
+            product_line_code: "cloud-erp",
+            module: "base",
+            status: "draft",
+            assigned_user_id: 1,
+            assigned_user_name: "业务B",
+            solution: "",
+          },
+        ],
+      );
+
+      // 验证初始状态
+      expect(await screen.findByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(await screen.findByText("需求类子任务")).toBeInTheDocument();
+      expect(await screen.findByText("应用类子任务")).toBeInTheDocument();
+      const transferDevBtn = screen.getByRole("button", { name: "转产研" });
+      expect(transferDevBtn).not.toBeDisabled();
+
+      const subtaskTable = screen.getAllByRole("table")[0];
+      expect(within(subtaskTable).getAllByText("待确认")).toHaveLength(2);
+
+      // 需求任务显示【去补充】，应用类任务显示【AI作答】
+      const supplementBtn = screen.getByRole("button", { name: "去补充" });
+      const aiAnswerBtn = screen.getByRole("button", { name: "AI作答" });
+      expect(supplementBtn).not.toBeDisabled();
+      expect(aiAnswerBtn).not.toBeDisabled();
+
+      // 点击【转产研】
+      fireEvent.click(transferDevBtn);
+
+      // 1. 处理环节更新为【产研处理】
+      expect(await screen.findByLabelText("处理环节：产研处理")).toBeInTheDocument();
+
+      // 2. 需求任务状态更新为【处理中】，应用类任务保持【待确认】
+      expect(within(subtaskTable).getByText("处理中")).toBeInTheDocument();
+      expect(within(subtaskTable).getByText("待确认")).toBeInTheDocument();
+
+      // 3. 操作列精准管控：需求任务【去补充】禁用，应用类【AI作答】不受管控依然可用
+      expect(supplementBtn).toBeDisabled();
+      expect(aiAnswerBtn).not.toBeDisabled();
+
+      // 4. 处理说明禁用编辑且只读
+      expect(screen.getByPlaceholderText("已转产研处理，只读")).toHaveAttribute("readonly");
+      expect(transferDevBtn).toBeDisabled();
+    });
+
+    it("前置校验：若子任务列表中不存在需求或BUG任务，点击【转产研】提示无法转产研并中断", async () => {
+      renderTicket(
+        {
+          status: "draft",
+          op_status: "processing",
+          short_code: "HUB-NO-DEV-001",
+          predicted_type: "Operation",
+          cached_reply_content: "这是处理说明内容",
+        },
+        undefined,
+        undefined,
+        [
+          {
+            id: 201,
+            short_code: "HUB-SUB-201",
+            type: "Operation",
+            title: "纯应用类咨询任务",
+            product_line_code: "cloud-erp",
+            module: "base",
+            status: "draft",
+            solution: "已协助解决客户疑问",
+          },
+        ],
+      );
+
+      expect(await screen.findByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(await screen.findByText("纯应用类咨询任务")).toBeInTheDocument();
+      const transferDevBtn = screen.getByRole("button", { name: "转产研" });
+
+      // 点击【转产研】
+      fireEvent.click(transferDevBtn);
+
+      // 页面给出提示，阻止进入下一步，环节依然保持【服务处理】
+      expect((await screen.findAllByText("子任务列表中不存在需求或BUG任务，无法转产研")).length).toBeGreaterThan(0);
+      expect(screen.getByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(transferDevBtn).not.toBeDisabled();
+    });
+
+    it("前置校验：若需求任务的产品分类、模块或任务解决方案为空，点击【转产研】提示具体缺失项并中断", async () => {
+      renderTicket(
+        {
+          status: "draft",
+          op_status: "processing",
+          short_code: "HUB-MISSING-001",
+          predicted_type: "Operation",
+          cached_reply_content: "已填写工单处理说明",
+        },
+        undefined,
+        undefined,
+        [
+          {
+            id: 301,
+            short_code: "HUB-SUB-301",
+            type: "Demand",
+            title: "待完善的需求任务",
+            product_line_code: "", // 缺少产品分类
+            module: "", // 缺少问题模块
+            status: "draft",
+            solution: "", // 缺少解决方案
+          },
+        ],
+      );
+
+      expect(await screen.findByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(await screen.findByText("待完善的需求任务")).toBeInTheDocument();
+      const transferDevBtn = screen.getByRole("button", { name: "转产研" });
+
+      // 点击【转产研】
+      fireEvent.click(transferDevBtn);
+
+      // 页面提示具体缺失字段并拦截
+      expect(
+        (await screen.findAllByText("任务 HUB-SUB-301 的产品分类、问题模块、任务解决方案为空，请先补全后再转产研")).length,
+      ).toBeGreaterThan(0);
+      expect(screen.getByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(transferDevBtn).not.toBeDisabled();
+    });
+
+    it("前置校验：子任务为需求类且未录入有效解决方案（仅为默认占位符或空）时，即便工单处理说明有内容，点击【转产研】也必须被严格拦截", async () => {
+      renderTicket(
+        {
+          status: "draft",
+          op_status: "processing",
+          short_code: "HUB-DEV-EMPTY-001",
+          predicted_type: "Operation",
+          cached_reply_content: "工单顶部的处理说明已填写但子任务没有录入方案",
+        },
+        undefined,
+        undefined,
+        [
+          {
+            id: 401,
+            short_code: "HUB-SUB-401",
+            type: "Demand",
+            title: "仅有占位符的需求任务",
+            product_line_code: "cloud-erp",
+            module: "base",
+            status: "draft",
+            solution: "转产研上下文", // 属于系统默认占位内容，绝不能被判定为有效值
+          },
+        ],
+      );
+
+      expect(await screen.findByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(await screen.findByText("仅有占位符的需求任务")).toBeInTheDocument();
+      const transferDevBtn = screen.getByRole("button", { name: "转产研" });
+
+      // 点击【转产研】
+      fireEvent.click(transferDevBtn);
+
+      // 拦截提示：任务解决方案为空，不可进行下一步
+      expect(
+        (await screen.findAllByText("任务 HUB-SUB-401 的任务解决方案为空，请先补全后再转产研")).length,
+      ).toBeGreaterThan(0);
+      expect(screen.getByLabelText("处理环节：服务处理")).toBeInTheDocument();
+      expect(transferDevBtn).not.toBeDisabled();
     });
   });
 });

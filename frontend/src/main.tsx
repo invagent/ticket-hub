@@ -85,7 +85,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     if (import.meta.env.DEV) {
       localStorage.setItem(
         "auth_token",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzNSIsIm5hbWUiOiJcdTY3NjhcdTYxNjdcdTgzODkiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3ODg0MjMyNDEsImV4cCI6MTc4OTAyODA0MX0.rdp_hKCoLirdByItl85Cs0TRF31W7fNp2AvyvlRqlXw",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzNSIsIm5hbWUiOiJcdTY3NjhcdTYxNjdcdTgzODkiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3ODkwMzA0OTAsImV4cCI6MTc4OTYzNTI5MH0.QLT-Rs3URjC2MMJf0v-DNbCH6-qGB-6VFaXXR2rw56Y",
       );
       localStorage.setItem(
         "auth_user",

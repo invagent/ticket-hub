@@ -19,7 +19,37 @@ import { useTabTitle } from "@/tabs/useTabTitle";
 import { keyOf, useTabsOptional } from "@/tabs/TabsContext";
 import { ReflectDrawer } from "./ReflectDrawer";
 import { KnowledgeBaseDrawer } from "@/pages/knowledge-base/KnowledgeBaseDrawer";
-import { StatusBadge, subtaskStatusBadge, ticketStatusLabel } from "./ticketStatus";
+import { DevContextDrawer, type TaskAttachment } from "./DevContextDrawer";
+export type { TaskAttachment } from "./DevContextDrawer";
+import {
+  StatusBadge,
+  subtaskStatusBadge,
+  ticketStatusLabel,
+  getTicketProcessLink,
+  type ProcessLinkStage,
+} from "./ticketStatus";
+
+function ProcessStageBadge({ stage }: { stage: ProcessLinkStage }) {
+  const style =
+    stage === "完成"
+      ? { bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" }
+    : stage === "产研处理"
+      ? { bg: "#eef1fb", fg: "#4b4fb3", bd: "#d4d8f2" }
+      : { bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" };
+  return (
+    <span
+      className="inline-block px-2 py-0.5 rounded-full text-[10.5px] font-bold border whitespace-nowrap"
+      style={{
+        backgroundColor: style.bg,
+        color: style.fg,
+        borderColor: style.bd,
+      }}
+      aria-label={`处理环节：${stage}`}
+    >
+      {stage}
+    </span>
+  );
+}
 
 type HistoryEvent =
   paths["/api/tickets/{ticket_id}/history"]["get"]["responses"]["200"]["content"]["application/json"]["items"][number];
@@ -186,145 +216,31 @@ function extractAttachments(payload: unknown): AttachmentRef[] {
   return out.filter((a) => (seen.has(a.url) ? false : (seen.add(a.url), true)));
 }
 
-export interface TaskNoteItem {
-  code: string;
-  title: string;
-  solution: string;
-}
+import {
+  type TaskNoteItem,
+  isDemandOrBug,
+  getTaskTypeLabel,
+  extractDevSolutionParts,
+  extractPureSolution,
+  formatTasksReplyNote,
+  parseReplyNoteSolutions,
+  renderFormattedReplyNote,
+  isValidSolution,
+  isFieldEmpty,
+} from "./replyNoteUtils";
 
-/** 递归剥离模板外层前缀，还原真实纯净解决方案文本，坚决杜绝多次嵌套拼接 */
-export function extractPureSolution(text: string | null | undefined): string {
-  if (!text) return "";
-  let cur = text.trim();
-  while (cur.includes("解决方案：") || cur.includes("解决方案:") || cur.startsWith("工单包含问题数：") || cur.startsWith("工单包含问题数:")) {
-    const match = cur.match(/解决方案[：:]\s*([\s\S]*)$/);
-    if (match && match[1] !== undefined) {
-      cur = match[1].trim();
-    } else {
-      break;
-    }
-  }
-  return cur;
-}
-
-export function formatTasksReplyNote(tasks: TaskNoteItem[]): string {
-  if (tasks.length === 0) return "";
-  const lines: string[] = [`工单包含问题数：${tasks.length}`];
-  tasks.forEach((t, idx) => {
-    const code = t.code || "---";
-    const title = t.title || "---";
-    const pureSol = extractPureSolution(t.solution);
-    const sol = pureSol && pureSol.trim() ? pureSol.trim() : "---";
-    lines.push(`问题${idx + 1}：${code}-${title}`);
-    lines.push(`解决方案：${sol}`);
-    if (idx < tasks.length - 1) {
-      lines.push(""); // 每个问题之间间隔1行
-    }
-  });
-  return lines.join("\n");
-}
-
-export function parseReplyNoteSolutions(
-  content: string,
-  tasks: { code: string; key: string | number }[],
-): Record<string | number, string> {
-  const result: Record<string | number, string> = {};
-  if (!content || !content.trim() || tasks.length === 0) return result;
-
-  const trimmed = content.trim();
-  const lines = trimmed.split("\n");
-  let currentTaskIdx = tasks.length === 1 ? 0 : -1;
-  let collectingSolution = false;
-  let currentSolLines: string[] = [];
-
-  const flushCurrentSolution = () => {
-    if (currentTaskIdx >= 0 && currentTaskIdx < tasks.length) {
-      const fullSol = currentSolLines.join("\n").trim();
-      const taskKey = tasks[currentTaskIdx].key;
-      result[taskKey] = fullSol === "---" ? "" : extractPureSolution(fullSol);
-    }
-    currentSolLines = [];
-    collectingSolution = false;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const matchProblem = line.match(/^\s*【?问题(\d+)】?[:：]?(.*)$/);
-    if (matchProblem) {
-      flushCurrentSolution();
-      const pIdx = parseInt(matchProblem[1], 10) - 1;
-      currentTaskIdx = pIdx;
-      continue;
-    }
-
-    const matchSolution = line.match(/^\s*【?解决方案】?[:：]?(.*)$/);
-    if (matchSolution) {
-      collectingSolution = true;
-      currentSolLines = [matchSolution[1].trim()];
-      continue;
-    }
-
-    if (collectingSolution) {
-      currentSolLines.push(line);
-    }
-  }
-
-  flushCurrentSolution();
-
-  if (Object.keys(result).length === 0 && tasks.length === 1) {
-    result[tasks[0].key] = extractPureSolution(trimmed);
-  }
-
-  return result;
-}
-
-
-export function renderFormattedReplyNote(content: string) {
-  if (!content) {
-    return <span className="text-hub-textFaint">暂无处理说明</span>;
-  }
-  const lines = content.split("\n");
-  return (
-    <div className="space-y-1 text-[12.5px] leading-relaxed select-text font-sans">
-      {lines.map((line, idx) => {
-        if (!line.trim()) {
-          return <div key={idx} className="h-3.5" />;
-        }
-        const matchProblem = line.match(/^(\s*【?问题\d+】?[:：]?)(.*)$/);
-        if (matchProblem) {
-          return (
-            <div key={idx}>
-              <strong className="font-bold text-slate-900">{matchProblem[1]}</strong>
-              <span>{matchProblem[2]}</span>
-            </div>
-          );
-        }
-        const matchSolution = line.match(/^(\s*【?解决方案】?[:：]?)(.*)$/);
-        if (matchSolution) {
-          return (
-            <div key={idx}>
-              <strong className="font-bold text-slate-900">{matchSolution[1]}</strong>
-              <span>{matchSolution[2]}</span>
-            </div>
-          );
-        }
-        const matchTotal = line.match(/^(\s*工单包含问题数[:：]?\s*\d*)(.*)$/);
-        if (matchTotal) {
-          return (
-            <div key={idx} className="font-semibold text-slate-800">
-              {line}
-            </div>
-          );
-        }
-        return (
-          <div key={idx} className="text-slate-700">
-            {line}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+export {
+  type TaskNoteItem,
+  isDemandOrBug,
+  getTaskTypeLabel,
+  extractDevSolutionParts,
+  extractPureSolution,
+  formatTasksReplyNote,
+  parseReplyNoteSolutions,
+  renderFormattedReplyNote,
+  isValidSolution,
+  isFieldEmpty,
+};
 
 export function TicketDetailPage() {
   const { ticketId } = useParams<{ ticketId: string }>();
@@ -406,6 +322,17 @@ export function TicketDetailPage() {
   } | null>(null);
   const [noteViewMode, setNoteViewMode] = useState<"preview" | "edit">("preview");
   const [currentSubTasks, setCurrentSubTasks] = useState<SubTaskSummaryItem[]>([]);
+  const [isDevTransferred, setIsDevTransferred] = useState(false);
+  const [currentProcessStage, setCurrentProcessStage] = useState<ProcessLinkStage | null>(null);
+
+  useEffect(() => {
+    if (!isDevTransferred && detail.data) {
+      setCurrentProcessStage(getTicketProcessLink(detail.data as any));
+    }
+  }, [detail.data, isDevTransferred]);
+
+  const effectiveProcessStage: ProcessLinkStage =
+    currentProcessStage ?? (detail.data ? getTicketProcessLink(detail.data as any) : "服务处理");
 
   useEffect(() => {
     if (!transferDevAlert) return;
@@ -466,6 +393,43 @@ export function TicketDetailPage() {
       const it = prev.find((x) => x.id === id);
       if (it?.url) URL.revokeObjectURL(it.url);
       return prev.filter((x) => x.id !== id);
+    });
+  };
+
+  // 各子任务在转产研上下文抽屉中上传的附件映射 (key -> TaskAttachment[])
+  const [taskAttachmentsMap, setTaskAttachmentsMap] = useState<Record<string | number, TaskAttachment[]>>({});
+
+  // 汇聚所有子任务附件
+  const subtaskAttachmentsList = useMemo(() => {
+    return Object.values(taskAttachmentsMap).flat();
+  }, [taskAttachmentsMap]);
+
+  // 处理附件小节统一汇聚展示：主工单直接上传 + 所有子任务转产研上下文上传
+  const allProcAttachments = useMemo(() => {
+    return [...procAttachments, ...subtaskAttachmentsList];
+  }, [procAttachments, subtaskAttachmentsList]);
+
+  const handleRemoveAnyAttachment = (id: string) => {
+    // 1. 若属于主工单直接上传的附件
+    if (procAttachments.some((x) => x.id === id)) {
+      handleRemoveProcAttachment(id);
+      return;
+    }
+    // 2. 若属于某个子任务上传的附件
+    setTaskAttachmentsMap((prev) => {
+      let found = false;
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        const list = next[key];
+        if (list && list.some((x) => x.id === id)) {
+          const item = list.find((x) => x.id === id);
+          if (item?.url) URL.revokeObjectURL(item.url);
+          next[key] = list.filter((x) => x.id !== id);
+          found = true;
+          break;
+        }
+      }
+      return found ? next : prev;
     });
   };
 
@@ -813,6 +777,7 @@ export function TicketDetailPage() {
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Tag tone="cyan">{sourceLabel(d.source_code)}</Tag>
                     <Tag tone="purple">{d.service_level ?? "标准服务"}</Tag>
+                    <ProcessStageBadge stage={effectiveProcessStage} />
                     {d.predicted_type && (
                       <PredictedTypeBadge type={d.predicted_type} confidence={d.predicted_confidence} />
                     )}
@@ -855,28 +820,6 @@ export function TicketDetailPage() {
                             ).trim();
 
                             // 提交答复时：将更新的答复会写更新到对应的子任务解决方案处
-                            const tasksToSync: { code: string; key: string | number }[] = [];
-                            const childIds = d.children_ticket_ids ?? [];
-                            if (childIds.length === 0 && subDrafts.length === 0) {
-                              tasksToSync.push({ code: d.short_code, key: "self" });
-                            }
-                            childIds.forEach((cid, idx) => {
-                              tasksToSync.push({
-                                code: childResults[idx]?.data?.short_code ?? `#${cid}`,
-                                key: cid,
-                              });
-                            });
-                            subDrafts.forEach((_, idx) => {
-                              const code = `${d.short_code}-${(childIds.length || 1) + idx + 1}`;
-                              tasksToSync.push({ code, key: `draft-${idx}` });
-                            });
-
-                            const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
-                            if (Object.keys(parsedMap).length > 0) {
-                              setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
-                            }
-
-                            // 校验：节点详情下的子任务列表任务类型是【应用类】的记录，解决方案都不为空，为空提示“{任务编号}任务解决方案为空，请先录入后再提交”
                             const tasksToCheck: SubTaskSummaryItem[] =
                               currentSubTasks.length > 0
                                 ? currentSubTasks
@@ -896,15 +839,28 @@ export function TicketDetailPage() {
                                     },
                                   ];
 
+                            const tasksToSync: { code: string; key: string | number; type?: string }[] =
+                              tasksToCheck.map((t) => ({ code: t.code, key: t.key, type: t.type }));
+
+                            const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
+                            if (Object.keys(parsedMap).length > 0) {
+                              setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
+                            }
+
+                            // 校验：节点详情下的子任务列表任务类型是【应用类】的记录，解决方案都不为空，为空提示“{任务编号}任务解决方案为空，请先录入后再提交”
                             for (const t of tasksToCheck) {
                               const isOp = t.type === "Operation" || t.type === "应用类";
                               if (isOp) {
-                                const sol = (
-                                  parsedMap[t.key] ??
-                                  (tasksToCheck.length === 1 && content ? content : t.solution) ??
-                                  ""
-                                ).trim();
-                                if (!sol) {
+                                const directSol = (t.solution ?? "").trim();
+                                const parsedSol = (parsedMap[t.key] ?? "").trim();
+                                const sol = isValidSolution(directSol)
+                                  ? directSol
+                                  : isValidSolution(parsedSol)
+                                  ? parsedSol
+                                  : tasksToCheck.length === 1 && isValidSolution(content)
+                                  ? content
+                                  : "";
+                                if (!isValidSolution(sol)) {
                                   const msg = `${t.code}任务解决方案为空，请先录入后再提交`;
                                   showTopToast(msg, "warning");
                                   setReplyErr(msg);
@@ -913,7 +869,7 @@ export function TicketDetailPage() {
                               }
                             }
 
-                            if (!content) {
+                            if (!content || isFieldEmpty(content)) {
                               setReplyErr("处理说明为空，无法答复");
                               return;
                             }
@@ -941,8 +897,8 @@ export function TicketDetailPage() {
                       {/* 2. 转产研 */}
                       <button
                         type="button"
-                        disabled={opDone}
-                        title="处理说明转产研说明并提交产研"
+                        disabled={opDone || isDevTransferred}
+                        title={isDevTransferred ? "已转产研处理" : "处理说明转产研说明并提交产研"}
                         onClick={() => {
                           const content = (
                             noteDrafts[0] ??
@@ -950,10 +906,96 @@ export function TicketDetailPage() {
                             draftReply ??
                             ""
                           ).trim();
-                          if (!content) {
+                          if (!content || isFieldEmpty(content)) {
                             setTransferDevAlert("请在处理说明转产研说明，没有录入不能转产研");
                             return;
                           }
+
+                          // 1. 整理当前全部子任务列表（如果 currentSubTasks 为空则退化为单主任务 self）
+                          const tasksToCheck: SubTaskSummaryItem[] =
+                            currentSubTasks.length > 0
+                              ? currentSubTasks
+                              : [
+                                  {
+                                    key: "self",
+                                    code:
+                                      hub.data?.short_code ??
+                                      (d as any).hub_short_code ??
+                                      (d.hub_issue_id
+                                        ? `HUB-${String(d.hub_issue_id).padStart(6, "0")}`
+                                        : d.short_code),
+                                    title: hub.data?.title ?? d.title ?? "",
+                                    type: (hub.data?.type ?? d.predicted_type ?? d.type ?? "") as string,
+                                    product_line_code: d.product_line_code ?? "",
+                                    module: d.module ?? "",
+                                    solution: (d.cached_reply_content ?? "").trim(),
+                                    status: "",
+                                  },
+                                ];
+
+                          const tasksToSync: { code: string; key: string | number; type?: string }[] =
+                            tasksToCheck.map((t) => ({ code: t.code, key: t.key, type: t.type }));
+
+                          const parsedMap = parseReplyNoteSolutions(content, tasksToSync);
+                          if (Object.keys(parsedMap).length > 0) {
+                            setExternalTaskSolutions((prev) => ({ ...prev, ...parsedMap }));
+                          }
+
+                          // 2. 校验是否存在需求/BUG任务
+                          const devTasks = tasksToCheck.filter((t) => isDemandOrBug(t.type));
+                          if (devTasks.length === 0) {
+                            const msg = "子任务列表中不存在需求或BUG任务，无法转产研";
+                            showTopToast(msg, "warning");
+                            setTransferDevAlert(msg);
+                            return;
+                          }
+
+                          // 3. 校验需求/BUG任务的产品分类、模块、任务解决方案是否为空
+                          // 系统默认内容绝不能被判定为有效值（如 ---、无、转产研上下文、录入说明等）
+                          // 且严禁将工单的处理说明兜底赋值给未录入方案的子任务！
+                          for (const t of devTasks) {
+                            const directSol = (t.solution ?? "").trim();
+                            const parsedSol = (parsedMap[t.key] ?? "").trim();
+
+                            let validSol = "";
+                            if (isValidSolution(directSol)) {
+                              validSol = directSol;
+                            } else if (isValidSolution(parsedSol)) {
+                              validSol = parsedSol;
+                            }
+
+                            const missing: string[] = [];
+                            if (isFieldEmpty(t.product_line_code)) missing.push("产品分类");
+                            if (isFieldEmpty(t.module)) missing.push("问题模块");
+                            if (!validSol) missing.push("任务解决方案");
+
+                            if (missing.length > 0) {
+                              const msg = `任务 ${t.code} 的${missing.join("、")}为空，请先补全后再转产研`;
+                              showTopToast(msg, "warning");
+                              setTransferDevAlert(msg);
+                              return;
+                            }
+                          }
+
+                          setIsDevTransferred(true);
+                          setCurrentProcessStage("产研处理");
+                          setNoteViewMode("preview");
+                          if (ticketId) {
+                            qc.setQueryData(["ticket-detail", ticketId], (old: any) =>
+                              old ? { ...old, process_stage: "产研处理", process_link: "产研处理" } : old,
+                            );
+                          }
+                          qc.setQueriesData({ queryKey: ["tickets"] }, (old: any) => {
+                            if (!old || !Array.isArray(old.items)) return old;
+                            return {
+                              ...old,
+                              items: old.items.map((it: any) =>
+                                it.id === ticketId || it.short_code === d.short_code
+                                  ? { ...it, process_stage: "产研处理", process_link: "产研处理" }
+                                  : it,
+                              ),
+                            };
+                          });
                           showTopToast("已成功转产研，处理说明已同步", "success");
                           setLocalActions((p) => [{ label: "转产研处理" }, ...p]);
                         }}
@@ -1326,8 +1368,12 @@ export function TicketDetailPage() {
                   {isCurrentNode ? (
                     <SubTicketList
                       ticketId={d.id}
+                      ticketContent={d.body || d.title || ""}
+                      devOwners={devOwners}
                       childIds={d.children_ticket_ids ?? []}
                       drafts={subDrafts}
+                      taskAttachmentsMap={taskAttachmentsMap}
+                      onTaskAttachmentsChange={setTaskAttachmentsMap}
                       onDeleteDrafts={(indices) => {
                         setSubDrafts((prev) => prev.filter((_, i) => !indices.includes(i)));
                       }}
@@ -1352,6 +1398,7 @@ export function TicketDetailPage() {
                           (d.assigned_user_id != null && currentUserId() === d.assigned_user_id)) &&
                         !opDone
                       }
+                      isDevTransferred={isDevTransferred}
                       externalSolutions={externalTaskSolutions}
                       isOpCompleted={isOpCompleted}
                       onTasksChange={setCurrentSubTasks}
@@ -1421,7 +1468,7 @@ export function TicketDetailPage() {
 
                   {isCurrentNode ? (
                     (() => {
-                      const editable = !opDone;
+                      const editable = !opDone && !isDevTransferred;
                       const supplyNote =
                         opStatus === "supplementing" ? (hub.data?.supply_note ?? "") : "";
                       const val =
@@ -1461,9 +1508,11 @@ export function TicketDetailPage() {
                             placeholder={
                               editable
                                 ? "填写当前节点处理说明（支持输入说明，支持在下方添加或 Ctrl+V 粘贴附件）"
-                                : opStatus === "closed"
-                                  ? "已关单，只读"
-                                  : "已答复完成，只读"
+                                : isDevTransferred
+                                  ? "已转产研处理，只读"
+                                  : opStatus === "closed"
+                                    ? "已关单，只读"
+                                    : "已答复完成，只读"
                             }
                             className={
                               "w-full min-h-[136px] pb-6 text-[12.5px] border border-hub-border rounded-[7px] px-2.5 py-2 resize-y outline-none " +
@@ -1512,9 +1561,9 @@ export function TicketDetailPage() {
                       <span className="text-[12px] font-bold text-black tracking-wide">
                         处理附件
                       </span>
-                      {procAttachments.length > 0 && (
+                      {allProcAttachments.length > 0 && (
                         <span className="text-[11px] text-hub-teal-deep font-semibold">
-                          ({procAttachments.length})
+                          ({allProcAttachments.length})
                         </span>
                       )}
                       {isCurrentNode ? (
@@ -1560,7 +1609,7 @@ export function TicketDetailPage() {
 
                   {/* 附件列表或空状态提示 */}
                   {isCurrentNode ? (
-                    procAttachments.length === 0 ? (
+                    allProcAttachments.length === 0 ? (
                       opDone ? (
                         <div className="border border-dashed border-slate-200 rounded-[7px] p-3 text-center bg-slate-50/50">
                           <p className="text-[11.5px] text-slate-400 m-0">暂无处理附件</p>
@@ -1589,17 +1638,21 @@ export function TicketDetailPage() {
                       )
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                        {procAttachments.map((att) => {
+                        {allProcAttachments.map((att) => {
                           const isImg = att.type.startsWith("image/");
+                          const isVideo = att.type.startsWith("video/");
                           const sizeStr =
                             att.size < 1024 * 1024
                               ? `${(att.size / 1024).toFixed(1)} KB`
                               : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+                          const taskAttach = att as TaskAttachment;
+                          const displayName = taskAttach.displayName || att.name;
+                          const taskCode = taskAttach.taskCode;
 
                           return (
                             <div
                               key={att.id}
-                              className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
+                              className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative shadow-2xs"
                             >
                               {isImg && att.url ? (
                                 <img
@@ -1609,17 +1662,28 @@ export function TicketDetailPage() {
                                   onClick={() => setPreviewImgUrl(att.url!)}
                                   title="点击预览大图"
                                 />
+                              ) : isVideo ? (
+                                <div className="w-10 h-10 rounded bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-[10px] flex-none">
+                                  VIDEO
+                                </div>
                               ) : (
-                                <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
+                                <div className="w-10 h-10 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] flex-none">
                                   FILE
                                 </div>
                               )}
                               <div className="min-w-0 flex-1">
-                                <div
-                                  className="text-[12px] font-medium text-slate-800 truncate"
-                                  title={att.name}
-                                >
-                                  {att.name}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    className="text-[12px] font-bold text-slate-800 font-mono truncate"
+                                    title={att.name}
+                                  >
+                                    {displayName}
+                                  </span>
+                                  {taskCode && (
+                                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-blue-50 text-[#6085e7] border border-blue-200">
+                                      {taskCode}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
                                   <span>{sizeStr}</span>
@@ -1630,8 +1694,9 @@ export function TicketDetailPage() {
                               {!opDone && (
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveProcAttachment(att.id)}
+                                  onClick={() => handleRemoveAnyAttachment(att.id)}
                                   title="删除此附件"
+                                  aria-label={`删除附件 ${displayName}`}
                                   className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 text-[13px] transition-colors cursor-pointer flex-none"
                                 >
                                   ✕
@@ -1642,19 +1707,23 @@ export function TicketDetailPage() {
                         })}
                       </div>
                     )
-                  ) : procAttachments.length > 0 ? (
+                  ) : allProcAttachments.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {procAttachments.map((att) => {
+                      {allProcAttachments.map((att) => {
                         const isImg = att.type.startsWith("image/");
+                        const isVideo = att.type.startsWith("video/");
                         const sizeStr =
                           att.size < 1024 * 1024
                             ? `${(att.size / 1024).toFixed(1)} KB`
                             : `${(att.size / (1024 * 1024)).toFixed(1)} MB`;
+                        const taskAttach = att as TaskAttachment;
+                        const displayName = taskAttach.displayName || att.name;
+                        const taskCode = taskAttach.taskCode;
 
                         return (
                           <div
                             key={att.id}
-                            className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative"
+                            className="flex items-center gap-2.5 p-2 rounded-[7px] border border-hub-border bg-white hover:border-[#6085e7] transition-all group relative shadow-2xs"
                           >
                             {isImg && att.url ? (
                               <img
@@ -1664,17 +1733,28 @@ export function TicketDetailPage() {
                                 onClick={() => setPreviewImgUrl(att.url!)}
                                 title="点击预览大图"
                               />
+                            ) : isVideo ? (
+                              <div className="w-10 h-10 rounded bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-[10px] flex-none">
+                                VIDEO
+                              </div>
                             ) : (
-                              <div className="w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-[11px] flex-none">
+                              <div className="w-10 h-10 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] flex-none">
                                 FILE
                               </div>
                             )}
                             <div className="min-w-0 flex-1">
-                              <div
-                                className="text-[12px] font-medium text-slate-800 truncate"
-                                title={att.name}
-                              >
-                                {att.name}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className="text-[12px] font-bold text-slate-800 font-mono truncate"
+                                  title={att.name}
+                                >
+                                  {displayName}
+                                </span>
+                                {taskCode && (
+                                  <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded bg-blue-50 text-[#6085e7] border border-blue-200">
+                                    {taskCode}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[10.5px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
                                 <span>{sizeStr}</span>
@@ -1794,11 +1874,10 @@ export function TicketDetailPage() {
             />
           )}
 
-          {/* 添加子任务弹窗：录入说明 + 类型 → 真正调用后端 API 创建 Hub 子任务，并在本地草稿即时回显 */}
+          {/* 添加子任务弹窗：录入说明 + 类型 → 真正调用后端 API 创建 Hub 子任务 */}
           {addSubOpen && (
             <AddSubTaskModal
               onSubmit={(title, type) => {
-                setSubDrafts((prev) => [...prev, { title, type }]);
                 postByPath(
                   "/api/tickets/{ticket_id}/subtasks",
                   { ticket_id: id },
@@ -2730,6 +2809,8 @@ export interface SubTaskSummaryItem {
   code: string;
   title: string;
   type: string;
+  product_line_code?: string;
+  module?: string;
   solution: string;
   status: string;
 }
@@ -2739,7 +2820,9 @@ export interface SubTaskSummaryItem {
 // 处理说明支持 600×400 弹窗录入，解决方案截取 10 字符，支持浮窗查看与双行同步主单；新增操作列确认分类。
 function SubTicketList({
   ticketId,
-  childIds: _childIds,
+  ticketContent,
+  devOwners,
+  childIds = [],
   drafts,
   self,
   externalSolutions,
@@ -2751,11 +2834,22 @@ function SubTicketList({
   onSyncNote,
   onSyncAllTasksNote,
   onSyncConfirmedAttributes,
+  taskAttachmentsMap,
+  onTaskAttachmentsChange,
   canEdit = true,
+  isDevTransferred = false,
 }: {
   ticketId?: number;
+  ticketContent?: string;
+  devOwners?: string;
   childIds: number[];
   drafts: { title: string; type: string; product_line?: string; module?: string }[];
+  taskAttachmentsMap?: Record<string | number, TaskAttachment[]>;
+  onTaskAttachmentsChange?: (
+    updater:
+      | Record<string | number, TaskAttachment[]>
+      | ((prev: Record<string | number, TaskAttachment[]>) => Record<string | number, TaskAttachment[]>),
+  ) => void;
   self: {
     short_code: string;
     hub_id?: number;
@@ -2782,6 +2876,7 @@ function SubTicketList({
     module: string;
   }) => void;
   canEdit?: boolean;
+  isDevTransferred?: boolean;
 }) {
   const qc = useQueryClient();
 
@@ -2910,6 +3005,7 @@ function SubTicketList({
     Record<
       string | number,
       {
+        title?: string;
         type?: string;
         product_line_code?: string;
         module?: string;
@@ -2939,9 +3035,20 @@ function SubTicketList({
     module: string;
     solution: string;
   } | null>(null);
+  const [devDrawerState, setDevDrawerState] = useState<{
+    key: string | number;
+    code?: string;
+    title: string;
+    type: string;
+    product_line_code?: string;
+    product_line_name?: string;
+    module?: string;
+    assignee_name?: string;
+    solution: string;
+  } | null>(null);
 
   const [selfHidden, setSelfHidden] = useState(false);
-  const showSelf = subtasks.length === 0 && (!selfHidden || drafts.length === 0);
+  const showSelf = childIds.length === 0 && (!selfHidden || (subtasks.length === 0 && drafts.length === 0));
 
   const allRowKeys: (string | number)[] = useMemo(() => {
     const keys: (string | number)[] = [];
@@ -2953,13 +3060,31 @@ function SubTicketList({
     return keys;
   }, [showSelf, subtasks, drafts]);
 
-  const allSelected = allRowKeys.length > 0 && allRowKeys.every((k) => selectedKeys.has(k));
+  const isKeyLocked = (k: string | number) => {
+    if (!isDevTransferred) return false;
+    if (k === "self") return isDemandOrBug(rowStates["self"]?.type || self.predicted_type);
+    if (typeof k === "number") {
+      const stk = subtasks.find((s: any) => s.id === k);
+      return isDemandOrBug(rowStates[k]?.type || stk?.type);
+    }
+    if (typeof k === "string" && k.startsWith("draft-")) {
+      const idx = parseInt(k.replace("draft-", ""), 10);
+      return isDemandOrBug(rowStates[k]?.type || drafts[idx]?.type);
+    }
+    return false;
+  };
+
+  const selectableRowKeys = useMemo(() => {
+    return allRowKeys.filter((k) => !isKeyLocked(k));
+  }, [allRowKeys, isDevTransferred, rowStates, self, subtasks, drafts]);
+
+  const allSelected = selectableRowKeys.length > 0 && selectableRowKeys.every((k) => selectedKeys.has(k));
 
   const toggleSelectAll = () => {
     if (allSelected) {
       setSelectedKeys(new Set());
     } else {
-      setSelectedKeys(new Set(allRowKeys));
+      setSelectedKeys(new Set(selectableRowKeys));
     }
   };
 
@@ -2992,12 +3117,22 @@ function SubTicketList({
     if (draftIndices.length > 0) {
       onDeleteDrafts?.(draftIndices);
     }
+    if (onTaskAttachmentsChange) {
+      onTaskAttachmentsChange((prev) => {
+        const next = { ...prev };
+        selectedKeys.forEach((k) => {
+          delete next[k];
+        });
+        return next;
+      });
+    }
     setSelectedKeys(new Set());
   };
 
   const getRowState = (
     key: string | number,
     initial: {
+      title?: string;
       type: string;
       product_line_code: string;
       module: string;
@@ -3009,6 +3144,7 @@ function SubTicketList({
     const cur = rowStates[key];
     const extSol = externalSolutions?.[key];
     return {
+      title: cur?.title !== undefined ? cur.title : initial.title,
       type: cur?.type !== undefined ? cur.type : initial.type,
       product_line_code:
         cur?.product_line_code !== undefined ? cur.product_line_code : initial.product_line_code,
@@ -3042,6 +3178,7 @@ function SubTicketList({
   const updateRow = (
     key: string | number,
     patch: Partial<{
+      title: string;
       type: string;
       product_line_code: string;
       module: string;
@@ -3064,74 +3201,91 @@ function SubTicketList({
     });
   };
 
-  const getAllTasks = (overridePatch?: { key: string | number; solution: string }): TaskNoteItem[] => {
+  const getAllTasks = (overridePatch?: { key: string | number; title?: string; solution: string }): TaskNoteItem[] => {
     const tasks: TaskNoteItem[] = [];
     if (showSelf) {
       const st = getRowState("self", {
+        title: self.title ?? "当前工单任务",
         type: self.predicted_type ?? "",
         product_line_code: self.product_line_code ?? "",
         module: self.module ?? "",
         solution: extractPureSolution(self.cached_reply_content),
       });
       const sol = overridePatch && overridePatch.key === "self" ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === "self" && overridePatch.title !== undefined ? overridePatch.title : (st.title || self.title || "当前工单任务");
       tasks.push({
         code: self.short_code,
-        title: self.title ?? "当前工单任务",
-        solution: extractPureSolution(sol),
+        title: tit,
+        type: st.type || self.predicted_type || "",
+        solution: sol,
       });
     }
     subtasks.forEach((stk: any) => {
       const sid = stk.id;
       const st = getRowState(sid, {
+        title: stk.title ?? `子任务 #${sid}`,
         type: stk.type ?? "",
         product_line_code: stk.product_line_code ?? "",
         module: stk.module ?? "",
         solution: extractPureSolution(stk.solution),
       });
       const sol = overridePatch && overridePatch.key === sid ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === sid && overridePatch.title !== undefined ? overridePatch.title : (st.title || stk.title || `子任务 #${sid}`);
       tasks.push({
         code: stk.short_code ?? `#${sid}`,
-        title: stk.title ?? `子任务 #${sid}`,
-        solution: extractPureSolution(sol),
+        title: tit,
+        type: st.type || stk.type || "",
+        solution: sol,
       });
     });
     drafts.forEach((dft, i) => {
       const draftKey = `draft-${i}`;
       const st = getRowState(draftKey, {
+        title: dft.title || `新建子任务 #${i + 1}`,
         type: dft.type || "",
         product_line_code: dft.product_line || "",
         module: dft.module || "",
         solution: "",
       });
       const sol = overridePatch && overridePatch.key === draftKey ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === draftKey && overridePatch.title !== undefined ? overridePatch.title : (st.title || dft.title || `新建子任务 #${i + 1}`);
       tasks.push({
         code: `${self.short_code}-${subtasks.length + i + 1}`,
-        title: dft.title || `新建子任务 #${i + 1}`,
+        title: tit,
+        type: st.type || dft.type || "",
         solution: sol,
       });
     });
     return tasks;
   };
 
-  const getSummaryTasks = (overridePatch?: { key: string | number; solution: string }): SubTaskSummaryItem[] => {
+  const getSummaryTasks = (overridePatch?: { key: string | number; title?: string; solution: string }): SubTaskSummaryItem[] => {
     const tasks: SubTaskSummaryItem[] = [];
     if (showSelf) {
       const st = getRowState("self", {
+        title: self.title ?? "当前工单任务",
         type: self.predicted_type ?? "",
         product_line_code: self.product_line_code ?? "",
         module: self.module ?? "",
         solution: self.cached_reply_content ?? "",
       });
       const sol = overridePatch && overridePatch.key === "self" ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === "self" && overridePatch.title !== undefined ? overridePatch.title : (st.title || self.title || "当前工单任务");
+      const isDev = isDemandOrBug(st.type || self.predicted_type);
       const isOp = st.type === "Operation" || self.predicted_type === "Operation";
-      const effStatus = isOpCompleted && isOp
+      let effStatus = isOpCompleted && isOp
         ? "completed"
         : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
+      if (isDevTransferred && isDev) {
+        effStatus = "processing";
+      }
       tasks.push({
         key: "self",
         code: self.short_code,
-        title: self.title ?? "当前工单任务",
+        title: tit,
         type: st.type || self.predicted_type || "",
+        product_line_code: st.product_line_code || self.product_line_code || "",
+        module: st.module || self.module || "",
         solution: sol,
         status: effStatus,
       });
@@ -3139,21 +3293,29 @@ function SubTicketList({
     subtasks.forEach((stk: any) => {
       const sid = stk.id;
       const st = getRowState(sid, {
+        title: stk.title ?? `子任务 #${sid}`,
         type: stk.type ?? "",
         product_line_code: stk.product_line_code ?? "",
         module: stk.module ?? "",
         solution: stk.solution ?? "",
       });
       const sol = overridePatch && overridePatch.key === sid ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === sid && overridePatch.title !== undefined ? overridePatch.title : (st.title || stk.title || `子任务 #${sid}`);
+      const isDev = isDemandOrBug(st.type || stk.type);
       const isOp = st.type === "Operation" || stk.type === "Operation";
-      const effStatus = isOpCompleted && isOp
+      let effStatus = isOpCompleted && isOp
         ? "completed"
         : (st.status ?? (st.confirmed ? "processing" : (stk.status || "draft")));
+      if (isDevTransferred && isDev) {
+        effStatus = "processing";
+      }
       tasks.push({
         key: sid,
         code: stk.short_code ?? `#${sid}`,
-        title: stk.title ?? `子任务 #${sid}`,
+        title: tit,
         type: st.type || stk.type || "",
+        product_line_code: st.product_line_code || stk.product_line_code || "",
+        module: st.module || stk.module || "",
         solution: sol,
         status: effStatus,
       });
@@ -3161,21 +3323,29 @@ function SubTicketList({
     drafts.forEach((dft, i) => {
       const draftKey = `draft-${i}`;
       const st = getRowState(draftKey, {
+        title: dft.title || `新建子任务 #${i + 1}`,
         type: dft.type || "",
         product_line_code: dft.product_line || "",
         module: dft.module || "",
         solution: "",
       });
       const sol = overridePatch && overridePatch.key === draftKey ? overridePatch.solution : st.solution;
+      const tit = overridePatch && overridePatch.key === draftKey && overridePatch.title !== undefined ? overridePatch.title : (st.title || dft.title || `新建子任务 #${i + 1}`);
+      const isDev = isDemandOrBug(st.type || dft.type);
       const isOp = st.type === "Operation" || dft.type === "Operation";
-      const effStatus = isOpCompleted && isOp
+      let effStatus = isOpCompleted && isOp
         ? "completed"
         : (st.status ?? (st.confirmed ? "processing" : "draft"));
+      if (isDevTransferred && isDev) {
+        effStatus = "processing";
+      }
       tasks.push({
         key: draftKey,
         code: `${self.short_code}-${subtasks.length + i + 1}`,
-        title: dft.title || `新建子任务 #${i + 1}`,
+        title: tit,
         type: st.type || dft.type || "",
+        product_line_code: st.product_line_code || dft.product_line || "",
+        module: st.module || dft.module || "",
         solution: sol,
         status: effStatus,
       });
@@ -3191,7 +3361,7 @@ function SubTicketList({
 
     // 任务解决方案有值后自动同步至处理说明
     const tasks = getAllTasks();
-    const hasAnySolution = tasks.some((t) => t.solution && t.solution.trim());
+    const hasAnySolution = tasks.some((t) => isValidSolution(t.solution));
     if (hasAnySolution || subtasks.length > 0 || drafts.length > 0) {
       if (tasks.length > 0) {
         const formatted = formatTasksReplyNote(tasks);
@@ -3455,7 +3625,7 @@ function SubTicketList({
               >
                 <input
                   type="checkbox"
-                  disabled={!canEdit}
+                  disabled={!canEdit || selectableRowKeys.length === 0}
                   checked={allSelected}
                   onChange={toggleSelectAll}
                   className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3497,20 +3667,35 @@ function SubTicketList({
           </thead>
           <tbody>
             {/* 无独立子工单时保留展示系统默认生成的主任务行（支持点击「添加」新增更多子任务行而不被覆盖） */}
+            {/* 无独立子工单时保留展示系统默认生成的主任务行（支持点击「添加」新增更多子任务行而不被覆盖） */}
             {showSelf && (() => {
               const rowKey = "self";
-              const rowTitle = self.title ?? "当前工单任务";
               const st = getRowState(rowKey, {
+                title: self.title ?? "当前工单任务",
                 type: self.predicted_type ?? "",
                 product_line_code: self.product_line_code ?? "",
                 module: self.module ?? "",
                 solution: self.cached_reply_content ?? "",
               });
+              const rowTitle = st.title || self.title || "当前工单任务";
+              const isDev = isDemandOrBug(st.type);
               const isOp = st.type === "Operation" || self.predicted_type === "Operation";
-              const effStatus = isOpCompleted && isOp
+              let effStatus = isOpCompleted && isOp
                 ? "completed"
                 : (st.status ?? (st.confirmed ? "processing" : (self.status || "draft")));
+              if (isDevTransferred && isDev) {
+                effStatus = "processing";
+              }
               const b = subtaskStatusBadge(effStatus);
+              const isRowLocked = isDevTransferred && isDev;
+              const currentAssigneeName =
+                st.assigned_user_name ??
+                self.assigned_user_name ??
+                (self.assigned_user_id ? `#${self.assigned_user_id}` : devOwners || "—");
+              const plName =
+                productLineOptions.find((p) => p.code === st.product_line_code)?.name ||
+                st.product_line_code ||
+                "";
               const truncSolution = st.solution
                 ? st.solution.length > 10
                   ? `${st.solution.slice(0, 10)}...`
@@ -3527,7 +3712,7 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
-                      disabled={!canEdit}
+                      disabled={!canEdit || isRowLocked}
                       checked={selectedKeys.has(rowKey)}
                       onChange={() => toggleRow(rowKey)}
                       className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3543,13 +3728,13 @@ function SubTicketList({
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => self.title && setPopoverText({ title: "任务说明详情", content: self.title })}
+                    onClick={() => rowTitle && setPopoverText({ title: "任务说明详情", content: rowTitle })}
                   >
-                    {self.title ?? "—"}
+                    {rowTitle}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
-                      disabled={!canEdit}
+                      disabled={!canEdit || isRowLocked}
                       value={st.type}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -3559,7 +3744,7 @@ function SubTicketList({
                         }
                       }}
                       className={`text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal h-[28px] ${
-                        !canEdit ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
+                        !canEdit || isRowLocked ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
                       }`}
                     >
                       <option value="">选择类型</option>
@@ -3587,7 +3772,7 @@ function SubTicketList({
                       placeholder="选择产品分类"
                       width={140}
                       compact
-                      disabled={!canEdit}
+                      disabled={!canEdit || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3600,7 +3785,7 @@ function SubTicketList({
                           updateSubtaskMutation.mutate({ hubId: self.hub_id, body: { module: val } });
                         }
                       }}
-                      disabled={!canEdit}
+                      disabled={!canEdit || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3612,52 +3797,94 @@ function SubTicketList({
                     </span>
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {st.assigned_user_name ??
-                      self.assigned_user_name ??
-                      (self.assigned_user_id ? `#${self.assigned_user_id}` : "—")}
+                    {currentAssigneeName}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
-                    {st.solution ? (
+                    {isValidSolution(st.solution) ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: rowKey,
-                            title: rowTitle,
-                            content: st.solution,
-                          })
-                        }
+                        onClick={() => {
+                          if (isDev) {
+                            setDevDrawerState({
+                              key: rowKey,
+                              code: self.short_code,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: st.solution,
+                            });
+                          } else {
+                            setNoteModal({
+                              key: rowKey,
+                              title: rowTitle,
+                              content: st.solution,
+                              canEdit: canEdit,
+                            });
+                          }
+                        }}
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改指派说明"
+                        title={
+                          isRowLocked
+                            ? "已转产研处理（点击查看转产研上下文）"
+                            : isDev
+                              ? "点击查看并补充转产研上下文"
+                              : "点击查看并直接修改任务解决方案"
+                        }
                       >
                         {truncSolution}
                       </button>
-                    ) : canEdit ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setKbDrawerState({
-                            key: rowKey,
-                            title: rowTitle,
-                            product_line_code: st.product_line_code || "",
-                            module: st.module || "",
-                            solution: "",
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline cursor-pointer"
-                        title="点击打开维护知识库面板"
-                      >
-                        无方案，去完善
-                      </button>
+                    ) : canEdit && !isRowLocked ? (
+                      isDev ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDevDrawerState({
+                              key: rowKey,
+                              code: self.short_code,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: "",
+                            })
+                          }
+                          className="text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开转产研上下文补充操作面板"
+                        >
+                          转产研上下文
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKbDrawerState({
+                              key: rowKey,
+                              title: rowTitle,
+                              product_line_code: st.product_line_code || "",
+                              module: st.module || "",
+                              solution: "",
+                            })
+                          }
+                          className="text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开维护知识库面板"
+                        >
+                          无方案，去完善
+                        </button>
+                      )
                     ) : (
                       <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
-                    0
+                    {taskAttachmentsMap?.[rowKey]?.length ?? 0}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {canEdit ? (
+                    {canEdit || isRowLocked ? (
                       <div className="flex items-center gap-2">
                         {effStatus === "returned" || self.status === "returned" ? (
                           <button
@@ -3667,6 +3894,34 @@ function SubTicketList({
                             title="被研发退回，点击重新推送到 Linear"
                           >
                             重新推送
+                          </button>
+                        ) : isDev ? (
+                          <button
+                            type="button"
+                            aria-label="去补充"
+                            disabled={isRowLocked}
+                            onClick={() => {
+                              if (isRowLocked) return;
+                              setDevDrawerState({
+                                key: rowKey,
+                                code: self.short_code,
+                                title: rowTitle,
+                                type: st.type,
+                                product_line_code: st.product_line_code || "",
+                                product_line_name: plName,
+                                module: st.module || "",
+                                assignee_name: currentAssigneeName,
+                                solution: st.solution || "",
+                              });
+                            }}
+                            className={
+                              isRowLocked
+                                ? "font-medium text-slate-400 cursor-not-allowed opacity-50"
+                                : "font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            }
+                            title={isRowLocked ? "已转产研处理，操作已禁用" : "点击打开转产研上下文补充操作面板"}
+                          >
+                            去补充
                           </button>
                         ) : currentAiStatus === "loading" ? (
                           <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
@@ -3696,15 +3951,16 @@ function SubTicketList({
                           <button
                             type="button"
                             aria-label="人工完善"
-                            onClick={() =>
+                            disabled={!canEdit}
+                            onClick={() => {
                               setKbDrawerState({
                                 key: rowKey,
                                 title: rowTitle,
                                 product_line_code: st.product_line_code || "",
                                 module: st.module || "",
                                 solution: st.solution || "",
-                              })
-                            }
+                              });
+                            }}
                             className="font-medium text-[#6085e7] hover:underline cursor-pointer"
                             title="点击打开维护知识库面板"
                           >
@@ -3714,7 +3970,10 @@ function SubTicketList({
                           <button
                             type="button"
                             aria-label="AI作答"
-                            onClick={() => handleAiAnswer(rowKey, rowTitle, st)}
+                            disabled={!canEdit}
+                            onClick={() => {
+                              handleAiAnswer(rowKey, rowTitle, st);
+                            }}
                             className="font-medium text-[#6085e7] hover:underline cursor-pointer"
                             title="点击调用 Agent 进行自动作答"
                           >
@@ -3731,18 +3990,30 @@ function SubTicketList({
             })()}
 
             {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取） */}
+            {/* 真实 Hub 子任务列表行（从 /api/tickets/{ticketId}/subtasks 接口拉取） */}
             {subtasks.map((stk: any) => {
               const rowKey = stk.id;
-              const rowTitle = stk.title ?? `子任务 #${stk.id}`;
               const isStkAssignee =
                 stk.assigned_user_id != null && currentUserId() === stk.assigned_user_id;
               const canEditThisRow = canEdit || isStkAssignee;
               const st = getRowState(rowKey, {
+                title: stk.title ?? `子任务 #${stk.id}`,
                 type: stk.type ?? "",
                 product_line_code: stk.product_line_code ?? "",
                 module: stk.module ?? "",
                 solution: stk.solution ?? "",
               });
+              const rowTitle = st.title || stk.title || `子任务 #${stk.id}`;
+              const isDev = isDemandOrBug(st.type);
+              const isRowLocked = isDevTransferred && isDev;
+              const currentAssigneeName =
+                st.assigned_user_name ??
+                stk.assigned_user_name ??
+                (stk.assigned_user_id ? `#${stk.assigned_user_id}` : devOwners || "—");
+              const plName =
+                productLineOptions.find((p) => p.code === st.product_line_code)?.name ||
+                st.product_line_code ||
+                "";
               const truncSolution = st.solution
                 ? st.solution.length > 10
                   ? `${st.solution.slice(0, 10)}...`
@@ -3759,7 +4030,7 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
-                      disabled={!canEdit}
+                      disabled={!canEditThisRow || isRowLocked}
                       checked={selectedKeys.has(rowKey)}
                       onChange={() => toggleRow(rowKey)}
                       className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3777,13 +4048,13 @@ function SubTicketList({
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-white group-hover:bg-slate-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => stk.title && setPopoverText({ title: "任务说明详情", content: stk.title })}
+                    onClick={() => rowTitle && setPopoverText({ title: "任务说明详情", content: rowTitle })}
                   >
-                    {stk.title ?? "—"}
+                    {rowTitle}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
-                      disabled={!canEdit}
+                      disabled={!canEditThisRow || isRowLocked}
                       value={st.type}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -3791,7 +4062,7 @@ function SubTicketList({
                         updateSubtaskMutation.mutate({ hubId: stk.id, body: { type: val } });
                       }}
                       className={`text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal h-[28px] ${
-                        !canEdit ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
+                        !canEditThisRow || isRowLocked ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
                       }`}
                     >
                       <option value="">选择类型</option>
@@ -3817,7 +4088,7 @@ function SubTicketList({
                       placeholder="选择产品分类"
                       width={140}
                       compact
-                      disabled={!canEdit}
+                      disabled={!canEditThisRow || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -3828,15 +4099,18 @@ function SubTicketList({
                         updateRow(rowKey, { module: val });
                         updateSubtaskMutation.mutate({ hubId: stk.id, body: { module: val } });
                       }}
-                      disabled={!canEdit}
+                      disabled={!canEditThisRow || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
                       const isOp = st.type === "Operation" || stk.type === "Operation";
-                      const effStatus = isOpCompleted && isOp
+                      let effStatus = isOpCompleted && isOp
                         ? "completed"
                         : (st.status ?? (st.confirmed ? "processing" : (stk.status || "draft")));
+                      if (isDevTransferred && isDev) {
+                        effStatus = "processing";
+                      }
                       const b = subtaskStatusBadge(effStatus);
                       return (
                         <span
@@ -3849,53 +4123,94 @@ function SubTicketList({
                     })()}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {st.assigned_user_name ??
-                      stk.assigned_user_name ??
-                      (stk.assigned_user_id ? `#${stk.assigned_user_id}` : "—")}
+                    {currentAssigneeName}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
-                    {st.solution ? (
+                    {isValidSolution(st.solution) ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: rowKey,
-                            title: rowTitle,
-                            content: st.solution,
-                            canEdit: canEditThisRow,
-                          })
-                        }
+                        onClick={() => {
+                          if (isDev) {
+                            setDevDrawerState({
+                              key: rowKey,
+                              code: stk.short_code ?? `#${stk.id}`,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: st.solution,
+                            });
+                          } else {
+                            setNoteModal({
+                              key: rowKey,
+                              title: rowTitle,
+                              content: st.solution,
+                              canEdit: canEditThisRow,
+                            });
+                          }
+                        }}
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改指派说明"
+                        title={
+                          isRowLocked
+                            ? "已转产研处理（点击查看转产研上下文）"
+                            : isDev
+                              ? "点击查看并补充转产研上下文"
+                              : "点击查看并直接修改任务解决方案"
+                        }
                       >
                         {truncSolution}
                       </button>
-                    ) : canEditThisRow ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setKbDrawerState({
-                            key: rowKey,
-                            title: rowTitle,
-                            product_line_code: st.product_line_code || "",
-                            module: st.module || "",
-                            solution: "",
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline cursor-pointer"
-                        title="点击打开维护知识库面板"
-                      >
-                        无方案，去完善
-                      </button>
+                    ) : canEditThisRow && !isRowLocked ? (
+                      isDev ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDevDrawerState({
+                              key: rowKey,
+                              code: stk.short_code ?? `#${stk.id}`,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: "",
+                            })
+                          }
+                          className="text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开转产研上下文补充操作面板"
+                        >
+                          转产研上下文
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKbDrawerState({
+                              key: rowKey,
+                              title: rowTitle,
+                              product_line_code: st.product_line_code || "",
+                              module: st.module || "",
+                              solution: "",
+                            })
+                          }
+                          className="text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开维护知识库面板"
+                        >
+                          无方案，去完善
+                        </button>
+                      )
                     ) : (
                       <span className="text-hub-textFaint">—</span>
                     )}
                   </td>
                   <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
-                    {stk.attachments_count ?? (Array.isArray(stk.attachments) ? stk.attachments.length : 0)}
+                    {(taskAttachmentsMap?.[rowKey]?.length ?? 0) + (stk.attachments_count ?? (Array.isArray(stk.attachments) ? stk.attachments.length : 0))}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    {canEditThisRow ? (
+                    {canEditThisRow || isRowLocked ? (
                       <div className="flex items-center gap-2">
                         {stk.status === "returned" ? (
                           <button
@@ -3905,6 +4220,34 @@ function SubTicketList({
                             title="被研发退回，点击重新推送到 Linear"
                           >
                             重新推送
+                          </button>
+                        ) : isDev ? (
+                          <button
+                            type="button"
+                            aria-label="去补充"
+                            disabled={isRowLocked}
+                            onClick={() => {
+                              if (isRowLocked) return;
+                              setDevDrawerState({
+                                key: rowKey,
+                                code: stk.short_code ?? `#${stk.id}`,
+                                title: rowTitle,
+                                type: st.type,
+                                product_line_code: st.product_line_code || "",
+                                product_line_name: plName,
+                                module: st.module || "",
+                                assignee_name: currentAssigneeName,
+                                solution: st.solution || "",
+                              });
+                            }}
+                            className={
+                              isRowLocked
+                                ? "font-medium text-slate-400 cursor-not-allowed opacity-50"
+                                : "font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            }
+                            title={isRowLocked ? "已转产研处理，操作已禁用" : "点击打开转产研上下文补充操作面板"}
+                          >
+                            去补充
                           </button>
                         ) : currentAiStatus === "loading" ? (
                           <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
@@ -3934,15 +4277,16 @@ function SubTicketList({
                           <button
                             type="button"
                             aria-label="人工完善"
-                            onClick={() =>
+                            disabled={!canEditThisRow}
+                            onClick={() => {
                               setKbDrawerState({
                                 key: rowKey,
                                 title: rowTitle,
                                 product_line_code: st.product_line_code || "",
                                 module: st.module || "",
                                 solution: st.solution || "",
-                              })
-                            }
+                              });
+                            }}
                             className="font-medium text-[#6085e7] hover:underline cursor-pointer"
                             title="点击打开维护知识库面板"
                           >
@@ -3952,7 +4296,10 @@ function SubTicketList({
                           <button
                             type="button"
                             aria-label="AI作答"
-                            onClick={() => handleAiAnswer(rowKey, rowTitle, st)}
+                            disabled={!canEditThisRow}
+                            onClick={() => {
+                              handleAiAnswer(rowKey, rowTitle, st);
+                            }}
                             className="font-medium text-[#6085e7] hover:underline cursor-pointer"
                             title="点击调用 Agent 进行自动作答"
                           >
@@ -3971,13 +4318,21 @@ function SubTicketList({
             {/* 本地草稿行 */}
             {drafts.map((dft, i) => {
               const draftKey = `draft-${i}`;
-              const rowTitle = dft.title || `新建子任务 #${i + 1}`;
               const st = getRowState(draftKey, {
+                title: dft.title || `新建子任务 #${i + 1}`,
                 type: dft.type || "",
                 product_line_code: dft.product_line || "",
                 module: dft.module || "",
                 solution: "",
               });
+              const rowTitle = st.title || dft.title || `新建子任务 #${i + 1}`;
+              const isDev = isDemandOrBug(st.type);
+              const isRowLocked = isDevTransferred && isDev;
+              const currentAssigneeName = devOwners || "—";
+              const plName =
+                productLineOptions.find((p) => p.code === st.product_line_code)?.name ||
+                st.product_line_code ||
+                "";
               const truncSolution = st.solution
                 ? st.solution.length > 10
                   ? `${st.solution.slice(0, 10)}...`
@@ -3994,9 +4349,10 @@ function SubTicketList({
                   >
                     <input
                       type="checkbox"
+                      disabled={!canEdit || isRowLocked}
                       checked={selectedKeys.has(draftKey)}
                       onChange={() => toggleRow(draftKey)}
-                      className="rounded border-slate-300 cursor-pointer"
+                      className="rounded border-slate-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                   </td>
                   <td
@@ -4009,15 +4365,18 @@ function SubTicketList({
                     className="px-2.5 py-1.5 max-w-[180px] truncate bg-amber-50/50 group-hover:bg-amber-50 cursor-pointer hover:text-[#6085e7]"
                     style={{ position: "sticky", left: 140, zIndex: 2 }}
                     title="点击查看完整任务说明"
-                    onClick={() => dft.title && setPopoverText({ title: "任务说明详情", content: dft.title })}
+                    onClick={() => rowTitle && setPopoverText({ title: "任务说明详情", content: rowTitle })}
                   >
-                    {dft.title}
+                    {rowTitle}
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     <select
+                      disabled={!canEdit || isRowLocked}
                       value={st.type}
                       onChange={(e) => updateRow(draftKey, { type: e.target.value })}
-                      className="text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal cursor-pointer h-[28px]"
+                      className={`text-[11.5px] border border-hub-border rounded-[6px] px-1.5 py-1 bg-white outline-none focus:border-hub-teal h-[28px] ${
+                        !canEdit || isRowLocked ? "opacity-60 cursor-not-allowed bg-slate-50" : "cursor-pointer"
+                      }`}
                     >
                       <option value="">选择类型</option>
                       {SUB_TASK_TYPES.map((t) => (
@@ -4036,6 +4395,7 @@ function SubTicketList({
                       placeholder="选择产品分类"
                       width={140}
                       compact
+                      disabled={!canEdit || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
@@ -4043,14 +4403,18 @@ function SubTicketList({
                       plc={st.product_line_code}
                       value={st.module}
                       onChange={(val) => updateRow(draftKey, { module: val })}
+                      disabled={!canEdit || isRowLocked}
                     />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {(() => {
                       const isOp = st.type === "Operation" || dft.type === "Operation";
-                      const effStatus = isOpCompleted && isOp
+                      let effStatus = isOpCompleted && isOp
                         ? "completed"
                         : (st.status ?? (st.confirmed ? "processing" : "draft"));
+                      if (isDevTransferred && isDev) {
+                        effStatus = "processing";
+                      }
                       const b = subtaskStatusBadge(effStatus);
                       return (
                         <span
@@ -4064,110 +4428,181 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap text-hub-textFaint">—</td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
-                    {st.solution ? (
+                    {isValidSolution(st.solution) ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setNoteModal({
-                            key: draftKey,
-                            title: rowTitle,
-                            content: st.solution,
-                          })
-                        }
+                        onClick={() => {
+                          if (isDev) {
+                            setDevDrawerState({
+                              key: draftKey,
+                              code: `${self.short_code}-${subtasks.length + i + 1}`,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: st.solution,
+                            });
+                          } else {
+                            setNoteModal({
+                              key: draftKey,
+                              title: rowTitle,
+                              content: st.solution,
+                              canEdit: canEdit,
+                            });
+                          }
+                        }}
                         className="text-slate-800 hover:text-[#6085e7] hover:underline cursor-pointer truncate block text-left"
-                        title="点击查看并直接修改指派说明"
+                        title={
+                          isRowLocked
+                            ? "已转产研处理（点击查看转产研上下文）"
+                            : isDev
+                              ? "点击查看并补充转产研上下文"
+                              : "点击查看并直接修改任务解决方案"
+                        }
                       >
                         {truncSolution}
                       </button>
-                    ) : canEdit ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setKbDrawerState({
-                            key: draftKey,
-                            title: rowTitle,
-                            product_line_code: st.product_line_code || "",
-                            module: st.module || "",
-                            solution: "",
-                          })
-                        }
-                        className="text-[#6085e7] hover:underline cursor-pointer"
-                        title="点击打开维护知识库面板"
-                      >
-                        无方案，去完善
-                      </button>
-                    ) : (
-                      <span className="text-hub-textFaint">—</span>
-                    )}
-                  </td>
-                  <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
-                    0
-                  </td>
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      {st.type === "Bug_fix" || st.type === "Demand" ? (
+                    ) : canEdit && !isRowLocked ? (
+                      isDev ? (
                         <button
                           type="button"
-                          onClick={() => handleConfirmRow(draftKey, rowTitle, st)}
-                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
-                          title="点击确认并推送到 Linear"
+                          onClick={() =>
+                            setDevDrawerState({
+                              key: draftKey,
+                              code: `${self.short_code}-${subtasks.length + i + 1}`,
+                              title: rowTitle,
+                              type: st.type,
+                              product_line_code: st.product_line_code || "",
+                              product_line_name: plName,
+                              module: st.module || "",
+                              assignee_name: currentAssigneeName,
+                              solution: "",
+                            })
+                          }
+                          className="text-[#6085e7] hover:underline cursor-pointer"
+                          title="点击打开转产研上下文补充操作面板"
                         >
-                          确认推送
+                          转产研上下文
                         </button>
-                      ) : currentAiStatus === "loading" ? (
-                        <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
-                          <svg
-                            className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
-                            xmlns="http://www.w3.org/2000/svg"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            />
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8v8H4z"
-                            />
-                          </svg>
-                          AI作答中...
-                        </span>
-                      ) : currentAiStatus === "done" ? (
+                      ) : (
                         <button
                           type="button"
-                          aria-label="人工完善"
                           onClick={() =>
                             setKbDrawerState({
                               key: draftKey,
                               title: rowTitle,
                               product_line_code: st.product_line_code || "",
                               module: st.module || "",
-                              solution: st.solution || "",
+                              solution: "",
                             })
                           }
-                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                          className="text-[#6085e7] hover:underline cursor-pointer"
                           title="点击打开维护知识库面板"
                         >
-                          人工完善
+                          无方案，去完善
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          aria-label="AI作答"
-                          onClick={() => handleAiAnswer(draftKey, rowTitle, st)}
-                          className="font-medium text-[#6085e7] hover:underline cursor-pointer"
-                          title="点击调用 Agent 进行自动作答"
-                        >
-                          AI作答
-                        </button>
-                      )}
-                    </div>
+                      )
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
+                    )}
+                  </td>
+                  <td className="px-2.5 py-1.5 text-center whitespace-nowrap font-mono text-slate-600">
+                    {taskAttachmentsMap?.[draftKey]?.length ?? 0}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {canEdit || isRowLocked ? (
+                      <div className="flex items-center gap-2">
+                        {isDev ? (
+                          <button
+                            type="button"
+                            aria-label="去补充"
+                            disabled={isRowLocked}
+                            onClick={() => {
+                              if (isRowLocked) return;
+                              setDevDrawerState({
+                                key: draftKey,
+                                code: `${self.short_code}-${subtasks.length + i + 1}`,
+                                title: rowTitle,
+                                type: st.type,
+                                product_line_code: st.product_line_code || "",
+                                product_line_name: plName,
+                                module: st.module || "",
+                                assignee_name: currentAssigneeName,
+                                solution: st.solution || "",
+                              });
+                            }}
+                            className={
+                              isRowLocked
+                                ? "font-medium text-slate-400 cursor-not-allowed opacity-50"
+                                : "font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            }
+                            title={isRowLocked ? "已转产研处理，操作已禁用" : "点击打开转产研上下文补充操作面板"}
+                          >
+                            去补充
+                          </button>
+                        ) : currentAiStatus === "loading" ? (
+                          <span className="inline-flex items-center gap-1 text-[#6085e7] text-[11px] font-medium opacity-80 cursor-wait">
+                            <svg
+                              className="animate-spin h-3.5 w-3.5 text-[#6085e7]"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v8H4z"
+                              />
+                            </svg>
+                            AI作答中...
+                          </span>
+                        ) : currentAiStatus === "done" ? (
+                          <button
+                            type="button"
+                            aria-label="人工完善"
+                            disabled={!canEdit}
+                            onClick={() => {
+                              setKbDrawerState({
+                                key: draftKey,
+                                title: rowTitle,
+                                product_line_code: st.product_line_code || "",
+                                module: st.module || "",
+                                solution: st.solution || "",
+                              });
+                            }}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击打开维护知识库面板"
+                          >
+                            人工完善
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label="AI作答"
+                            disabled={!canEdit}
+                            onClick={() => {
+                              handleAiAnswer(draftKey, rowTitle, st);
+                            }}
+                            className="font-medium text-[#6085e7] hover:underline cursor-pointer"
+                            title="点击调用 Agent 进行自动作答"
+                          >
+                            AI作答
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-hub-textFaint">—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -4248,6 +4683,69 @@ function SubTicketList({
               onToast("已更新任务解决方案并同步至工单处理说明", "success");
             }
             setKbDrawerState(null);
+          }}
+        />
+      )}
+
+      {/* 从工单子任务发起的转产研上下文补充抽屉（800px，包含客户原始问题、类型、产品线、模块、产研责任人、可编辑任务说明、沟通记录、沟通记录附件） */}
+      {devDrawerState && (
+        <DevContextDrawer
+          open={true}
+          onClose={() => setDevDrawerState(null)}
+          ticketContent={ticketContent || ""}
+          taskCode={devDrawerState.code}
+          taskKey={devDrawerState.key}
+          taskType={devDrawerState.type}
+          productLineCode={devDrawerState.product_line_code}
+          productLineName={devDrawerState.product_line_name}
+          moduleName={devDrawerState.module}
+          assigneeName={devDrawerState.assignee_name}
+          initialTitle={devDrawerState.title}
+          initialSolution={devDrawerState.solution}
+          initialAttachments={taskAttachmentsMap?.[devDrawerState.key] || []}
+          canEdit={canEdit && !isDevTransferred}
+          onConfirm={({ title: newTitle, solution: newSolution, attachments: newAttachments }) => {
+            const targetKey = devDrawerState.key;
+            updateRow(targetKey, { title: newTitle, solution: newSolution });
+
+            if (onTaskAttachmentsChange) {
+              onTaskAttachmentsChange((prev) => ({
+                ...prev,
+                [targetKey]: newAttachments,
+              }));
+            }
+
+            const targetHubId =
+              typeof targetKey === "number"
+                ? targetKey
+                : targetKey === "self"
+                ? self.hub_id
+                : undefined;
+            if (targetHubId) {
+              updateSubtaskMutation.mutate({
+                hubId: targetHubId,
+                body: { title: newTitle, solution: newSolution },
+              });
+            }
+
+            if (typeof targetKey === "string" && targetKey.startsWith("draft-")) {
+              const draftIdx = parseInt(targetKey.replace("draft-", ""), 10);
+              if (!isNaN(draftIdx) && drafts[draftIdx]) {
+                drafts[draftIdx].title = newTitle;
+              }
+            }
+
+            onSyncNote?.(newTitle, newSolution);
+            const nextTasks = getAllTasks({
+              key: targetKey,
+              title: newTitle,
+              solution: newSolution,
+            });
+            onSyncAllTasksNote?.(formatTasksReplyNote(nextTasks));
+            if (onToast) {
+              onToast("已更新转产研上下文并同步至工单处理说明", "success");
+            }
+            setDevDrawerState(null);
           }}
         />
       )}

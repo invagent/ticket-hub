@@ -287,6 +287,7 @@ describe("TicketDetailPage", () => {
 
   // #3 工单手动毕业按钮
   function stubTicket(id: number, hubIssueId: number | null) {
+    const mockSubtasks: any[] = [];
     server.use(
       http.get(`*/api/tickets/${id}`, () =>
         HttpResponse.json({
@@ -307,6 +308,25 @@ describe("TicketDetailPage", () => {
       http.get(`*/api/tickets/${id}/history`, () =>
         HttpResponse.json({ ticket_id: id, items: [] }),
       ),
+      http.get(`*/api/tickets/${id}/subtasks`, () =>
+        HttpResponse.json(mockSubtasks),
+      ),
+      http.post(`*/api/tickets/${id}/subtasks`, async ({ request }) => {
+        const body: any = await request.json();
+        const item = {
+          id: 9900 + mockSubtasks.length + 1,
+          short_code: `TKT-${id}-${mockSubtasks.length + 1}`,
+          ticket_id: id,
+          title: body.title,
+          type: body.type,
+          product_line_code: body.product_line_code,
+          module: body.module,
+          status: "draft",
+          solution: "",
+        };
+        mockSubtasks.push(item);
+        return HttpResponse.json(item, { status: 201 });
+      }),
     );
     // 已毕业工单：默认 hub 已确认（status=created），避免 hub 查询 unhandled 报错
     if (hubIssueId != null) {
@@ -367,8 +387,8 @@ describe("TicketDetailPage", () => {
     localStorage.clear();
   });
 
-  // 添加子任务弹窗 → 追加本地草稿行
-  it("添加子任务 → 弹窗录入 → 子任务列表出现草稿行", async () => {
+  // 添加子任务弹窗 → 创建子任务行
+  it("添加子任务 → 弹窗录入 → 子任务列表出现新任务行", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ role: "supervisor" }));
     stubTicket(308, null);
     renderPage(308);
@@ -379,9 +399,9 @@ describe("TicketDetailPage", () => {
     // 弹窗内确认
     const dialogConfirm = screen.getAllByRole("button", { name: "确认" });
     await userEvent.click(dialogConfirm[dialogConfirm.length - 1]);
-    // 草稿行出现：说明 + 待生成/待创建
+    // 新增任务行出现：说明 + 任务编号
     expect(await screen.findByText("导出接口报错")).toBeInTheDocument();
-    expect(screen.getByText("待生成")).toBeInTheDocument();
+    expect(screen.getByText("TKT-308-1")).toBeInTheDocument();
     localStorage.clear();
   });
 
