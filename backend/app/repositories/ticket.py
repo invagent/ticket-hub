@@ -209,7 +209,7 @@ class TicketRepository:
             base = base.where(cond)
             count_base = count_base.where(cond)
         if op_statuses or op_status:
-            targets = list(op_statuses) if op_statuses else [op_status]  # type: ignore[list-item]
+            targets = list(op_statuses) if op_statuses else [str(op_status)]
             dev_types = ("Bug_fix", "Demand")
             dev_processing_statuses = ("in_progress", "processing", "created", "draft")
             dev_answered_statuses = ("released", "answered")

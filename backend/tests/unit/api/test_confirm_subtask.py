@@ -45,7 +45,9 @@ def subtask_world(db_session: Session) -> Session:
     yield db_session
 
 
-def test_confirm_subtask_missing_solution_rejected(app_client: TestClient, subtask_world: Session) -> None:
+def test_confirm_subtask_missing_solution_rejected(
+    app_client: TestClient, subtask_world: Session
+) -> None:
     """Bug_fix 任务指派说明为空时，确认推送被拦截并返回 400。"""
     hub = HubIssue(
         ticket_id=100,
@@ -69,7 +71,9 @@ def test_confirm_subtask_missing_solution_rejected(app_client: TestClient, subta
     assert "需求类或 Bug 类任务在推送前必须先录入指派说明" in resp.json()["detail"]
 
 
-def test_confirm_subtask_missing_assignee_rejected(app_client: TestClient, subtask_world: Session) -> None:
+def test_confirm_subtask_missing_assignee_rejected(
+    app_client: TestClient, subtask_world: Session
+) -> None:
     """Bug_fix 任务责任人（处理人）为空时，确认推送被拦截并返回 400。"""
     hub = HubIssue(
         ticket_id=100,
@@ -93,7 +97,9 @@ def test_confirm_subtask_missing_assignee_rejected(app_client: TestClient, subta
     assert "任务处理人为空，请先分配处理人后再进行确认推送" in resp.json()["detail"]
 
 
-def test_confirm_subtask_success_pushes_linear(app_client: TestClient, subtask_world: Session) -> None:
+def test_confirm_subtask_success_pushes_linear(
+    app_client: TestClient, subtask_world: Session
+) -> None:
     """指派说明与处理人齐备时，成功调用 push_hub_issue_to_linear 并更新为 processing。"""
     hub = HubIssue(
         ticket_id=100,
@@ -109,7 +115,9 @@ def test_confirm_subtask_success_pushes_linear(app_client: TestClient, subtask_w
     subtask_world.commit()
 
     mock_res = MagicMock()
-    with patch("app.services.hub_issues.linear_push.push_hub_issue_to_linear", return_value=mock_res) as mock_push:
+    with patch(
+        "app.services.hub_issues.linear_push.push_hub_issue_to_linear", return_value=mock_res
+    ) as mock_push:
         resp = app_client.post(
             f"/api/hub-issues/{hub.id}/confirm-subtask",
             json={},

@@ -34,6 +34,7 @@ from app.services.hub_issues.op_status import (
     OP_ANSWERED,
     OP_PROCESSING,
     OP_SUPPLEMENTING,
+    OP_TRANSFERRED_RETURN,
     apply_op_status,
     resolve_op_handler,
 )
@@ -87,7 +88,9 @@ class KSMIngester:
             # 属于答复后的关单状态同步或客户评价关单，绝不作为客户驳回重新打开工单
             is_ksm_closed = str(payload.get("sourceStatus") or payload.get("status") or "") == "4"
             if is_ksm_closed:
-                logger.info("ksm_ingest_closed_sync", bill_id=bill_id, existing_ticket_id=existing.id)
+                logger.info(
+                    "ksm_ingest_closed_sync", bill_id=bill_id, existing_ticket_id=existing.id
+                )
                 return self._dedup_result(existing)
 
             if op == OP_SUPPLEMENTING:
@@ -143,6 +146,88 @@ class KSMIngester:
                     reject_count=hub.reject_count,
                 )
                 return self._dedup_result(existing)
+
+            # 转单退回(transferred_return)后，客户/上游在 KSM 调整模块或重新分派回流
+            is_reopened_from_returned = (
+                existing.status == "transferred_return"
+                or op == OP_TRANSFERRED_RETURN
+                or (hub is not None and hub.status == "returned")
+            )
+            if is_reopened_from_returned:
+                # 客户调整模块/重新分派回流（此时 KSM 状态非结案）：
+                apply_content_refresh(self._db, existing, payload)
+                raw_plc = payload.get("productLineCode") or payload.get("product_line")
+                raw_mod = payload.get("moduleName") or payload.get("module")
+                raw_feat = payload.get("featureName") or payload.get("feature")
+                if raw_mod:
+                    existing.module = raw_mod
+                if raw_feat:
+                    existing.feature = raw_feat
+                if raw_plc:
+                    existing.product_line_code = safe_product_line_code(self._db, raw_plc)
+                upsert_catalog(self._db, product_line_code=raw_plc, module=raw_mod)
+
+                prev_ticket_status = existing.status
+                existing.status = "processing"
+                self._history.record(
+                    entity_type="ticket",
+                    entity_id=existing.id,
+                    from_status=prev_ticket_status,
+                    to_status="processing",
+                    changed_by="system:ksm_ingest",
+                    reason="转单退回后客户变更模块重推，重新接入处理中",
+                )
+
+                if hub is not None:
+                    prev_hub_status = hub.status
+                    hub.status = "draft"
+                    hub.linear_uuid = None
+                    hub.linear_identifier = None
+                    hub.linear_status = None
+                    hub.linear_status_synced_at = None
+                    if existing.module:
+                        hub.module = existing.module
+                    if existing.product_line_code:
+                        hub.product_line_code = existing.product_line_code
+                    if hub.type == "Operation":
+                        apply_op_status(
+                            self._db,
+                            hub,
+                            to_status=OP_PROCESSING,
+                            handler=resolve_op_handler(self._db, hub, get_settings()),
+                            reason="转单退回后客户变更模块重推，任务重置为处理中",
+                        )
+                    else:
+                        hub.op_status = None
+                    self._history.record(
+                        entity_type="hub_issue",
+                        entity_id=hub.id,
+                        from_status=prev_hub_status,
+                        to_status="draft",
+                        changed_by="system:ksm_ingest",
+                        reason="转单退回后客户变更模块重推，任务重置为待确认",
+                    )
+
+                logger.info(
+                    "ksm_ingest_reopened_from_returned",
+                    bill_id=bill_id,
+                    existing_ticket_id=existing.id,
+                    module=existing.module,
+                    product_line_code=existing.product_line_code,
+                )
+                return IngestResult(
+                    ticket_id=existing.id,
+                    short_code=existing.short_code,
+                    customer_id=(existing.customer_identity_id and self._customer_id_of(existing))
+                    or 0,
+                    customer_identity_id=existing.customer_identity_id or 0,
+                    routing_decision="reopened_transferred_return",
+                    assigned_user_ids=[existing.assigned_user_id]
+                    if existing.assigned_user_id
+                    else [],
+                    deduped=False,
+                )
+
             # closed（硬终态）/ 其他（未毕业 hub / 研发类无 op_status）→ 原 no-op
             logger.info("ksm_ingest_dedup", bill_id=bill_id, existing_ticket_id=existing.id)
             return self._dedup_result(existing)

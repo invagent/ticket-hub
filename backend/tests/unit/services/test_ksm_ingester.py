@@ -512,7 +512,6 @@ def test_ingest_answered_with_status_4_does_not_reopen(db_session, monkeypatch) 
     existing.status = "answered"
     db_session.commit()
 
-    called = False
     monkeypatch.setattr(mod, "apply_content_refresh", lambda db, ticket, payload: True)
     ing = mod.KSMIngester(db_session)
     ing.ingest({"billId": "bill-closed-sync", "sourceStatus": "4", "status": "4"})
@@ -578,3 +577,50 @@ def test_ingest_dedup_noop_when_no_hub(db_session, monkeypatch) -> None:  # type
     assert called["n"] == 0
     assert result.deduped is True
     assert result.ticket_id == existing.id
+
+
+def test_ingest_reopens_transferred_return_ticket(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """转单退回后客户/KSM调整模块重推回流：更新内容与模块，工单状态流转回 processing，hub 状态重置为 draft。"""
+    from app.services.hub_issues.op_status import OP_TRANSFERRED_RETURN
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=OP_TRANSFERRED_RETURN,
+        bill_id="bill-reopen-transferred-1",
+        short_code="TKT-RET-1",
+        hub_short_code="HUB-RET-1",
+    )
+    existing.status = "transferred_return"
+    hub.type = "Demand"
+    hub.status = "returned"
+    hub.linear_uuid = "old-lin-uuid"
+    hub.linear_identifier = "OLD-ENG-1"
+    db_session.commit()
+
+    called = {"n": 0}
+    monkeypatch.setattr(mod, "apply_content_refresh", lambda *a, **k: called.__setitem__("n", 1))
+
+    ing = mod.KSMIngester(db_session)
+    result = ing.ingest(
+        {
+            "billId": "bill-reopen-transferred-1",
+            "moduleName": "开票管理",
+            "productLineCode": "cloud-fapiao",
+            "content": "客户调整模块后重提",
+        }
+    )
+    db_session.commit()
+
+    assert called["n"] == 1
+    assert result.deduped is False  # 触发后续接入与接管流程
+    assert result.routing_decision == "reopened_transferred_return"
+
+    db_session.refresh(existing)
+    db_session.refresh(hub)
+    assert existing.status == "processing"
+    assert existing.module == "开票管理"
+    assert hub.status == "draft"
+    assert hub.linear_uuid is None
+    assert hub.linear_identifier is None
+    assert hub.op_status is None

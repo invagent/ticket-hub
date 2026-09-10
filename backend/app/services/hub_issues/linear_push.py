@@ -107,7 +107,9 @@ def _build_description(db: Session, hub: HubIssue) -> str:
 
     # 3. 📋 工单背景信息
     meta_lines: list[str] = ["### 📋 工单背景信息"]
-    meta_lines.append(f"- **任务短码**: {hub.short_code} ({_TICKET_TYPE_ZH.get(hub.type, hub.type)})")
+    meta_lines.append(
+        f"- **任务短码**: {hub.short_code} ({_TICKET_TYPE_ZH.get(hub.type, hub.type)})"
+    )
 
     src = _primary_source_ticket(db, hub)
     if src:
@@ -204,7 +206,7 @@ def _push_via_webhook(
             to_status="processing",
             changed_by="agent:linear_webhook",
             reason=(
-                f"转研发 webhook 重推成功，pending 解除"
+                "转研发 webhook 重推成功，pending 解除"
                 if prev_status == "pending"
                 else f"转研发 webhook 重新推送成功（{identifier}）"
             ),
@@ -242,7 +244,9 @@ def push_hub_issue_to_linear(
         if hub.type not in ("Bug_fix", "Demand"):
             logger.info("linear_push_skip_type", hub_issue_id=hub_issue_id, type=hub.type)
             return None
-        if (hub.linear_uuid is not None or hub.linear_identifier is not None) and hub.status != "returned":
+        if (
+            hub.linear_uuid is not None or hub.linear_identifier is not None
+        ) and hub.status != "returned":
             logger.info(
                 "linear_push_already_pushed",
                 hub_issue_id=hub_issue_id,
@@ -280,8 +284,12 @@ def push_hub_issue_to_linear(
 
         assignee_user = db.get(User, target_user_id)
         if assignee_user is None:
-            logger.warning("linear_push_assignee_not_found", hub_issue_id=hub.id, user_id=target_user_id)
-            _mark_pending(db, hub, reason=f"任务处理人(ID={target_user_id})不存在，推送暂停请重新分配")
+            logger.warning(
+                "linear_push_assignee_not_found", hub_issue_id=hub.id, user_id=target_user_id
+            )
+            _mark_pending(
+                db, hub, reason=f"任务处理人(ID={target_user_id})不存在，推送暂停请重新分配"
+            )
             return None
 
         hub.owner_user_id = assignee_user.id

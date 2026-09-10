@@ -129,6 +129,7 @@ def ensure_hub_issue_for_ticket(
         ticket.module = eff_module
 
     hub = HubIssue(
+        ticket_id=ticket.id,
         short_code=_next_hub_short_code(db),
         type=issue_type,
         title=(ticket.title or "").strip(),
