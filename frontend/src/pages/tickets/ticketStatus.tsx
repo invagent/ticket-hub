@@ -111,11 +111,14 @@ export function isTicketClosed(t: TicketSummary): boolean {
 }
 
 export function getTicketProcessLink(t: TicketSummary): ProcessLinkStage {
-  if ((t as any).process_stage) {
-    return (t as any).process_stage as ProcessLinkStage;
-  }
-  if ((t as any).process_link) {
-    return (t as any).process_link as ProcessLinkStage;
+  const stage = (t as any).process_stage || (t as any).process_link;
+  if (stage) {
+    if (stage === "研发处理" || stage === "产研处理") {
+      return "产研处理";
+    }
+    if (stage === "服务处理" || stage === "完成") {
+      return stage as ProcessLinkStage;
+    }
   }
   if (t.op_status && ["processing", "reviewing", "supplementing"].includes(t.op_status)) {
     return "服务处理";

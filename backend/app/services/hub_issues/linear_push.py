@@ -178,6 +178,22 @@ def _build_description(db: Session, hub: HubIssue) -> str:
     return "\n\n".join(sections).strip()
 
 
+def _sync_tickets_dev_stage(db: Session, hub: HubIssue) -> None:
+    """推送 Linear 成功后，同步将关联工单的处理环节流转为「研发处理」。"""
+    tickets = (
+        db.query(Ticket)
+        .filter(
+            (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
+            Ticket.deleted_at.is_(None),
+        )
+        .all()
+    )
+    terminal = {"closed", "done", "resolved", "transferred_return"}
+    for t in tickets:
+        if t.status not in terminal:
+            t.process_stage = "研发处理"
+
+
 def _push_via_webhook(
     db: Session, hub: HubIssue, *, assignee_override_user_id: int | None = None
 ) -> LinearPushResult | None:
@@ -227,6 +243,7 @@ def _push_via_webhook(
                 else f"转研发 webhook 重新推送成功（{identifier}）"
             ),
         )
+    _sync_tickets_dev_stage(db, hub)
     db.commit()
     logger.info("linear_webhook_push_committed", hub_issue_id=hub.id, identifier=identifier)
     return LinearPushResult(
@@ -378,6 +395,7 @@ def push_hub_issue_to_linear(
                     else f"Linear 重推成功（{created.identifier}），pending 解除"
                 ),
             )
+        _sync_tickets_dev_stage(db, hub)
         db.commit()
         logger.info(
             "linear_push_ok",

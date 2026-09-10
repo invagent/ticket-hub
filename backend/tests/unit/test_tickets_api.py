@@ -271,6 +271,67 @@ def test_list_tickets_filter_op_status(app_client: TestClient, world: Session) -
     assert r2.json()["total"] == 0
 
 
+def test_list_tickets_filter_process_stages(app_client: TestClient, world: Session) -> None:
+    """筛选处理环节：服务处理、研发处理（产研处理）、完成。"""
+    world.add(
+        Ticket(
+            id=201,
+            short_code="TKT-STAGE-SVC",
+            source_code="ksm",
+            source_ticket_id="stage-svc",
+            type="Raw",
+            status="processing",
+            process_stage="服务处理",
+            title="服务工单",
+        )
+    )
+    world.add(
+        Ticket(
+            id=202,
+            short_code="TKT-STAGE-DEV",
+            source_code="ksm",
+            source_ticket_id="stage-dev",
+            type="Raw",
+            status="processing",
+            process_stage="研发处理",
+            title="研发工单",
+        )
+    )
+    world.add(
+        Ticket(
+            id=203,
+            short_code="TKT-STAGE-DONE",
+            source_code="ksm",
+            source_ticket_id="stage-done",
+            type="Raw",
+            status="closed",
+            process_stage="完成",
+            title="完成工单",
+        )
+    )
+    world.commit()
+
+    # 查服务处理
+    r1 = app_client.get("/api/tickets?process_stages=服务处理", headers=_bearer())
+    codes1 = {it["short_code"] for it in r1.json()["items"]}
+    assert "TKT-STAGE-SVC" in codes1
+    assert "TKT-STAGE-DEV" not in codes1
+    assert "TKT-STAGE-DONE" not in codes1
+
+    # 查产研处理（自动匹配研发处理）
+    r2 = app_client.get("/api/tickets?process_stages=产研处理", headers=_bearer())
+    codes2 = {it["short_code"] for it in r2.json()["items"]}
+    assert "TKT-STAGE-DEV" in codes2
+    assert "TKT-STAGE-SVC" not in codes2
+    assert "TKT-STAGE-DONE" not in codes2
+
+    # 查完成
+    r3 = app_client.get("/api/tickets?process_stages=完成", headers=_bearer())
+    codes3 = {it["short_code"] for it in r3.json()["items"]}
+    assert "TKT-STAGE-DONE" in codes3
+    assert "TKT-STAGE-SVC" not in codes3
+
+
 def test_list_tickets_filter_answered_includes_released_dev(
     app_client: TestClient, world: Session
 ) -> None:

@@ -85,6 +85,7 @@ class TicketSummary(BaseModel):
     )
     type: str
     status: str
+    process_stage: str | None = "服务处理"  # 处理环节（服务处理 / 研发处理 / 完成）
     title: str | None
     customer_identity_id: int | None
     product_line_code: str | None
@@ -285,6 +286,7 @@ def list_tickets(
     source_ticket_q: str | None = Query(None),  # 来源工单号/本系统编号子串搜索（全表）
     op_status: str | None = Query(None),  # 处理状态筛选（所挂 hub_issue 的 op_status）
     op_statuses: list[str] | None = Query(None),  # 处理状态多选筛选
+    process_stages: list[str] | None = Query(None),  # 处理环节多选筛选（服务处理 / 研发处理 / 完成）
     received_from: date | None = Query(None),  # 提单时间起
     received_to: date | None = Query(None),  # 提单时间止
     created_from: date | None = Query(None),  # 创建时间起
@@ -326,6 +328,7 @@ def list_tickets(
         source_ticket_q=source_ticket_q,
         op_status=op_status,
         op_statuses=op_statuses,
+        process_stages=process_stages,
         received_from=rf_start,
         received_to=rf_end,
         created_from=cf_start,
@@ -1377,6 +1380,7 @@ def ticket_reply_endpoint(
                     raise HTTPException(status_code=400, detail=f"提交答复失败：{err_msg}")
 
     # 6. 外部成功后，推进本地工单与任务状态 → answered，并留痕
+    ticket.process_stage = "完成"
     if ticket.status != "answered" and ticket.status != "closed":
         prev_ticket_status = ticket.status
         ticket.status = "answered"

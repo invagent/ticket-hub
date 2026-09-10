@@ -169,6 +169,7 @@ class KSMIngester:
 
                 prev_ticket_status = existing.status
                 existing.status = "processing"
+                existing.process_stage = "服务处理"
                 self._history.record(
                     entity_type="ticket",
                     entity_id=existing.id,
@@ -247,6 +248,7 @@ class KSMIngester:
         short_code = self._tickets.next_short_code()
         is_already_closed = str(payload.get("sourceStatus") or "") == "4"
         initial_status = "closed" if is_already_closed else "processing"
+        initial_stage = "完成" if is_already_closed else "服务处理"
         ticket = Ticket(
             short_code=short_code,
             source_code="ksm",
@@ -254,6 +256,7 @@ class KSMIngester:
             source_ticket_number=payload.get("billNumber"),
             type="Raw",
             status=initial_status,
+            process_stage=initial_stage,
             source_payload=payload,
             customer_identity_id=resolve.customer_identity_id,
             product_line_code=safe_product_line_code(

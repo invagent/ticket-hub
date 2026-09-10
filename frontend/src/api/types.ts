@@ -5394,6 +5394,11 @@ export interface components {
             predicted_product_line_code?: string | null;
             /** Predicted Type */
             predicted_type?: string | null;
+            /**
+             * Process Stage
+             * @default 服务处理
+             */
+            process_stage: string | null;
             /** Product Line Code */
             product_line_code: string | null;
             /** Product Name */
@@ -5549,6 +5554,11 @@ export interface components {
             predicted_confidence?: number | null;
             /** Predicted Type */
             predicted_type?: string | null;
+            /**
+             * Process Stage
+             * @default 服务处理
+             */
+            process_stage: string | null;
             /** Product Line Code */
             product_line_code: string | null;
             /** Product Name */
@@ -10120,6 +10130,7 @@ export interface operations {
                 source_ticket_q?: string | null;
                 op_status?: string | null;
                 op_statuses?: string[] | null;
+                process_stages?: string[] | null;
                 received_from?: string | null;
                 received_to?: string | null;
                 created_from?: string | null;

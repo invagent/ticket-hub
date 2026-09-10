@@ -8379,6 +8379,18 @@
             ],
             "title": "Predicted Type"
           },
+          "process_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "服务处理",
+            "title": "Process Stage"
+          },
           "product_line_code": {
             "anyOf": [
               {
@@ -9041,6 +9053,18 @@
               }
             ],
             "title": "Predicted Type"
+          },
+          "process_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "服务处理",
+            "title": "Process Stage"
           },
           "product_line_code": {
             "anyOf": [
@@ -16832,6 +16856,25 @@
                 }
               ],
               "title": "Op Statuses"
+            }
+          },
+          {
+            "in": "query",
+            "name": "process_stages",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Process Stages"
             }
           },
           {

@@ -110,6 +110,7 @@ class TicketRepository:
         source_ticket_q: str | None = None,
         op_status: str | None = None,
         op_statuses: list[str] | None = None,
+        process_stages: list[str] | None = None,
         received_from: datetime | None = None,
         received_to: datetime | None = None,
         created_from: datetime | None = None,
@@ -250,6 +251,21 @@ class TicketRepository:
 
             base = base.where(ticket_cond)
             count_base = count_base.where(ticket_cond)
+        if process_stages:
+            stage_set = set(process_stages) - {"ALL", "all"}
+            mapped_stages: set[str] = set()
+            for s in stage_set:
+                if s == "服务处理":
+                    mapped_stages.add("服务处理")
+                elif s in ("研发处理", "产研处理"):
+                    mapped_stages.update(["研发处理", "产研处理"])
+                elif s == "完成":
+                    mapped_stages.add("完成")
+                else:
+                    mapped_stages.add(s)
+            if mapped_stages:
+                base = base.where(Ticket.process_stage.in_(mapped_stages))
+                count_base = count_base.where(Ticket.process_stage.in_(mapped_stages))
 
         total = self._db.execute(count_base).scalar() or 0
         rows_stmt = (

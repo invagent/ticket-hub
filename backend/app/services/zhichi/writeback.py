@@ -179,6 +179,7 @@ class ZhichiWritebackSender:
         changed_by = "system:zhichi_writeback"
         suffix = f"（{reason_suffix}）" if reason_suffix else ""
         target_ticket_status = "closed" if reason_suffix or row.kind != "reply" else "answered"
+        ticket.process_stage = "完成"
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
             ticket.status = target_ticket_status

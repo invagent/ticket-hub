@@ -344,6 +344,7 @@ class KSMWritebackSender:
         history = StatusHistoryRepository(self._db)
         changed_by = "system:ksm_writeback"
         target_ticket_status = "answered" if row.kind == "reply" else "closed"
+        ticket.process_stage = "完成"
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
             ticket.status = target_ticket_status
@@ -384,6 +385,7 @@ class KSMWritebackSender:
         工单转单退回 + 若所挂 hub 已无其它未终态工单，则同步将 hub 状态置为 returned / transferred_return。
         已在终态的不重置（幂等）。不 commit。
         """
+        ticket.process_stage = "完成"
         if ticket.status not in _TICKET_TERMINAL_STATUSES:
             prev = ticket.status
             ticket.status = "transferred_return"

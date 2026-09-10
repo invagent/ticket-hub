@@ -357,6 +357,7 @@ class Ticket(Base):
         Index("ix_tickets_status", "status"),
         Index("ix_tickets_type", "type"),
         Index("ix_tickets_diagnosis_flagged", "diagnosis_flagged_at"),
+        Index("ix_tickets_process_stage", "process_stage"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -411,6 +412,9 @@ class Ticket(Base):
     # in ticket repository; full PG CHECK added in §future Alembic migration if needed)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     source_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    process_stage: Mapped[str] = mapped_column(
+        String(32), default="服务处理", server_default="服务处理", nullable=False
+    )
 
     # Hub linkage (FK added later — circular ref hub_issues.id ↔ tickets.hub_issue_id)
     hub_issue_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

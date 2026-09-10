@@ -825,6 +825,7 @@ export function TicketsListPage() {
         status: status || undefined,
         op_status: opStatuses.length === 1 ? opStatuses[0] : undefined,
         op_statuses: opStatuses.length > 0 ? opStatuses : undefined,
+        process_stages: processStages.length > 0 && !processStages.includes("ALL") ? processStages : undefined,
         unassigned_only: unassigned || undefined,
         handler_user_ids: handlerUserIds.length ? handlerUserIds : undefined,
         assigned_user_id: effectiveAssignedUserIds.length === 1 ? effectiveAssignedUserIds[0] : (effectiveAssignedUserIds.length > 1 ? effectiveAssignedUserIds[0] : undefined),

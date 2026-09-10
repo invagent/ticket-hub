@@ -82,6 +82,19 @@ def apply_hub_status(
     result.changed = True
 
     if to_status not in _TICKET_CASCADE_STATUSES:
+        if to_status == "returned":
+            tickets = (
+                db.query(Ticket)
+                .filter(
+                    (Ticket.hub_issue_id == hub.id) | (Ticket.id == hub.ticket_id),
+                    Ticket.deleted_at.is_(None),
+                )
+                .all()
+            )
+            terminal = {"closed", "done", "resolved", "transferred_return"}
+            for t in tickets:
+                if t.status not in terminal:
+                    t.process_stage = "服务处理"
         return result
 
     ticket_target_status = (
@@ -96,6 +109,10 @@ def apply_hub_status(
         db.query(Ticket).filter(Ticket.hub_issue_id == hub.id, Ticket.deleted_at.is_(None)).all()
     )
     for t in tickets:
+        if to_status in ("released", "answered", "closed", "resolved"):
+            t.process_stage = "完成"
+        elif to_status in ("in_progress", "processing") and hub.type in ("Bug_fix", "Demand"):
+            t.process_stage = "研发处理"
         if t.status == ticket_target_status or t.status in _TICKET_TERMINAL_STATUSES:
             continue
         t_prev = t.status
