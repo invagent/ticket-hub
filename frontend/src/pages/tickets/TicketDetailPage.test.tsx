@@ -1677,7 +1677,7 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(transferDevBtn).not.toBeDisabled();
     });
 
-    it("子任务列表新增【责任田人】列且紧跟任务处理人后，不论任务类型均根据产品分类+问题模块展示研发责任人", async () => {
+    it("子任务列表隐藏【责任田人】列，且将【任务处理人】修改为【责任田责任人】", async () => {
       renderTicket(
         {
           id: 501,
@@ -1706,12 +1706,10 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
         ],
       );
 
-      // 表头必须包含【责任田人】
-      expect(await screen.findByRole("columnheader", { name: "责任田人" })).toBeInTheDocument();
-      expect(screen.getByRole("columnheader", { name: "任务处理人" })).toBeInTheDocument();
-
-      // 单元格中无论应用类还是其他，只要产品分类和问题模块不为空，即展示研发责任人张工
-      expect(await screen.findByText("研发责任人张工")).toBeInTheDocument();
+      // 表头必须包含【责任田责任人】，且【责任田人】与【任务处理人】不出现
+      expect(await screen.findByRole("columnheader", { name: "责任田责任人" })).toBeInTheDocument();
+      expect(screen.queryByRole("columnheader", { name: "责任田人" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("columnheader", { name: "任务处理人" })).not.toBeInTheDocument();
     });
 
     it("维护知识库抽屉中点击【仅作答】按钮，内容回写至任务处理说明且不向知识库发送新增请求", async () => {
