@@ -624,3 +624,35 @@ def test_ingest_reopens_transferred_return_ticket(db_session, monkeypatch) -> No
     assert hub.linear_uuid is None
     assert hub.linear_identifier is None
     assert hub.op_status is None
+
+
+def test_ingest_supplement_reopens_dev_ticket_without_op_status(db_session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """研发类工单(Bug_fix/Demand)补料后回流：hub.op_status 为 None，ticket.status=supplementing，重推时成功 reopen 回 processing 并追加内容。"""
+    from app.services.ingest import ksm_ingester as mod
+
+    existing, hub = _seed_existing_with_hub(
+        db_session,
+        op_status=None,
+        bill_id="bill-supp-dev-1",
+        short_code="TKT-SP-DEV-1",
+        hub_short_code="HUB-SP-DEV-1",
+    )
+    existing.status = "supplementing"
+    hub.type = "Bug_fix"
+    hub.status = "draft"
+    db_session.commit()
+
+    called = {"n": 0}
+    monkeypatch.setattr(
+        mod, "apply_content_refresh", lambda db, ticket, payload: called.__setitem__("n", 1) or True
+    )
+
+    ing = mod.KSMIngester(db_session)
+    result = ing.ingest({"billId": "bill-supp-dev-1", "content": "这是研发类客户补充的内容"})
+    db_session.commit()
+
+    assert called["n"] == 1
+    assert result.deduped is True
+    assert result.ticket_id == existing.id
+    db_session.refresh(existing)
+    assert existing.status == "processing"

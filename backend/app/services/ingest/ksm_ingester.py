@@ -93,20 +93,29 @@ class KSMIngester:
                 )
                 return self._dedup_result(existing)
 
-            if op == OP_SUPPLEMENTING:
+            if op == OP_SUPPLEMENTING or existing.status == "supplementing":
                 # 客户补料重推同 billId：content_refresh 刷内容 + 建新附件行，并把
-                # 工单转回 processing/agent，让 drain 重新扫到 → AI 自动重答 → 走
-                # 全局审核闸门。转态由 apply_op_status 保证幂等（已是 processing/agent
-                # 则 no-op），防客户短时多次重推重复触发重答。
-                assert hub is not None
+                # 工单转回 processing/agent（Operation 类交 AI 重答，研发类恢复处理中）。
                 apply_content_refresh(self._db, existing, payload)
-                apply_op_status(
-                    self._db,
-                    hub,
-                    to_status=OP_PROCESSING,
-                    handler="agent",
-                    reason="客户补料回流，交回 AI 重答",
-                )
+                if existing.status == "supplementing":
+                    prev = existing.status
+                    existing.status = "processing"
+                    self._history.record(
+                        entity_type="ticket",
+                        entity_id=existing.id,
+                        from_status=prev,
+                        to_status="processing",
+                        changed_by="system:ksm_ingest",
+                        reason="客户补料回流，工单重新进入处理中",
+                    )
+                if hub is not None and hub.type == "Operation":
+                    apply_op_status(
+                        self._db,
+                        hub,
+                        to_status=OP_PROCESSING,
+                        handler="agent",
+                        reason="客户补料回流，交回 AI 重答",
+                    )
                 logger.info(
                     "ksm_ingest_supplement_reopen", bill_id=bill_id, existing_ticket_id=existing.id
                 )
