@@ -525,6 +525,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/sla-levels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sla Levels
+         * @description List all SLA level configurations sorted by sort_order and id.
+         */
+        get: operations["list_sla_levels_api_admin_sla_levels_get"];
+        put?: never;
+        /**
+         * Create Sla Level
+         * @description Create a new SLA level configuration. Automatically generates SEVERLEVEL#### primary key.
+         */
+        post: operations["create_sla_level_api_admin_sla_levels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/sla-levels/{level_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Sla Level
+         * @description Update an existing SLA level configuration.
+         */
+        put: operations["update_sla_level_api_admin_sla_levels__level_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/sources": {
         parameters: {
             query?: never;
@@ -5111,6 +5155,76 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** SlaLevelCreateBody */
+        SlaLevelCreateBody: {
+            /**
+             * Issue Levels
+             * @description 问题级别，顿号隔开
+             */
+            issue_levels: string;
+            /**
+             * Issue Types
+             * @description 问题类型，顿号隔开
+             */
+            issue_types: string;
+            /**
+             * Name
+             * @description 服务等级名称
+             */
+            name: string;
+            /**
+             * Sla Hours
+             * @description 标准处理时长SLA，必须为大于0的正数
+             */
+            sla_hours: number;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Source System
+             * @description 来源系统
+             */
+            source_system: string;
+            /**
+             * Source System Code
+             * @description 来源系统code
+             */
+            source_system_code: string;
+            /**
+             * Source System Field
+             * @description 来源系统字段
+             */
+            source_system_field: string;
+        };
+        /** SlaLevelDetailOut */
+        SlaLevelDetailOut: {
+            /** Code */
+            code: string;
+            /** Id */
+            id: string;
+            /** Issue Levels */
+            issue_levels: string;
+            /** Issue Types */
+            issue_types: string;
+            /** Name */
+            name: string;
+            /** Sla Hours */
+            sla_hours: number;
+            /** Sort Order */
+            sort_order: number;
+            /** Source System */
+            source_system: string;
+            /** Source System Code */
+            source_system_code?: string | null;
+            /** Source System Field */
+            source_system_field: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
         /** SlaLevelOut */
         SlaLevelOut: {
             /** Code */
@@ -5119,6 +5233,46 @@ export interface components {
             name: string;
             /** Sort Order */
             sort_order: number;
+        };
+        /** SlaLevelUpdateBody */
+        SlaLevelUpdateBody: {
+            /**
+             * Issue Levels
+             * @description 问题级别，顿号隔开
+             */
+            issue_levels: string;
+            /**
+             * Issue Types
+             * @description 问题类型，顿号隔开
+             */
+            issue_types: string;
+            /**
+             * Name
+             * @description 服务等级名称
+             */
+            name: string;
+            /**
+             * Sla Hours
+             * @description 标准处理时长SLA，必须为大于0的正数
+             */
+            sla_hours: number;
+            /** Sort Order */
+            sort_order?: number | null;
+            /**
+             * Source System
+             * @description 来源系统
+             */
+            source_system: string;
+            /**
+             * Source System Code
+             * @description 来源系统code
+             */
+            source_system_code: string;
+            /**
+             * Source System Field
+             * @description 来源系统字段
+             */
+            source_system_field: string;
         };
         /** SloItemOut */
         SloItemOut: {
@@ -7253,6 +7407,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EditResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sla_levels_api_admin_sla_levels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlaLevelDetailOut"][];
+                };
+            };
+        };
+    };
+    create_sla_level_api_admin_sla_levels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlaLevelCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlaLevelDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_sla_level_api_admin_sla_levels__level_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                level_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlaLevelUpdateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlaLevelDetailOut"];
                 };
             };
             /** @description Validation Error */

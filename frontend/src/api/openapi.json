@@ -7289,6 +7289,158 @@
         "title": "SkillVersionModel",
         "type": "object"
       },
+      "SlaLevelCreateBody": {
+        "properties": {
+          "issue_levels": {
+            "description": "问题级别，顿号隔开",
+            "minLength": 1,
+            "title": "Issue Levels",
+            "type": "string"
+          },
+          "issue_types": {
+            "description": "问题类型，顿号隔开",
+            "minLength": 1,
+            "title": "Issue Types",
+            "type": "string"
+          },
+          "name": {
+            "description": "服务等级名称",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sla_hours": {
+            "description": "标准处理时长SLA，必须为大于0的正数",
+            "exclusiveMinimum": 0.0,
+            "title": "Sla Hours",
+            "type": "number"
+          },
+          "sort_order": {
+            "default": 0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_system": {
+            "description": "来源系统",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System",
+            "type": "string"
+          },
+          "source_system_code": {
+            "description": "来源系统code",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System Code",
+            "type": "string"
+          },
+          "source_system_field": {
+            "description": "来源系统字段",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "issue_levels",
+          "issue_types",
+          "sla_hours",
+          "source_system",
+          "source_system_field",
+          "source_system_code"
+        ],
+        "title": "SlaLevelCreateBody",
+        "type": "object"
+      },
+      "SlaLevelDetailOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issue_levels": {
+            "title": "Issue Levels",
+            "type": "string"
+          },
+          "issue_types": {
+            "title": "Issue Types",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sla_hours": {
+            "title": "Sla Hours",
+            "type": "number"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_system": {
+            "title": "Source System",
+            "type": "string"
+          },
+          "source_system_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source System Code"
+          },
+          "source_system_field": {
+            "title": "Source System Field",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "sort_order",
+          "issue_levels",
+          "issue_types",
+          "sla_hours",
+          "source_system",
+          "source_system_field"
+        ],
+        "title": "SlaLevelDetailOut",
+        "type": "object"
+      },
       "SlaLevelOut": {
         "properties": {
           "code": {
@@ -7310,6 +7462,78 @@
           "sort_order"
         ],
         "title": "SlaLevelOut",
+        "type": "object"
+      },
+      "SlaLevelUpdateBody": {
+        "properties": {
+          "issue_levels": {
+            "description": "问题级别，顿号隔开",
+            "minLength": 1,
+            "title": "Issue Levels",
+            "type": "string"
+          },
+          "issue_types": {
+            "description": "问题类型，顿号隔开",
+            "minLength": 1,
+            "title": "Issue Types",
+            "type": "string"
+          },
+          "name": {
+            "description": "服务等级名称",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sla_hours": {
+            "description": "标准处理时长SLA，必须为大于0的正数",
+            "exclusiveMinimum": 0.0,
+            "title": "Sla Hours",
+            "type": "number"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "source_system": {
+            "description": "来源系统",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System",
+            "type": "string"
+          },
+          "source_system_code": {
+            "description": "来源系统code",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System Code",
+            "type": "string"
+          },
+          "source_system_field": {
+            "description": "来源系统字段",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source System Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "issue_levels",
+          "issue_types",
+          "sla_hours",
+          "source_system",
+          "source_system_field",
+          "source_system_code"
+        ],
+        "title": "SlaLevelUpdateBody",
         "type": "object"
       },
       "SloItemOut": {
@@ -12235,6 +12459,125 @@
         "summary": "Rollback Skill",
         "tags": [
           "admin-skills"
+        ]
+      }
+    },
+    "/api/admin/sla-levels": {
+      "get": {
+        "description": "List all SLA level configurations sorted by sort_order and id.",
+        "operationId": "list_sla_levels_api_admin_sla_levels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlaLevelDetailOut"
+                  },
+                  "title": "Response List Sla Levels Api Admin Sla Levels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sla Levels",
+        "tags": [
+          "admin-sla"
+        ]
+      },
+      "post": {
+        "description": "Create a new SLA level configuration. Automatically generates SEVERLEVEL#### primary key.",
+        "operationId": "create_sla_level_api_admin_sla_levels_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlaLevelCreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlaLevelDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sla Level",
+        "tags": [
+          "admin-sla"
+        ]
+      }
+    },
+    "/api/admin/sla-levels/{level_id}": {
+      "put": {
+        "description": "Update an existing SLA level configuration.",
+        "operationId": "update_sla_level_api_admin_sla_levels__level_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "level_id",
+            "required": true,
+            "schema": {
+              "title": "Level Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlaLevelUpdateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlaLevelDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Sla Level",
+        "tags": [
+          "admin-sla"
         ]
       }
     },
