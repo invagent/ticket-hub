@@ -21,12 +21,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.logging import get_logger
 from app.core.storage.minio_store import classify_attachment_kind, filename_from_url
-from app.models import Attachment, HubIssue, Ticket
+from app.models import Attachment, HubIssue, SlaLevel, Ticket
 from app.repositories.status_history import StatusHistoryRepository
 from app.repositories.ticket import TicketRepository
 from app.services.dispatch import dispatch_handler
@@ -60,6 +61,18 @@ class IngestError(Exception):
     """Validation failure (missing required fields, etc.)."""
 
 
+# KSM serviceLevel 对应中文服务等级名称（存量与兜底映射表，与 0032/0053 迁移及 /admin/sla 一致）
+_KSM_SLA_FALLBACK: dict[str, str] = {
+    "50": "战略客户绿色通道",
+    "22": "标准成功服务（2023版）",
+    "19": "标准成功服务",
+    "54": "高级成功服务（含定制开发维）",
+    "55": "高级成功服务（2023版）",
+    "52": "高级成功服务（仅工单）",
+    "10": "服务期外",
+}
+
+
 class KSMIngester:
     """Stateless. One per request; constructor params injected for testing."""
 
@@ -68,6 +81,45 @@ class KSMIngester:
         self._tickets = TicketRepository(db)
         self._history = StatusHistoryRepository(db)
         self._resolver = IdentityResolver(db)
+
+    def _resolve_service_level(self, code: Any) -> str | None:
+        """KSM serviceLevel code → 服务等级中文名称。
+        优先查数据库 sla_levels 表（与管理后台配置动态对齐），回落至内置字典。"""
+        if code is None:
+            return None
+        code_str = str(code).strip()
+        if not code_str:
+            return None
+
+        # 1. 优先查 sla_levels 表
+        try:
+            row = (
+                self._db.execute(
+                    select(SlaLevel.name).where(
+                        or_(
+                            SlaLevel.code == code_str,
+                            SlaLevel.source_system_code == code_str,
+                            SlaLevel.name == code_str,
+                        ),
+                        or_(SlaLevel.source_system == "KSM", SlaLevel.source_system.is_(None)),
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if row:
+                return row
+        except Exception:
+            logger.warning("failed_to_resolve_service_level_from_db", code=code_str)
+
+        # 2. 内置字典兜底（离线/单测等未跑迁移环境）
+        if code_str in _KSM_SLA_FALLBACK:
+            return _KSM_SLA_FALLBACK[code_str]
+        if code_str in _KSM_SLA_FALLBACK.values():
+            return code_str
+
+        # 3. 未知 code 原样保留
+        return code_str
 
     # ---- public --------------------------------------------------------
 
@@ -283,6 +335,9 @@ class KSMIngester:
                 "source_user_id": payload.get("account"),
             },
             reporter_company=payload.get("reporterCompany"),
+            service_level=self._resolve_service_level(
+                payload.get("serviceLevel") or payload.get("service_level")
+            ),
         )
         self._sync_ksm_fields(ticket, payload)
         self._tickets.add(ticket)
@@ -359,8 +414,7 @@ class KSMIngester:
 
     # ---- internal ------------------------------------------------------
 
-    @staticmethod
-    def _sync_ksm_fields(ticket: Ticket, payload: dict[str, Any]) -> None:
+    def _sync_ksm_fields(self, ticket: Ticket, payload: dict[str, Any]) -> None:
         """把 KSM 重推payload 里的状态类字段刷到已存在 ticket——接收状态/关单节点
         随工单流转变化，每次重推都要跟最新值同步，不止首次入库写一次。"""
         ticket.source_status = payload.get("sourceStatus")
@@ -372,6 +426,11 @@ class KSMIngester:
         ticket.ksm_close_node_id = payload.get("closeNodeId")
         ticket.ksm_close_node_name = payload.get("closeNodeName")
         ticket.ksm_close_node_status = payload.get("closeNodeStatus")
+        raw_sl = payload.get("serviceLevel") or payload.get("service_level")
+        if raw_sl is not None:
+            resolved_sl = self._resolve_service_level(raw_sl)
+            if resolved_sl:
+                ticket.service_level = resolved_sl
 
     @staticmethod
     def _require_str(payload: dict[str, Any], key: str) -> str:

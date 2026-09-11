@@ -271,6 +271,16 @@ describe("TicketsListPage", () => {
         handler_user_id: 12,
         handler_user_name: "李四",
       },
+      {
+        ...sample.items[0],
+        id: 103,
+        short_code: "TKT-103",
+        service_level: "战略客户绿色通道",
+        remaining_hours: 10.0,
+        created_at: "2020-01-01T00:00:00Z",
+        handler_user_id: 12,
+        handler_user_name: "王五",
+      },
     ];
 
     server.use(
@@ -307,6 +317,7 @@ describe("TicketsListPage", () => {
       fireEvent.click(vipTag);
     });
     expect(screen.getByText("TKT-101")).toBeInTheDocument();
+    expect(screen.getByText("TKT-103")).toBeInTheDocument();
     expect(screen.queryByText("TKT-102")).toBeNull();
 
     // 5. 工单号为高对比蓝色加粗链接 (RGB: 43, 94, 209 -> #2b5ed1)

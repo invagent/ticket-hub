@@ -187,6 +187,30 @@ def test_customerinfo_contact_fields_prioritized() -> None:
     assert out["tel"] == "010-12345678"
 
 
+def test_ksm_service_level_extracted() -> None:
+    """从 customerInfo.serviceLevel 提取服务等级代码，或回落至顶层 serviceLevel。"""
+    # 1. 优先从 customerInfo 提取
+    data1 = {
+        "billId": "R001",
+        "customerInfo": {
+            "customerNumber": "C001",
+            "serviceLevel": "50",
+        },
+    }
+    assert from_subscribe_callback(data1)["serviceLevel"] == "50"
+
+    # 2. 顶层 serviceLevel 兜底
+    data2 = {
+        "billId": "R002",
+        "serviceLevel": "22",
+    }
+    assert from_subscribe_callback(data2)["serviceLevel"] == "22"
+
+    # 3. 缺失时为 None
+    data3 = {"billId": "R003"}
+    assert from_subscribe_callback(data3)["serviceLevel"] is None
+
+
 def test_feedback_fields_fallback_when_customerinfo_missing() -> None:
     """customerInfo 无手机/邮箱时，回落反馈人顶层 feedbackPhone/feedbackEmail。"""
     data = {

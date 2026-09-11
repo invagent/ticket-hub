@@ -113,6 +113,12 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         (data.get("closereason") or {}) if isinstance(data.get("closereason"), dict) else {}
     )
     status = data.get("status")
+    raw_service_level = customer.get("serviceLevel") or data.get("serviceLevel")
+    service_level = (
+        str(raw_service_level).strip()
+        if raw_service_level is not None and str(raw_service_level).strip()
+        else None
+    )
 
     payload: dict[str, Any] = {
         # Identity / dedupe key
@@ -146,6 +152,8 @@ def from_subscribe_callback(data: dict[str, Any]) -> dict[str, Any]:
         # 提单公司：KSM customerInfo.customerName（客户公司名，≠ feedbackUser 反馈人）。
         # 税号/租户 KSM 不传，留空。
         "reporterCompany": customer.get("customerName") or None,
+        # 服务级别（customerInfo.serviceLevel，如 50、22、54 等 code）
+        "serviceLevel": service_level,
         # 客户联系人（customerInfo.linkman/mobile/email）：跟 reporter「反馈人」
         # （feedbackUser）语义不同，是客户公司侧登记的联系人，可能与反馈人不是同一人。
         "linkman": customer.get("linkman") or None,

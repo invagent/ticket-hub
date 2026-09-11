@@ -12,6 +12,7 @@ from app.models import (
     DispatchConfig,
     DispatchRule,
     ProductLine,
+    SlaLevel,
     Source,
     StatusHistory,
     Ticket,
@@ -167,6 +168,62 @@ def test_ksm_source_fields_synced_on_reingest_noop_path(ingest_world: Session) -
     assert ticket.ksm_close_node_id == "CR9"
     assert ticket.ksm_close_node_name == "已关闭"
     assert ticket.ksm_close_node_status == "1"
+
+
+def test_ksm_service_level_mapped_and_persisted(ingest_world: Session) -> None:
+    """入库提取 serviceLevel 代码并通过 SlaLevel 表或内置字典解析为对应中文名称。"""
+    # 1. 50 对应战略客户绿色通道（内置字典兜底）
+    res1 = KSMIngester(ingest_world).ingest(_payload(billId="ksm-sl-1", serviceLevel="50"))
+    ingest_world.commit()
+    t1 = ingest_world.get(Ticket, res1.ticket_id)
+    assert t1 is not None
+    assert t1.service_level == "战略客户绿色通道"
+
+    # 2. 22 对应标准成功服务（2023版）
+    res2 = KSMIngester(ingest_world).ingest(_payload(billId="ksm-sl-2", serviceLevel="22"))
+    ingest_world.commit()
+    t2 = ingest_world.get(Ticket, res2.ticket_id)
+    assert t2 is not None
+    assert t2.service_level == "标准成功服务（2023版）"
+
+    # 3. 数据库 sla_levels 表动态配置优先于内置兜底
+    ingest_world.add(
+        SlaLevel(
+            id="SEVERLEVEL9999",
+            code="99",
+            name="顶级定制服务",
+            source_system="KSM",
+            source_system_field="serviceLevel",
+            source_system_code="99",
+            issue_levels="P0",
+            issue_types="不限",
+            sla_hours=24.0,
+            sort_order=99,
+        )
+    )
+    ingest_world.commit()
+    res3 = KSMIngester(ingest_world).ingest(_payload(billId="ksm-sl-3", serviceLevel="99"))
+    ingest_world.commit()
+    t3 = ingest_world.get(Ticket, res3.ticket_id)
+    assert t3 is not None
+    assert t3.service_level == "顶级定制服务"
+
+
+def test_ksm_service_level_synced_on_reingest(ingest_world: Session) -> None:
+    """重推同一 billId 时同步更新 service_level。"""
+    first = KSMIngester(ingest_world).ingest(_payload(billId="ksm-sl-reingest", serviceLevel="22"))
+    ingest_world.commit()
+    t = ingest_world.get(Ticket, first.ticket_id)
+    assert t is not None
+    assert t.service_level == "标准成功服务（2023版）"
+
+    # 重推升级为绿色通道 50
+    second = KSMIngester(ingest_world).ingest(_payload(billId="ksm-sl-reingest", serviceLevel="50"))
+    ingest_world.commit()
+    assert second.deduped is True
+    t_updated = ingest_world.get(Ticket, first.ticket_id)
+    assert t_updated is not None
+    assert t_updated.service_level == "战略客户绿色通道"
 
 
 def test_idempotent_replay_returns_dedup(ingest_world: Session) -> None:
