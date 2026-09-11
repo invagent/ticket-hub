@@ -45,7 +45,7 @@ export const TICKET_STATUS_BADGE: Record<string, { label: string; bg: string; fg
   completed: { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" },
 };
 
-/** 子任务专用精简状态映射：待确认 / 处理中 / 处理完成 / 已完成 / 退回转单 / 处理关闭 */
+/** 子任务专用精简状态映射：待确认 / 处理中 / 已完成 / 已关闭 / 已退回 */
 export function subtaskStatusBadge(status: string | null | undefined): {
   label: string;
   bg: string;
@@ -53,23 +53,17 @@ export function subtaskStatusBadge(status: string | null | undefined): {
   bd: string;
 } {
   const s = (status || "").toLowerCase();
-  if (["completed"].includes(s)) {
+  if (["completed", "answered", "released", "done", "replied"].includes(s)) {
     return { label: "已完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" };
   }
-  if (["answered", "released", "done", "replied"].includes(s)) {
-    return { label: "处理完成", bg: "#edf5ee", fg: "#2f7d4f", bd: "#bcd9c4" };
-  }
-  if (["returned", "canceled", "transferred_return", "transferred"].includes(s)) {
-    return { label: "退回转单", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" };
-  }
   if (["closed", "resolved"].includes(s)) {
-    return { label: "处理关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" };
-  }
-  if (["processing", "in_progress"].includes(s)) {
-    return { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" };
-  }
-  if (["closed"].includes(s)) {
     return { label: "已关闭", bg: "#f3f0e9", fg: "#a09a8c", bd: "#e8e3d9" };
+  }
+  if (["returned", "canceled", "transferred_return"].includes(s)) {
+    return { label: "已退回", bg: "#fbf1ef", fg: "#b04a4a", bd: "#eed7d2" };
+  }
+  if (["processing", "in_progress", "transferred"].includes(s)) {
+    return { label: "处理中", bg: "#e7f2f6", fg: "#2383a0", bd: "#c9e0e8" };
   }
   return { label: "待确认", bg: "#faf3e3", fg: "#9a6c1c", bd: "#eddfba" };
 }
