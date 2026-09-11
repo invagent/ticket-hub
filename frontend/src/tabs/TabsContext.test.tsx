@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, render, screen, fireEvent } from "@testing-library/react";
 import { TabsProvider, useTabs, keyOf } from "./TabsContext";
+import { TabBar } from "./TabBar";
 
 function wrapper(initialPath = "/tickets") {
   return ({ children }: { children: React.ReactNode }) => (
@@ -85,5 +86,34 @@ describe("TabsContext", () => {
     // 新实例从 localStorage 恢复
     const { result: r2 } = renderHook(() => useTabs(), { wrapper: wrapper("/tickets/9") });
     expect(r2.current.tabs.map((t) => t.key).sort()).toEqual(["/tickets", "/tickets/9"]);
+  });
+
+  it("closes all tabs and resets to default /tickets tab", () => {
+    const { result } = renderHook(() => useTabs(), { wrapper: wrapper("/tickets") });
+    act(() => result.current.openTab("/tickets/1", "TKT-1"));
+    act(() => result.current.openTab("/tickets/2", "TKT-2"));
+    expect(result.current.tabs).toHaveLength(3);
+
+    act(() => result.current.closeAllTabs());
+    expect(result.current.tabs).toHaveLength(1);
+    expect(result.current.tabs[0].key).toBe("/tickets");
+    expect(result.current.activeKey).toBe("/tickets");
+  });
+
+  it("renders clear button on TabBar and clicking it triggers closeAllTabs", () => {
+    function TestApp() {
+      return (
+        <TabsProvider initialPath="/tickets" resolveTitle={(p) => p}>
+          <TabBar />
+        </TabsProvider>
+      );
+    }
+    render(<TestApp />);
+    const clearBtn = screen.getByRole("button", { name: /清空/ });
+    expect(clearBtn).toBeInTheDocument();
+    expect(clearBtn).toHaveAttribute("title", "一键清空所有页签");
+    fireEvent.click(clearBtn);
+    // 依然保留默认全部工单页签
+    expect(screen.getByText("全部工单")).toBeInTheDocument();
   });
 });

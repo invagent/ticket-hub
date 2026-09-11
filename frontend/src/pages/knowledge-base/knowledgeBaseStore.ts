@@ -33,6 +33,7 @@ export interface KnowledgeItem {
   product_line_name: string;
   module_code: string;
   module_name: string;
+  applicable_customer?: string; // 适用客户，默认「全部客户」
   status: KnowledgeStatus;
   created_by: string;
   created_at: string;
@@ -57,6 +58,7 @@ const INITIAL_MOCK_ITEMS: KnowledgeItem[] = [
     product_line_name: "数电票/全电发票系统",
     module_code: "issue",
     module_name: "发票开具与开票服务",
+    applicable_customer: "全部客户",
     status: "active",
     created_by: "张工 (8021)",
     created_at: "2026-09-02 09:30:15",
@@ -209,6 +211,7 @@ export function addKnowledgeItem(
   const now = formatNowDateTime();
   const newItem: KnowledgeItem = {
     ...payload,
+    applicable_customer: payload.applicable_customer?.trim() || "全部客户",
     id,
     status: payload.status ?? "pending_review",
     created_at: now,

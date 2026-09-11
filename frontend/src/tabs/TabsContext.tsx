@@ -17,6 +17,7 @@ interface TabsState {
   activeKey: string;
   openTab: (path: string, title?: string, opts?: { closable?: boolean; activate?: boolean }) => void;
   closeTab: (key: string) => void;
+  closeAllTabs: () => void;
   setActive: (key: string) => void;
   updateTitle: (key: string, title: string) => void;
 }
@@ -142,6 +143,24 @@ export function TabsProvider({
     });
   }, []);
 
+  const closeAllTabs = useCallback<TabsState["closeAllTabs"]>(() => {
+    setState((prev) => {
+      // 保留不可关闭的标签（若有）
+      const unclosable = prev.tabs.filter((t) => !t.closable);
+      if (unclosable.length > 0) {
+        return { tabs: unclosable, activeKey: unclosable[0].key };
+      }
+      // 全部可关闭时，一键清空并重置为默认「全部工单」页签
+      const defaultTab: TabItem = {
+        key: "/tickets",
+        path: "/tickets",
+        title: "全部工单",
+        closable: true,
+      };
+      return { tabs: [defaultTab], activeKey: "/tickets" };
+    });
+  }, []);
+
   const setActive = useCallback<TabsState["setActive"]>((key) => {
     setState((prev) => (prev.activeKey === key ? prev : { ...prev, activeKey: key }));
   }, []);
@@ -160,10 +179,11 @@ export function TabsProvider({
       activeKey: state.activeKey,
       openTab,
       closeTab,
+      closeAllTabs,
       setActive,
       updateTitle,
     }),
-    [state, openTab, closeTab, setActive, updateTitle],
+    [state, openTab, closeTab, closeAllTabs, setActive, updateTitle],
   );
 
   return <TabsCtx.Provider value={value}>{children}</TabsCtx.Provider>;

@@ -158,10 +158,12 @@ describe("KnowledgeBasePage 知识库模块", () => {
     // 抽屉滑出，展示知识库操作面板
     expect(await screen.findByText("知识库操作面板")).toBeInTheDocument();
     expect(screen.getByText("详细知识内容")).toBeInTheDocument();
+    expect(screen.getByText("适用客户")).toBeInTheDocument();
 
     // 验证无任何提交或保存操作按钮，仅有关闭按钮
     expect(screen.queryByRole("button", { name: "提交" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "提交并作答" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "作答并新增知识库" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "仅作答" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
 
     // 点击关闭抽屉
@@ -269,5 +271,32 @@ describe("KnowledgeBasePage 知识库模块", () => {
     expect(firstBtnText.endsWith("...")).toBe(true);
     // 去除 '...' 后的前缀长度不超过 50
     expect(firstBtnText.replace(/\.\.\.$/, "").length).toBeLessThanOrEqual(50);
+  });
+
+  it("新增知识库时知识内容录入框高度为原2倍(minHeight 320px)，且包含【适用客户】字段默认全部客户并支持修改", async () => {
+    const user = userEvent.setup();
+    renderComponent();
+    await screen.findByText("FPYFAQ202609020001");
+
+    // 点击顶部「新增」按钮
+    const addBtn = screen.getByRole("button", { name: /新增/ });
+    await user.click(addBtn);
+
+    // 抽屉弹出
+    expect(await screen.findByText("维护知识库")).toBeInTheDocument();
+
+    // 1. 验证富文本录入框高度为原2倍（320px）
+    const editor = screen.getByRole("textbox", { name: "富文本知识内容" });
+    expect(editor).toHaveStyle({ minHeight: "320px" });
+
+    // 2. 验证适用问题模块下方存在【适用客户】输入框，默认内容为「全部客户」
+    const customerInput = screen.getByPlaceholderText("请输入适用客户（默认：全部客户）") as HTMLInputElement;
+    expect(customerInput).toBeInTheDocument();
+    expect(customerInput.value).toBe("全部客户");
+
+    // 3. 支持修改为指定的客户
+    await user.clear(customerInput);
+    await user.type(customerInput, "航天信息股份有限公司");
+    expect(customerInput.value).toBe("航天信息股份有限公司");
   });
 });

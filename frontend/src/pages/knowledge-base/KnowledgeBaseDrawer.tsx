@@ -21,6 +21,7 @@ export interface KnowledgeBaseDrawerProps {
   defaultTitle?: string;
   defaultType?: KnowledgeType;
   defaultContent?: string;
+  defaultCustomer?: string;
   item?: KnowledgeItem | null;
   mode?: "create" | "view";
   actionType?: "submit_only" | "answer_only" | "both";
@@ -41,6 +42,7 @@ export function KnowledgeBaseDrawer({
   defaultTitle = "",
   defaultType = "FAQ",
   defaultContent = "",
+  defaultCustomer = "全部客户",
   item,
   mode = item ? "view" : "create",
   onAnswerAndSubmit,
@@ -53,6 +55,7 @@ export function KnowledgeBaseDrawer({
   const [type, setType] = useState<KnowledgeType>("FAQ");
   const [productLineCode, setProductLineCode] = useState("");
   const [moduleCode, setModuleCode] = useState("");
+  const [applicableCustomer, setApplicableCustomer] = useState("全部客户");
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<KnowledgeAttachment[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export function KnowledgeBaseDrawer({
       setTitle(defaultTitle || "");
       setType(defaultType || "FAQ");
       setContent(defaultContent || "");
+      setApplicableCustomer(defaultCustomer || "全部客户");
       setAttachments([]);
       setUploadError(null);
       setFormError(null);
@@ -117,7 +121,7 @@ export function KnowledgeBaseDrawer({
       setProductLineCode(firstPlc);
       setModuleCode(firstMod);
     }
-  }, [open, defaultProductLine, defaultModule, defaultTitle, defaultType, defaultContent]);
+  }, [open, defaultProductLine, defaultModule, defaultTitle, defaultType, defaultContent, defaultCustomer]);
 
   // 如果打开抽屉且暂无指定产品线，默认选中第一条可用产品线
   useEffect(() => {
@@ -214,6 +218,7 @@ export function KnowledgeBaseDrawer({
       product_line_name: selectedPl?.name ?? productLineCode,
       module_code: moduleCode,
       module_name: selectedMod?.name ?? moduleCode,
+      applicable_customer: applicableCustomer.trim() || "全部客户",
       content: trimmedContent,
       status: "pending_review",
       created_by: creator,
@@ -237,6 +242,7 @@ export function KnowledgeBaseDrawer({
       product_line_name: selectedPl?.name ?? productLineCode,
       module_code: moduleCode,
       module_name: selectedMod?.name ?? moduleCode,
+      applicable_customer: applicableCustomer.trim() || "全部客户",
       content: trimmedContent,
       status: "pending_review",
       attachments,
@@ -248,6 +254,24 @@ export function KnowledgeBaseDrawer({
     }
 
     onSubmitSuccess?.(newItem);
+    onClose();
+  };
+
+  // 3.8 仅作答：不向知识库接口发请求，不写入知识库列表，仅回写当前工单任务解决方案并关闭
+  const handleAnswerOnly = () => {
+    setFormError(null);
+    const trimmedContent = content.trim();
+    if (!trimmedContent) {
+      setFormError("请录入详细的知识/答复内容");
+      return;
+    }
+    if (trimmedContent.length > 2000) {
+      setFormError("内容最多录入 2000 字");
+      return;
+    }
+    if (onAnswerAndSubmit) {
+      onAnswerAndSubmit(trimmedContent);
+    }
     onClose();
   };
 
@@ -319,8 +343,8 @@ export function KnowledgeBaseDrawer({
               </div>
             </div>
 
-            {/* 类型、产品线、问题模块 */}
-            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-[8px] border border-slate-200/80 text-[12px]">
+            {/* 类型、产品线、问题模块、适用客户 */}
+            <div className="grid grid-cols-4 gap-2 bg-slate-50 p-3 rounded-[8px] border border-slate-200/80 text-[12px]">
               <div>
                 <div className="text-slate-400 text-[11px] mb-0.5">知识类型</div>
                 <span className="inline-block font-semibold text-slate-800 px-1.5 py-0.5 bg-white rounded border border-slate-200 text-[11.5px]">
@@ -337,6 +361,12 @@ export function KnowledgeBaseDrawer({
                 <div className="text-slate-400 text-[11px] mb-0.5">适用问题模块</div>
                 <div className="font-medium text-slate-800 truncate" title={item.module_name}>
                   {item.module_name}
+                </div>
+              </div>
+              <div>
+                <div className="text-slate-400 text-[11px] mb-0.5">适用客户</div>
+                <div className="font-medium text-slate-800 truncate" title={item.applicable_customer || "全部客户"}>
+                  {item.applicable_customer || "全部客户"}
                 </div>
               </div>
             </div>
@@ -499,7 +529,21 @@ export function KnowledgeBaseDrawer({
               />
             </div>
 
-            {/* 3.5 知识内容：详细内容、2000 字、富文本录入框（支持加粗、插入超链接、插入图片等） */}
+            {/* 适用客户：手动录入，默认内容：全部客户，支持修改为指定的客户 */}
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1.5">
+                适用客户
+              </label>
+              <input
+                type="text"
+                value={applicableCustomer}
+                onChange={(e) => setApplicableCustomer(e.target.value)}
+                placeholder="请输入适用客户（默认：全部客户）"
+                className="w-full text-[12.5px] border border-hub-border rounded-[7px] px-3 py-1.5 outline-none focus:border-hub-teal transition-colors"
+              />
+            </div>
+
+            {/* 3.5 知识内容：详细内容、2000 字、富文本录入框（高度增至原 2 倍，minHeight=320） */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="font-semibold text-slate-700">
@@ -511,7 +555,7 @@ export function KnowledgeBaseDrawer({
                 onChange={setContent}
                 placeholder="详细录入该知识点解答内容、标准解决方案或操作步骤，支持加粗、插入超链接、图片等..."
                 maxLength={2000}
-                minHeight={160}
+                minHeight={320}
               />
 
               {/* 附件上传按钮与限制提示：统一为【上传附件】，右侧 #666666 颜色提示 图片<1M,视频<50M */}
@@ -581,41 +625,53 @@ export function KnowledgeBaseDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] border border-hub-border bg-white text-slate-700 hover:bg-slate-100 cursor-pointer"
+              className="min-w-[50px] px-4 py-1.5 text-[12px] font-semibold rounded-[7px] border border-hub-border bg-white text-slate-700 hover:bg-slate-100 cursor-pointer whitespace-nowrap"
             >
               关闭
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] border border-hub-border bg-white text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                取消
-              </button>
+              {/* 1. 仅作答：橙色填充，不在知识库列表生成记录，直接将录入内容回写当前工单任务解决方案并关闭抽屉 */}
+              {(actionType === "answer_only" || actionType === "both") && (
+                <button
+                  type="button"
+                  onClick={handleAnswerOnly}
+                  className="min-w-[50px] px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-orange-500 hover:bg-orange-600 text-white cursor-pointer shadow-sm transition-colors whitespace-nowrap"
+                >
+                  仅作答
+                </button>
+              )}
 
-              {/* 3.6 提交并作答：在知识库生成记录，并将知识内容回写当前工单任务解决方案 */}
+              {/* 2. 作答并新增知识库：在知识库生成记录，并将知识内容回写当前工单任务解决方案 */}
               {(actionType === "answer_only" || actionType === "both") && (
                 <button
                   type="button"
                   onClick={() => handleSave(true)}
-                  className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer shadow-sm"
+                  className="min-w-[50px] px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-[#6085e7] text-white hover:brightness-95 cursor-pointer shadow-sm whitespace-nowrap"
                 >
-                  提交并作答
+                  作答并新增知识库
                 </button>
               )}
 
-              {/* 3.7 提交：在知识库生成记录，不回写当前工单处理说明 */}
-              {(actionType === "submit_only" || actionType === "both") && (
+              {/* 提交：在知识库生成记录，不回写当前工单处理说明（独立新增知识库场景） */}
+              {actionType === "submit_only" && (
                 <button
                   type="button"
                   onClick={() => handleSave(false)}
-                  className="px-4 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 cursor-pointer shadow-sm"
+                  className="min-w-[50px] px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] bg-hub-teal text-white hover:brightness-95 cursor-pointer shadow-sm whitespace-nowrap"
                 >
                   提交
                 </button>
               )}
+
+              {/* 3. 取消 */}
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-w-[50px] px-3.5 py-1.5 text-[12px] font-semibold rounded-[7px] border border-hub-border bg-white text-slate-700 hover:bg-slate-100 cursor-pointer whitespace-nowrap"
+              >
+                取消
+              </button>
             </>
           )}
         </div>
