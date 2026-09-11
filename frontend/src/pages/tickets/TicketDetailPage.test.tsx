@@ -1766,6 +1766,44 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       expect(kbPostCalled).toBe(false);
       expect(screen.getAllByText(/已协助排查转单退回/).length).toBeGreaterThanOrEqual(1);
     });
+
+    it("子任务列表应用类点击「无方案，去完善」打开维护知识库面板时，自动带入当前任务的产品分类和问题模块", async () => {
+      renderTicket(
+        {
+          id: 503,
+          status: "in_progress",
+          predicted_type: "Operation",
+          product_line_code: "pl-test",
+          module: "m-test",
+        },
+        undefined,
+        [
+          http.get("*/api/admin/product-lines", () =>
+            HttpResponse.json([
+              { code: "pl-other", name: "其他产品线", is_active: true },
+              { code: "pl-test", name: "发票标准版", is_active: true },
+            ]),
+          ),
+          http.get("*/api/hub-issues/catalog/modules", () =>
+            HttpResponse.json([{ code: "m-test", name: "开票模块", is_active: true }]),
+          ),
+        ],
+      );
+
+      const enrichBtn = await screen.findByRole("button", { name: "无方案，去完善" });
+      fireEvent.click(enrichBtn);
+
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer).toBeInTheDocument();
+
+      // 验证适用产品线自动带入 "发票标准版"（而非默认首项 "其他产品线"）
+      const plBtn = within(drawer).getByRole("button", { name: "知识库产品线" });
+      expect(plBtn).toHaveTextContent("发票标准版");
+
+      // 验证适用问题模块自动带入当前任务的问题模块
+      const modBtn = within(drawer).getByRole("button", { name: "知识库问题模块" });
+      expect(modBtn).toHaveTextContent(/开票模块|m-test/);
+    });
   });
 });
 

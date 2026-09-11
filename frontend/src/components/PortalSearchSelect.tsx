@@ -101,7 +101,7 @@ export function PortalSearchSelect({
     };
   }, [open, updatePosition]);
 
-  const selectedOpt = options.find((o) => o.code === value);
+  const selectedOpt = options.find((o) => o.code === value || o.name === value);
   const displayLabel = selectedOpt ? selectedOpt.name : value || placeholder;
 
   const filtered = useMemo(() => {
@@ -190,7 +190,7 @@ export function PortalSearchSelect({
               setOpen(false);
             }}
             className={`text-left px-2.5 py-1.5 rounded-[5px] hover:bg-slate-100 whitespace-normal break-words leading-relaxed cursor-pointer transition-colors ${
-              opt.code === value
+              opt.code === value || opt.name === value
                 ? "bg-hub-teal-light text-hub-teal-deep font-semibold"
                 : "text-slate-700"
             }`}

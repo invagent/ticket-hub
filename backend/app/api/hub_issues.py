@@ -309,11 +309,19 @@ def list_catalog_modules(
     工单参数编辑区的模块下拉数据源；admin_catalog 的同类端点是 require_admin，
     处理人够不到，故在此另开一个只读端点。Module 无独立 code 列，用 name 兼作 code。
     """
-    from app.models import Module
+    from app.models import Module, ProductLine
 
     q = db.query(Module).filter(Module.is_active.is_(True))
     if product_line_code:
-        q = q.filter(Module.product_line_code == product_line_code)
+        pl_row = (
+            db.query(ProductLine.code)
+            .filter(
+                (ProductLine.code == product_line_code) | (ProductLine.name == product_line_code)
+            )
+            .first()
+        )
+        eff_code = pl_row[0] if pl_row else product_line_code
+        q = q.filter(Module.product_line_code == eff_code)
     rows = q.order_by(Module.name).all()
     return [CatalogModuleOut(code=m.name, name=m.name) for m in rows]
 

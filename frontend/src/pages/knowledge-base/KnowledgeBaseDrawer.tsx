@@ -98,7 +98,7 @@ export function KnowledgeBaseDrawer({
 
   const moduleOptions = useMemo(() => {
     const list = activeModules.map((m) => ({ code: m.code, name: m.name }));
-    if (moduleCode && !list.some((m) => m.code === moduleCode)) {
+    if (moduleCode && !list.some((m) => m.code === moduleCode || m.name === moduleCode)) {
       list.push({ code: moduleCode, name: moduleCode });
     }
     return list;
@@ -115,20 +115,60 @@ export function KnowledgeBaseDrawer({
       setUploadError(null);
       setFormError(null);
 
-      // 默认等于工单的产品线（多值取第一个）
-      const firstPlc = defaultProductLine ? defaultProductLine.split(",")[0].trim() : "";
-      const firstMod = defaultModule ? defaultModule.split(",")[0].trim() : "";
-      setProductLineCode(firstPlc);
-      setModuleCode(firstMod);
-    }
-  }, [open, defaultProductLine, defaultModule, defaultTitle, defaultType, defaultContent, defaultCustomer]);
+      // 默认等于工单/任务的产品线（多值取第一个）
+      const rawPlc = defaultProductLine ? defaultProductLine.split(",")[0].trim() : "";
+      const rawMod = defaultModule ? defaultModule.split(",")[0].trim() : "";
 
-  // 如果打开抽屉且暂无指定产品线，默认选中第一条可用产品线
+      const matchedPl = productLineOptions.find(
+        (p) => p.code === rawPlc || p.name === rawPlc,
+      );
+      const targetPlc = matchedPl
+        ? matchedPl.code
+        : rawPlc || (productLineOptions.length > 0 ? productLineOptions[0].code : "");
+
+      setProductLineCode(targetPlc);
+      setModuleCode(rawMod);
+    }
+  }, [
+    open,
+    defaultProductLine,
+    defaultModule,
+    defaultTitle,
+    defaultType,
+    defaultContent,
+    defaultCustomer,
+    productLineOptions,
+  ]);
+
+  // 当 productLineOptions 加载完成后，若指定了 defaultProductLine，确保映射为正确 code；若未指定且尚未选择，则默认首项
   useEffect(() => {
-    if (open && !productLineCode && productLineOptions.length > 0) {
+    if (!open || productLineOptions.length === 0) return;
+    const rawPlc = defaultProductLine ? defaultProductLine.split(",")[0].trim() : "";
+    if (rawPlc) {
+      const matched = productLineOptions.find(
+        (p) => p.code === rawPlc || p.name === rawPlc,
+      );
+      if (matched && productLineCode !== matched.code) {
+        setProductLineCode(matched.code);
+      }
+    } else if (!productLineCode) {
       setProductLineCode(productLineOptions[0].code);
     }
-  }, [open, productLineCode, productLineOptions]);
+  }, [open, productLineOptions, defaultProductLine, productLineCode]);
+
+  // 当 activeModules 加载完成后，若指定了 defaultModule，确保对齐 moduleCode
+  useEffect(() => {
+    if (!open || activeModules.length === 0) return;
+    const rawMod = defaultModule ? defaultModule.split(",")[0].trim() : "";
+    if (rawMod && (!moduleCode || moduleCode === rawMod)) {
+      const matchedMod = activeModules.find(
+        (m) => m.code === rawMod || m.name === rawMod,
+      );
+      if (matchedMod && moduleCode !== matchedMod.code) {
+        setModuleCode(matchedMod.code);
+      }
+    }
+  }, [open, activeModules, defaultModule, moduleCode]);
 
   // 统一附件上传处理（图片 < 1M，视频 < 50M）
   const handleUploadAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,8 +247,8 @@ export function KnowledgeBaseDrawer({
       return;
     }
 
-    const selectedPl = productLineOptions.find((p) => p.code === productLineCode);
-    const selectedMod = moduleOptions.find((m) => m.code === moduleCode);
+    const selectedPl = productLineOptions.find((p) => p.code === productLineCode || p.name === productLineCode);
+    const selectedMod = moduleOptions.find((m) => m.code === moduleCode || m.name === moduleCode);
     const creator = ticketHandlerName || (JSON.parse(localStorage.getItem("auth_user") || "null")?.name ?? "当前用户");
 
     const payload = {
