@@ -18,6 +18,7 @@ const STATIC: Record<string, string> = {
   "/admin/users": "人员与分工",
   "/admin/catalog": "产品模块管理",
   "/admin/dispatch": "派单规则配置",
+  "/admin/sla": "服务等级&SLA配置",
   "/admin/skills": "技能编排",
 };
 

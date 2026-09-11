@@ -1266,13 +1266,24 @@ class AgentDecision(Base):
 
 
 class SlaLevel(Base):
-    """KSM 服务等级编码 → 显示名称映射表。"""
+    """服务等级与 SLA 配置表（多系统来源与全量 SLA 规范）。"""
 
     __tablename__ = "sla_levels"
 
-    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # SEVERLEVEL0001
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    issue_levels: Mapped[str] = mapped_column(String(128), default="P0、P1、P2、P3", nullable=False)
+    issue_types: Mapped[str] = mapped_column(String(128), default="不限", nullable=False)
+    sla_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=40.0, nullable=False)
+    source_system: Mapped[str] = mapped_column(String(64), default="KSM", nullable=False)
+    source_system_field: Mapped[str] = mapped_column(String(64), default="serviceLevel", nullable=False)
+    source_system_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class DispatchRule(Base):
