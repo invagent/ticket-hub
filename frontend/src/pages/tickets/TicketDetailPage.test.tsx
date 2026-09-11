@@ -953,12 +953,12 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       const drawerTitle = await screen.findByText("维护知识库");
       expect(drawerTitle).toBeInTheDocument();
 
-      // 3. 在富文本录入框中输入解决方案并点击「提交并作答」
+      // 3. 在富文本录入框中输入解决方案并点击「作答并新增知识库」
       const editorBox = screen.getByRole("textbox", { name: "富文本知识内容" });
       editorBox.innerHTML = "已协助处理解绑成功";
       fireEvent.input(editorBox);
 
-      const saveBtn = screen.getByRole("button", { name: "提交并作答" });
+      const saveBtn = screen.getByRole("button", { name: "作答并新增知识库" });
       fireEvent.click(saveBtn);
 
       // 4. 验证抽屉关闭，且处理说明在单任务下不做问题拆分，直接显示关联任务的解决方案
@@ -1675,6 +1675,98 @@ describe("TicketDetailPage 出站回写失败横幅", () => {
       ).toBeGreaterThan(0);
       expect(screen.getByLabelText("处理环节：服务处理")).toBeInTheDocument();
       expect(transferDevBtn).not.toBeDisabled();
+    });
+
+    it("子任务列表新增【责任田人】列且紧跟任务处理人后，不论任务类型均根据产品分类+问题模块展示研发责任人", async () => {
+      renderTicket(
+        {
+          id: 501,
+          status: "in_progress",
+          predicted_type: "Operation",
+          product_line_code: "pl-test",
+          module: "m-test",
+          assigned_user_name: "客服小李",
+        },
+        undefined,
+        [
+          http.get("*/api/admin/product-lines", () =>
+            HttpResponse.json([{ code: "pl-test", name: "发票标准版", is_active: true }]),
+          ),
+          http.get("*/api/hub-issues/catalog/modules", () =>
+            HttpResponse.json([{ code: "m-test", name: "开票模块", is_active: true }]),
+          ),
+          http.get("*/api/hub-issues/catalog/module-owner", () =>
+            HttpResponse.json({
+              product_line_code: "pl-test",
+              module: "m-test",
+              user_id: 99,
+              user_name: "研发责任人张工",
+            }),
+          ),
+        ],
+      );
+
+      // 表头必须包含【责任田人】
+      expect(await screen.findByRole("columnheader", { name: "责任田人" })).toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: "任务处理人" })).toBeInTheDocument();
+
+      // 单元格中无论应用类还是其他，只要产品分类和问题模块不为空，即展示研发责任人张工
+      expect(await screen.findByText("研发责任人张工")).toBeInTheDocument();
+    });
+
+    it("维护知识库抽屉中点击【仅作答】按钮，内容回写至任务处理说明且不向知识库发送新增请求", async () => {
+      let kbPostCalled = false;
+      renderTicket(
+        {
+          id: 502,
+          status: "in_progress",
+          predicted_type: "Operation",
+          product_line_code: "pl-test",
+          module: "m-test",
+        },
+        undefined,
+        [
+          http.get("*/api/admin/product-lines", () =>
+            HttpResponse.json([{ code: "pl-test", name: "发票标准版", is_active: true }]),
+          ),
+          http.get("*/api/hub-issues/catalog/modules", () =>
+            HttpResponse.json([{ code: "m-test", name: "开票模块", is_active: true }]),
+          ),
+          http.post("*/api/knowledge-base", () => {
+            kbPostCalled = true;
+            return HttpResponse.json({ ok: true });
+          }),
+        ],
+      );
+
+      // 1. 点击子任务列表中「无方案，去完善」打开维护知识库抽屉
+      const enrichBtn = await screen.findByRole("button", { name: "无方案，去完善" });
+      fireEvent.click(enrichBtn);
+
+      const drawer = await screen.findByRole("dialog");
+      expect(drawer).toBeInTheDocument();
+
+      // 2. 抽屉底部存在【仅作答】按钮和【作答并新增知识库】按钮
+      const answerOnlyBtn = within(drawer).getByRole("button", { name: "仅作答" });
+      const submitAndAnswerBtn = within(drawer).getByRole("button", { name: "作答并新增知识库" });
+      expect(answerOnlyBtn).toBeInTheDocument();
+      expect(submitAndAnswerBtn).toBeInTheDocument();
+
+      // 3. 在富文本录入框中输入答复内容
+      const editorBox = within(drawer).getByRole("textbox", { name: "富文本知识内容" });
+      expect(editorBox).toBeInTheDocument();
+      editorBox.innerHTML = "已协助排查转单退回";
+      fireEvent.input(editorBox);
+
+      // 4. 点击【仅作答】
+      fireEvent.click(answerOnlyBtn);
+
+      // 5. 校验：知识库创建接口未被调用，抽屉关闭，任务解决方案已更新
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(kbPostCalled).toBe(false);
+      expect(screen.getAllByText(/已协助排查转单退回/).length).toBeGreaterThanOrEqual(1);
     });
   });
 });

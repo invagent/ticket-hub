@@ -2970,6 +2970,40 @@ function SubTaskRowModuleSelect({
   );
 }
 
+/**
+ * 责任田人（研发责任人）单元格组件：
+ * 无论任务类型，只要产品分类与问题模块不为空，即根据产品线和问题模块查询【产品模块管理】定位研发责任人。
+ */
+function SubTaskFieldOwnerCell({ plc, mod }: { plc?: string; mod?: string }) {
+  const cleanPlc = plc?.trim() || "";
+  const cleanMod = mod?.trim() || "";
+  const { data: ownerName, isLoading } = useQuery({
+    queryKey: ["catalog-module-owner", cleanPlc, cleanMod],
+    queryFn: async () => {
+      if (!cleanPlc || !cleanMod) return "";
+      try {
+        const res: any = await api.get("/api/hub-issues/catalog/module-owner", {
+          product_line_code: cleanPlc,
+          module: cleanMod,
+        });
+        return res?.user_name || "";
+      } catch {
+        return "";
+      }
+    },
+    enabled: !!(cleanPlc && cleanMod),
+    staleTime: 60_000,
+  });
+
+  if (!cleanPlc || !cleanMod) {
+    return <span className="text-hub-textFaint">—</span>;
+  }
+  if (isLoading) {
+    return <span className="text-slate-400 text-[10.5px]">查询中…</span>;
+  }
+  return <span className="whitespace-nowrap font-medium text-slate-700">{ownerName || "—"}</span>;
+}
+
 const SUB_TASK_TYPES = [
   { code: "Bug_fix", name: "Bug 修复" },
   { code: "Demand", name: "需求" },
@@ -3954,7 +3988,7 @@ function SubTicketList({
       )}
 
       <div className="overflow-x-auto border border-hub-border rounded-[7px]">
-        <table className="min-w-full text-[11.5px] border-collapse">
+        <table className="min-w-full text-[11.5px] border-collapse whitespace-nowrap">
           <thead>
             <tr style={{ backgroundColor: "rgb(234, 237, 245)" }} className="text-slate-700">
               <th
@@ -4004,6 +4038,7 @@ function SubTicketList({
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">问题模块</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务状态</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">任务处理人</th>
+              <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">责任田人</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">处理说明</th>
               <th className="px-2.5 py-1.5 text-center font-bold whitespace-nowrap">附件</th>
               <th className="px-2.5 py-1.5 text-left font-bold whitespace-nowrap">操作</th>
@@ -4145,6 +4180,9 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {currentAssigneeName}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskFieldOwnerCell plc={st.product_line_code} mod={st.module} />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     {isValidSolution(st.solution) ? (
@@ -4474,6 +4512,9 @@ function SubTicketList({
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {currentAssigneeName}
                   </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskFieldOwnerCell plc={st.product_line_code} mod={st.module} />
+                  </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     {isValidSolution(st.solution) ? (
                       <button
@@ -4782,6 +4823,9 @@ function SubTicketList({
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap">
                     {currentAssigneeName}
+                  </td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    <SubTaskFieldOwnerCell plc={st.product_line_code} mod={st.module} />
                   </td>
                   <td className="px-2.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     {isValidSolution(st.solution) ? (
