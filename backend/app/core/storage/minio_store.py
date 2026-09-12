@@ -165,11 +165,14 @@ class MinioStore:
         logger.info("minio_put", bucket=self._bucket, key=key, size=len(data))
         return self.public_url(key)
 
-    def get_bytes(self, key: str) -> bytes:
+    def get_bytes(self, key: str, *, max_bytes: int | None = None) -> bytes:
         """按对象 key 读回附件字节（下载代理端点用；不存在则 minio 抛错）。"""
         resp = self._client.get_object(self._bucket, key)
         try:
-            return resp.read()
+            data = resp.read(max_bytes + 1) if max_bytes is not None else resp.read()
+            if max_bytes is not None and len(data) > max_bytes:
+                raise ValueError("attachment exceeds maximum bytes")
+            return data
         finally:
             resp.close()
             resp.release_conn()

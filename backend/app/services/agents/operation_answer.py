@@ -20,6 +20,7 @@ from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
 from app.models import AgentDecision, HubIssue, SyncOutbox, Ticket
 from app.services.agents.answer_accuracy import score_answer_accuracy
+from app.services.ai_cs.context import build_hub_question
 from app.services.cascade.reply_sync import ReplySyncError, author_reply
 from app.services.hub_issues.op_status import (
     OP_ANSWERED,
@@ -279,15 +280,11 @@ def auto_answer_operation(
         logger.info("operation_auto_reply_ai_cs_disabled", hub_issue_id=hub.id)
         return False
 
-    product = hub.product or hub.product_line_code or ""
-    module = hub.module or ""
-    body = hub.canonical_body or hub.title or ""
-    question = f"{product}-{module}：{body}" if module else f"{product}：{body}"
-    question = question.lstrip("-：").strip() or body
-
     # AI 客服服务端要求 skill 必须在受管理列表内，取第一个受管理 skill 作默认
     skill = next((s.strip() for s in settings.ai_cs_managed_skills.split(",") if s.strip()), None)
     try:
+        # Include catalog names, titles and image evidence before the replay call.
+        question = build_hub_question(db, hub, settings=settings)
         replay_result = _replay_with_retry(client, question=question, skill=skill, hub_id=hub.id)
     except AiCsError:
         # 防并发竞态（如 replay 耗时 1-5 分钟期间，处理人已在界面人工提交答复、退回 KSM、补料或关单）：

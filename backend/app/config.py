@@ -147,6 +147,7 @@ class Settings(BaseSettings):
     vision_enabled: bool = False
     vision_model: str = "qwen-vl-max"  # 报错截图要准确 OCR；可换 qwen-vl-plus 省成本
     vision_api_key: str = ""  # 留空则回落 dashscope_api_key
+    vision_base_url: str = ""  # 新版业务空间的 OpenAI 兼容地址；空则沿用 DashScope 地址
     vision_max_images_per_ticket: int = 5  # 单工单最多识别张数（防异常附件刷量）
 
     # ---- D4 第③段 AI 客服 escalation ----

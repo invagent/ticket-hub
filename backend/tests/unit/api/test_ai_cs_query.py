@@ -88,12 +88,12 @@ def test_answer_ai_cs_error_returns_502(app_client) -> None:  # type: ignore[no-
 
 def test_build_question_with_category() -> None:
     assert build_question(title="标题", content="内容", product_category="星瀚-收票") == (
-        "星瀚-收票：标题 内容"
+        "【产品信息】\n产品线：星瀚-收票\n\n【工单标题】\n标题\n\n【问题正文】\n内容"
     )
 
 
 def test_build_question_no_category() -> None:
-    assert build_question(title="", content="只有内容") == "只有内容"
+    assert build_question(title="", content="只有内容") == "【问题正文】\n只有内容"
 
 
 class _S:

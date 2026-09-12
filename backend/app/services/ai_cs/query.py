@@ -18,6 +18,11 @@ from adapters.ai_cs import AiCsBusinessError, AiCsClient, AiCsError, AiCsNetwork
 from app.config import Settings, get_settings
 from app.core.llm_router import LLMMessage, LLMRouter, LLMRouterError
 from app.core.logging import get_logger
+from app.services.ai_cs.context import (
+    content_text_and_images,
+    extract_image_context,
+    format_question,
+)
 from app.services.knowledge_feedback.service import KnowledgeFeedbackDisabledError, build_client
 from app.services.skills.prompt_store import load_prompt
 
@@ -43,10 +48,8 @@ class AnswerResult:
 
 
 def build_question(*, title: str, content: str, product_category: str = "") -> str:
-    """拼客户问题：{产品分类}：{标题} {内容}。与自动答复口径一致（去空段/前缀）。"""
-    body = " ".join(p for p in (title.strip(), content.strip()) if p).strip()
-    q = f"{product_category.strip()}：{body}" if product_category.strip() else body
-    return q.lstrip("-：").strip() or body
+    """保留标题与正文，使用与内部自动答复一致的分区格式。"""
+    return format_question(title=title, body=content, product=product_category)
 
 
 def resolve_default_skill(settings: Settings) -> str:
@@ -137,9 +140,26 @@ def answer_question(
     except KnowledgeFeedbackDisabledError as e:
         raise AiCsQueryDisabledError(str(e)) from e
 
-    question = build_question(title=title, content=content, product_category=product_category)
-    resolved_skill = (skill or "").strip() or resolve_default_skill(settings)
     try:
+        product = product_category.strip()
+        code = ""
+        if product.startswith("PROLINE"):
+            from sqlalchemy import select
+
+            from app.db import make_session
+            from app.models import ProductLine
+
+            code = product
+            with make_session() as db:
+                line = db.scalar(select(ProductLine).where(ProductLine.code == code))
+                product = line.name if line else ""
+        _, urls = content_text_and_images(content)
+        _, title_urls = content_text_and_images(title)
+        images = extract_image_context(attachments=[], urls=urls + title_urls, settings=settings)
+        question = format_question(
+            title=title, body=content, product=product, code=code, images=images
+        )
+        resolved_skill = (skill or "").strip() or resolve_default_skill(settings)
         answer = replay_with_retry(
             client, question=question, skill=resolved_skill, label="ai_cs_query"
         )

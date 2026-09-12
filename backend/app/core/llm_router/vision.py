@@ -82,7 +82,11 @@ class VisionClient:
         key = settings.vision_api_key or settings.dashscope_api_key
         if not key:
             raise VisionError("no vision API key (set VISION_API_KEY or DASHSCOPE_API_KEY)")
-        return cls(api_key=key, model=settings.vision_model)
+        return cls(
+            api_key=key,
+            model=settings.vision_model,
+            base_url=(settings.vision_base_url or DASHSCOPE_BASE_URL).rstrip("/"),
+        )
 
     def extract(
         self,
